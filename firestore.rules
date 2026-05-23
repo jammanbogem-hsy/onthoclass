@@ -94,13 +94,14 @@ service cloud.firestore {
         allow read: if (signedIn() && resource.data.uid == uid())
           || isMember(classId);
         // 본인 가입(개설 teacher / 코드참여 student): 자기 문서만.
-        // role=teacher 는 학급 개설자(ownerId==uid)만 허용 → 학생의 권한 상승 차단
+        // role=teacher 는 교사 계정(users.role=='teacher')만 허용 → 학생의 권한
+        // 상승 차단. (학급+멤버를 한 배치로 만들 때 클래스 get 이 아직 안 보이는
+        // 문제를 피하려고 classOwner 대신 isTeacherAccount 로 검사)
         allow create: if signedIn()
           && memberId == uid()
           && request.resource.data.uid == uid()
           && (request.resource.data.role == 'student'
-            || (request.resource.data.role == 'teacher'
-              && classOwner(classId) == uid()));
+            || (request.resource.data.role == 'teacher' && isTeacherAccount()));
         // 본인 탈퇴 또는 교사의 멤버 관리
         allow delete: if (signedIn() && memberId == uid())
           || isTeacher(classId);
