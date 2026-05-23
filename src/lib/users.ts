@@ -13,8 +13,9 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import type { User } from "firebase/auth";
-import { getDbClient } from "@/lib/firebase";
+import { getDbClient, getFunctionsClient } from "@/lib/firebase";
 
 export type AccountRole = "teacher" | "student";
 
@@ -43,8 +44,7 @@ export const AVATAR_PAGES: { label: string; items: string[] }[] = [
   { label: "2페이지", items: AVATARS_PAGE2 },
 ];
 
-// 교사 가입용 시스템 코드 (공유 비밀 — 교사 가입 게이트)
-export const TEACHER_SYSTEM_CODE = "jam1536";
+// 교사 가입 코드는 서버(claimTeacherRole)에서만 검증한다 — 클라이언트에 두지 않음.
 
 /** 로그인 시 기본 프로필(이메일/사진) 동기화. 역할은 건드리지 않음. */
 export async function ensureUserDoc(user: User): Promise<void> {
@@ -103,27 +103,28 @@ export async function setUserAvatar(
   await batch.commit();
 }
 
-/** 교사 회원가입 — 이름 + 시스템 코드 */
+/** 교사 회원가입 — 이름 + 시스템 코드.
+ *  코드 검증과 role 부여는 서버(claimTeacherRole)에서 admin 권한으로 처리한다.
+ *  (클라이언트는 role 을 'teacher' 로 직접 쓸 수 없도록 규칙으로 잠겨 있음) */
 export async function completeTeacherOnboarding(
   user: User,
   name: string,
   systemCode: string
 ): Promise<void> {
-  if (systemCode.trim() !== TEACHER_SYSTEM_CODE) {
-    throw new Error("시스템 코드가 올바르지 않습니다.");
-  }
   if (!name.trim()) throw new Error("이름을 입력해 주세요.");
-  await setDoc(
-    doc(getDbClient(), "users", user.uid),
-    {
-      role: "teacher",
-      name: name.trim(),
-      email: user.email ?? "",
-      photoURL: user.photoURL ?? "",
-      createdAt: serverTimestamp(),
-    },
-    { merge: true }
+  const fn = httpsCallable<{ code: string; name: string }, { ok: true }>(
+    getFunctionsClient(),
+    "claimTeacherRole"
   );
+  try {
+    await fn({ code: systemCode.trim(), name: name.trim() });
+  } catch (e) {
+    const msg =
+      (e as { message?: string })?.message ?? "교사 가입에 실패했습니다.";
+    throw new Error(
+      /code|permission/i.test(msg) ? "시스템 코드가 올바르지 않습니다." : msg
+    );
+  }
 }
 
 /** 학생 회원가입 — 이름 + 학급 코드(한글). 프로필 + 학급 멤버 동시 등록 */

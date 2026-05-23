@@ -19,6 +19,9 @@ setGlobalOptions({ region: "asia-northeast3" }); // 서울 리전
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
+// 교사 가입 코드(서버 비밀). Secret Manager 미설정 시 기본값 사용.
+const TEACHER_CODE = defineSecret("TEACHER_CODE");
+const TEACHER_CODE_FALLBACK = "jam1536";
 
 /* ---------- 출력 타입 & JSON Schema (구조화 출력) ---------- */
 export type Sentiment = "positive" | "neutral" | "negative";
@@ -806,5 +809,45 @@ export const onLessonMessage = onDocumentCreated(
       authorName: (data.authorName as string) ?? "",
       text: (data.text as string) ?? "",
     });
+  }
+);
+
+// 교사 권한 부여 — 코드 검증 후 users/{uid}.role='teacher' 설정(서버 전용).
+// 클라이언트가 role 을 직접 'teacher' 로 쓰지 못하도록 규칙으로 잠그고
+// 이 함수만 admin 권한으로 role 을 부여한다.
+export const claimTeacherRole = onCall(
+  { secrets: [TEACHER_CODE] },
+  async (req): Promise<{ ok: true }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { code, name } = (req.data ?? {}) as { code?: string; name?: string };
+    let expected = TEACHER_CODE_FALLBACK;
+    try {
+      const v = TEACHER_CODE.value();
+      if (v) expected = v;
+    } catch {
+      // Secret 미설정 → fallback
+    }
+    if (!code || code.trim() !== expected) {
+      throw new HttpsError("permission-denied", "시스템 코드가 올바르지 않습니다.");
+    }
+    if (!name || !name.trim()) {
+      throw new HttpsError("invalid-argument", "이름을 입력해 주세요.");
+    }
+    const auth = req.auth;
+    await getFirestore()
+      .doc(`users/${auth.uid}`)
+      .set(
+        {
+          role: "teacher",
+          name: name.trim(),
+          email: auth.token.email ?? "",
+          photoURL: auth.token.picture ?? "",
+          createdAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    return { ok: true };
   }
 );

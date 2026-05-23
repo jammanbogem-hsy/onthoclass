@@ -388,6 +388,12 @@ function StudentProgress({
               role="button"
               tabIndex={0}
               onClick={() => router.push(`/level/?id=${c.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  router.push(`/level/?id=${c.id}`);
+                }
+              }}
               className="block w-full cursor-pointer rounded-xl text-left transition hover:bg-black/[0.03]"
             >
               <div className="flex items-center gap-2">

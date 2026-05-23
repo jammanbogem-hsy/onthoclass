@@ -58,6 +58,8 @@ import { ReflectAvgBadge } from "@/components/ReflectAvgBadge";
 import { grantXp } from "@/lib/xp";
 import { listSourceClasses, type SourceClass } from "@/lib/teams";
 import { listProjects, type Project } from "@/lib/projects";
+import { buildPrePostOverlay, filterOverlayByMode } from "@/lib/compare";
+import { PREPOST_COLOR } from "@/lib/palette";
 import { canonicalizeOntology, extractOntology } from "@/lib/ai";
 import {
   applyLabelClusters,
@@ -1018,6 +1020,7 @@ function QuestionRow({
   const [options, setOptions] = useState<string[]>(question.options);
   const [answerIdx, setAnswerIdx] = useState(question.answerIndex);
   const [allowResubmit, setAllowResubmit] = useState(question.allowResubmit);
+  const [revealAnswer, setRevealAnswer] = useState(!!question.revealAnswer);
   const [boardMode, setBoardMode] = useState<"shared" | "group">(
     question.boardMode === "group" ? "group" : "shared"
   );
@@ -1052,6 +1055,7 @@ function QuestionRow({
     setOptions(question.options);
     setAnswerIdx(question.answerIndex);
     setAllowResubmit(question.allowResubmit);
+    setRevealAnswer(!!question.revealAnswer);
     setBoardMode(question.boardMode === "group" ? "group" : "shared");
     setAudGroupIds(question.audGroupIds);
     setAudUids(question.audUids);
@@ -1183,6 +1187,7 @@ function QuestionRow({
       g: audGroupIds,
       u: audUids,
       r: allowResubmit,
+      v: revealAnswer,
       b: boardMode,
     });
     const sv = JSON.stringify({
@@ -1194,6 +1199,7 @@ function QuestionRow({
       g: question.audGroupIds,
       u: question.audUids,
       r: question.allowResubmit,
+      v: !!question.revealAnswer,
       b: question.boardMode === "group" ? "group" : "shared",
     });
     return cur !== sv;
@@ -1206,6 +1212,7 @@ function QuestionRow({
     audGroupIds,
     audUids,
     allowResubmit,
+    revealAnswer,
     boardMode,
     question,
   ]);
@@ -1220,6 +1227,7 @@ function QuestionRow({
       audGroupIds,
       audUids,
       allowResubmit,
+      revealAnswer,
       boardMode,
     });
     setSavedAt(new Date().toLocaleTimeString());
@@ -1463,6 +1471,26 @@ function QuestionRow({
                 <span className="h-3 w-3 rounded-full bg-white" />
               </span>
               제출 후 학생 수정 {allowResubmit ? "허용" : "불가"}
+            </button>
+          )}
+
+          {isQuiz && (
+            <button
+              type="button"
+              onClick={() => setRevealAnswer((v) => !v)}
+              className="ml-2 mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium"
+              title="켜면 학생이 제출한 뒤 정답이 공개되고, 답은 더 이상 수정할 수 없습니다 (저장 필요)"
+            >
+              <span
+                className={`flex h-4 w-7 items-center rounded-full p-0.5 transition ${
+                  revealAnswer
+                    ? "justify-end bg-[var(--md-sys-color-primary)]"
+                    : "justify-start bg-black/20"
+                }`}
+              >
+                <span className="h-3 w-3 rounded-full bg-white" />
+              </span>
+              제출 후 정답 공개 {revealAnswer ? "켬" : "끔"}
             </button>
           )}
 
@@ -2413,73 +2441,6 @@ function MiniOntology({
 }
 
 /* ---------- 같은 활동 수업 전↔후 비교 (복제 또는 같은 제목으로 짝지음) ---------- */
-const PP_COLOR: Record<string, string> = {
-  pre: "#f5a623", // 수업 전에만 (주황)
-  both: "#d6209c", // 공통 (자홍 — 가장 눈에 띄게)
-  post: "#23b27a", // 수업 후 신규 (초록)
-};
-function buildPrePostOverlay(pre: Ontology | null, post: Ontology | null) {
-  const keyOf = (n: { id: string; label: string }) =>
-    (n.label || n.id).trim().toLowerCase() || n.id;
-  const byKey = new Map<
-    string,
-    { node: Ontology["nodes"][number]; inPre: boolean; inPost: boolean }
-  >();
-  const preKeys = new Map<string, string>();
-  const postKeys = new Map<string, string>();
-  (pre?.nodes ?? []).forEach((n) => {
-    const k = keyOf(n);
-    preKeys.set(n.id, k);
-    const e = byKey.get(k);
-    if (e) e.inPre = true;
-    else byKey.set(k, { node: { ...n, id: k }, inPre: true, inPost: false });
-  });
-  (post?.nodes ?? []).forEach((n) => {
-    const k = keyOf(n);
-    postKeys.set(n.id, k);
-    const e = byKey.get(k);
-    if (e) {
-      e.inPost = true;
-      e.node = { ...n, id: k };
-    } else byKey.set(k, { node: { ...n, id: k }, inPre: false, inPost: true });
-  });
-  const statusByKey: Record<string, "pre" | "post" | "both"> = {};
-  const counts = { pre: 0, post: 0, both: 0 };
-  byKey.forEach((e, k) => {
-    const s = e.inPre && e.inPost ? "both" : e.inPre ? "pre" : "post";
-    statusByKey[k] = s;
-    counts[s] += 1;
-  });
-  const remap = (edges: Ontology["edges"], keys: Map<string, string>) =>
-    edges.map((ed) => ({
-      ...ed,
-      source: keys.get(ed.source) ?? ed.source,
-      target: keys.get(ed.target) ?? ed.target,
-    }));
-  const edgeMap = new Map<string, Ontology["edges"][number]>();
-  [
-    ...remap(pre?.edges ?? [], preKeys),
-    ...remap(post?.edges ?? [], postKeys),
-  ].forEach((ed) => {
-    const id = `${ed.source}__${ed.target}`;
-    if (!edgeMap.has(id)) edgeMap.set(id, ed);
-  });
-  return {
-    overlay: {
-      nodes: [...byKey.values()].map((e) => e.node),
-      edges: [...edgeMap.values()],
-      overallSentiment: (post ?? pre)?.overallSentiment ?? {
-        positive: 0,
-        neutral: 1,
-        negative: 0,
-      },
-      summary: "",
-    } as Ontology,
-    statusByKey,
-    counts,
-  };
-}
-
 function PrePostCompare({
   cid,
   lid,
@@ -2511,22 +2472,10 @@ function PrePostCompare({
   );
 
   // 선택한 강조 모드에 맞는 노드만 남긴 그래프
-  const display = useMemo(() => {
-    if (mode === "all") return overlay;
-    const keep = (s: "pre" | "post" | "both") =>
-      mode === "diff" ? s !== "both" : s === mode;
-    const nodes = overlay.nodes.filter((n) =>
-      keep(statusByKey[n.id] ?? "both")
-    );
-    const ids = new Set(nodes.map((n) => n.id));
-    return {
-      ...overlay,
-      nodes,
-      edges: overlay.edges.filter(
-        (e) => ids.has(e.source) && ids.has(e.target)
-      ),
-    } as Ontology;
-  }, [overlay, statusByKey, mode]);
+  const display = useMemo(
+    () => filterOverlayByMode(overlay, statusByKey, mode),
+    [overlay, statusByKey, mode]
+  );
 
   if (overlay.nodes.length === 0) return null;
 
@@ -2555,7 +2504,7 @@ function PrePostCompare({
         <div className="mt-3">
           {/* 강조 필터 탭 (바깥 + 확대 모달 공용) */}
           <CompareTabs
-            colors={PP_COLOR}
+            colors={PREPOST_COLOR}
             legend={legend}
             mode={mode}
             setMode={setMode}
@@ -2574,10 +2523,10 @@ function PrePostCompare({
                 title={`수업 전/후 비교 · ${
                   legend.find(([m]) => m === mode)?.[1] ?? "전체"
                 }`}
-                nodeColor={(node) => PP_COLOR[statusByKey[node.id] ?? "both"]}
+                nodeColor={(node) => PREPOST_COLOR[statusByKey[node.id] ?? "both"]}
                 modalHeader={
                   <CompareTabs
-                    colors={PP_COLOR}
+                    colors={PREPOST_COLOR}
                     legend={legend}
                     mode={mode}
                     setMode={setMode}
@@ -2773,7 +2722,10 @@ function StudentQuestionCard({
       }
       setReady(true);
     });
-  }, [user, cid, lid, question.id, question.text, isQuiz, isLink]);
+    // 활동(id)·사용자 변경 시에만 초기화한다. question.text 변경(교사 실시간
+    // 편집)으로 재실행하면 학생이 작성 중인 내용을 덮어쓰므로 의존성에서 제외.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, cid, lid, question.id, isQuiz, isLink]);
 
   const value = isQuiz ? choice : content;
   const hasAnswer = isQuiz
@@ -2782,7 +2734,9 @@ function StudentQuestionCard({
   // 제출 doc이 있으면(서버타임스탬프 미해석이어도) 제출된 것으로 간주
   const submitted =
     !!mine && (!!mine.submittedAt || mine.content.trim().length > 0);
-  const locked = submitted && !question.allowResubmit;
+  // 문항 정답 공개: 제출 후 공개되며, 공개되면 답을 더 못 바꾼다(부정행위 방지)
+  const quizRevealed = isQuiz && submitted && !!question.revealAnswer;
+  const locked = (submitted && !question.allowResubmit) || quizRevealed;
   const prevAns = isQuiz
     ? (mine?.content ?? "")
     : blocksToPlainText(mine?.content ?? "").trim();
@@ -2892,7 +2846,7 @@ function StudentQuestionCard({
                 question.options.map((opt, oi) => {
                   const picked = choice === opt;
                   const revealOk =
-                    submitted &&
+                    quizRevealed &&
                     question.answerIndex >= 0 &&
                     oi === question.answerIndex;
                   return (
@@ -2923,7 +2877,7 @@ function StudentQuestionCard({
                   );
                 })
               )}
-              {submitted && question.answerIndex >= 0 && (
+              {quizRevealed && question.answerIndex >= 0 ? (
                 <p
                   className={`text-xs font-semibold ${
                     correct ? "text-emerald-700" : "text-rose-600"
@@ -2931,7 +2885,11 @@ function StudentQuestionCard({
                 >
                   {correct ? "정답입니다 ✓" : "오답입니다"}
                 </p>
-              )}
+              ) : submitted ? (
+                <p className="text-xs text-black/45">
+                  제출 완료 — 정답은 선생님이 공개하면 표시됩니다.
+                </p>
+              ) : null}
             </div>
           ) : locked ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
@@ -2948,7 +2906,9 @@ function StudentQuestionCard({
           {locked ? (
             <div className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-700">
               <Icon name="lock" size={18} />
-              제출 완료 · 교사가 수정을 잠갔습니다 (수정 불가)
+              {quizRevealed
+                ? "제출 완료 · 정답이 공개되어 수정할 수 없습니다"
+                : "제출 완료 · 교사가 수정을 잠갔습니다 (수정 불가)"}
             </div>
           ) : (
             <button
@@ -3327,12 +3287,19 @@ function ReflectionStudent({
               <p className="whitespace-pre-wrap">{mine!.application}</p>
             </div>
           )}
-          <button
-            onClick={() => setOpen(true)}
-            className="self-start text-xs font-semibold text-[var(--md-sys-color-primary)] hover:underline"
-          >
-            수정하기
-          </button>
+          {question.allowResubmit !== false ? (
+            <button
+              onClick={() => setOpen(true)}
+              className="self-start text-xs font-semibold text-[var(--md-sys-color-primary)] hover:underline"
+            >
+              수정하기
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1 self-start text-xs text-black/45">
+              <Icon name="lock" size={13} />
+              제출 후 수정이 잠겨 있습니다
+            </span>
+          )}
         </div>
       ) : (
         <button
@@ -3509,13 +3476,37 @@ function ReflectionTeacher({
             성찰
           </span>
         </div>
-        <button
-          onClick={remove}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/35 hover:bg-rose-100 hover:text-rose-600"
-          title="활동 삭제"
-        >
-          <Icon name="delete" size={16} />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={async () => {
+              await updateQuestion(cid, lid, question.id, {
+                allowResubmit: question.allowResubmit === false,
+              });
+              onChanged();
+            }}
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium"
+            title="학생이 제출 후 성찰을 수정할 수 있는지"
+          >
+            <span
+              className={`flex h-4 w-7 items-center rounded-full p-0.5 transition ${
+                question.allowResubmit !== false
+                  ? "justify-end bg-[var(--md-sys-color-primary)]"
+                  : "justify-start bg-black/20"
+              }`}
+            >
+              <span className="h-3 w-3 rounded-full bg-white" />
+            </span>
+            제출 후 수정 {question.allowResubmit !== false ? "허용" : "불가"}
+          </button>
+          <button
+            onClick={remove}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-black/35 hover:bg-rose-100 hover:text-rose-600"
+            title="활동 삭제"
+          >
+            <Icon name="delete" size={16} />
+          </button>
+        </div>
       </div>
 
       {/* 평균 요약 */}
@@ -3756,6 +3747,155 @@ function ImportPreModal({
   );
 }
 
+/* ---------- 가져오기 모달의 클래스 HDD 트리 노드(모듈 최상위) ---------- */
+type ImportTreeCtx = {
+  expanded: Set<string>;
+  sel: Map<string, Question>;
+  toggle: (id: string) => void;
+  toggleLesson: (l: Lesson) => void;
+  toggleAct: (lid: string, q: Question) => void;
+  actsByLesson: Record<string, Question[] | null>;
+  childProjects: (pid: string | null) => Project[];
+  lessonsOf: (pid: string | null) => Lesson[];
+};
+
+function ImportLessonNode({
+  l,
+  depth,
+  ctx,
+}: {
+  l: Lesson;
+  depth: number;
+  ctx: ImportTreeCtx;
+}) {
+  const open = ctx.expanded.has(`l:${l.id}`);
+  const acts = ctx.actsByLesson[l.id];
+  return (
+    <li>
+      <button
+        onClick={() => ctx.toggleLesson(l)}
+        style={{ paddingLeft: 8 + depth * 16 }}
+        className="flex w-full items-center gap-2 rounded-lg py-2 pr-2 text-left text-sm hover:bg-black/5"
+      >
+        <Icon
+          name={open ? "expand_more" : "chevron_right"}
+          size={16}
+          className="shrink-0 text-black/40"
+        />
+        <Icon name="menu_book" size={15} className="shrink-0 text-black/45" />
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {l.title || "(제목 없음)"}
+        </span>
+        <span className="shrink-0 text-[11px] text-black/40">{l.date}</span>
+      </button>
+      {open && (
+        <ul>
+          {acts === null || acts === undefined ? (
+            <li
+              style={{ paddingLeft: 8 + (depth + 1) * 16 }}
+              className="py-1.5 text-xs text-black/40"
+            >
+              불러오는 중…
+            </li>
+          ) : acts.length === 0 ? (
+            <li
+              style={{ paddingLeft: 8 + (depth + 1) * 16 }}
+              className="py-1.5 text-xs text-black/40"
+            >
+              활동이 없습니다.
+            </li>
+          ) : (
+            acts.map((q) => {
+              const picked = ctx.sel.has(`${l.id}:${q.id}`);
+              return (
+                <li key={q.id}>
+                  <label
+                    style={{ paddingLeft: 8 + (depth + 1) * 16 }}
+                    className={`flex cursor-pointer items-center gap-2.5 rounded-lg py-2 pr-2 text-sm ${
+                      picked
+                        ? "bg-[var(--md-sys-color-primary-container)]"
+                        : "hover:bg-black/5"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      onChange={() => ctx.toggleAct(l.id, q)}
+                      className="h-4 w-4 shrink-0 accent-[var(--md-sys-color-primary)]"
+                    />
+                    <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] font-medium text-black/55">
+                      {IMPORT_KIND_LABEL[q.kind] ?? q.kind}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-[var(--md-sys-color-secondary-container)] px-1.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+                      {q.phase === "pre" ? "전" : "후"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {q.title.trim() || "(제목 없음)"}
+                    </span>
+                  </label>
+                </li>
+              );
+            })
+          )}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function ImportProjectNode({
+  p,
+  depth,
+  ctx,
+}: {
+  p: Project;
+  depth: number;
+  ctx: ImportTreeCtx;
+}) {
+  const open = ctx.expanded.has(`p:${p.id}`);
+  const subs = ctx.childProjects(p.id);
+  const ls = ctx.lessonsOf(p.id);
+  return (
+    <li>
+      <button
+        onClick={() => ctx.toggle(`p:${p.id}`)}
+        style={{ paddingLeft: 8 + depth * 16 }}
+        className="flex w-full items-center gap-2 rounded-lg py-2 pr-2 text-left text-sm hover:bg-black/5"
+      >
+        <Icon
+          name={open ? "expand_more" : "chevron_right"}
+          size={16}
+          className="shrink-0 text-black/40"
+        />
+        <Icon
+          name={open ? "folder_open" : "folder"}
+          size={15}
+          className="shrink-0 text-[var(--md-sys-color-primary)]"
+        />
+        <span className="min-w-0 flex-1 truncate font-semibold">{p.name}</span>
+      </button>
+      {open && (
+        <ul>
+          {subs.map((sp) => (
+            <ImportProjectNode key={sp.id} p={sp} depth={depth + 1} ctx={ctx} />
+          ))}
+          {ls.map((l) => (
+            <ImportLessonNode key={l.id} l={l} depth={depth + 1} ctx={ctx} />
+          ))}
+          {subs.length === 0 && ls.length === 0 && (
+            <li
+              style={{ paddingLeft: 8 + (depth + 1) * 16 }}
+              className="py-1.5 text-xs text-black/40"
+            >
+              비어 있습니다.
+            </li>
+          )}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 /* ---------- 다른 학급(내 다른 반·팀원 반)에서 활동 가져오기 ---------- */
 function CrossImportModal({
   myCid,
@@ -3844,129 +3984,17 @@ function CrossImportModal({
   }
 
   // 차시 노드 (활동 목록 펼침)
-  function LessonNode({ l, depth }: { l: Lesson; depth: number }) {
-    const open = expanded.has(`l:${l.id}`);
-    const acts = actsByLesson[l.id];
-    return (
-      <li>
-        <button
-          onClick={() => toggleLesson(l)}
-          style={{ paddingLeft: 8 + depth * 16 }}
-          className="flex w-full items-center gap-2 rounded-lg py-2 pr-2 text-left text-sm hover:bg-black/5"
-        >
-          <Icon
-            name={open ? "expand_more" : "chevron_right"}
-            size={16}
-            className="shrink-0 text-black/40"
-          />
-          <Icon name="menu_book" size={15} className="shrink-0 text-black/45" />
-          <span className="min-w-0 flex-1 truncate font-medium">
-            {l.title || "(제목 없음)"}
-          </span>
-          <span className="shrink-0 text-[11px] text-black/40">{l.date}</span>
-        </button>
-        {open && (
-          <ul>
-            {acts === null || acts === undefined ? (
-              <li
-                style={{ paddingLeft: 8 + (depth + 1) * 16 }}
-                className="py-1.5 text-xs text-black/40"
-              >
-                불러오는 중…
-              </li>
-            ) : acts.length === 0 ? (
-              <li
-                style={{ paddingLeft: 8 + (depth + 1) * 16 }}
-                className="py-1.5 text-xs text-black/40"
-              >
-                활동이 없습니다.
-              </li>
-            ) : (
-              acts.map((q) => {
-                const picked = sel.has(`${l.id}:${q.id}`);
-                return (
-                  <li key={q.id}>
-                    <label
-                      style={{ paddingLeft: 8 + (depth + 1) * 16 }}
-                      className={`flex cursor-pointer items-center gap-2.5 rounded-lg py-2 pr-2 text-sm ${
-                        picked
-                          ? "bg-[var(--md-sys-color-primary-container)]"
-                          : "hover:bg-black/5"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={picked}
-                        onChange={() => toggleAct(l.id, q)}
-                        className="h-4 w-4 shrink-0 accent-[var(--md-sys-color-primary)]"
-                      />
-                      <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] font-medium text-black/55">
-                        {IMPORT_KIND_LABEL[q.kind] ?? q.kind}
-                      </span>
-                      <span className="shrink-0 rounded-full bg-[var(--md-sys-color-secondary-container)] px-1.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
-                        {q.phase === "pre" ? "전" : "후"}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate font-medium">
-                        {q.title.trim() || "(제목 없음)"}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        )}
-      </li>
-    );
-  }
-
-  // 프로젝트 노드 (하위 프로젝트 + 차시 재귀)
-  function ProjectNode({ p, depth }: { p: Project; depth: number }) {
-    const open = expanded.has(`p:${p.id}`);
-    const subs = childProjects(p.id);
-    const ls = lessonsOf(p.id);
-    return (
-      <li>
-        <button
-          onClick={() => toggle(`p:${p.id}`)}
-          style={{ paddingLeft: 8 + depth * 16 }}
-          className="flex w-full items-center gap-2 rounded-lg py-2 pr-2 text-left text-sm hover:bg-black/5"
-        >
-          <Icon
-            name={open ? "expand_more" : "chevron_right"}
-            size={16}
-            className="shrink-0 text-black/40"
-          />
-          <Icon
-            name={open ? "folder_open" : "folder"}
-            size={15}
-            className="shrink-0 text-[var(--md-sys-color-primary)]"
-          />
-          <span className="min-w-0 flex-1 truncate font-semibold">
-            {p.name}
-          </span>
-        </button>
-        {open && (
-          <ul>
-            {subs.map((sp) => (
-              <ProjectNode key={sp.id} p={sp} depth={depth + 1} />
-            ))}
-            {ls.map((l) => (
-              <LessonNode key={l.id} l={l} depth={depth + 1} />
-            ))}
-            {subs.length === 0 && ls.length === 0 && (
-              <li
-                style={{ paddingLeft: 8 + (depth + 1) * 16 }}
-                className="py-1.5 text-xs text-black/40"
-              >
-                비어 있습니다.
-              </li>
-            )}
-          </ul>
-        )}
-      </li>
-    );
-  }
+  // 트리 노드(모듈 최상위 컴포넌트)에 넘길 컨텍스트
+  const treeCtx: ImportTreeCtx = {
+    expanded,
+    sel,
+    toggle,
+    toggleLesson,
+    toggleAct,
+    actsByLesson,
+    childProjects,
+    lessonsOf,
+  };
 
   const title = srcClass
     ? `${srcClass.name} · 클래스 HDD`
@@ -4065,7 +4093,7 @@ function CrossImportModal({
             ) : (
               <ul className="flex flex-col">
                 {rootProjects.map((p) => (
-                  <ProjectNode key={p.id} p={p} depth={0} />
+                  <ImportProjectNode key={p.id} p={p} depth={0} ctx={treeCtx} />
                 ))}
                 {rootLessons.length > 0 && (
                   <li>
@@ -4078,7 +4106,12 @@ function CrossImportModal({
                     </div>
                     <ul>
                       {rootLessons.map((l) => (
-                        <LessonNode key={l.id} l={l} depth={1} />
+                        <ImportLessonNode
+                          key={l.id}
+                          l={l}
+                          depth={1}
+                          ctx={treeCtx}
+                        />
                       ))}
                     </ul>
                   </li>

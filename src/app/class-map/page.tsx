@@ -34,6 +34,12 @@ import {
 } from "@/lib/lessons";
 import { listProjects, type Project } from "@/lib/projects";
 import { listGroups, type Group } from "@/lib/groups";
+import { buildPrePostOverlay, filterOverlayByMode } from "@/lib/compare";
+import {
+  CATEGORY_PALETTE,
+  GROUP_COMMON_COLOR,
+  PREPOST_COLOR,
+} from "@/lib/palette";
 import {
   canonicalizeOntology,
   extractOntology,
@@ -895,11 +901,7 @@ export default function ClassMapPage() {
 }
 
 /* ---------- 사전/사후 지식맵 겹쳐보기 ---------- */
-const COMPARE_COLOR: Record<string, string> = {
-  pre: "#f5a623", // 사전만 (주황)
-  both: "#d6209c", // 공통 (자홍 — 가장 눈에 띄게)
-  post: "#23b27a", // 사후 신규 (초록)
-};
+const COMPARE_COLOR = PREPOST_COLOR;
 function ComparePanel({
   pre,
   post,
@@ -914,83 +916,16 @@ function ComparePanel({
   const [mode, setMode] = useState<"all" | "pre" | "post" | "both" | "diff">(
     "all"
   );
-  const { overlay, statusByKey, counts } = useMemo(() => {
-    const keyOf = (n: { id: string; label: string }) =>
-      (n.label || n.id).trim().toLowerCase() || n.id;
-    const byKey = new Map<
-      string,
-      { node: Ontology["nodes"][number]; inPre: boolean; inPost: boolean }
-    >();
-    const preKeys = new Map<string, string>();
-    const postKeys = new Map<string, string>();
-    pre.nodes.forEach((n) => {
-      const k = keyOf(n);
-      preKeys.set(n.id, k);
-      const e = byKey.get(k);
-      if (e) e.inPre = true;
-      else byKey.set(k, { node: { ...n, id: k }, inPre: true, inPost: false });
-    });
-    post.nodes.forEach((n) => {
-      const k = keyOf(n);
-      postKeys.set(n.id, k);
-      const e = byKey.get(k);
-      if (e) {
-        e.inPost = true;
-        e.node = { ...n, id: k };
-      } else byKey.set(k, { node: { ...n, id: k }, inPre: false, inPost: true });
-    });
-    const statusByKey: Record<string, "pre" | "post" | "both"> = {};
-    const counts = { pre: 0, post: 0, both: 0 };
-    byKey.forEach((e, k) => {
-      const s = e.inPre && e.inPost ? "both" : e.inPre ? "pre" : "post";
-      statusByKey[k] = s;
-      counts[s] += 1;
-    });
-    const remap = (
-      edges: Ontology["edges"],
-      keys: Map<string, string>
-    ) =>
-      edges.map((ed) => ({
-        ...ed,
-        source: keys.get(ed.source) ?? ed.source,
-        target: keys.get(ed.target) ?? ed.target,
-      }));
-    const edgeMap = new Map<string, Ontology["edges"][number]>();
-    [...remap(pre.edges, preKeys), ...remap(post.edges, postKeys)].forEach(
-      (ed) => {
-        const id = `${ed.source}__${ed.target}`;
-        if (!edgeMap.has(id)) edgeMap.set(id, ed);
-      }
-    );
-    return {
-      overlay: {
-        nodes: [...byKey.values()].map((e) => e.node),
-        edges: [...edgeMap.values()],
-        overallSentiment: post.overallSentiment,
-        summary: "",
-      } as Ontology,
-      statusByKey,
-      counts,
-    };
-  }, [pre, post]);
+  const { overlay, statusByKey, counts } = useMemo(
+    () => buildPrePostOverlay(pre, post),
+    [pre, post]
+  );
 
   // 강조 모드에 맞는 노드만 남긴 그래프
-  const display = useMemo(() => {
-    if (mode === "all") return overlay;
-    const keep = (s: "pre" | "post" | "both") =>
-      mode === "diff" ? s !== "both" : s === mode;
-    const nodes = overlay.nodes.filter((n) =>
-      keep(statusByKey[n.id] ?? "both")
-    );
-    const ids = new Set(nodes.map((n) => n.id));
-    return {
-      ...overlay,
-      nodes,
-      edges: overlay.edges.filter(
-        (e) => ids.has(e.source) && ids.has(e.target)
-      ),
-    } as Ontology;
-  }, [overlay, statusByKey, mode]);
+  const display = useMemo(
+    () => filterOverlayByMode(overlay, statusByKey, mode),
+    [overlay, statusByKey, mode]
+  );
 
   if (loading)
     return (
@@ -1077,17 +1012,8 @@ function ComparePanel({
 }
 
 /* ---------- 모둠 간 지식맵 비교 ---------- */
-const GROUP_PALETTE = [
-  "#4f7cff",
-  "#23b27a",
-  "#f5a623",
-  "#a66bff",
-  "#ff6f91",
-  "#0ea5e9",
-  "#14b8a6",
-  "#ef4444",
-];
-const GROUP_COMMON = "#475569";
+const GROUP_PALETTE = CATEGORY_PALETTE;
+const GROUP_COMMON = GROUP_COMMON_COLOR;
 
 function GroupComparePanel({
   base,

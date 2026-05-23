@@ -140,16 +140,26 @@ export function NotificationBell() {
       {/* 새 알림 토스트 (상단 우측, 자동 닫힘) */}
       {toasts.length > 0 && (
         <div className="fixed right-4 top-20 z-[70] flex w-80 flex-col gap-2">
-          {toasts.map((n) => (
-            <button
+          {toasts.map((n) => {
+            const openNotif = () => {
+              if (user && !n.readAt)
+                markNotifRead(user.uid, n.id).catch(() => {});
+              setToasts((q) => q.filter((x) => x.id !== n.id));
+              if (n.link) router.push(n.link);
+            };
+            return (
+            <div
               key={n.id}
-              onClick={() => {
-                if (user && !n.readAt)
-                  markNotifRead(user.uid, n.id).catch(() => {});
-                setToasts((q) => q.filter((x) => x.id !== n.id));
-                if (n.link) router.push(n.link);
+              role="button"
+              tabIndex={0}
+              onClick={openNotif}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openNotif();
+                }
               }}
-              className="flex animate-float-in items-start gap-2 rounded-2xl bg-[var(--md-sys-color-primary)] px-4 py-3 text-left text-sm text-white shadow-lg transition hover:brightness-110"
+              className="flex animate-float-in cursor-pointer items-start gap-2 rounded-2xl bg-[var(--md-sys-color-primary)] px-4 py-3 text-left text-sm text-white shadow-[var(--md-sys-elevation-3)] transition hover:brightness-110"
             >
               <Icon
                 name={n.type === "message" ? "forum" : "notifications"}
@@ -164,8 +174,9 @@ export function NotificationBell() {
                   {n.text}
                 </span>
               </span>
-              <span
-                role="button"
+              <button
+                type="button"
+                aria-label="알림 닫기"
                 onClick={(e) => {
                   e.stopPropagation();
                   setToasts((q) => q.filter((x) => x.id !== n.id));
@@ -173,9 +184,10 @@ export function NotificationBell() {
                 className="ml-1 shrink-0 cursor-pointer rounded-full p-0.5 opacity-70 hover:opacity-100"
               >
                 <Icon name="close" size={14} />
-              </span>
-            </button>
-          ))}
+              </button>
+            </div>
+            );
+          })}
         </div>
       )}
     </div>

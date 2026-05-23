@@ -66,7 +66,20 @@
       "Bash(gh auth *)",
       "Bash(git ls-remote *)",
       "Bash(git add *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(echo \"name: $\\(git config user.name\\)\")",
+      "Bash(echo \"email: $\\(git config user.email\\)\")",
+      "Bash(echo \"set: $\\(git config user.name\\) <$\\(git config user.email\\)>\")",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx tsc --noEmit)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx next lint)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx eslint src)",
+      "Bash(NODE_OPTIONS=\"\" npm run build)",
+      "Bash(NODE_OPTIONS=\"\" npx firebase functions:secrets:set TEACHER_CODE --data-file=-)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only firestore:rules,functions,hosting)",
+      "Bash(awk 'NR>=2890 && NR<=2990 && \\(/revealOk|answerIndex|정답|isCorrect|opt ===|correct/\\)' src/app/lesson/page.tsx)"
     ]
   }
 }

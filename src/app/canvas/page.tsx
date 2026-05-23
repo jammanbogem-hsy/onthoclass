@@ -517,8 +517,14 @@ function CanvasInner() {
   }
 
   // ---------- 카드 인터랙션 ----------
+  // 학생은 본인이 만든 카드만 이동/연결 가능(교사는 전체). 협업 보드 무결성 보호.
+  function canManipulate(n: CardNode) {
+    if (!canEdit) return false;
+    if (isTeacher) return true;
+    return !n.authorUid || n.authorUid === user?.uid;
+  }
   function onCardPointerDown(e: React.PointerEvent, n: CardNode) {
-    if (!canEdit) return;
+    if (!canManipulate(n)) return;
     e.stopPropagation();
     if (connectMode) {
       if (!pendingFrom) {

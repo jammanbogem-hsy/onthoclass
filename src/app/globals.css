@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "./material3.css";
 
+/* 다크 유틸리티를 클래스 기반으로 전환(.dark 하위에서만 적용).
+   현재는 .dark 를 부여하지 않아 라이트 테마로 일관 고정 — OS 다크에서
+   토큰(라이트)과 dark: 유틸리티가 충돌해 '반쪽 다크'로 깨지는 문제 방지.
+   완전 다크모드 지원 시 <html>에 .dark + [data-md-scheme="dark"] 동시 토글. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ===========================================================
    Material 3 (Material You) — 잼클래스
    브랜드: Teal #0F6E56 / Peach #F5C4B3 / Mint #E1F5EE / Sage #C0DD97

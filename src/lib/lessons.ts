@@ -79,6 +79,7 @@ export type Question = {
   audUids: string[]; // 대상 학생 uid
   order: number;
   allowResubmit: boolean; // 제출 후 학생 수정 허용 여부 (교사 설정)
+  revealAnswer?: boolean; // 문항(quiz): 제출 후 학생에게 정답 공개(공개 시 잠금)
   boardMode?: "shared" | "group"; // 보드(canvas): 공용 1개 / 모둠별 따로
   clonedFrom?: string; // 복제 원본 질문 id (수업 전→후 가져오기 등)
   createdBy: string;
@@ -297,6 +298,7 @@ export async function createQuestion(
     audUids?: string[];
     order?: number;
     allowResubmit?: boolean;
+    revealAnswer?: boolean;
     boardMode?: "shared" | "group";
   }
 ): Promise<string> {
@@ -313,6 +315,7 @@ export async function createQuestion(
     audUids: data.audUids ?? [],
     order: data.order ?? Date.now(),
     allowResubmit: data.allowResubmit ?? true,
+    revealAnswer: data.revealAnswer ?? false,
     boardMode: data.boardMode ?? "shared",
     createdBy: user.uid,
     createdAt: serverTimestamp(),
@@ -353,6 +356,7 @@ export async function cloneQuestionsToPhase(
       audUids: q.audUids,
       order,
       allowResubmit: q.allowResubmit,
+      boardMode: q.boardMode ?? "shared",
       clonedFrom: q.id,
       createdBy: user.uid,
       createdAt: serverTimestamp(),
@@ -389,6 +393,7 @@ export async function updateQuestion(
     audUids?: string[];
     order?: number;
     allowResubmit?: boolean;
+    revealAnswer?: boolean;
     boardMode?: "shared" | "group";
     clonedFrom?: string;
   }
@@ -821,6 +826,7 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
       .filter((l) => l.title || l.url),
     order: (v.order as number) ?? 0,
     allowResubmit: v.allowResubmit !== false, // 미설정/기존 문서는 허용(true)
+    revealAnswer: v.revealAnswer === true,
     boardMode: v.boardMode === "group" ? "group" : "shared",
     clonedFrom:
       typeof v.clonedFrom === "string" ? (v.clonedFrom as string) : undefined,

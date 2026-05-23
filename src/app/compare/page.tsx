@@ -18,17 +18,10 @@ import {
   type Phase,
 } from "@/lib/lessons";
 import { filterOntologyByGroup, mergeOntologies } from "@/lib/ontology";
+import { CATEGORY_PALETTE, GROUP_COMMON_COLOR } from "@/lib/palette";
 
-const PALETTE = [
-  "#4f7cff",
-  "#23b27a",
-  "#f5a623",
-  "#a66bff",
-  "#ff6f91",
-  "#0ea5e9",
-  "#14b8a6",
-];
-const COMMON = "#475569";
+const PALETTE = CATEGORY_PALETTE;
+const COMMON = GROUP_COMMON_COLOR;
 
 type Item = {
   key: string; // cid__lid__(group|all)

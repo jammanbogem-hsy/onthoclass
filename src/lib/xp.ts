@@ -12,6 +12,7 @@ import {
   getDocs,
   increment,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -285,7 +286,9 @@ export async function deleteQuest(cid: string, qid: string): Promise<void> {
   await deleteDoc(doc(questsCol(cid), qid));
 }
 
-// 학생별 미션 완료 토글 — 완료 시 보상 XP 지급, 취소 시 회수
+// 학생별 미션 완료 토글 — 완료 시 보상 XP 지급, 취소 시 회수.
+// 트랜잭션으로 서버의 최신 quest 를 다시 읽어 완료여부·보상을 확정하므로
+// 동시 토글/보상 변경에도 XP 이중지급·잘못된 회수가 발생하지 않는다.
 export async function toggleQuestComplete(
   cid: string,
   quest: Quest,
@@ -293,31 +296,36 @@ export async function toggleQuestComplete(
   complete: boolean,
   by: string
 ): Promise<void> {
-  const already = !!quest.completions[uid];
-  if (complete === already) return; // 변화 없음
   const db = getDbClient();
-  const batch = writeBatch(db);
   const qRef = doc(questsCol(cid), quest.id);
-  batch.update(qRef, {
-    [`completions.${uid}`]: complete
-      ? { at: Date.now(), by }
-      : deleteField(),
-  });
   const xpRef = xpDocRef(cid, uid);
-  const delta = complete ? quest.xp : -quest.xp;
-  batch.set(
-    xpRef,
-    { uid, xp: increment(delta), updatedAt: serverTimestamp() },
-    { merge: true }
-  );
   const logRef = doc(collection(xpRef, "log"));
-  batch.set(logRef, {
-    amount: delta,
-    reason: `${complete ? "미션 완료" : "미션 취소"}: ${quest.title}`,
-    by,
-    at: serverTimestamp(),
+  await runTransaction(db, async (tx) => {
+    const qSnap = await tx.get(qRef);
+    if (!qSnap.exists()) return;
+    const data = qSnap.data();
+    const completions = (data.completions as Record<string, unknown>) ?? {};
+    const already = !!completions[uid];
+    if (complete === already) return; // 서버 기준으로도 변화 없음 → no-op
+    const reward = typeof data.xp === "number" ? (data.xp as number) : 0;
+    const delta = complete ? reward : -reward;
+    tx.update(qRef, {
+      [`completions.${uid}`]: complete ? { at: Date.now(), by } : deleteField(),
+    });
+    tx.set(
+      xpRef,
+      { uid, xp: increment(delta), updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+    tx.set(logRef, {
+      amount: delta,
+      reason: `${complete ? "미션 완료" : "미션 취소"}: ${
+        (data.title as string) ?? quest.title
+      }`,
+      by,
+      at: serverTimestamp(),
+    });
   });
-  await batch.commit();
 }
 
 // 미션 보상 변경 등으로 quest 문서만 갱신하고 싶을 때
