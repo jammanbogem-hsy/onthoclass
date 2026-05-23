@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Neutral Variant palette</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); font-family: var(--md-sys-font-plain); color: var(--md-sys-color-on-surface); }
+  .wrap { padding: 18px 20px; }
+  .row { display: grid; grid-template-columns: repeat(13, 1fr); gap: 2px; border-radius: 8px; overflow: hidden; }
+  .sw { height: 64px; display: flex; flex-direction: column; justify-content: space-between; padding: 6px 6px; font: 500 9px/1.2 var(--md-sys-font-plain); letter-spacing: 0.3px; }
+  .sw .hex  { font-family: var(--md-sys-font-code); font-size: 7.5px; opacity: 0.9; }
+  .title { font: 500 11px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; color: var(--md-sys-color-on-surface-variant); margin: 0 0 8px 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">Neutral Variant</div>
+  <div class="row" id="row"></div>
+</div>
+<script>
+  const tones = ["0","10","20","30","40","50","60","70","80","90","95","99","100"];
+  const onLight = ["0","10","20","30","40","50"];
+  const cs = getComputedStyle(document.documentElement);
+  const row = document.getElementById('row');
+  tones.forEach(t => {
+    const hex = cs.getPropertyValue('--md-sys-color-nv-' + t).trim();
+    const fg = onLight.includes(t) ? '#fff' : '#000';
+    const d = document.createElement('div');
+    d.className = 'sw';
+    d.style.background = hex;
+    d.style.color = fg;
+    d.innerHTML = '<span>NV-' + t + '</span><span class="hex">' + hex.toUpperCase() + '</span>';
+    row.appendChild(d);
+  });
+</script>
+</body>
+</html>

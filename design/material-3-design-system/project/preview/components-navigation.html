@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — App bars</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .topbar { height: 64px; background: var(--md-sys-color-surface-container); display: flex; align-items: center; padding: 0 4px 0 12px; gap: 4px; border-radius: 6px; }
+  .topbar .ttl { flex: 1; font: 500 22px/1 var(--md-sys-font-brand); letter-spacing: 0; padding-left: 8px; }
+  .topbar.large { height: 88px; align-items: flex-start; padding-top: 14px; }
+  .topbar.large .ttl { font: 400 28px/36px var(--md-sys-font-brand); padding-top: 6px; }
+  .iconbtn { width: 40px; height: 40px; border-radius: 999px; border: none; background: transparent; color: var(--md-sys-color-on-surface); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .iconbtn .ico { font-family: var(--md-sys-font-icon); font-size: 24px; color: var(--md-sys-color-on-surface-variant); }
+
+  .bottombar { height: 80px; background: var(--md-sys-color-surface-container); border-radius: 6px; display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; padding: 0 8px; }
+  .nav { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--md-sys-color-on-surface-variant); }
+  .nav .pill { height: 32px; width: 64px; border-radius: 999px; display: flex; align-items: center; justify-content: center; }
+  .nav.active .pill { background: var(--md-sys-color-secondary-container); }
+  .nav.active { color: var(--md-sys-color-on-surface); }
+  .nav .ico { font-family: var(--md-sys-font-icon); font-size: 24px; color: var(--md-sys-color-on-surface-variant); }
+  .nav.active .ico { color: var(--md-sys-color-on-secondary-container); font-variation-settings: "FILL" 1; }
+  .nav .lbl { font: 500 12px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <button class="iconbtn"><span class="ico">menu</span></button>
+    <span class="ttl">Inbox</span>
+    <button class="iconbtn"><span class="ico">search</span></button>
+    <button class="iconbtn"><span class="ico">account_circle</span></button>
+  </div>
+  <div class="topbar large">
+    <button class="iconbtn"><span class="ico">arrow_back</span></button>
+    <span class="ttl">Settings</span>
+    <button class="iconbtn"><span class="ico">more_vert</span></button>
+  </div>
+  <div class="bottombar">
+    <div class="nav active"><span class="pill"><span class="ico">home</span></span><span class="lbl">Home</span></div>
+    <div class="nav"><span class="pill"><span class="ico">explore</span></span><span class="lbl">Explore</span></div>
+    <div class="nav"><span class="pill"><span class="ico">favorite</span></span><span class="lbl">Saved</span></div>
+    <div class="nav"><span class="pill"><span class="ico">notifications</span></span><span class="lbl">Alerts</span></div>
+    <div class="nav"><span class="pill"><span class="ico">person</span></span><span class="lbl">You</span></div>
+  </div>
+</div>
+</body>
+</html>

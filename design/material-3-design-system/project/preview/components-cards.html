@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Cards</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { border-radius: 12px; overflow: hidden; padding: 16px; min-height: 130px; display: flex; flex-direction: column; gap: 6px; }
+  .card.filled    { background: var(--md-sys-color-surface-container-highest); }
+  .card.elevated  { background: var(--md-sys-color-surface-container-low); box-shadow: var(--md-sys-elevation-1); }
+  .card.outlined  { background: var(--md-sys-color-surface); border: 1px solid var(--md-sys-color-outline-variant); }
+  .ttl { font: 500 16px/1.4 var(--md-sys-font-plain); letter-spacing: 0.15px; color: var(--md-sys-color-on-surface); }
+  .bd  { font: 400 14px/1.4 var(--md-sys-font-plain); letter-spacing: 0.25px; color: var(--md-sys-color-on-surface-variant); }
+  .lbl { font: 500 10px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; color: var(--md-sys-color-on-surface-variant); margin-top: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card filled"><span class="ttl">New design system</span><span class="bd">Material 3 ships expressive defaults and dynamic color.</span><span class="lbl">Filled</span></div>
+  <div class="card elevated"><span class="ttl">New design system</span><span class="bd">Material 3 ships expressive defaults and dynamic color.</span><span class="lbl">Elevated · L1</span></div>
+  <div class="card outlined"><span class="ttl">New design system</span><span class="bd">Material 3 ships expressive defaults and dynamic color.</span><span class="lbl">Outlined</span></div>
+</div>
+</body>
+</html>

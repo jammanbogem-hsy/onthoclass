@@ -1,0 +1,249 @@
+rules_version = '2';
+
+// 잼클래스 보안 규칙 v1 (docs/SCHEMA.md 기준)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function memberDoc(cid) {
+      return /databases/$(database)/documents/classes/$(cid)/members/$(uid());
+    }
+    function isMember(cid) {
+      return signedIn() && exists(memberDoc(cid));
+    }
+    function isTeacher(cid) {
+      return isMember(cid) && get(memberDoc(cid)).data.role == 'teacher';
+    }
+    // 계정 역할: users/{uid}.role == 'teacher'
+    function isTeacherAccount() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(uid()))
+        && get(/databases/$(database)/documents/users/$(uid())).data.role == 'teacher';
+    }
+    // 교사 팀: teamLinks/{정렬된 두 uid} 가 accepted 면 팀원
+    function teamPair(a, b) {
+      return a < b ? (a + '__' + b) : (b + '__' + a);
+    }
+    function isTeammate(ownerUid) {
+      return signedIn() && uid() != ownerUid
+        && exists(/databases/$(database)/documents/teamLinks/$(teamPair(uid(), ownerUid)))
+        && get(/databases/$(database)/documents/teamLinks/$(teamPair(uid(), ownerUid))).data.status == 'accepted';
+    }
+    function classOwner(cid) {
+      return get(/databases/$(database)/documents/classes/$(cid)).data.ownerId;
+    }
+    // 학급 멤버이거나 학급 소유 교사의 팀원이면 콘텐츠(차시/활동) 읽기 허용
+    function canReadContent(cid) {
+      return isMember(cid) || isTeammate(classOwner(cid));
+    }
+
+    // 읽기전용 공유 지식맵 스냅샷: 링크를 가진 누구나 열람(비로그인 포함),
+    // 생성은 교사 계정 본인, 수정/삭제는 소유자만. (학생 식별정보는 저장 시 제거)
+    match /shares/{shareId} {
+      allow read: if true;
+      allow create: if isTeacherAccount()
+        && request.resource.data.ownerUid == uid();
+      allow update, delete: if signedIn() && resource.data.ownerUid == uid();
+    }
+
+    // 교사 팀: 코드 공유 → 요청 → 수락
+    match /teamLinks/{linkId} {
+      allow read: if signedIn() && uid() in resource.data.members;
+      allow create: if isTeacherAccount()
+        && request.resource.data.requestedBy == uid()
+        && uid() in request.resource.data.members
+        && request.resource.data.status == "pending";
+      allow update, delete: if signedIn() && uid() in resource.data.members;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && uid() == userId;
+
+      // 인앱 알림: 생성은 서버(Admin)만, 본인은 읽기/읽음표시/삭제
+      match /notifications/{nid} {
+        allow read, update, delete: if signedIn() && uid() == userId;
+        allow create: if false;
+      }
+    }
+
+    match /classes/{classId} {
+      // 코드로 학급 검색은 비멤버도 필요 → 로그인 사용자 read 허용
+      allow read: if signedIn();
+      allow create: if isTeacherAccount()
+        && request.resource.data.ownerId == uid();
+      allow update, delete: if isTeacher(classId);
+
+      match /members/{memberId} {
+        // 본인 소유 멤버 문서는 직접 읽기 허용 (collectionGroup '내 학급' 조회용)
+        // 학급 내 멤버 목록은 같은 학급 멤버면 읽기 허용
+        allow read: if (signedIn() && resource.data.uid == uid())
+          || isMember(classId);
+        // 본인 가입(개설 teacher / 코드참여 student): 자기 문서만
+        allow create: if signedIn()
+          && memberId == uid()
+          && request.resource.data.uid == uid();
+        // 본인 탈퇴 또는 교사의 멤버 관리
+        allow delete: if (signedIn() && memberId == uid())
+          || isTeacher(classId);
+        // 교사는 전체, 본인은 프로필 사진(아바타)만 변경 가능
+        allow update: if isTeacher(classId)
+          || (signedIn() && memberId == uid()
+            && request.resource.data.diff(resource.data)
+                .affectedKeys().hasOnly(['photoURL']));
+      }
+
+      // --- 클래스 레벨 온톨로지 (위계 머지/정규화 캐시) ---
+      match /ontology/{scope} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+      }
+
+      // --- 1:1 메시지: 클래스 레벨 (교사 ↔ 학생) ---
+      match /threads/{studentUid}/messages/{mid} {
+        allow read, create: if signedIn()
+          && (uid() == studentUid || isTeacher(classId));
+        allow delete: if isTeacher(classId)
+          || (signedIn() && resource.data.authorUid == uid());
+      }
+
+      // --- 무한 캔버스 (Canvas) ---
+      match /canvas/{docId} {
+        allow read: if isMember(classId);
+        allow create, update, delete: if isTeacher(classId);
+
+        // 카드 피드백(댓글/반응): 멤버는 본인 것 작성, 본인/교사 삭제
+        match /feedback/{fid} {
+          allow read: if isMember(classId);
+          allow create: if isMember(classId)
+            && request.resource.data.uid == uid();
+          allow delete: if isMember(classId)
+            && (resource.data.uid == uid() || isTeacher(classId));
+        }
+      }
+
+      // --- 게이미피케이션: 학생 경험치(XP) ---
+      match /xp/{studentUid} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+        // 지급 내역 로그
+        match /log/{logId} {
+          allow read: if isMember(classId);
+          allow create, delete: if isTeacher(classId);
+        }
+      }
+
+      // --- 게이미피케이션: 퀘스트(미션) ---
+      match /quests/{questId} {
+        allow read: if isMember(classId);
+        allow create, update, delete: if isTeacher(classId);
+      }
+
+      // --- 모둠(그룹) ---
+      match /groups/{groupId} {
+        allow read: if isMember(classId);
+        allow create, update, delete: if isTeacher(classId);
+      }
+
+      // --- 프로젝트(차시 상위 그룹) ---
+      match /projects/{projectId} {
+        allow read: if canReadContent(classId);
+        allow create, update, delete: if isTeacher(classId);
+      }
+
+      // --- 자료/링크 (이동 가능한 모듈) ---
+      match /resources/{resourceId} {
+        allow read: if isMember(classId);
+        allow create, update, delete: if isTeacher(classId);
+      }
+
+      // --- 차시(lessons) ---
+      match /lessons/{lessonId} {
+        allow read: if canReadContent(classId);
+        allow create, update, delete: if isTeacher(classId);
+
+        // 질문(차시당 N개, phase별, 링크 첨부): 멤버/팀원 읽기, 교사 쓰기
+        match /questions/{questionId} {
+          allow read: if canReadContent(classId);
+          allow create, update, delete: if isTeacher(classId);
+
+          // 질문별 학생 제출물: 학생은 본인 것만, 교사는 전체
+          // 최초 제출은 항상 허용, 재수정은 질문의 allowResubmit 가 false 가
+          // 아닐 때만(교사는 항상 가능)
+          match /submissions/{sid} {
+            allow read: if isTeacher(classId) || sid == uid();
+            allow create: if sid == uid() || isTeacher(classId);
+            allow update: if isTeacher(classId)
+              || (sid == uid()
+                && get(/databases/$(database)/documents/classes/$(classId)/lessons/$(lessonId)/questions/$(questionId)).data.allowResubmit != false);
+            allow delete: if isTeacher(classId);
+
+            // 산출물 댓글(피드백): 교사 또는 해당 학생만 열람/작성
+            match /comments/{cmtId} {
+              allow read: if isTeacher(classId) || sid == uid();
+              allow create: if signedIn()
+                && (isTeacher(classId) || sid == uid())
+                && request.resource.data.authorUid == uid();
+              allow delete: if isTeacher(classId)
+                || (signedIn() && resource.data.authorUid == uid());
+            }
+          }
+        }
+
+        // 차시 보드(캔버스): 멤버(학생+교사) 협업 작성
+        match /canvas/{docId} {
+          allow read: if isMember(classId);
+          allow create, update, delete: if isMember(classId);
+
+          // 카드 피드백(댓글/반응)
+          match /feedback/{fid} {
+            allow read: if isMember(classId);
+            allow create: if isMember(classId)
+              && request.resource.data.uid == uid();
+            allow delete: if isMember(classId)
+              && (resource.data.uid == uid() || isTeacher(classId));
+          }
+        }
+
+        // 1:1 메시지: 차시 레벨
+        match /threads/{studentUid}/messages/{mid} {
+          allow read, create: if signedIn()
+            && (uid() == studentUid || isTeacher(classId));
+          allow delete: if isTeacher(classId)
+            || (signedIn() && resource.data.authorUid == uid());
+        }
+
+        // 학생 제출물(레거시 phase 통합): 학생은 본인 것만, 교사는 전체
+        match /submissions/{sid} {
+          allow read: if isTeacher(classId) || sid == uid();
+          allow create, update: if sid == uid() || isTeacher(classId);
+          allow delete: if isTeacher(classId);
+        }
+
+        // 추출된 온톨로지: 멤버/팀원 읽기(학급 비교용), 교사 쓰기
+        match /ontology/{scope} {
+          allow read: if canReadContent(classId);
+          allow write: if isTeacher(classId);
+        }
+      }
+
+      // --- 향후 기능 (스키마 예약, 구현 단계에서 활성) ---
+      match /posts/{postId} {
+        allow read: if isMember(classId);
+        allow create, update, delete: if isTeacher(classId);
+
+        match /submissions/{sid} {
+          allow read: if isTeacher(classId) || sid == uid();
+          allow create, update: if sid == uid() || isTeacher(classId);
+          allow delete: if isTeacher(classId);
+        }
+      }
+
+      match /attendance/{date} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+      }
+    }
+  }
+}

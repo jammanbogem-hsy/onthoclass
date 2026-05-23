@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — FAB & Icon buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .lbl { color: var(--md-sys-color-on-surface-variant); font: 500 10px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; }
+  .fab { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); box-shadow: var(--md-sys-elevation-3); transition: box-shadow var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard); }
+  .fab:hover { box-shadow: var(--md-sys-elevation-4); }
+  .fab .ico { font-family: var(--md-sys-font-icon); }
+  .sm  { width: 40px; height: 40px; border-radius: 12px; } .sm  .ico { font-size: 24px; }
+  .md  { width: 56px; height: 56px; border-radius: 16px; } .md  .ico { font-size: 24px; }
+  .lg  { width: 96px; height: 96px; border-radius: 28px; } .lg  .ico { font-size: 36px; }
+  .ext { width: auto; height: 56px; padding: 0 20px; border-radius: 16px; gap: 8px; } .ext .ico { font-size: 24px; }
+
+  .iconbtn { width: 40px; height: 40px; border-radius: 999px; border: none; background: transparent; color: var(--md-sys-color-on-surface-variant); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .iconbtn .ico { font-family: var(--md-sys-font-icon); font-size: 24px; }
+  .iconbtn:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
+  .iconbtn.fill { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+  .iconbtn.tonal { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+  .iconbtn.outlined { border: 1px solid var(--md-sys-color-outline); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="col"><button class="fab sm"><span class="ico">edit</span></button><span class="lbl">FAB sm</span></div>
+  <div class="col"><button class="fab md"><span class="ico">edit</span></button><span class="lbl">FAB md</span></div>
+  <div class="col"><button class="fab lg"><span class="ico">edit</span></button><span class="lbl">FAB lg</span></div>
+  <div class="col"><button class="fab ext"><span class="ico">edit</span><span style="font: 500 14px/1 var(--md-sys-font-plain)">Compose</span></button><span class="lbl">Extended</span></div>
+  <div style="width: 1px; height: 80px; background: var(--md-sys-color-outline-variant);"></div>
+  <div class="col"><button class="iconbtn"><span class="ico">notifications</span></button><span class="lbl">Standard</span></div>
+  <div class="col"><button class="iconbtn fill"><span class="ico">notifications</span></button><span class="lbl">Filled</span></div>
+  <div class="col"><button class="iconbtn tonal"><span class="ico">notifications</span></button><span class="lbl">Tonal</span></div>
+  <div class="col"><button class="iconbtn outlined"><span class="ico">notifications</span></button><span class="lbl">Outlined</span></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Semantic roles (light)</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); font-family: var(--md-sys-font-plain); color: var(--md-sys-color-on-surface); }
+  .wrap { padding: 16px 18px; }
+  .title { font: 500 11px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; color: var(--md-sys-color-on-surface-variant); margin: 0 0 10px 2px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .pair { display: grid; grid-template-rows: 56px 28px; border-radius: 6px; overflow: hidden; font: 500 11px/1.2 var(--md-sys-font-plain); letter-spacing: 0.1px; }
+  .pair > div { padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; }
+  .pair .top  { font-size: 11px; }
+  .pair .bot  { font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">Semantic roles · Light scheme</div>
+  <div class="grid">
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-primary);color:var(--md-sys-color-on-primary)">Primary</div><div class="bot" style="background:var(--md-sys-color-on-primary);color:var(--md-sys-color-primary)">On Primary</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)">Primary container</div><div class="bot" style="background:var(--md-sys-color-on-primary-container);color:var(--md-sys-color-primary-container)">On primary cont.</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-secondary);color:var(--md-sys-color-on-secondary)">Secondary</div><div class="bot" style="background:var(--md-sys-color-on-secondary);color:var(--md-sys-color-secondary)">On Secondary</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container)">Secondary container</div><div class="bot" style="background:var(--md-sys-color-on-secondary-container);color:var(--md-sys-color-secondary-container)">On secondary cont.</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-tertiary);color:var(--md-sys-color-on-tertiary)">Tertiary</div><div class="bot" style="background:var(--md-sys-color-on-tertiary);color:var(--md-sys-color-tertiary)">On Tertiary</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-tertiary-container);color:var(--md-sys-color-on-tertiary-container)">Tertiary container</div><div class="bot" style="background:var(--md-sys-color-on-tertiary-container);color:var(--md-sys-color-tertiary-container)">On tertiary cont.</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-error);color:var(--md-sys-color-on-error)">Error</div><div class="bot" style="background:var(--md-sys-color-on-error);color:var(--md-sys-color-error)">On Error</div></div>
+    <div class="pair"><div class="top" style="background:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container)">Error container</div><div class="bot" style="background:var(--md-sys-color-on-error-container);color:var(--md-sys-color-error-container)">On error cont.</div></div>
+  </div>
+</div>
+</body>
+</html>

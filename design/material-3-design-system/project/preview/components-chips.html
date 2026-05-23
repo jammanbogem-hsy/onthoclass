@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Chips</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .lbl { width: 100px; flex-shrink: 0; color: var(--md-sys-color-on-surface-variant); font: 500 11px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; }
+  .chip { height: 32px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline); background: transparent; color: var(--md-sys-color-on-surface-variant); font: 500 14px/1 var(--md-sys-font-plain); letter-spacing: 0.1px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .chip .ico { font-family: var(--md-sys-font-icon); font-size: 18px; }
+  .chip.selected { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; padding-left: 8px; }
+  .chip.assist { color: var(--md-sys-color-on-surface); }
+  .chip.input { padding-right: 8px; }
+  .chip.input .x { font-size: 18px; opacity: 0.6; }
+  .chip.suggestion { color: var(--md-sys-color-on-surface-variant); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row"><span class="lbl">Assist</span>
+    <button class="chip assist"><span class="ico">event</span>Add to calendar</button>
+    <button class="chip assist"><span class="ico">place</span>Find directions</button>
+  </div>
+  <div class="row"><span class="lbl">Filter</span>
+    <button class="chip selected"><span class="ico">check</span>Available now</button>
+    <button class="chip">Free</button>
+    <button class="chip selected"><span class="ico">check</span>Under $20</button>
+    <button class="chip">Top rated</button>
+  </div>
+  <div class="row"><span class="lbl">Input</span>
+    <button class="chip selected input">Jane Smith<span class="ico x">close</span></button>
+    <button class="chip selected input">Alex Kim<span class="ico x">close</span></button>
+  </div>
+  <div class="row"><span class="lbl">Suggestion</span>
+    <button class="chip suggestion">Pasta primavera</button>
+    <button class="chip suggestion">Veggie stir-fry</button>
+    <button class="chip suggestion">Quick salad</button>
+  </div>
+</div>
+</body>
+</html>

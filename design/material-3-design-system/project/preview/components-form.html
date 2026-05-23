@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Form controls</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .lbl { color: var(--md-sys-color-on-surface-variant); font: 500 11px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 4px; }
+
+  /* Filled text field */
+  .tf-filled { background: var(--md-sys-color-surface-container-highest); border-bottom: 1px solid var(--md-sys-color-on-surface-variant); border-radius: 4px 4px 0 0; padding: 8px 16px 8px 16px; height: 56px; display: flex; flex-direction: column; justify-content: center; }
+  .tf-filled .ph { font: 400 12px/1 var(--md-sys-font-plain); letter-spacing: 0.4px; color: var(--md-sys-color-on-surface-variant); margin-bottom: 4px; }
+  .tf-filled .val { font: 400 16px/1.2 var(--md-sys-font-plain); letter-spacing: 0.5px; color: var(--md-sys-color-on-surface); }
+  .tf-filled.focused { border-bottom: 2px solid var(--md-sys-color-primary); padding-bottom: 7px; }
+  .tf-filled.focused .ph { color: var(--md-sys-color-primary); font-weight: 500; }
+
+  /* Outlined text field */
+  .tf-outlined { position: relative; height: 56px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; padding: 14px 16px; display: flex; align-items: center; }
+  .tf-outlined.focused { border: 2px solid var(--md-sys-color-primary); padding: 13px 15px; }
+  .tf-outlined .ph { position: absolute; top: -8px; left: 12px; background: var(--md-sys-color-surface); padding: 0 4px; font: 400 12px/1 var(--md-sys-font-plain); letter-spacing: 0.4px; color: var(--md-sys-color-on-surface-variant); }
+  .tf-outlined.focused .ph { color: var(--md-sys-color-primary); font-weight: 500; }
+  .tf-outlined .val { font: 400 16px/1.2 var(--md-sys-font-plain); letter-spacing: 0.5px; }
+
+  /* Checkbox, radio, switch */
+  .ctl { display: flex; align-items: center; gap: 14px; }
+  .check { width: 18px; height: 18px; border-radius: 2px; border: 2px solid var(--md-sys-color-on-surface-variant); display: inline-flex; align-items: center; justify-content: center; }
+  .check.on { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+  .check.on::after { content: "check"; font-family: var(--md-sys-font-icon); color: var(--md-sys-color-on-primary); font-size: 16px; }
+
+  .radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--md-sys-color-on-surface-variant); display: inline-flex; align-items: center; justify-content: center; }
+  .radio.on { border-color: var(--md-sys-color-primary); }
+  .radio.on::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--md-sys-color-primary); }
+
+  .sw { width: 52px; height: 32px; border-radius: 999px; background: var(--md-sys-color-surface-container-highest); border: 2px solid var(--md-sys-color-outline); display: inline-flex; align-items: center; padding: 4px; transition: background var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard); }
+  .sw .knob { width: 16px; height: 16px; border-radius: 50%; background: var(--md-sys-color-outline); transition: all var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard); }
+  .sw.on { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+  .sw.on .knob { background: var(--md-sys-color-on-primary); transform: translateX(20px); width: 24px; height: 24px; }
+
+  span.txt { font: 400 14px/1 var(--md-sys-font-plain); letter-spacing: 0.25px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="col">
+    <span class="lbl">Text fields</span>
+    <div class="tf-filled focused"><span class="ph">Email</span><span class="val">jane@material.io</span></div>
+    <div class="tf-outlined focused"><span class="ph">Email</span><span class="val">jane@material.io</span></div>
+    <div class="tf-filled"><span class="ph">Password</span><span class="val">••••••••</span></div>
+    <div class="tf-outlined"><span class="ph">Password</span><span class="val">••••••••</span></div>
+  </div>
+  <div class="col">
+    <span class="lbl">Selection controls</span>
+    <div class="ctl"><span class="check on"></span><span class="txt">Send me product updates</span></div>
+    <div class="ctl"><span class="check"></span><span class="txt">Subscribe to newsletter</span></div>
+    <div class="ctl"><span class="radio on"></span><span class="txt">Standard delivery</span></div>
+    <div class="ctl"><span class="radio"></span><span class="txt">Express delivery</span></div>
+    <div class="ctl"><span class="sw on"><span class="knob"></span></span><span class="txt">Wi-Fi</span></div>
+    <div class="ctl"><span class="sw"><span class="knob"></span></span><span class="txt">Bluetooth</span></div>
+  </div>
+</div>
+</body>
+</html>

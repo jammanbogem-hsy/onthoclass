@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="64" viewBox="0 0 240 64">
+  <g>
+    
+    <rect x="0" y="0" width="64" height="64" rx="20" fill="#6750A4"></rect>
+    <path d="M16 46 V20 a4 4 0 0 1 4 -4 h4 l8 14 8 -14 h4 a4 4 0 0 1 4 4 V46 h-6 V30 l-8 14 h-4 l-8 -14 V46 z" fill="#FFFFFF"></path>
+    
+    <text x="80" y="42" font-family="Roboto, system-ui, sans-serif" font-weight="500" font-size="28" fill="#1D1B20" letter-spacing="-0.2">Material 3</text>
+  </g>
+</svg>

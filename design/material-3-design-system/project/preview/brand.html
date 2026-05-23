@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Brand</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; display: flex; gap: 22px; align-items: stretch; }
+  .mark {
+    width: 96px; height: 96px; border-radius: 28px;
+    background: #0F6E56;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; box-shadow: var(--md-sys-elevation-1);
+  }
+  .mark span { font-family: var(--md-sys-font-icon); font-size: 56px; color: #E1F5EE; font-variation-settings: "FILL" 1, "wght" 500; }
+
+  .info { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 200px; }
+  .info h1 { margin: 0; font: 400 24px/32px var(--md-sys-font-brand); letter-spacing: 0; color: var(--md-sys-color-on-surface); }
+  .info p  { margin: 0; font: 400 13px/18px var(--md-sys-font-plain); letter-spacing: 0.25px; color: var(--md-sys-color-on-surface-variant); }
+
+  .palette { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .sw { border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; justify-content: space-between; min-height: 96px; }
+  .sw .nm { font: 500 12px/16px var(--md-sys-font-plain); letter-spacing: 0.4px; }
+  .sw .hx { font: 400 10px/14px var(--md-sys-font-code); opacity: 0.85; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark"><span>auto_awesome</span></div>
+  <div class="info">
+    <h1>Brand palette</h1>
+    <p>Four named hues. Teal leads as the primary action color; peach, mint and sage carry the supporting roles.</p>
+  </div>
+  <div class="palette">
+    <div class="sw" style="background:#0F6E56; color:#E1F5EE"><span class="nm">청록 · Teal</span><span class="hx">#0F6E56</span></div>
+    <div class="sw" style="background:#F5C4B3; color:#5A2614"><span class="nm">피치 · Peach</span><span class="hx">#F5C4B3</span></div>
+    <div class="sw" style="background:#E1F5EE; color:#0F6E56"><span class="nm">민트 · Mint</span><span class="hx">#E1F5EE</span></div>
+    <div class="sw" style="background:#C0DD97; color:#324B17"><span class="nm">세이지 · Sage</span><span class="hx">#C0DD97</span></div>
+  </div>
+</div>
+</body>
+</html>

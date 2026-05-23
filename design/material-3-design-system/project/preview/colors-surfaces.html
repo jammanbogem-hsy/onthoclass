@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Surfaces</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); font-family: var(--md-sys-font-plain); color: var(--md-sys-color-on-surface); }
+  .wrap { padding: 16px 18px; }
+  .title { font: 500 11px/1 var(--md-sys-font-plain); letter-spacing: 0.5px; text-transform: uppercase; color: var(--md-sys-color-on-surface-variant); margin: 0 0 10px 2px; }
+  .row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; border-radius: 6px; overflow: hidden; margin-bottom: 10px; }
+  .sw { height: 60px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; font: 500 10px/1.2 var(--md-sys-font-plain); color: var(--md-sys-color-on-surface); border: 1px solid var(--md-sys-color-outline-variant); }
+  .sw .name { font-size: 10.5px; }
+  .sw .hex  { font: 400 9px/1 var(--md-sys-font-code); opacity: .75; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">Surface containers · Light → progressively deeper</div>
+  <div class="row">
+    <div class="sw" style="background:var(--md-sys-color-surface-container-lowest)"><span class="name">Lowest</span><span class="hex">N-100</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface)"><span class="name">Surface</span><span class="hex">N-98</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container-low)"><span class="name">Low</span><span class="hex">N-96</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container)"><span class="name">Container</span><span class="hex">N-94</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container-high)"><span class="name">High</span><span class="hex">N-92</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container-highest)"><span class="name">Highest</span><span class="hex">N-90</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-dim)"><span class="name">Dim</span><span class="hex">N-87</span></div>
+  </div>
+  <div class="title">Surface containers · Dark</div>
+  <div class="row" data-md-scheme="dark">
+    <div class="sw" style="background:var(--md-sys-color-surface-container-lowest);color:var(--md-sys-color-on-surface)"><span class="name">Lowest</span><span class="hex">N-4</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)"><span class="name">Surface</span><span class="hex">N-6</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container-low);color:var(--md-sys-color-on-surface)"><span class="name">Low</span><span class="hex">N-10</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container);color:var(--md-sys-color-on-surface)"><span class="name">Container</span><span class="hex">N-12</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container-high);color:var(--md-sys-color-on-surface)"><span class="name">High</span><span class="hex">N-17</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-container-highest);color:var(--md-sys-color-on-surface)"><span class="name">Highest</span><span class="hex">N-22</span></div>
+    <div class="sw" style="background:var(--md-sys-color-surface-bright);color:var(--md-sys-color-on-surface)"><span class="name">Bright</span><span class="hex">N-24</span></div>
+  </div>
+</div>
+</body>
+</html>

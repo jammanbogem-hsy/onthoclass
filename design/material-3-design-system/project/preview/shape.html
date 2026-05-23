@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Shape scale</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; }
+  .row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+  .shape { aspect-ratio: 1 / 1; background: var(--md-sys-color-primary-container); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; color: var(--md-sys-color-on-primary-container); font: 500 11px/1.2 var(--md-sys-font-plain); }
+  .label { display: block; margin-top: 8px; color: var(--md-sys-color-on-surface-variant); font: 500 11px/1.3 var(--md-sys-font-plain); text-align: center; letter-spacing: 0.3px; }
+  .col { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-none)">0dp</div><div class="label">None</div></div>
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-extra-small)">4dp</div><div class="label">Extra-small</div></div>
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-small)">8dp</div><div class="label">Small</div></div>
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-medium)">12dp</div><div class="label">Medium</div></div>
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-large)">16dp</div><div class="label">Large</div></div>
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-extra-large)">28dp</div><div class="label">Extra-large</div></div>
+    <div class="col"><div class="shape" style="border-radius:var(--md-sys-shape-corner-full)">Full</div><div class="label">Full</div></div>
+  </div>
+</div>
+</body>
+</html>

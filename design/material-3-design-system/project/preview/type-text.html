@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M3 — Title, Body, Label</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font-family: var(--md-sys-font-plain); }
+  .wrap { padding: 18px 22px; }
+  .row { display: flex; align-items: baseline; gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+  .row:last-child { border-bottom: none; }
+  .meta { width: 130px; flex-shrink: 0; color: var(--md-sys-color-on-surface-variant); font-size: 11px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
+  .specimen { flex: 1; min-width: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row"><div class="meta">Title L · 22/28</div><div class="specimen md-typescale-title-large">List section header</div></div>
+  <div class="row"><div class="meta">Title M · 16/24</div><div class="specimen md-typescale-title-medium">List section header</div></div>
+  <div class="row"><div class="meta">Title S · 14/20</div><div class="specimen md-typescale-title-small">List section header</div></div>
+  <div class="row"><div class="meta">Body L · 16/24</div><div class="specimen md-typescale-body-large">Material is the design system Google uses across its surfaces.</div></div>
+  <div class="row"><div class="meta">Body M · 14/20</div><div class="specimen md-typescale-body-medium">Material is the design system Google uses across its surfaces.</div></div>
+  <div class="row"><div class="meta">Body S · 12/16</div><div class="specimen md-typescale-body-small">Material is the design system Google uses across its surfaces.</div></div>
+  <div class="row"><div class="meta">Label L · 14/20 · 500</div><div class="specimen md-typescale-label-large">BUTTON LABEL · Tab title</div></div>
+  <div class="row"><div class="meta">Label M · 12/16 · 500</div><div class="specimen md-typescale-label-medium">BUTTON LABEL · Tab title</div></div>
+  <div class="row"><div class="meta">Label S · 11/16 · 500</div><div class="specimen md-typescale-label-small">CAPTION · TIME 12:34</div></div>
+</div>
+</body>
+</html>
