@@ -79,7 +79,10 @@
       "Bash(NODE_OPTIONS=\"\" npm run build)",
       "Bash(NODE_OPTIONS=\"\" npx firebase functions:secrets:set TEACHER_CODE --data-file=-)",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only firestore:rules,functions,hosting)",
-      "Bash(awk 'NR>=2890 && NR<=2990 && \\(/revealOk|answerIndex|정답|isCorrect|opt ===|correct/\\)' src/app/lesson/page.tsx)"
+      "Bash(awk 'NR>=2890 && NR<=2990 && \\(/revealOk|answerIndex|정답|isCorrect|opt ===|correct/\\)' src/app/lesson/page.tsx)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only firestore:rules)",
+      "Bash(git commit -q -m 'fix\\(teamLinks\\): 비존재 문서 get 허용 — 팀 신청 전 존재확인 권한거부로 신청 실패하던 버그 수정 *)",
+      "Bash(git commit -q -m 'fix\\(BlockEditor\\): font 축약→개별 속성으로 fontStyle 충돌 경고 제거 *)"
     ]
   }
 }

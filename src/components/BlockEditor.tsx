@@ -147,21 +147,22 @@ export function blocksToPlainText(json: string): string {
     .join("\n");
 }
 
+// font 축약 대신 개별 속성 사용 — 축약(font)과 fontStyle 을 섞으면
+// 블록 타입 전환(quote↔기타) 시 React 가 fontStyle 제거를 경고함.
 function textStyle(type: BlockType): CSSProperties {
+  const brand = "var(--md-sys-font-brand)";
+  const plain = "var(--md-sys-font-plain)";
   switch (type) {
     case "h1":
-      return { font: "700 26px/34px var(--md-sys-font-brand)" };
+      return { fontWeight: 700, fontSize: 26, lineHeight: "34px", fontFamily: brand, fontStyle: "normal" };
     case "h2":
-      return { font: "600 21px/30px var(--md-sys-font-brand)" };
+      return { fontWeight: 600, fontSize: 21, lineHeight: "30px", fontFamily: brand, fontStyle: "normal" };
     case "h3":
-      return { font: "600 17px/26px var(--md-sys-font-brand)" };
+      return { fontWeight: 600, fontSize: 17, lineHeight: "26px", fontFamily: brand, fontStyle: "normal" };
     case "quote":
-      return {
-        font: "400 15px/24px var(--md-sys-font-plain)",
-        fontStyle: "italic",
-      };
+      return { fontWeight: 400, fontSize: 15, lineHeight: "24px", fontFamily: plain, fontStyle: "italic" };
     default:
-      return { font: "400 15px/24px var(--md-sys-font-plain)" };
+      return { fontWeight: 400, fontSize: 15, lineHeight: "24px", fontFamily: plain, fontStyle: "normal" };
   }
 }
 
