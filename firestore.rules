@@ -52,7 +52,9 @@ service cloud.firestore {
 
     // 교사 팀: 코드 공유 → 요청 → 수락
     match /teamLinks/{linkId} {
-      allow read: if signedIn() && uid() in resource.data.members;
+      // 비존재 문서(get) 는 허용 → 신청 전 존재 확인이 가능. 존재하면 팀원만.
+      allow read: if signedIn()
+        && (resource == null || uid() in resource.data.members);
       allow create: if isTeacherAccount()
         && request.resource.data.requestedBy == uid()
         && uid() in request.resource.data.members
