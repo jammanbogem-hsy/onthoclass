@@ -237,8 +237,8 @@ function ClassMap() {
   const [scope, setScope] = useState<Scope>({ mode: "all" });
   const [phase, setPhase] = useState<Phase>("pre");
   const [tab, setTab] = useState<
-    "graph" | "compare" | "groups" | "emotion" | "insight"
-  >("graph");
+    "summary" | "graph" | "compare" | "groups" | "emotion" | "insight"
+  >("summary");
   const [studentUid, setStudentUid] = useState<string>("");
 
   const [insights, setInsights] = useState<
@@ -248,6 +248,8 @@ function ClassMap() {
     "idle"
   );
   const [insMsg, setInsMsg] = useState("");
+  // 분석 직후 인사이트를 함께 자동 생성하기 위한 플래그
+  const [pendingInsight, setPendingInsight] = useState(false);
 
   const [norm, setNorm] = useState<Ontology | null>(null);
   const [normGen, setNormGen] = useState<"idle" | "running" | "error">(
@@ -407,8 +409,24 @@ function ClassMap() {
     setInsGen("running");
     setInsMsg("");
     try {
+      // 학생 수(중첩 분모) + 대표 응답 샘플(전수 아님)
+      const uidSet = new Set<string>();
+      const samples: { student: string; text: string }[] = [];
+      for (const e of entries ?? []) {
+        if (e.q.phase !== phase) continue;
+        for (const s of e.subs) {
+          if (!s.content.trim()) continue;
+          uidSet.add(s.uid);
+          if (samples.length < 8)
+            samples.push({
+              student: s.studentName,
+              text: blocksToPlainText(s.content).slice(0, 300),
+            });
+        }
+      }
       const payload = {
         phase,
+        studentCount: uidSet.size,
         concepts: base.nodes.map((n) => ({
           id: n.id,
           label: n.label,
@@ -427,6 +445,7 @@ function ClassMap() {
           preCount: c.preCount,
           postCount: c.postCount,
         })),
+        sampleResponses: samples,
       };
       const res = await wikiInsights({ classId: cid, payload });
       const saved = { ...res, inputHash: labelHash };
@@ -440,6 +459,22 @@ function ClassMap() {
       );
     }
   }
+
+  // 분석 직후(labelHash 정착) 인사이트 자동 생성 — 따로 누르지 않아도 함께 갱신
+  useEffect(() => {
+    if (
+      pendingInsight &&
+      base &&
+      base.nodes.length > 0 &&
+      labelHash &&
+      !insFresh &&
+      insGen !== "running"
+    ) {
+      setPendingInsight(false);
+      genInsights();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingInsight, base, labelHash, insFresh, insGen]);
 
   const students = useMemo(
     () =>
@@ -623,17 +658,23 @@ function ClassMap() {
           </span>
           <div className="flex items-center gap-2">
             <button
-              onClick={generateAll}
+              onClick={async () => {
+                await generateAll();
+                setPendingInsight(true);
+              }}
               disabled={gen === "running"}
               className="rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-xs font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)] disabled:opacity-50"
-              title="모든 질문을 강제로 다시 추출 (해시 무관)"
+              title="모든 질문을 강제로 다시 추출 (해시 무관) — 인사이트도 함께 생성"
             >
               전체 재분석
             </button>
             <GlassButton
               variant="accent"
               className="!px-4 !py-2 text-xs"
-              onClick={generateStale}
+              onClick={async () => {
+                await generateStale();
+                setPendingInsight(true);
+              }}
               disabled={gen === "running" || staleEntries.length === 0}
             >
               {gen === "running" ? (
@@ -656,6 +697,7 @@ function ClassMap() {
             <div className="inline-flex rounded-full bg-black/5 p-0.5 dark:bg-white/10">
               {(
                 [
+                  ["summary", "종합"],
                   ["graph", "지식 그래프"],
                   ["compare", "사전/사후 비교"],
                   ["groups", "모둠 비교"],
@@ -718,7 +760,121 @@ function ClassMap() {
             <p className="mt-2 text-xs text-red-500">{normMsg}</p>
           )}
 
-          {tab === "compare" ? (
+          {tab === "summary" ? (
+            !base || base.nodes.length === 0 ? (
+              <p className="py-10 text-center text-sm text-black/40">
+                {entries === null
+                  ? "불러오는 중…"
+                  : "아직 분석된 데이터가 없습니다. 위 “변경된 질문 분석”을 실행하면 종합 요약이 만들어집니다."}
+              </p>
+            ) : (
+              <div className="mt-4 flex flex-col gap-5">
+                {/* 한눈에 */}
+                <div>
+                  <p className="mb-2 text-sm font-semibold">한눈에</p>
+                  <SentimentBar s={base.overallSentiment} />
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {[...base.nodes]
+                      .sort(
+                        (a, b) =>
+                          (b.sourceCount ?? b.sources?.length ?? 0) -
+                          (a.sourceCount ?? a.sources?.length ?? 0)
+                      )
+                      .slice(0, 10)
+                      .map((n) => (
+                        <span
+                          key={n.id}
+                          className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2.5 py-1 text-xs"
+                        >
+                          {n.label}
+                          <span className="font-bold text-[var(--md-sys-color-primary)]">
+                            {n.sourceCount ?? n.sources?.length ?? 0}
+                          </span>
+                        </span>
+                      ))}
+                  </div>
+                </div>
+
+                {/* 전 → 후 변화 표 */}
+                {changes.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-sm font-semibold">전 → 후 변화</p>
+                    <PrePostTable changes={changes} />
+                  </div>
+                )}
+
+                {/* 인사이트 */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold">
+                      <Icon
+                        name="auto_stories"
+                        size={16}
+                        className="text-[var(--md-sys-color-primary)]"
+                      />
+                      종합 인사이트
+                    </p>
+                    {!insFresh && (
+                      <GlassButton
+                        variant="ghost"
+                        className="!h-8 !px-3 text-xs"
+                        onClick={genInsights}
+                        disabled={insGen === "running"}
+                      >
+                        {insGen === "running" ? "생성 중…" : "지금 생성"}
+                      </GlassButton>
+                    )}
+                  </div>
+                  {insGen === "error" && (
+                    <p className="text-xs text-red-500">{insMsg}</p>
+                  )}
+                  {insights ? (
+                    <div className="flex flex-col gap-3">
+                      <p className="text-sm leading-relaxed text-black/75 dark:text-white/75">
+                        {insights.narrative}
+                      </p>
+                      {(insights.highlights?.length ?? 0) > 0 && (
+                        <div>
+                          <p className="mb-1 flex items-center gap-1 text-xs font-semibold text-black/55">
+                            <Icon name="person" size={13} />
+                            개별 응답에서
+                          </p>
+                          <ul className="list-disc pl-5 text-sm text-black/70 dark:text-white/70">
+                            {insights.highlights!.map((h, i) => (
+                              <li key={i}>{h}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {[
+                        ["다음 수업 질문 제안", insights.followUps],
+                        ["관찰된 오개념·약점", insights.misconceptions],
+                        ["보강이 필요한 개념", insights.gaps],
+                      ].map(([title, arr]) =>
+                        (arr as string[])?.length ? (
+                          <div key={title as string}>
+                            <p className="mb-1 text-xs font-semibold text-black/55">
+                              {title as string}
+                            </p>
+                            <ul className="list-disc pl-5 text-sm text-black/70 dark:text-white/70">
+                              {(arr as string[]).map((x, i) => (
+                                <li key={i}>{x}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-black/45">
+                      “변경된 질문 분석”을 실행하면 인사이트가 함께 자동
+                      생성됩니다. (또는 “지금 생성”)
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          ) : tab === "compare" ? (
             <ComparePanel
               pre={mergedPre}
               post={mergedPost}
