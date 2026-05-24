@@ -76,7 +76,7 @@ export function NotificationBell() {
       >
         <Icon name="notifications" size={20} />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--md-sys-color-error-container)]0 px-1 text-xs font-bold text-white">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -113,12 +113,12 @@ export function NotificationBell() {
                   >
                     <span
                       className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
-                        n.readAt ? "bg-transparent" : "bg-rose-500"
+                        n.readAt ? "bg-transparent" : "bg-[var(--md-sys-color-error-container)]0"
                       }`}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block">{n.text}</span>
-                      <span className="mt-0.5 block text-[10px] text-black/35">
+                      <span className="mt-0.5 block text-xs text-black/35">
                         {n.createdAt
                           ? new Date(n.createdAt).toLocaleString("ko-KR", {
                               month: "numeric",

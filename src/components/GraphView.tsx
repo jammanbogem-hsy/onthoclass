@@ -746,7 +746,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
     <div className="relative w-full">
       {/* 색상 모드 토글 — 비교 그래프(nodeColor 지정)에서는 숨김 */}
       {!nodeColor && (
-        <div className="absolute left-2 top-2 z-10 flex rounded-full bg-white/85 p-0.5 text-[11px] font-semibold shadow-sm backdrop-blur">
+        <div className="absolute left-2 top-2 z-10 flex rounded-full bg-white/85 p-0.5 text-xs font-semibold shadow-sm backdrop-blur">
           {(
             [
               ["sentiment", "감정 극성"],
@@ -840,7 +840,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                 <Icon name="language" size={15} />
                 HTML (인터랙티브)
               </button>
-              <p className="px-3 pb-1 pt-0.5 text-[10px] leading-tight text-black/40">
+              <p className="px-3 pb-1 pt-0.5 text-xs leading-tight text-black/40">
                 HTML은 줌·드래그·클릭이 되는 동적 파일입니다.
               </p>
               {user && (
@@ -856,7 +856,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                     <Icon name="link" size={15} />
                     {sharing ? "링크 만드는 중…" : "읽기전용 링크 만들기"}
                   </button>
-                  <p className="px-3 pb-2 pt-0.5 text-[10px] leading-tight text-black/40">
+                  <p className="px-3 pb-2 pt-0.5 text-xs leading-tight text-black/40">
                     앱과 동일한 화면을 로그인 없이 볼 수 있는 링크입니다.
                   </p>
                 </>
@@ -1049,14 +1049,14 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                       { query: "", color: "#23b27a" },
                     ])
                   }
-                  className="inline-flex items-center gap-0.5 rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-[10px] font-semibold text-white"
+                  className="inline-flex items-center gap-0.5 rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-xs font-semibold text-white"
                 >
                   <Icon name="add" size={12} />
                   규칙
                 </button>
               </div>
               {groupRules.length === 0 && (
-                <p className="text-[11px] text-black/40">
+                <p className="text-xs text-black/40">
                   검색어를 포함하는 노드를 그 색으로 표시 (위→아래 우선)
                 </p>
               )}
@@ -1090,7 +1090,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                     onClick={() =>
                       setGroupRules((rs) => rs.filter((_, j) => j !== gi))
                     }
-                    className="flex items-center text-black/30 hover:text-rose-500"
+                    className="flex items-center text-black/30 hover:text-[var(--md-sys-color-error)]"
                     title="규칙 삭제"
                   >
                     <Icon name="close" size={14} />
@@ -1357,7 +1357,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
               {selNode.sources.map((s) => (
                 <span
                   key={s}
-                  className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[11px] text-[var(--md-sys-color-on-secondary-container)]"
+                  className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-secondary-container)]"
                 >
                   {nameOf(s)}
                 </span>
@@ -1374,7 +1374,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                 {data.aliases[selNode.id].map((a) => (
                   <span
                     key={a}
-                    className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] text-black/60 dark:bg-white/10"
+                    className="rounded-full bg-black/5 px-2 py-0.5 text-xs text-black/60 dark:bg-white/10"
                   >
                     {a}
                   </span>
@@ -1406,12 +1406,12 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                     </span>
                   </button>
                   {e.evidence && (
-                    <p className="mt-1 text-[11px] leading-snug text-black/55 dark:text-white/55">
+                    <p className="mt-1 text-xs leading-snug text-black/55 dark:text-white/55">
                       “{e.evidence}”
                     </p>
                   )}
                   {(e.sourceCount ?? 0) > 0 && (
-                    <p className="mt-0.5 text-[10px] text-black/40">
+                    <p className="mt-0.5 text-xs text-black/40">
                       {e.sourceCount}명 응답에서 발견
                     </p>
                   )}
@@ -1425,7 +1425,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
         </div>
       )}
 
-      <p className="mt-1 px-1 text-[11px] text-black/40">
+      <p className="mt-1 px-1 text-xs text-black/40">
         휠=확대 · 배경 드래그=이동 · 노드 드래그=재배치 · 노드 클릭=상세 ·
         배지 숫자=언급 학생 수 · ❤점선=감정어 노드
         {!nodeColor && (
@@ -1450,7 +1450,7 @@ export function SentimentBar({
   const seg = (v: number, c: string, label: string) =>
     v > 0 ? (
       <div
-        className="flex items-center justify-center text-[10px] font-semibold text-white"
+        className="flex items-center justify-center text-xs font-semibold text-white"
         style={{ width: `${(v / total) * 100}%`, background: c }}
         title={`${label} ${v}`}
       >

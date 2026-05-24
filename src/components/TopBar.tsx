@@ -65,7 +65,7 @@ export function TopBar() {
               {profile?.name ?? user?.displayName ?? "사용자"}
             </span>
             <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                 profile?.role === "teacher"
                   ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
                   : "bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)]"

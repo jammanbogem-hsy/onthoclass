@@ -48,7 +48,7 @@ export function CommentThread({
 
   return (
     <div className="mt-2 rounded-xl bg-black/[0.03] p-3 dark:bg-white/[0.04]">
-      <p className="mb-2 flex items-center gap-1 text-[11px] font-semibold text-black/45 dark:text-white/45">
+      <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-black/45 dark:text-white/45">
         <Icon name="forum" size={13} />
         피드백 {items ? `(${items.length})` : ""}
       </p>
@@ -58,7 +58,7 @@ export function CommentThread({
             key={c.id}
             className={`rounded-lg px-2.5 py-1.5 text-xs ${
               c.authorRole === "teacher"
-                ? "bg-emerald-50 dark:bg-emerald-900/20"
+                ? "bg-[var(--md-sys-color-tertiary-container)]"
                 : "bg-white/70 dark:bg-white/10"
             }`}
           >
@@ -74,7 +74,7 @@ export function CommentThread({
                   onClick={() =>
                     deleteSubComment(cid, lid, qid, sid, c.id)
                   }
-                  className="text-black/30 hover:text-rose-500"
+                  className="text-black/30 hover:text-[var(--md-sys-color-error)]"
                   title="삭제"
                 >
                   <Icon name="close" size={12} />
@@ -87,7 +87,7 @@ export function CommentThread({
           </li>
         ))}
         {items && items.length === 0 && (
-          <li className="py-1 text-center text-[11px] text-black/35">
+          <li className="py-1 text-center text-xs text-black/35">
             아직 피드백이 없습니다.
           </li>
         )}

@@ -50,6 +50,8 @@ export type Submission = {
   understanding?: number; // 수업 후 성찰: 이해도 별점 1~5
   interest?: number; // 수업 후 성찰: 흥미도 하트 1~5
   application?: string; // 수업 후 성찰: 배운 걸 어디에 쓸 수 있을까
+  // 설문(검증) 응답: 문항 변수키(item.id) → 값(척도=숫자, 객관식=선택 라벨, 주관식=텍스트)
+  surveyAnswers?: Record<string, number | string>;
   submittedAt: number | null;
 };
 
@@ -61,13 +63,25 @@ export type QLink = {
   audUids?: string[];
 };
 
-// 활동 종류: 질문 · 문항 · 링크 · 보드(캔버스) · 수업후 성찰(이해도/흥미도+서술)
+// 활동 종류: 질문 · 문항 · 링크 · 보드(캔버스) · 수업후 성찰 · 설문(검증)
 export type ActivityKind =
   | "question"
   | "quiz"
   | "link"
   | "canvas"
-  | "reflection";
+  | "reflection"
+  | "survey";
+
+// 설문(검증) 문항 — 사전/사후 효과성 분석용. id 는 전·후를 잇는 변수키.
+export type SurveyItemType = "scale" | "choice" | "open";
+export type SurveyItem = {
+  id: string; // 변수키(Q1, Q2…) — 복제해도 유지되어 전/후 페어링의 기준
+  type: SurveyItemType;
+  prompt: string;
+  options?: string[]; // choice 선택지
+  scaleMax?: number; // scale 최대값(기본 5)
+  scaleLabels?: { low: string; high: string }; // scale 양끝 라벨
+};
 
 export type Question = {
   id: string;
@@ -84,6 +98,7 @@ export type Question = {
   allowResubmit: boolean; // 제출 후 학생 수정 허용 여부 (교사 설정)
   revealAnswer?: boolean; // 문항(quiz): 제출 후 학생에게 정답 공개(공개 시 잠금)
   boardMode?: "shared" | "group"; // 보드(canvas): 공용 1개 / 모둠별 따로
+  surveyItems?: SurveyItem[]; // 설문(survey) 문항 목록
   clonedFrom?: string; // 복제 원본 질문 id (수업 전→후 가져오기 등)
   createdBy: string;
   createdAt: number | null;
@@ -195,6 +210,7 @@ export async function copyLessonToClass(
       allowResubmit: q.allowResubmit,
       revealAnswer: q.revealAnswer ?? false,
       boardMode: q.boardMode ?? "shared",
+      surveyItems: cleanSurveyItems(q.surveyItems),
       clonedFrom: q.id,
       createdBy: user.uid,
       createdAt: serverTimestamp(),
@@ -384,6 +400,21 @@ export function watchQuestions(
   );
 }
 
+// Firestore 는 undefined 필드를 거부 → 설문 문항의 선택 필드를 정리
+export function cleanSurveyItems(items?: SurveyItem[]): SurveyItem[] {
+  return (items ?? []).map((it) => {
+    const o: SurveyItem = {
+      id: it.id,
+      type: it.type,
+      prompt: it.prompt ?? "",
+    };
+    if (it.options && it.options.length) o.options = it.options;
+    if (typeof it.scaleMax === "number") o.scaleMax = it.scaleMax;
+    if (it.scaleLabels) o.scaleLabels = it.scaleLabels;
+    return o;
+  });
+}
+
 export async function createQuestion(
   cid: string,
   lid: string,
@@ -402,6 +433,7 @@ export async function createQuestion(
     allowResubmit?: boolean;
     revealAnswer?: boolean;
     boardMode?: "shared" | "group";
+    surveyItems?: SurveyItem[];
   }
 ): Promise<string> {
   const ref = doc(questionsCol(cid, lid));
@@ -419,6 +451,7 @@ export async function createQuestion(
     allowResubmit: data.allowResubmit ?? true,
     revealAnswer: data.revealAnswer ?? false,
     boardMode: data.boardMode ?? "shared",
+    surveyItems: cleanSurveyItems(data.surveyItems),
     createdBy: user.uid,
     createdAt: serverTimestamp(),
   });
@@ -458,7 +491,9 @@ export async function cloneQuestionsToPhase(
       audUids: q.audUids,
       order,
       allowResubmit: q.allowResubmit,
+      revealAnswer: q.revealAnswer ?? false,
       boardMode: q.boardMode ?? "shared",
+      surveyItems: cleanSurveyItems(q.surveyItems), // 변수키(id) 보존 → 전/후 페어링
       clonedFrom: q.id,
       createdBy: user.uid,
       createdAt: serverTimestamp(),
@@ -497,12 +532,16 @@ export async function updateQuestion(
     allowResubmit?: boolean;
     revealAnswer?: boolean;
     boardMode?: "shared" | "group";
+    surveyItems?: SurveyItem[];
     clonedFrom?: string;
   }
 ): Promise<void> {
+  // surveyItems 가 있으면 undefined 필드를 제거해 저장
+  const safe: Record<string, unknown> = { ...patch };
+  if (patch.surveyItems) safe.surveyItems = cleanSurveyItems(patch.surveyItems);
   await setDoc(
     doc(getDbClient(), "classes", cid, "lessons", lid, "questions", qid),
-    patch,
+    safe,
     { merge: true }
   );
 }
@@ -596,6 +635,29 @@ export async function setQuestionSubmissionFor(
       studentName,
       phase,
       content,
+      submittedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+// 설문(검증) 응답 제출 — 문항 변수키 → 값(척도 숫자/객관식 라벨/주관식 텍스트)
+export async function setSurveySubmission(
+  cid: string,
+  lid: string,
+  qid: string,
+  user: User,
+  phase: Phase,
+  answers: Record<string, number | string>
+): Promise<void> {
+  await setDoc(
+    doc(qSubCol(cid, lid, qid), user.uid),
+    {
+      uid: user.uid,
+      studentName: user.displayName ?? "이름없음",
+      phase,
+      surveyAnswers: answers,
+      content: "", // 호환용
       submittedAt: serverTimestamp(),
     },
     { merge: true }
@@ -934,6 +996,28 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
     allowResubmit: v.allowResubmit !== false, // 미설정/기존 문서는 허용(true)
     revealAnswer: v.revealAnswer === true,
     boardMode: v.boardMode === "group" ? "group" : "shared",
+    surveyItems: Array.isArray(v.surveyItems)
+      ? (v.surveyItems as unknown[]).map((x) => {
+          const o = (x ?? {}) as Record<string, unknown>;
+          const t = o.type === "choice" || o.type === "open" ? o.type : "scale";
+          const item: SurveyItem = {
+            id: String(o.id ?? ""),
+            type: t as SurveyItemType,
+            prompt: (o.prompt as string) ?? "",
+          };
+          if (Array.isArray(o.options))
+            item.options = (o.options as unknown[]).map((y) => String(y ?? ""));
+          if (typeof o.scaleMax === "number") item.scaleMax = o.scaleMax;
+          if (o.scaleLabels && typeof o.scaleLabels === "object") {
+            const sl = o.scaleLabels as Record<string, unknown>;
+            item.scaleLabels = {
+              low: String(sl.low ?? ""),
+              high: String(sl.high ?? ""),
+            };
+          }
+          return item;
+        })
+      : undefined,
     clonedFrom:
       typeof v.clonedFrom === "string" ? (v.clonedFrom as string) : undefined,
     createdBy: (v.createdBy as string) ?? "",
@@ -956,6 +1040,10 @@ function mapSubmission(v: Record<string, unknown>): Submission {
       typeof v.interest === "number" ? (v.interest as number) : undefined,
     application:
       typeof v.application === "string" ? (v.application as string) : undefined,
+    surveyAnswers:
+      v.surveyAnswers && typeof v.surveyAnswers === "object"
+        ? (v.surveyAnswers as Record<string, number | string>)
+        : undefined,
     submittedAt: ts?.toMillis ? ts.toMillis() : null,
   };
 }

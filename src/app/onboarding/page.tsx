@@ -157,7 +157,7 @@ export default function OnboardingPage() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
-          {err && <p className="text-xs text-red-500">{err}</p>}
+          {err && <p className="text-xs text-[var(--md-sys-color-error)]">{err}</p>}
           <button
             className="btn-accent mt-1 px-5 py-3 text-sm font-semibold"
             disabled={busy || !name.trim() || !code.trim()}

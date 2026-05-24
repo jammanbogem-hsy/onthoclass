@@ -242,6 +242,33 @@ body {
   }
 }
 
+/* 발표 독려 효과 — 무지개 그라데이션 배경 (예외적 장식: 발표 연출 전용) */
+.jam-present-bg {
+  background: linear-gradient(
+    125deg,
+    #ff5f6d,
+    #ffc371,
+    #fff35b,
+    #4ade80,
+    #38bdf8,
+    #a78bfa,
+    #ff7eb3
+  );
+  background-size: 400% 400%;
+  animation: jam-rainbow-shift 6s ease infinite;
+}
+@keyframes jam-rainbow-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 /* M3 emphasized-decelerate 진입 모션 */
 @keyframes float-in {
   from {

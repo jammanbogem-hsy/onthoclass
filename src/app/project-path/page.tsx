@@ -192,7 +192,7 @@ function ProjectPathInner() {
                         {s.displayName}
                       </span>
                       <span
-                        className={`shrink-0 rounded-full px-1.5 text-[11px] font-bold ${
+                        className={`shrink-0 rounded-full px-1.5 text-xs font-bold ${
                           on
                             ? "bg-white/25"
                             : "bg-[var(--md-sys-color-surface-container-high)] text-black/55"
@@ -260,10 +260,10 @@ function StreamEntry({ activity, uid }: { activity: Activity; uid: string }) {
       <span className="absolute -left-[27px] top-4 h-2.5 w-2.5 rounded-full bg-[var(--md-sys-color-primary)]" />
       <div className="mb-1 flex flex-wrap items-center gap-1.5">
         <span className="text-sm font-semibold">{aTitle}</span>
-        <span className="rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] font-medium text-black/55">
+        <span className="rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs font-medium text-black/55">
           {KIND_LABEL[q.kind]}
         </span>
-        <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+        <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
           {phase}
         </span>
       </div>
@@ -287,7 +287,7 @@ function StreamEntry({ activity, uid }: { activity: Activity; uid: string }) {
           )}
           {s.application && (
             <p className="whitespace-pre-wrap rounded-lg bg-[var(--md-sys-color-surface-container)] p-2 text-[13px]">
-              <span className="text-[11px] font-semibold text-black/45">
+              <span className="text-xs font-semibold text-black/45">
                 활용:{" "}
               </span>
               {s.application}

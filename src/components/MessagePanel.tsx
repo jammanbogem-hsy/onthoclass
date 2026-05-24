@@ -177,7 +177,7 @@ export function MessagePanel({
             }}
             className={`${
               scope === "class" && lessons && lessons.length > 0 ? "" : "ml-auto"
-            } inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-2.5 py-1 text-[11px] font-medium text-[var(--md-sys-color-primary)]`}
+            } inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-2.5 py-1 text-xs font-medium text-[var(--md-sys-color-primary)]`}
             title="대화 JSON 다운로드"
           >
             <Icon name="download" size={12} />
@@ -187,7 +187,7 @@ export function MessagePanel({
       </div>
 
       {errMsg && (
-        <p className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">
+        <p className="border-b border-[var(--md-sys-color-error)] bg-[var(--md-sys-color-error-container)] px-4 py-2 text-xs text-[var(--md-sys-color-on-error-container)]">
           {errMsg}
         </p>
       )}
@@ -221,10 +221,10 @@ export function MessagePanel({
                       {m.text}
                     </p>
                   </div>
-                  <p className="mt-0.5 px-1 text-[10px] text-black/40">
+                  <p className="mt-0.5 px-1 text-xs text-black/40">
                     {mine ? "나" : `${partnerName}`}
                     {m.scope === "lesson" && m.lessonId && (
-                      <span className="ml-1 rounded bg-black/5 px-1.5 py-0.5 text-[9px] dark:bg-white/10">
+                      <span className="ml-1 rounded bg-black/5 px-1.5 py-0.5 text-xs dark:bg-white/10">
                         차시: {lessonTitleMap.get(m.lessonId) ?? "차시"}
                       </span>
                     )}

@@ -89,9 +89,9 @@ export function PrePostTable({ changes }: { changes: ConceptChange[] }) {
                   <span
                     className={
                       d > 0
-                        ? "text-emerald-600"
+                        ? "text-[var(--md-sys-color-tertiary)]"
                         : d < 0
-                          ? "text-rose-500"
+                          ? "text-[var(--md-sys-color-error)]"
                           : "text-black/40"
                     }
                   >
@@ -100,7 +100,7 @@ export function PrePostTable({ changes }: { changes: ConceptChange[] }) {
                 </td>
                 <td className="px-2 py-1.5 text-center">
                   <span
-                    className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+                    className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold text-white"
                     style={{ background: m.color }}
                   >
                     {m.label}

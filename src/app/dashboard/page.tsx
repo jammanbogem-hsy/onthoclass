@@ -369,7 +369,7 @@ function StudentProgress({
           className="text-[var(--md-sys-color-primary)]"
         />
         내 성장 · 경험치 &amp; 미션
-        <span className="ml-auto text-[11px] font-medium text-black/40">
+        <span className="ml-auto text-xs font-medium text-black/40">
           클릭하면 자세히
         </span>
       </p>
@@ -393,7 +393,7 @@ function StudentProgress({
               className="block w-full cursor-pointer rounded-xl text-left transition hover:bg-black/[0.03]"
             >
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-[11px] font-extrabold text-white">
+                <span className="rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-xs font-extrabold text-white">
                   Lv.{lv.level}
                 </span>
                 <span className="truncate text-sm font-semibold">
@@ -549,7 +549,7 @@ function CreateModal({
             setForm({ ...form, description: e.target.value })
           }
         />
-        {err && <p className="text-xs text-red-500">{err}</p>}
+        {err && <p className="text-xs text-[var(--md-sys-color-error)]">{err}</p>}
         <button
           className="btn-accent mt-1 px-5 py-3 text-sm font-semibold"
           disabled={busy || !form.name.trim()}
@@ -600,7 +600,7 @@ function JoinModal({
           onChange={(e) => setCode(e.target.value)}
           autoFocus
         />
-        {err && <p className="text-xs text-red-500">{err}</p>}
+        {err && <p className="text-xs text-[var(--md-sys-color-error)]">{err}</p>}
         <button
           className="btn-accent mt-1 px-5 py-3 text-sm font-semibold"
           disabled={busy || code.trim().length < 2}

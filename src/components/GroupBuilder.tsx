@@ -200,7 +200,7 @@ export function GroupBuilder({
                     reload();
                   }
                 }}
-                className="text-black/30 hover:text-rose-500"
+                className="text-black/30 hover:text-[var(--md-sys-color-error)]"
               >
                 <Icon name="delete" size={18} />
               </button>
@@ -237,7 +237,7 @@ export function GroupBuilder({
                     {nameOf(uid)}
                     <button
                       onClick={() => move(uid, null)}
-                      className="text-current/60 hover:text-rose-600"
+                      className="text-current/60 hover:text-[var(--md-sys-color-error)]"
                       title="미배정으로"
                     >
                       <Icon name="close" size={14} />

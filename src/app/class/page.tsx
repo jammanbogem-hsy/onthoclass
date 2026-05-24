@@ -150,7 +150,7 @@ function ClassDetail() {
               title="초대 코드 크게 보기"
               className="inline-flex items-center gap-2 rounded-full border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)] py-1.5 pl-3 pr-3 text-sm hover:bg-[var(--md-sys-color-surface-container-high)]"
             >
-              <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+              <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                 초대 코드
               </span>
               <span className="font-bold tracking-wide">{room.code}</span>

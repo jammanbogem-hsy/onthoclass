@@ -59,7 +59,7 @@ export function MissionMeta({
   const date = lm?.date || fmtMs(quest.createdAt);
 
   const chip =
-    "inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[11px] font-medium text-black/55";
+    "inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs font-medium text-black/55";
 
   return (
     <div className="mt-1 flex flex-wrap gap-1.5">

@@ -201,7 +201,7 @@ function LevelInner() {
                 </span>
               )}
               {/* 레벨 배지 */}
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-white px-2 py-0.5 text-[11px] font-extrabold text-[var(--md-sys-color-primary)] shadow">
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-white px-2 py-0.5 text-xs font-extrabold text-[var(--md-sys-color-primary)] shadow">
                 Lv.{lv.level}
               </span>
             </span>
@@ -264,12 +264,12 @@ function LevelInner() {
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 font-semibold">
                       {done && (
-                        <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-[10px] font-extrabold text-white">
+                        <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-xs font-extrabold text-white">
                           완료
                         </span>
                       )}
                       <span className="truncate">{q.title}</span>
-                      <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-[11px] font-extrabold text-[var(--md-sys-color-on-primary-container)]">
+                      <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-extrabold text-[var(--md-sys-color-on-primary-container)]">
                         +{q.xp} XP
                       </span>
                     </p>
@@ -352,7 +352,7 @@ function LevelInner() {
                           key={e.id}
                           className="flex items-center gap-2 px-2 py-2"
                         >
-                          <span className="w-9 shrink-0 text-[11px] text-black/40">
+                          <span className="w-9 shrink-0 text-xs text-black/40">
                             {fmtDate(e.at)}
                           </span>
                           <span className="min-w-0 flex-1 truncate text-xs">
@@ -362,7 +362,7 @@ function LevelInner() {
                             className={`shrink-0 text-xs font-extrabold ${
                               e.amount >= 0
                                 ? "text-[var(--md-sys-color-primary)]"
-                                : "text-rose-500"
+                                : "text-[var(--md-sys-color-error)]"
                             }`}
                           >
                             {e.amount >= 0 ? "+" : ""}

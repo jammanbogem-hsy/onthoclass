@@ -4,8 +4,14 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMyRole, type Role } from "@/lib/classes";
-import { watchLock, watchSignal, type ActivityLock } from "@/lib/live";
+import {
+  stopLock,
+  watchLock,
+  watchSignal,
+  type ActivityLock,
+} from "@/lib/live";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
+import { PresentOverlay } from "@/components/PresentOverlay";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { ActivityLockOverlay } from "@/components/ActivityLockOverlay";
 
@@ -65,24 +71,48 @@ function ClassLiveInner() {
     });
   }, [cid, uid, role]);
 
+  // 교사 클라이언트가 만료 시각에 잠금 문서를 자동 해제 → 헤더/지각 학생 동기화.
+  // (학생은 오버레이의 onExpire 로 즉시 풀리고, 문서는 교사가 정리한다.)
+  useEffect(() => {
+    if (role !== "teacher" || !cid) return;
+    if (!lock?.active || lock.until == null) return;
+    const ms = lock.until - Date.now();
+    if (ms <= 0) {
+      stopLock(cid).catch(() => {});
+      return;
+    }
+    const t = setTimeout(() => stopLock(cid).catch(() => {}), ms);
+    return () => clearTimeout(t);
+  }, [role, cid, lock]);
+
   // 학생만 잠금 대상. 만료(until) 처리는 오버레이의 onExpire 가 담당한다.
   const lockActive =
     !!cid && role === "student" && !lockDismissed && !!lock?.active;
 
   return (
     <>
-      {celebrate && (
-        <MissionCelebrate
-          key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
-          title={celebrate.title}
-          subtitle={celebrate.subtitle}
-          kicker={celebrate.kind === "level" ? "LEVEL UP" : "MISSION CLEAR"}
-          lottieSrc={
-            celebrate.kind === "level" ? "/Confetti.json" : "/mission-success.json"
-          }
-          onDone={done}
-        />
-      )}
+      {celebrate &&
+        (celebrate.kind === "present" ? (
+          <PresentOverlay
+            key={`present:${celebrate.title}:${celebrate.subtitle ?? ""}`}
+            title={celebrate.title}
+            subtitle={celebrate.subtitle}
+            onDone={done}
+          />
+        ) : (
+          <MissionCelebrate
+            key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
+            title={celebrate.title}
+            subtitle={celebrate.subtitle}
+            kicker={celebrate.kind === "level" ? "LEVEL UP" : "MISSION CLEAR"}
+            lottieSrc={
+              celebrate.kind === "level"
+                ? "/Confetti.json"
+                : "/mission-success.json"
+            }
+            onDone={done}
+          />
+        ))}
       {lockActive && (
         <ActivityLockOverlay
           until={lock!.until}

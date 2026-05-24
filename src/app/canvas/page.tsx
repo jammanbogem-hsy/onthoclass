@@ -759,7 +759,7 @@ function CanvasInner() {
           <span className="ml-2 text-sm font-semibold">
             {canvas?.name ?? "캔버스"}
           </span>
-          <span className="ml-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
+          <span className="ml-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
             {canEdit ? "편집 가능" : "보기만"}
           </span>
           {canEdit && (
@@ -931,7 +931,7 @@ function CanvasInner() {
                 {myGroup.name}
               </span>
             ) : (
-              <span className="text-xs text-rose-500">
+              <span className="text-xs text-[var(--md-sys-color-error)]">
                 배정된 모둠이 없어 참여할 수 없습니다. 선생님께 모둠 배정을 요청하세요.
               </span>
             )}
@@ -998,7 +998,7 @@ function CanvasInner() {
             )}
           </div>
           {isTeacher && (
-            <p className="mt-1 text-center text-[11px] text-black/35">
+            <p className="mt-1 text-center text-xs text-black/35">
               페이지 버튼을 꾹 누르면 색상·삭제 메뉴가 열립니다
             </p>
           )}
@@ -1283,7 +1283,7 @@ function CanvasInner() {
           )}
         </div>
 
-        <p className="border-t border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] px-4 py-2 text-[11px] text-black/45">
+        <p className="border-t border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] px-4 py-2 text-xs text-black/45">
           휠=줌 · 배경 드래그=이동 · 카드 드래그=재배치 · 연결 모드에서 카드 두
           개 차례로 클릭=화살표 · 화살표 클릭=라벨 · 화살표 더블클릭=삭제
         </p>
@@ -1408,7 +1408,7 @@ function CommentsPopover({
                     />
                   ) : (
                     <span
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
                       style={{ background: col }}
                     >
                       {(c.name || "?").slice(0, 1)}
@@ -1417,12 +1417,12 @@ function CommentsPopover({
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5">
                       <span
-                        className="text-[11px] font-bold"
+                        className="text-xs font-bold"
                         style={{ color: col }}
                       >
                         {c.name}
                       </span>
-                      <span className="text-[10px] text-black/35">
+                      <span className="text-xs text-black/35">
                         {relTime(c.createdAt)}
                       </span>
                     </p>
@@ -1433,7 +1433,7 @@ function CommentsPopover({
                   {(c.uid === myUid || isTeacher) && (
                     <button
                       onClick={() => onDelete(c.id)}
-                      className="shrink-0 rounded-full p-0.5 text-black/30 hover:bg-rose-100 hover:text-rose-600"
+                      className="shrink-0 rounded-full p-0.5 text-black/30 hover:bg-[var(--md-sys-color-error-container)] hover:text-[var(--md-sys-color-error)]"
                       title="삭제"
                     >
                       <Icon name="close" size={13} />
@@ -1447,7 +1447,7 @@ function CommentsPopover({
         </div>
 
         {err && (
-          <p className="px-3 text-[11px] text-rose-500">{err}</p>
+          <p className="px-3 text-xs text-[var(--md-sys-color-error)]">{err}</p>
         )}
         <div className="flex items-end gap-1.5 border-t border-[var(--md-sys-color-outline-variant)] p-2">
           <textarea
@@ -1625,7 +1625,7 @@ function CardView({
                 onSendToMap();
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold text-[var(--md-sys-color-primary)] hover:bg-black/5"
+              className="ml-auto rounded px-1.5 py-0.5 text-xs font-semibold text-[var(--md-sys-color-primary)] hover:bg-black/5"
               title="이 카드 내용을 차시 지식맵 입력으로 보내기"
             >
               지식맵으로
@@ -1860,7 +1860,7 @@ function PageBubble({
         {canDelete && (
           <button
             onClick={onDelete}
-            className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-rose-200 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-50"
+            className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-[var(--md-sys-color-error)] py-1.5 text-xs font-semibold text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-error-container)]"
           >
             <Icon name="delete" size={15} />
             페이지 삭제

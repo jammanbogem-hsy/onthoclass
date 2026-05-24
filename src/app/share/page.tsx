@@ -57,7 +57,7 @@ function ShareInner() {
         <span className="text-sm font-bold">잼클래스</span>
         <span className="mx-1 text-black/20">·</span>
         <span className="truncate text-sm font-semibold">{doc.title}</span>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2.5 py-1 text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)]">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2.5 py-1 text-xs font-medium text-[var(--md-sys-color-on-surface-variant)]">
           <Icon name="visibility" size={13} />
           읽기전용 공유
         </span>

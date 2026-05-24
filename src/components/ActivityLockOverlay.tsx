@@ -61,22 +61,22 @@ export function ActivityLockOverlay({
       aria-label="활동 잠금"
       className="fixed inset-0 z-[95] flex flex-col items-center justify-center bg-[var(--md-sys-color-surface)]/92 backdrop-blur-md"
     >
-      <div className="h-[min(42vh,340px)] w-[min(42vh,340px)] max-w-[82vw]">
+      <div className="h-[min(64vh,640px)] w-[min(64vh,640px)] max-w-[90vw]">
         {data ? (
           <Lottie animationData={data} loop autoplay />
         ) : (
           <div className="h-full w-full animate-pulse rounded-full bg-[var(--md-sys-color-surface-container-high)]" />
         )}
       </div>
-      <p className="-mt-2 text-2xl font-extrabold text-[var(--md-sys-color-on-surface)] sm:text-3xl">
+      <p className="-mt-4 text-4xl font-extrabold text-[var(--md-sys-color-on-surface)] sm:text-5xl">
         잠깐 멈춰요 ✋
       </p>
-      <p className="mt-1 text-sm text-[var(--md-sys-color-on-surface-variant)]">
+      <p className="mt-2 text-base text-[var(--md-sys-color-on-surface-variant)] sm:text-lg">
         선생님이 활동을 잠시 멈췄어요. 화면을 봐 주세요.
       </p>
       {remaining != null && (
         <p
-          className="mt-5 font-mono text-5xl font-black tabular-nums text-[var(--md-sys-color-primary)]"
+          className="mt-6 font-mono text-7xl font-black tabular-nums text-[var(--md-sys-color-primary)] sm:text-8xl"
           style={{ fontFeatureSettings: '"tnum"' }}
         >
           {fmt(remaining)}

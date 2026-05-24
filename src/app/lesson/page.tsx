@@ -48,6 +48,7 @@ import {
   saveOntology,
   seedQuestionsFromLesson,
   setReflectionSubmission,
+  setSurveySubmission,
   submitQuestionResponse,
   updateQuestion,
   type ActivityKind,
@@ -57,7 +58,9 @@ import {
   type QLink,
   type Question,
   type Submission,
+  type SurveyItem,
 } from "@/lib/lessons";
+import { SurveyBuilder } from "@/components/SurveyBuilder";
 import { ReflectAvgBadge } from "@/components/ReflectAvgBadge";
 import { grantXp } from "@/lib/xp";
 import { listSourceClasses, type SourceClass } from "@/lib/teams";
@@ -969,6 +972,12 @@ function TeacherPanel({
                         "수업 후 성찰",
                         "이해도·흥미도 + 배운 점",
                       ],
+                      [
+                        "survey",
+                        "fact_check",
+                        "설문 (검증)",
+                        "사전/사후 효과성 검증 (t검정)",
+                      ],
                     ] as const
                   )
                     // 수업 전에는 '수업 후 성찰' 활동을 제공하지 않음
@@ -1170,6 +1179,9 @@ function QuestionRow({
   const [boardMode, setBoardMode] = useState<"shared" | "group">(
     question.boardMode === "group" ? "group" : "shared"
   );
+  const [surveyItems, setSurveyItems] = useState<SurveyItem[]>(
+    question.surveyItems ?? []
+  );
   const [audGroupIds, setAudGroupIds] = useState<string[]>(
     question.audGroupIds
   );
@@ -1203,6 +1215,7 @@ function QuestionRow({
     setAllowResubmit(question.allowResubmit);
     setRevealAnswer(!!question.revealAnswer);
     setBoardMode(question.boardMode === "group" ? "group" : "shared");
+    setSurveyItems(question.surveyItems ?? []);
     setAudGroupIds(question.audGroupIds);
     setAudUids(question.audUids);
     setTitle(question.title);
@@ -1218,13 +1231,16 @@ function QuestionRow({
   const isQuiz = question.kind === "quiz";
   const isLink = question.kind === "link";
   const isCanvas = question.kind === "canvas";
+  const isSurvey = question.kind === "survey";
   const kindLabel = isQuiz
     ? "문항"
     : isLink
       ? "링크"
       : isCanvas
         ? "보드"
-        : "질문";
+        : isSurvey
+          ? "설문"
+          : "질문";
 
   // 같은 활동의 수업 전↔후 짝:
   //  - 복제관계: 한쪽이 다른 쪽을 복제(clonedFrom) 했거나
@@ -1335,6 +1351,7 @@ function QuestionRow({
       r: allowResubmit,
       v: revealAnswer,
       b: boardMode,
+      s: surveyItems,
     });
     const sv = JSON.stringify({
       t: question.title.trim(),
@@ -1347,6 +1364,7 @@ function QuestionRow({
       r: question.allowResubmit,
       v: !!question.revealAnswer,
       b: question.boardMode === "group" ? "group" : "shared",
+      s: question.surveyItems ?? [],
     });
     return cur !== sv;
   }, [
@@ -1360,6 +1378,7 @@ function QuestionRow({
     allowResubmit,
     revealAnswer,
     boardMode,
+    surveyItems,
     question,
   ]);
 
@@ -1375,6 +1394,7 @@ function QuestionRow({
       allowResubmit,
       revealAnswer,
       boardMode,
+      surveyItems,
     });
     setSavedAt(new Date().toLocaleTimeString());
     setSavedFlash(true);
@@ -1427,7 +1447,7 @@ function QuestionRow({
     <GlassCard className="p-0">
       <div
         className={`grid gap-0 ${
-          isLink
+          isLink || isSurvey
             ? ""
             : "lg:grid-cols-2 lg:divide-x lg:divide-black/5 dark:lg:divide-white/10"
         }`}
@@ -1591,7 +1611,16 @@ function QuestionRow({
             </div>
           )}
 
-          {!isQuiz && !isCanvas && (
+          {isSurvey && (
+            <div className="mt-3">
+              <p className="mb-2 text-xs font-semibold text-black/55">
+                검증 문항 (사전/사후 효과성)
+              </p>
+              <SurveyBuilder items={surveyItems} onChange={setSurveyItems} />
+            </div>
+          )}
+
+          {!isQuiz && !isCanvas && !isSurvey && (
             <LinksEditor
               links={links}
               onChange={setLinks}
@@ -1797,7 +1826,7 @@ function QuestionRow({
                     </span>
                   ) : (
                     <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
-                      최신 ✓
+                      최신 <Icon name="check" size={12} className="align-middle" />
                     </span>
                   ))}
               </p>
@@ -1837,8 +1866,8 @@ function QuestionRow({
           </div>
         )}
 
-        {/* 우: 결과 패널 (링크·보드는 제출 패널 없음) */}
-        {!isLink && !isCanvas && (
+        {/* 우: 결과 패널 (링크·보드·설문은 별도) */}
+        {!isLink && !isCanvas && !isSurvey && (
         <div className="bg-white/30 p-6 dark:bg-white/5">
           {isQuiz ? (
             <>
@@ -1889,9 +1918,9 @@ function QuestionRow({
                             <Icon name="chevron_right" size={14} />
                           </span>
                         </div>
-                        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-rose-200">
+                        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[var(--md-sys-color-error-container)]">
                           <div
-                            className="h-full bg-emerald-500"
+                            className="h-full bg-[var(--md-sys-color-tertiary)]"
                             style={{ width: `${cp}%` }}
                           />
                         </div>
@@ -1947,7 +1976,13 @@ function QuestionRow({
                                 : ""
                             }
                           >
-                            {correct && "✓ "}
+                            {correct && (
+                              <Icon
+                                name="check"
+                                size={13}
+                                className="mr-0.5 align-middle"
+                              />
+                            )}
                             {opt || `선택지 ${oi + 1}`}
                           </span>
                           <span className="text-black/45">
@@ -1957,7 +1992,9 @@ function QuestionRow({
                         <div className="h-2 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
                           <div
                             className={`h-full ${
-                              correct ? "bg-emerald-500" : "bg-blue-400"
+                              correct
+                                ? "bg-[var(--md-sys-color-tertiary)]"
+                                : "bg-[var(--md-sys-color-primary)]"
                             }`}
                             style={{ width: `${pct}%` }}
                           />
@@ -2038,7 +2075,7 @@ function QuestionRow({
                       </span>
                     ) : (
                       <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
-                        최신 ✓
+                        최신 <Icon name="check" size={12} className="align-middle" />
                       </span>
                     ))}
                 </p>
@@ -2549,7 +2586,7 @@ function MergedMapSection({
             <div className="flex items-center gap-2">
               {normFresh ? (
                 <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
-                  동의어 정리됨 ✓
+                  동의어 정리됨 <Icon name="check" size={12} className="align-middle" />
                 </span>
               ) : norm ? (
                 <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
@@ -2637,7 +2674,7 @@ function MergedMapSection({
               인사이트 (중첩도·개별 응답)
               {insFresh && (
                 <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
-                  최신 ✓
+                  최신 <Icon name="check" size={12} className="align-middle" />
                 </span>
               )}
             </p>
@@ -3024,16 +3061,20 @@ function StudentQuestionCard({
   const isQuiz = question.kind === "quiz";
   const isLink = question.kind === "link";
   const isCanvas = question.kind === "canvas";
+  const isSurvey = question.kind === "survey";
   const kindLabel = isQuiz
     ? "문항"
     : isLink
       ? "링크"
       : isCanvas
         ? "보드"
-        : "질문";
+        : isSurvey
+          ? "설문"
+          : "질문";
 
   const [content, setContent] = useState("");
   const [choice, setChoice] = useState("");
+  const [sAns, setSAns] = useState<Record<string, number | string>>({});
   const [mine, setMine] = useState<Submission | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -3048,6 +3089,8 @@ function StudentQuestionCard({
       setMine(s);
       if (isQuiz) {
         setChoice(s?.content ?? "");
+      } else if (isSurvey) {
+        setSAns(s?.surveyAnswers ?? {});
       } else {
         setContent(s && s.content.trim() ? s.content : question.text);
       }
@@ -3056,7 +3099,7 @@ function StudentQuestionCard({
     // 활동(id)·사용자 변경 시에만 초기화한다. question.text 변경(교사 실시간
     // 편집)으로 재실행하면 학생이 작성 중인 내용을 덮어쓰므로 의존성에서 제외.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, cid, lid, question.id, isQuiz, isLink]);
+  }, [user, cid, lid, question.id, isQuiz, isLink, isSurvey]);
 
   const value = isQuiz ? choice : content;
   const hasAnswer = isQuiz
@@ -3105,6 +3148,40 @@ function StudentQuestionCard({
     }
   }
 
+  // --- 설문(검증) 응답 ---
+  const surveyItems = question.surveyItems ?? [];
+  const surveySubmitted =
+    isSurvey &&
+    !!mine?.surveyAnswers &&
+    Object.keys(mine.surveyAnswers).length > 0;
+  const surveyLocked = surveySubmitted && !question.allowResubmit;
+  const surveyAllAnswered =
+    surveyItems.length > 0 &&
+    surveyItems.every((it) => {
+      const v = sAns[it.id];
+      return v !== undefined && v !== "" && !(typeof v === "string" && !v.trim());
+    });
+  function setAns(id: string, v: number | string) {
+    setSAns((p) => ({ ...p, [id]: v }));
+  }
+  async function submitSurvey() {
+    if (!user || surveyLocked || !surveyAllAnswered || busy) return;
+    setBusy(true);
+    try {
+      await setSurveySubmission(cid, lid, question.id, user, question.phase, sAns);
+      setMine({
+        uid: user.uid,
+        studentName: user.displayName ?? "나",
+        phase: question.phase,
+        content: "",
+        surveyAnswers: sAns,
+        submittedAt: Date.now(),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <GlassCard className="p-6">
       <div className="mb-3 flex items-center justify-between">
@@ -3117,7 +3194,7 @@ function StudentQuestionCard({
             {question.phase === "pre" ? "수업 전" : "수업 후"}
           </span>
         </p>
-        {!isLink && submitted && (
+        {!isLink && (submitted || surveySubmitted) && (
           <span className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2.5 py-1 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
             <Icon name="check" size={14} />
             제출 완료
@@ -3138,7 +3215,113 @@ function StudentQuestionCard({
         viewerGroupIds={myGroupIds}
       />
 
-      {isCanvas ? (
+      {isSurvey ? (
+        <div className="mt-4 flex flex-col gap-4">
+          {surveyItems.length === 0 ? (
+            <p className="text-sm text-black/40">아직 문항이 없습니다.</p>
+          ) : (
+            surveyItems.map((it, qi) => (
+              <div key={it.id}>
+                <p className="mb-2 text-sm font-medium">
+                  <span className="mr-1 text-[var(--md-sys-color-primary)]">
+                    Q{qi + 1}.
+                  </span>
+                  {it.prompt || "(문항)"}
+                </p>
+                {it.type === "scale" ? (
+                  <div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from({ length: it.scaleMax ?? 5 }, (_, k) => k + 1).map(
+                        (v) => {
+                          const on = sAns[it.id] === v;
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              disabled={surveyLocked}
+                              onClick={() => setAns(it.id, v)}
+                              className={`h-10 w-10 rounded-full border text-sm font-bold transition ${
+                                on
+                                  ? "border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary)] text-white"
+                                  : "border-[var(--md-sys-color-outline)] text-black/55 hover:bg-black/5"
+                              } ${surveyLocked ? "opacity-60" : ""}`}
+                            >
+                              {v}
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+                    {(it.scaleLabels?.low || it.scaleLabels?.high) && (
+                      <div className="mt-1 flex justify-between text-[11px] text-black/40">
+                        <span>{it.scaleLabels?.low}</span>
+                        <span>{it.scaleLabels?.high}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : it.type === "choice" ? (
+                  <div className="flex flex-col gap-1.5">
+                    {(it.options ?? []).map((opt, oi) => {
+                      const on = sAns[it.id] === opt;
+                      return (
+                        <label
+                          key={oi}
+                          className={`flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition ${
+                            on
+                              ? "border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]"
+                              : "border-[var(--md-sys-color-outline-variant)]"
+                          } ${surveyLocked ? "pointer-events-none opacity-70" : ""}`}
+                        >
+                          <input
+                            type="radio"
+                            name={`s-${question.id}-${it.id}`}
+                            checked={on}
+                            disabled={surveyLocked}
+                            onChange={() => setAns(it.id, opt)}
+                          />
+                          {opt || `선택지 ${oi + 1}`}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <textarea
+                    value={String(sAns[it.id] ?? "")}
+                    disabled={surveyLocked}
+                    onChange={(e) => setAns(it.id, e.target.value)}
+                    placeholder="자유롭게 작성하세요"
+                    rows={3}
+                    className="m3-field !text-sm"
+                  />
+                )}
+              </div>
+            ))
+          )}
+          {surveyLocked ? (
+            <div className="flex w-full items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-5 py-3 text-sm font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
+              <Icon name="lock" size={18} />
+              제출 완료 · 수정이 잠겨 있습니다
+            </div>
+          ) : (
+            surveyItems.length > 0 && (
+              <button
+                onClick={submitSurvey}
+                disabled={!surveyAllAnswered || busy}
+                className="btn-accent flex w-full items-center justify-center gap-1.5 px-5 py-3 text-sm font-semibold disabled:opacity-60"
+              >
+                {busy ? (
+                  "제출 중…"
+                ) : (
+                  <>
+                    {surveySubmitted && <Icon name="check" size={18} />}
+                    {surveySubmitted ? "수정 제출" : "설문 제출"}
+                  </>
+                )}
+              </button>
+            )
+          )}
+        </div>
+      ) : isCanvas ? (
         <>
           <button
             onClick={() =>
@@ -3185,7 +3368,7 @@ function StudentQuestionCard({
                       key={oi}
                       className={`flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition ${
                         revealOk
-                          ? "border-emerald-400 bg-emerald-50"
+                          ? "border-[var(--md-sys-color-tertiary)] bg-[var(--md-sys-color-tertiary-container)]"
                           : picked
                             ? "border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]"
                             : "border-[var(--md-sys-color-outline-variant)]"
@@ -3210,11 +3393,12 @@ function StudentQuestionCard({
               )}
               {quizRevealed && question.answerIndex >= 0 ? (
                 <p
-                  className={`text-xs font-semibold ${
+                  className={`inline-flex items-center gap-1 text-xs font-semibold ${
                     correct ? "text-[var(--md-sys-color-on-tertiary-container)]" : "text-[var(--md-sys-color-error)]"
                   }`}
                 >
-                  {correct ? "정답입니다 ✓" : "오답입니다"}
+                  <Icon name={correct ? "check_circle" : "cancel"} size={14} />
+                  {correct ? "정답입니다" : "오답입니다"}
                 </p>
               ) : submitted ? (
                 <p className="text-xs text-black/45">
@@ -3223,7 +3407,7 @@ function StudentQuestionCard({
               ) : null}
             </div>
           ) : locked ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+            <div className="rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-tertiary-container)] p-4">
               <BlockView value={mine?.content ?? content} />
             </div>
           ) : (
@@ -3235,7 +3419,7 @@ function StudentQuestionCard({
             />
           )}
           {locked ? (
-            <div className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-50 px-5 py-3 text-sm font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
+            <div className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-5 py-3 text-sm font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
               <Icon name="lock" size={18} />
               {quizRevealed
                 ? "제출 완료 · 정답이 공개되어 수정할 수 없습니다"

@@ -215,7 +215,7 @@ function ClassAdminInner() {
               onClick={() => setModal("wizard")}
               className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 lock?.active
-                  ? "border-transparent bg-amber-500 text-white"
+                  ? "border-transparent bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
                   : "border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)] hover:bg-black/5"
               }`}
             >
@@ -297,7 +297,7 @@ function ClassAdminInner() {
                 >
                   {/* 레벨 배지 */}
                   <span
-                    className="absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-extrabold text-white"
+                    className="absolute left-2 top-2 rounded-full px-2 py-0.5 text-xs font-extrabold text-white"
                     style={{ background: col }}
                   >
                     Lv.{lv.level}
@@ -315,7 +315,7 @@ function ClassAdminInner() {
                   </span>
 
                   <span className="w-full">
-                    <span className="flex items-center justify-between text-[10px] text-black/45">
+                    <span className="flex items-center justify-between text-xs text-black/45">
                       <span>{xp.toLocaleString()} XP</span>
                       <span>다음 {lv.remaining}</span>
                     </span>
@@ -515,7 +515,7 @@ function QuestRow({
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-1.5 font-bold">
             <span className="truncate">{quest.title}</span>
-            <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-[11px] font-extrabold text-[var(--md-sys-color-on-primary-container)]">
+            <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-extrabold text-[var(--md-sys-color-on-primary-container)]">
               +{quest.xp} XP
             </span>
           </p>
@@ -553,7 +553,7 @@ function QuestRow({
           </button>
           <button
             onClick={onDelete}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-black/35 hover:bg-rose-100 hover:text-rose-600"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-black/35 hover:bg-[var(--md-sys-color-error-container)] hover:text-[var(--md-sys-color-error)]"
             title="미션 삭제"
           >
             <Icon name="delete" size={18} />
@@ -630,7 +630,7 @@ function QuestRow({
                       {nameOf[uid] ?? uid}
                     </span>
                     {dirty && (
-                      <span className="shrink-0 text-[10px] font-bold text-[var(--md-sys-color-primary)]">
+                      <span className="shrink-0 text-xs font-bold text-[var(--md-sys-color-primary)]">
                         변경
                       </span>
                     )}
@@ -1025,7 +1025,7 @@ function QuestModal({
               </select>
             )}
             {lessonId && (
-              <p className="text-[11px] text-black/45">
+              <p className="text-xs text-black/45">
                 학생 미션에 “활동 열기” 버튼이 표시되어 해당 활동으로 바로
                 이동합니다.
               </p>
@@ -1092,17 +1092,20 @@ function WizardModal({
   onClose: () => void;
   onSendEffect: (
     uids: string[],
-    effect: { kind: "mission" | "level"; title: string; subtitle?: string }
+    effect: {
+      kind: "mission" | "level" | "present";
+      title: string;
+      subtitle?: string;
+    }
   ) => Promise<void>;
   onStartLock: (ms: number) => Promise<void>;
   onStopLock: () => Promise<void>;
 }) {
-  const uids = students
-    .filter((s) => selected.has(s.uid))
-    .map((s) => s.uid);
+  const [sel, setSel] = useState<Set<string>>(new Set(selected));
+  const uids = students.filter((s) => sel.has(s.uid)).map((s) => s.uid);
   const single = uids.length === 1 ? uids[0] : null;
 
-  const [kind, setKind] = useState<"mission" | "level">("mission");
+  const [kind, setKind] = useState<"mission" | "level" | "present">("mission");
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
@@ -1119,6 +1122,15 @@ function WizardModal({
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [lockActive]);
+
+  function toggle(uid: string) {
+    setSel((s) => {
+      const n = new Set(s);
+      if (n.has(uid)) n.delete(uid);
+      else n.add(uid);
+      return n;
+    });
+  }
 
   function buildEffect() {
     const name = single ? nameOf[single] : "";
@@ -1168,147 +1180,252 @@ function WizardModal({
   }
 
   return (
-    <ModalShell title="기능 & 효과 마법사" icon="auto_awesome" onClose={onClose}>
-      <div className="flex flex-col gap-6">
-        {/* 효과 보내기 */}
-        <section className="flex flex-col gap-3">
-          <h3 className="flex items-center gap-1.5 text-sm font-bold">
-            <Icon name="celebration" size={16} className="text-[var(--md-sys-color-primary)]" />
-            효과 보내기
-            <span className="font-normal text-black/45">
-              · 놓친 학생에게 다시
-            </span>
-          </h3>
-          {uids.length === 0 ? (
-            <p className="rounded-xl bg-black/5 px-3 py-2.5 text-xs text-black/55">
-              먼저 위에서 학생 카드를 선택하세요. 선택한 학생에게 효과가
-              전달됩니다.
-            </p>
-          ) : (
-            <p className="text-xs text-black/55">
-              대상{" "}
-              <b className="text-[var(--md-sys-color-primary)]">
-                {uids.length}
-              </b>
-              명
-              {single && nameOf[single] ? ` · ${nameOf[single]}` : ""}
-            </p>
-          )}
-          <div className="flex gap-1.5">
-            {(
-              [
-                ["mission", "미션 완료", "flag"],
-                ["level", "레벨업", "trending_up"],
-              ] as const
-            ).map(([k, label, icon]) => (
-              <button
-                key={k}
-                onClick={() => setKind(k)}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                  kind === k
-                    ? "bg-[var(--md-sys-color-primary)] text-white"
-                    : "border border-[var(--md-sys-color-outline)] text-black/60"
-                }`}
-              >
-                <Icon name={icon} size={16} />
-                {label}
-              </button>
-            ))}
-          </div>
-          <input
-            value={msg}
-            onChange={(e) => setMsg(e.target.value)}
-            placeholder="문구 (선택, 예: 참 잘했어요!)"
-            className="m3-field !py-2 !text-sm"
-          />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--md-sys-color-scrim)]/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <GlassCard
+        strong
+        className="flex max-h-[88vh] w-full max-w-5xl animate-float-in flex-col overflow-hidden p-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 헤더 */}
+        <div className="flex items-center justify-between border-b border-[var(--md-sys-color-outline-variant)] px-6 py-4">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <Icon
+              name="auto_awesome"
+              size={20}
+              className="text-[var(--md-sys-color-primary)]"
+            />
+            기능 &amp; 효과 마법사
+          </h2>
           <button
-            onClick={send}
-            disabled={uids.length === 0 || sending}
-            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-105 disabled:opacity-40"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
           >
-            <Icon name={sentOk ? "check" : "send"} size={16} />
-            {sentOk
-              ? "전달했어요!"
-              : sending
-                ? "보내는 중…"
-                : `효과 적용해서 보내기${uids.length ? ` (${uids.length}명)` : ""}`}
+            <Icon name="close" size={20} />
           </button>
-        </section>
+        </div>
 
-        <div className="h-px bg-[var(--md-sys-color-outline-variant)]" />
-
-        {/* 활동 잠금 타이머 */}
-        <section className="flex flex-col gap-3">
-          <h3 className="flex items-center gap-1.5 text-sm font-bold">
-            <Icon name="hourglass_top" size={16} className="text-[var(--md-sys-color-primary)]" />
-            활동 잠금 타이머
-            <span className="font-normal text-black/45">· 생각/활동 시간</span>
-          </h3>
-          {lockActive ? (
-            <div className="flex items-center justify-between rounded-xl bg-amber-50 px-4 py-3">
-              <span className="flex items-center gap-2 text-sm font-semibold text-amber-700">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
-                </span>
-                학생 활동 잠금 중
+        {/* 본문: 좌 학생 / 우 컨트롤 */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-[1fr_340px]">
+          {/* 좌측: 학생 선택 */}
+          <div className="flex min-h-0 flex-col border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] sm:border-b-0 sm:border-r">
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                선택{" "}
+                <b className="text-[var(--md-sys-color-primary)]">{uids.length}</b>{" "}
+                / {students.length}
               </span>
-              {remaining != null && (
-                <span className="font-mono text-lg font-black tabular-nums text-amber-700">
-                  {fmt(remaining)}
-                </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setSel(new Set(students.map((s) => s.uid)))}
+                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
+                >
+                  전체
+                </button>
+                <button
+                  onClick={() => setSel(new Set())}
+                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
+                >
+                  해제
+                </button>
+              </div>
+            </div>
+            <div className="max-h-52 min-h-0 flex-1 overflow-y-auto px-3 pb-3 sm:max-h-none">
+              {students.length === 0 ? (
+                <p className="px-2 py-6 text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  학생이 없습니다.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                  {students.map((s) => {
+                    const on = sel.has(s.uid);
+                    const lv = xpLevel(xpMap[s.uid] ?? 0);
+                    return (
+                      <button
+                        key={s.uid}
+                        onClick={() => toggle(s.uid)}
+                        className={`relative flex flex-col items-center gap-1 rounded-2xl border p-2.5 transition ${
+                          on
+                            ? "border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]"
+                            : "border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] hover:border-[var(--md-sys-color-outline)]"
+                        }`}
+                      >
+                        {on && (
+                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--md-sys-color-primary)] text-white">
+                            <Icon name="check" size={11} />
+                          </span>
+                        )}
+                        <Avatar m={s} size={44} />
+                        <span className="line-clamp-1 w-full text-center text-xs font-semibold">
+                          {s.displayName}
+                        </span>
+                        <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                          Lv.{lv.level}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          ) : (
-            <div className="flex items-end gap-2">
-              <label className="flex flex-col gap-1 text-xs text-black/55">
-                분
-                <input
-                  type="number"
-                  min={0}
-                  max={99}
-                  value={min}
-                  onChange={(e) =>
-                    setMin(Math.max(0, Math.min(99, Number(e.target.value) || 0)))
-                  }
-                  className="m3-field w-20 !py-1.5 !text-sm"
+          </div>
+
+          {/* 우측: 컨트롤 */}
+          <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
+            {/* 효과 보내기 */}
+            <section className="flex flex-col gap-3">
+              <h3 className="flex items-center gap-1.5 text-sm font-bold">
+                <Icon
+                  name="celebration"
+                  size={16}
+                  className="text-[var(--md-sys-color-primary)]"
                 />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-black/55">
-                초
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={sec}
-                  onChange={(e) =>
-                    setSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
-                  }
-                  className="m3-field w-20 !py-1.5 !text-sm"
+                효과 보내기
+                <span className="font-normal text-[var(--md-sys-color-on-surface-variant)]">
+                  · 놓친 학생에게 다시
+                </span>
+              </h3>
+              {uids.length === 0 ? (
+                <p className="rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  왼쪽에서 학생을 선택하세요.
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  대상{" "}
+                  <b className="text-[var(--md-sys-color-primary)]">
+                    {uids.length}
+                  </b>
+                  명
+                  {single && nameOf[single] ? ` · ${nameOf[single]}` : ""}
+                </p>
+              )}
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    ["mission", "미션 완료", "flag"],
+                    ["level", "레벨업", "trending_up"],
+                  ] as const
+                ).map(([k, label, icon]) => (
+                  <button
+                    key={k}
+                    onClick={() => setKind(k)}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                      kind === k
+                        ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                        : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface-variant)]"
+                    }`}
+                  >
+                    <Icon name={icon} size={16} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+                placeholder="문구 (선택, 예: 참 잘했어요!)"
+                className="m3-field !py-2 !text-sm"
+              />
+              <button
+                onClick={send}
+                disabled={uids.length === 0 || sending}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
+              >
+                <Icon name={sentOk ? "check" : "send"} size={16} />
+                {sentOk
+                  ? "전달했어요!"
+                  : sending
+                    ? "보내는 중…"
+                    : `효과 적용해서 보내기${uids.length ? ` (${uids.length}명)` : ""}`}
+              </button>
+            </section>
+
+            <div className="h-px bg-[var(--md-sys-color-outline-variant)]" />
+
+            {/* 활동 잠금 타이머 */}
+            <section className="flex flex-col gap-3">
+              <h3 className="flex items-center gap-1.5 text-sm font-bold">
+                <Icon
+                  name="hourglass_top"
+                  size={16}
+                  className="text-[var(--md-sys-color-primary)]"
                 />
-              </label>
-              <p className="pb-2 text-xs text-black/45">동안 활동 멈춤</p>
-            </div>
-          )}
-          <button
-            onClick={toggleLock}
-            disabled={busyLock || (!lockActive && lockMs <= 0)}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-bold transition disabled:opacity-40 ${
-              lockActive
-                ? "bg-rose-500 text-white hover:brightness-105"
-                : "bg-amber-500 text-white hover:brightness-105"
-            }`}
-          >
-            <Icon name={lockActive ? "play_arrow" : "pause"} size={18} />
-            {lockActive ? "잠금 해제 (활동 재개)" : "활동 잠금 시작"}
-          </button>
-          <p className="text-[11px] leading-relaxed text-black/40">
-            잠금을 켜면 학생 화면에 모래시계가 뜨고 모든 활동이 멈춰요. 설정한
-            시간이 끝나거나 잠금을 해제하면 다시 활동할 수 있어요.
-          </p>
-        </section>
-      </div>
-    </ModalShell>
+                활동 잠금 타이머
+                <span className="font-normal text-[var(--md-sys-color-on-surface-variant)]">
+                  · 생각/활동 시간
+                </span>
+              </h3>
+              {lockActive ? (
+                <div className="flex items-center justify-between rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-4 py-3">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--md-sys-color-tertiary)] opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--md-sys-color-tertiary)]" />
+                    </span>
+                    학생 활동 잠금 중
+                  </span>
+                  {remaining != null && (
+                    <span className="font-mono text-lg font-black tabular-nums text-[var(--md-sys-color-on-tertiary-container)]">
+                      {fmt(remaining)}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    분
+                    <input
+                      type="number"
+                      min={0}
+                      max={99}
+                      value={min}
+                      onChange={(e) =>
+                        setMin(Math.max(0, Math.min(99, Number(e.target.value) || 0)))
+                      }
+                      className="m3-field w-20 !py-1.5 !text-sm"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    초
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={sec}
+                      onChange={(e) =>
+                        setSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
+                      }
+                      className="m3-field w-20 !py-1.5 !text-sm"
+                    />
+                  </label>
+                  <p className="pb-2 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    동안 활동 멈춤
+                  </p>
+                </div>
+              )}
+              <button
+                onClick={toggleLock}
+                disabled={busyLock || (!lockActive && lockMs <= 0)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-bold transition disabled:opacity-40 ${
+                  lockActive
+                    ? "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)] hover:brightness-105"
+                    : "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] hover:brightness-105"
+                }`}
+              >
+                <Icon name={lockActive ? "play_arrow" : "pause"} size={18} />
+                {lockActive ? "잠금 해제 (활동 재개)" : "활동 잠금 시작"}
+              </button>
+              <p className="text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                잠금을 켜면 학생 화면에 모래시계가 뜨고 모든 활동이 멈춰요. 설정한
+                시간이 끝나거나 잠금을 해제하면 다시 활동할 수 있어요.
+              </p>
+            </section>
+          </div>
+        </div>
+      </GlassCard>
+    </div>
   );
 }
 

@@ -741,7 +741,7 @@ function ClassMap() {
                       정리됨 <Icon name="check" size={12} />
                     </span>
                   ) : norm ? (
-                    <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+                    <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
                       변경됨
                     </span>
                   ) : null}

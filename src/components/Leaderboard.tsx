@@ -63,7 +63,7 @@ export function Leaderboard({
               <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
                 {s.displayName}
                 {me && (
-                  <span className="rounded-full bg-[var(--md-sys-color-primary)] px-1.5 py-0.5 text-[9px] font-bold text-white">
+                  <span className="rounded-full bg-[var(--md-sys-color-primary)] px-1.5 py-0.5 text-xs font-bold text-white">
                     나
                   </span>
                 )}
@@ -81,7 +81,7 @@ export function Leaderboard({
                 <Icon name="military_tech" size={14} />
                 Lv.{lv.level}
               </p>
-              <p className="text-[11px] text-black/45">
+              <p className="text-xs text-black/45">
                 {s.xp.toLocaleString()} XP
               </p>
             </div>

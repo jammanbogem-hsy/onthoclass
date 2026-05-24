@@ -11,7 +11,7 @@ import {
 import { getDbClient } from "@/lib/firebase";
 
 // ---------- 개별 효과 신호 ----------
-export type EffectKind = "mission" | "level";
+export type EffectKind = "mission" | "level" | "present";
 
 export type EffectSignal = {
   kind: EffectKind;

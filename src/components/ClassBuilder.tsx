@@ -349,7 +349,7 @@ function ItemMenu({
                     "conic-gradient(from 0deg, hsl(0 70% 55%), hsl(60 70% 55%), hsl(120 70% 55%), hsl(180 70% 55%), hsl(240 70% 55%), hsl(300 70% 55%), hsl(360 70% 55%))",
                 }}
               >
-                <div className="absolute inset-5 flex items-center justify-center rounded-full bg-[var(--md-sys-color-surface-container-high)] text-[10px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                <div className="absolute inset-5 flex items-center justify-center rounded-full bg-[var(--md-sys-color-surface-container-high)] text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
                   {(() => {
                     const cur = color ?? "";
                     if (cur.startsWith("hue:"))
@@ -385,7 +385,7 @@ function ItemMenu({
               <button
                 type="button"
                 onClick={() => onColor(null)}
-                className="rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1 text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-highest)]"
+                className="rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1 text-xs font-medium text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-highest)]"
               >
                 기본(색 없음)
               </button>
@@ -657,7 +657,7 @@ function FolderNode({
                 `/project-path/?class=${classId}&project=${project.id}`
               );
             }}
-            className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-primary)] px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-[var(--md-sys-color-primary)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+            className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-primary)] px-2 py-0.5 text-xs font-extrabold tracking-wide text-[var(--md-sys-color-primary)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
             title="과정중심평가 · 학생별 응답 스트림"
           >
             <Icon name="timeline" size={13} />
@@ -952,7 +952,7 @@ function DetailPane({
                       <span className="flex-1 truncate font-medium">
                         {s.studentName}
                       </span>
-                      <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2 py-0.5 text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+                      <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
                         {s.phase === "pre" ? "수업 전" : "수업 후"}
                       </span>
                       <Icon
@@ -1536,7 +1536,7 @@ export function ClassBuilder({
                 </p>
                 <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
                   {favs.length === 0 ? (
-                    <p className="px-2 py-4 text-[11px] leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                    <p className="px-2 py-4 text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
                       폴더·차시의 ⋮ 메뉴에서 &quot;즐겨찾기에
                       추가&quot;하면 여기에 표시됩니다.
                     </p>
