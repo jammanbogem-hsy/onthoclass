@@ -212,6 +212,36 @@ export async function copyLessonToClass(
   return newLessonRef.id;
 }
 
+/**
+ * 두 차시를 '같은 수업' 계보로 연결(학급 간 비교용).
+ * 대상 차시(dest)에 출처 차시(src)의 계보 루트를 부여하고, src 에 루트가 없으면 함께 심는다.
+ * '다른 학급에서 가져오기'로 단일 출처 차시의 활동을 가져왔을 때 호출.
+ */
+export async function linkLessonLineage(
+  destCid: string,
+  destLid: string,
+  srcCid: string,
+  srcLid: string,
+  _user: User
+): Promise<void> {
+  const src = await getLesson(srcCid, srcLid);
+  if (!src) return;
+  const origin = src.originLessonId || src.id;
+  const db = getDbClient();
+  await setDoc(
+    doc(db, "classes", destCid, "lessons", destLid),
+    { originLessonId: origin },
+    { merge: true }
+  );
+  if (!src.originLessonId) {
+    await setDoc(
+      doc(db, "classes", srcCid, "lessons", srcLid),
+      { originLessonId: origin },
+      { merge: true }
+    ).catch(() => {});
+  }
+}
+
 /** 차시 메타 수정 (제목·색상·고정) */
 export async function updateLesson(
   cid: string,

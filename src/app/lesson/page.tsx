@@ -36,6 +36,7 @@ import {
   getOntology,
   cloneQuestionsToPhase,
   copyLessonToClass,
+  linkLessonLineage,
   listLessons,
   listQuestionSubmissions,
   listQuestions,
@@ -1003,9 +1004,15 @@ function TeacherPanel({
           phase={phase}
           uid={user.uid}
           onClose={() => setCrossOpen(false)}
-          onImport={async (sources) => {
+          onImport={async (sources, src) => {
             if (!user || sources.length === 0) return;
             await cloneQuestionsToPhase(cid, lid, sources, phase, user);
+            // 단일 출처 차시면 이 차시를 '같은 수업' 계보로 연결 → 학급 간 비교에 잡힘
+            if (src && src.cid !== cid) {
+              await linkLessonLineage(cid, lid, src.cid, src.lid, user).catch(
+                () => {}
+              );
+            }
             load();
             setCrossOpen(false);
           }}
@@ -4027,7 +4034,11 @@ function CrossImportModal({
   phase: Phase;
   uid: string;
   onClose: () => void;
-  onImport: (sources: Question[]) => Promise<void>;
+  // src: 선택 활동이 모두 한 출처 차시일 때 그 차시(계보 연결용), 아니면 null
+  onImport: (
+    sources: Question[],
+    src: { cid: string; lid: string } | null
+  ) => Promise<void>;
 }) {
   const [classes, setClasses] = useState<SourceClass[] | null>(null);
   const [srcClass, setSrcClass] = useState<SourceClass | null>(null);
@@ -4247,7 +4258,16 @@ function CrossImportModal({
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await onImport([...sel.values()]);
+                  // 선택 활동의 출처 차시(키 = `${lid}:${qid}`)가 하나뿐이면
+                  // 계보 연결 대상으로 전달 → 학급 간 비교에 자동으로 잡힘
+                  const lids = new Set(
+                    [...sel.keys()].map((k) => k.split(":")[0])
+                  );
+                  const src =
+                    srcClass && lids.size === 1
+                      ? { cid: srcClass.cid, lid: [...lids][0] }
+                      : null;
+                  await onImport([...sel.values()], src);
                 } finally {
                   setBusy(false);
                 }

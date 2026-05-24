@@ -85,7 +85,8 @@
       "Bash(git commit -q -m 'fix\\(BlockEditor\\): font 축약→개별 속성으로 fontStyle 충돌 경고 제거 *)",
       "Bash(git commit -q -m 'fix\\(rules\\): 멤버 teacher role 검사를 classOwner→isTeacherAccount로 — 배치 학급생성 실패 수정 *)",
       "Bash(NODE_OPTIONS='' node -e ' *)",
-      "Bash(git commit -q -m 'feat\\(compare\\): 학급 간 비교를 차시 복제 계보\\(originLessonId\\) 기반으로 재설계 *)"
+      "Bash(git commit -q -m 'feat\\(compare\\): 학급 간 비교를 차시 복제 계보\\(originLessonId\\) 기반으로 재설계 *)",
+      "Bash(git commit -q -m 'fix\\(compare\\): '\\\\''다른 학급에서 가져오기'\\\\''도 차시 계보 연결 — 단일 출처 차시면 originLessonId 연결해 학급 간 비교에 자동 포함 *)"
     ]
   }
 }
