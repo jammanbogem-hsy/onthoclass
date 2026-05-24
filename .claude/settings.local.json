@@ -87,7 +87,9 @@
       "Bash(NODE_OPTIONS='' node -e ' *)",
       "Bash(git commit -q -m 'feat\\(compare\\): 학급 간 비교를 차시 복제 계보\\(originLessonId\\) 기반으로 재설계 *)",
       "Bash(git commit -q -m 'fix\\(compare\\): '\\\\''다른 학급에서 가져오기'\\\\''도 차시 계보 연결 — 단일 출처 차시면 originLessonId 연결해 학급 간 비교에 자동 포함 *)",
-      "Bash(git commit -q -m 'feat: 사전/사후·학급별 표 비교 + 학급 비교 학급내 진입 *)"
+      "Bash(git commit -q -m 'feat: 사전/사후·학급별 표 비교 + 학급 비교 학급내 진입 *)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only functions:wikiInsights,hosting)",
+      "Bash(git commit -q -m 'feat\\(insights\\): 차시 통합 지식맵에 스토리텔링 인사이트\\(중첩도+개별 응답 하이라이트\\) *)"
     ]
   }
 }

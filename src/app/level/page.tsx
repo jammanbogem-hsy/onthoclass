@@ -7,6 +7,7 @@ import { GlassCard } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
 import { Icon } from "@/components/Icon";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
+import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { MissionMeta, useLessonMeta } from "@/components/MissionMeta";
 import { getClass, getMyRole } from "@/lib/classes";
 import {
@@ -36,13 +37,8 @@ function LevelInner() {
   const [xpMap, setXpMap] = useState<Record<string, number>>({});
   const [quests, setQuests] = useState<Quest[]>([]);
   const [log, setLog] = useState<XpLogEntry[]>([]);
-  const [celebrate, setCelebrate] = useState<{
-    kind: "level" | "mission";
-    title: string;
-    subtitle?: string;
-    kicker?: string;
-    icon?: string;
-  } | null>(null);
+  const { current: celebrate, enqueue: setCelebrate, done: celebrateDone } =
+    useCelebrateQueue();
   const lastLevelRef = useRef<number | null>(null);
   const lessonMeta = useLessonMeta(cid);
   const nameRef = useRef("");
@@ -426,6 +422,7 @@ function LevelInner() {
 
       {celebrate && (
         <MissionCelebrate
+          key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
           title={celebrate.title}
           subtitle={celebrate.subtitle}
           kicker={celebrate.kind === "level" ? "LEVEL UP" : "MISSION CLEAR"}
@@ -434,7 +431,7 @@ function LevelInner() {
               ? "/Confetti.json"
               : "/mission-success.json"
           }
-          onDone={() => setCelebrate(null)}
+          onDone={celebrateDone}
         />
       )}
     </>

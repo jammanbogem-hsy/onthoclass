@@ -452,6 +452,7 @@ export interface WikiInsights {
   followUps: string[];
   misconceptions: string[];
   gaps: string[];
+  highlights: string[]; // 개별 응답에서 주목할 관찰(샘플이 있을 때)
 }
 
 const WIKI_SCHEMA = {
@@ -489,17 +490,31 @@ const WIKI_SCHEMA = {
       items: { type: "string" },
       description: "다뤄지지 않았거나 빈약한 핵심 개념",
     },
+    highlights: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "입력에 대표 응답 샘플(sampleResponses)이 있을 때, 개별 응답에서 주목할 관찰(특이한 통찰·오개념·유난히 풍부한 답변)을 학생 맥락과 함께. 샘플이 없으면 빈 배열.",
+    },
   },
-  required: ["narrative", "concepts", "followUps", "misconceptions", "gaps"],
+  required: [
+    "narrative",
+    "concepts",
+    "followUps",
+    "misconceptions",
+    "gaps",
+    "highlights",
+  ],
 } as const;
 
-const WIKI_SYSTEM = `당신은 교사를 돕는 학습 분석가입니다. 학생 응답에서 추출된 지식 그래프(개념·관계·감정·언급 학생 수)와 전/후 변화 요약을 받습니다. 원문은 없습니다.
+const WIKI_SYSTEM = `당신은 교사를 돕는 학습 분석가입니다. 학생 응답에서 추출된 지식 그래프(개념·관계·감정·언급 학생 수=sourceCount)와 전/후 변화 요약, 그리고 일부 대표 응답 샘플(sampleResponses, 있을 수도 없을 수도)을 받습니다.
 규칙:
-- narrative: 학급의 현재 이해 상태를 근거에 기반해 한국어로 종합합니다(과장 금지).
-- concepts: 비중 큰 개념 위주로 id와 함께 짧은 해설.
+- narrative: 학급의 현재 이해 상태를 **스토리텔링형**으로 종합합니다(한국어, 과장 금지). 특히 **중첩도(언급 학생 수)** 를 해석에 녹입니다 — 많은 학생이 공유한 '핵심 공통 개념'과 소수만 언급한 '주변·개별 개념'을 구분해 서술하고, 허브(연결이 많은) 개념을 짚습니다. studentCount 가 있으면 'N명 중 M명' 식으로 표현합니다.
+- concepts: 비중 큰(언급수 높은) 개념 위주로 id와 함께 짧은 해설.
 - followUps: 이해를 심화/점검할 다음 질문을 구체적으로 제안.
 - misconceptions: 부정 정서가 지속되거나 잘못 연결된 개념 등 약점.
 - gaps: 핵심인데 약하게만 다뤄진 개념.
+- highlights: sampleResponses 가 있으면 개별 응답에서 주목할 관찰(특이한 통찰·오개념·유난히 풍부하거나 빈약한 답변)을 학생 맥락과 함께 2~5개. 샘플이 없으면 빈 배열.
 - 입력 데이터에 없는 사실을 지어내지 않습니다.`;
 
 export const wikiInsights = onCall(

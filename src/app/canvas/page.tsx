@@ -14,6 +14,7 @@ import { GlassCard } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
 import { Icon } from "@/components/Icon";
 import { useDialog } from "@/components/Dialog";
+import { CanvasIntro } from "@/components/CanvasIntro";
 import { getMyRole, watchMembers, type Role } from "@/lib/classes";
 import { listGroups, type Group } from "@/lib/groups";
 import {
@@ -241,6 +242,17 @@ function CanvasInner() {
   } | null>(null);
   const [connectMode, setConnectMode] = useState(false);
   const [pendingFrom, setPendingFrom] = useState<string | null>(null);
+
+  // 캔버스 진입 인트로(Paint Brush 모션) — 멤버 확인 후 1회 노출
+  const [showIntro, setShowIntro] = useState(false);
+  const introShownRef = useRef(false);
+  useEffect(() => {
+    if (introShownRef.current) return;
+    if (!loading && (role === "teacher" || role === "student")) {
+      introShownRef.current = true;
+      setShowIntro(true);
+    }
+  }, [loading, role]);
 
   // 변경 사항 디바운스 저장
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -727,6 +739,12 @@ function CanvasInner() {
 
   return (
     <>
+      {showIntro && (
+        <CanvasIntro
+          name={profile?.name || user?.displayName || undefined}
+          onDone={() => setShowIntro(false)}
+        />
+      )}
       <TopBar />
       <div className="flex h-[calc(100vh-80px)] flex-col">
         {/* 툴바 */}

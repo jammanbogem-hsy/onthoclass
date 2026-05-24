@@ -15,6 +15,7 @@ import {
 import { studentOpenCount } from "@/lib/lessons";
 import { watchXp, watchQuests, xpLevel, type Quest } from "@/lib/xp";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
+import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 
 // M3 tonal container 색 (장식 그라데이션 대신 평면 톤)
 const SUBJECT_GRADIENTS = [
@@ -291,13 +292,8 @@ function StudentProgress({
   const [data, setData] = useState<
     Record<string, { xp: number; quests: Quest[] }> | null
   >(null);
-  const [celebrate, setCelebrate] = useState<{
-    kind: "level" | "mission";
-    title: string;
-    subtitle?: string;
-    kicker?: string;
-    icon?: string;
-  } | null>(null);
+  const { current: celebrate, enqueue: setCelebrate, done: celebrateDone } =
+    useCelebrateQueue();
 
   useEffect(() => {
     // 학급별 경험치/미션 실시간 구독 (교사 변경 즉시 반영 + 레벨업 축하)
@@ -459,6 +455,7 @@ function StudentProgress({
       </div>
       {celebrate && (
         <MissionCelebrate
+          key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
           title={celebrate.title}
           subtitle={celebrate.subtitle}
           kicker={celebrate.kind === "level" ? "LEVEL UP" : "MISSION CLEAR"}
@@ -467,7 +464,7 @@ function StudentProgress({
               ? "/Confetti.json"
               : "/mission-success.json"
           }
-          onDone={() => setCelebrate(null)}
+          onDone={celebrateDone}
         />
       )}
     </GlassCard>

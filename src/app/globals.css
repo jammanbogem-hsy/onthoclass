@@ -55,6 +55,77 @@ body {
   color: var(--md-sys-color-on-primary-container);
 }
 
+/* ---------- 네이티브 폼 요소 → M3 ----------
+   체크박스/셀렉트를 OS 기본 스타일에서 M3 룩으로 전환.
+   @layer base 에 두어 Tailwind 유틸리티(크기 등)가 우선하게 함. */
+@layer base {
+  /* M3 Checkbox */
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: 2px;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100% 100%;
+    cursor: pointer;
+    transition: background-color var(--md-sys-motion-duration-short2),
+      border-color var(--md-sys-motion-duration-short2);
+  }
+  input[type="checkbox"]:hover:not(:disabled) {
+    border-color: var(--md-sys-color-on-surface);
+  }
+  input[type="checkbox"]:checked {
+    background-color: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E");
+  }
+  input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+  }
+  input[type="checkbox"]:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+
+  /* M3 Select (outlined) — 커스텀 화살표 */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    padding: 10px 40px 10px 14px;
+    font: 400 14px/1.4 var(--md-sys-font-plain);
+    letter-spacing: 0.25px;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 20px;
+    transition: border-color var(--md-sys-motion-duration-short2),
+      box-shadow var(--md-sys-motion-duration-short2);
+  }
+  select:hover:not(:disabled) {
+    border-color: var(--md-sys-color-on-surface);
+  }
+  select:focus-visible {
+    outline: none;
+    border-color: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+  }
+  select:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+}
+
 /* ---------- 레거시 클래스 → M3 ---------- */
 @layer components {
   /* .glass / .glass-strong : 유리 카드 → M3 surface 카드 */
@@ -144,6 +215,14 @@ body {
   .m3-field:focus {
     border: 2px solid var(--md-sys-color-primary);
     padding: 13px 15px;
+  }
+  /* m3-field 가 붙은 select: background 단축속성이 화살표를 지우므로 복구 */
+  select.m3-field {
+    padding-right: 40px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 20px;
   }
 
   /* Material Symbols 아이콘 헬퍼 */

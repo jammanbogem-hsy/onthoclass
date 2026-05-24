@@ -36,8 +36,10 @@ import {
   getOntology,
   cloneQuestionsToPhase,
   copyLessonToClass,
+  getClassInsights,
   linkLessonLineage,
   listLessons,
+  saveClassInsights,
   listQuestionSubmissions,
   listQuestions,
   reorderQuestions,
@@ -62,7 +64,12 @@ import { listSourceClasses, type SourceClass } from "@/lib/teams";
 import { listProjects, type Project } from "@/lib/projects";
 import { buildPrePostOverlay, filterOverlayByMode } from "@/lib/compare";
 import { PREPOST_COLOR } from "@/lib/palette";
-import { canonicalizeOntology, extractOntology } from "@/lib/ai";
+import {
+  canonicalizeOntology,
+  extractOntology,
+  wikiInsights,
+  type WikiInsights,
+} from "@/lib/ai";
 import {
   applyLabelClusters,
   diffPrePost,
@@ -2458,6 +2465,74 @@ function MergedMapSection({
     }
   }
 
+  // --- 스토리텔링 인사이트 (중첩도 + 대표 응답) ---
+  const insScope = `wiki:lesson:${lid}:${phase}`;
+  const [insights, setInsights] = useState<
+    (WikiInsights & { inputHash?: string }) | null
+  >(null);
+  const [insGen, setInsGen] = useState<"idle" | "running" | "error">("idle");
+  const [insMsg, setInsMsg] = useState("");
+  const insFresh = !!insights && !!labelHash && insights.inputHash === labelHash;
+  useEffect(() => {
+    setInsights(null);
+    getClassInsights<WikiInsights>(cid, insScope)
+      .then(setInsights)
+      .catch(() => {});
+  }, [cid, insScope]);
+
+  async function genInsights() {
+    if (display.nodes.length === 0) return;
+    setInsGen("running");
+    setInsMsg("");
+    try {
+      // 학생 수(중첩 분모) + 대표 응답 샘플(전수 아님, 비용·프라이버시)
+      const uidSet = new Set<string>();
+      const samples: { student: string; text: string }[] = [];
+      for (const q of questions) {
+        for (const s of data.subsByQ[q.id] ?? []) {
+          if (!s.content.trim()) continue;
+          uidSet.add(s.uid);
+          if (samples.length < 8)
+            samples.push({
+              student: s.studentName,
+              text: blocksToPlainText(s.content).slice(0, 300),
+            });
+        }
+      }
+      const payload = {
+        phase,
+        studentCount: uidSet.size,
+        concepts: display.nodes
+          .slice()
+          .sort(
+            (a, b) =>
+              (b.sourceCount ?? b.sources?.length ?? 0) -
+              (a.sourceCount ?? a.sources?.length ?? 0)
+          )
+          .slice(0, 40)
+          .map((n) => ({
+            id: n.id,
+            label: n.label,
+            type: n.type,
+            sentiment: n.sentiment,
+            sourceCount: n.sourceCount ?? n.sources?.length ?? 0,
+          })),
+        relations: display.edges
+          .slice(0, 40)
+          .map((e) => ({ source: e.source, target: e.target, relation: e.relation })),
+        sampleResponses: samples,
+      };
+      const res = await wikiInsights({ classId: cid, payload });
+      const saved = { ...res, inputHash: labelHash };
+      await saveClassInsights(cid, insScope, saved);
+      setInsights(saved);
+      setInsGen("idle");
+    } catch (e) {
+      setInsGen("error");
+      setInsMsg(e instanceof Error ? e.message : "생성 중 오류가 발생했습니다.");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <GlassCard className="p-6">
@@ -2546,6 +2621,86 @@ function MergedMapSection({
           </p>
         )}
       </GlassCard>
+
+      {/* 스토리텔링 인사이트 */}
+      {display.nodes.length > 0 && (
+        <GlassCard className="p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-sm font-semibold">
+              <Icon
+                name="auto_stories"
+                size={16}
+                className="text-[var(--md-sys-color-primary)]"
+              />
+              인사이트 (중첩도·개별 응답)
+              {insFresh && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  최신 ✓
+                </span>
+              )}
+            </p>
+            <GlassButton
+              variant="accent"
+              className="!px-4 !py-2 text-xs"
+              onClick={genInsights}
+              disabled={insGen === "running" || insFresh}
+            >
+              {insGen === "running"
+                ? "생성 중…"
+                : insights
+                  ? "다시 생성"
+                  : "인사이트 생성"}
+            </GlassButton>
+          </div>
+          {insGen === "error" && (
+            <p className="mt-2 text-xs text-red-500">{insMsg}</p>
+          )}
+          {insights ? (
+            <div className="mt-3 flex flex-col gap-4">
+              <p className="text-sm leading-relaxed text-black/75 dark:text-white/75">
+                {insights.narrative}
+              </p>
+              {(insights.highlights?.length ?? 0) > 0 && (
+                <div>
+                  <p className="mb-1 flex items-center gap-1 text-xs font-semibold text-black/55">
+                    <Icon name="person" size={13} />
+                    개별 응답에서
+                  </p>
+                  <ul className="list-disc pl-5 text-sm text-black/70 dark:text-white/70">
+                    {insights.highlights!.map((h, i) => (
+                      <li key={i}>{h}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {[
+                ["다음 수업 질문 제안", insights.followUps],
+                ["관찰된 오개념·약점", insights.misconceptions],
+                ["보강이 필요한 개념", insights.gaps],
+              ].map(([title, arr]) =>
+                (arr as string[])?.length ? (
+                  <div key={title as string}>
+                    <p className="mb-1 text-xs font-semibold text-black/55">
+                      {title as string}
+                    </p>
+                    <ul className="list-disc pl-5 text-sm text-black/70 dark:text-white/70">
+                      {(arr as string[]).map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-black/45">
+              “인사이트 생성”으로 어떤 개념이 널리 공유됐는지(중첩도)와 개별
+              응답의 특이점을 스토리텔링으로 받아보세요. (라벨·언급수와 대표 응답
+              샘플만 전송 — 저비용)
+            </p>
+          )}
+        </GlassCard>
+      )}
     </div>
   );
 }

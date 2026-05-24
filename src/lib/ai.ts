@@ -63,6 +63,7 @@ export type WikiInsights = {
   followUps: string[];
   misconceptions: string[];
   gaps: string[];
+  highlights?: string[];
 };
 
 /** 머지된 온톨로지 JSON(원문 아님)으로 종합 서사 + 형성평가 lint 생성 */
