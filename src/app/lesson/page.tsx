@@ -35,6 +35,7 @@ import {
   getMyQuestionSubmission,
   getOntology,
   cloneQuestionsToPhase,
+  copyLessonToClass,
   listLessons,
   listQuestionSubmissions,
   listQuestions,
@@ -162,7 +163,10 @@ function LessonDetail() {
                 {lesson.date || "날짜 미지정"} · {isTeacher ? "교사" : "학생"}
               </p>
             </div>
-            <ShareButton />
+            <div className="flex items-center gap-2">
+              {isTeacher && <CopyLessonButton cid={cid} lid={lid} />}
+              <ShareButton />
+            </div>
           </div>
 
           <div className="mt-5 flex rounded-full bg-black/5 p-0.5 dark:bg-white/10">
@@ -220,6 +224,119 @@ function ShareButton() {
       <Icon name={copied ? "check" : "link"} size={16} />
       {copied ? "링크 복사됨" : "학생 공유 링크"}
     </button>
+  );
+}
+
+/* ---------- 차시를 다른 학급으로 복제 (학급 간 비교용 계보 생성) ---------- */
+function CopyLessonButton({ cid, lid }: { cid: string; lid: string }) {
+  const { user } = useAuth();
+  const dialog = useDialog();
+  const [open, setOpen] = useState(false);
+  const [classes, setClasses] = useState<SourceClass[] | null>(null);
+  const [busy, setBusy] = useState("");
+
+  useEffect(() => {
+    if (!open || !user) return;
+    // 차시 생성 권한이 있는 '내 학급'만 복제 대상으로(팀원 학급엔 쓰기 불가)
+    listSourceClasses(user.uid)
+      .then((cs) => setClasses(cs.filter((c) => c.mine && c.cid !== cid)))
+      .catch(() => setClasses([]));
+  }, [open, user, cid]);
+
+  async function copyTo(c: SourceClass) {
+    if (!user || busy) return;
+    setBusy(c.cid);
+    try {
+      await copyLessonToClass(cid, lid, c.cid, user);
+      setOpen(false);
+      await dialog.confirm({
+        title: "복제 완료",
+        body: `“${c.name}” 학급으로 이 차시(활동 포함)를 복제했습니다. 학급 간 비교에서 ‘같은 수업’으로 묶여 비교됩니다. (학생 응답은 복제되지 않습니다)`,
+        okLabel: "확인",
+      });
+    } catch (e) {
+      await dialog.confirm({
+        title: "복제 실패",
+        body: e instanceof Error ? e.message : "복제 중 오류가 발생했습니다.",
+        okLabel: "확인",
+      });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2 text-xs font-semibold text-[var(--md-sys-color-primary)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+        title="이 차시를 내 다른 학급·팀원 학급으로 복제 (학급 간 비교용)"
+      >
+        <Icon name="content_copy" size={15} />
+        다른 학급으로 복제
+      </button>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <GlassCard
+            strong
+            className="flex max-h-[80vh] w-full max-w-sm flex-col p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold">다른 학급으로 복제</h2>
+              <button
+                onClick={() => setOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+              >
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-black/55">
+              활동(질문·문항·보드 등)까지 복제됩니다. 학생 응답·지식맵은 복제되지
+              않으며, 두 학급은 ‘같은 수업’으로 묶여 비교됩니다.
+            </p>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {classes === null ? (
+                <p className="py-8 text-center text-sm text-black/40">
+                  불러오는 중…
+                </p>
+              ) : classes.length === 0 ? (
+                <p className="py-8 text-center text-sm text-black/40">
+                  복제할 다른 학급이 없습니다.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {classes.map((c) => (
+                    <li key={c.cid}>
+                      <button
+                        disabled={!!busy}
+                        onClick={() => copyTo(c)}
+                        className="flex w-full items-center gap-2 rounded-xl border border-[var(--md-sys-color-outline-variant)] px-3 py-2.5 text-left text-sm hover:bg-black/5 disabled:opacity-50"
+                      >
+                        <Icon
+                          name={c.mine ? "school" : "groups"}
+                          size={16}
+                          className="text-[var(--md-sys-color-primary)]"
+                        />
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {c.name}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-black/45">
+                          {busy === c.cid ? "복제 중…" : c.teacher}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </GlassCard>
+        </div>
+      )}
+    </>
   );
 }
 

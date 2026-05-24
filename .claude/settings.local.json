@@ -82,7 +82,10 @@
       "Bash(awk 'NR>=2890 && NR<=2990 && \\(/revealOk|answerIndex|정답|isCorrect|opt ===|correct/\\)' src/app/lesson/page.tsx)",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only firestore:rules)",
       "Bash(git commit -q -m 'fix\\(teamLinks\\): 비존재 문서 get 허용 — 팀 신청 전 존재확인 권한거부로 신청 실패하던 버그 수정 *)",
-      "Bash(git commit -q -m 'fix\\(BlockEditor\\): font 축약→개별 속성으로 fontStyle 충돌 경고 제거 *)"
+      "Bash(git commit -q -m 'fix\\(BlockEditor\\): font 축약→개별 속성으로 fontStyle 충돌 경고 제거 *)",
+      "Bash(git commit -q -m 'fix\\(rules\\): 멤버 teacher role 검사를 classOwner→isTeacherAccount로 — 배치 학급생성 실패 수정 *)",
+      "Bash(NODE_OPTIONS='' node -e ' *)",
+      "Bash(git commit -q -m 'feat\\(compare\\): 학급 간 비교를 차시 복제 계보\\(originLessonId\\) 기반으로 재설계 *)"
     ]
   }
 }

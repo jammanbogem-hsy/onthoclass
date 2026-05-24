@@ -8,37 +8,38 @@ import { TopBar } from "@/components/TopBar";
 import { Icon } from "@/components/Icon";
 import { GraphView } from "@/components/GraphView";
 import { listSourceClasses, type SourceClass } from "@/lib/teams";
-import { listGroups, type Group } from "@/lib/groups";
 import {
   getOntology,
   listLessons,
   listQuestions,
-  type Lesson,
   type Ontology,
   type Phase,
 } from "@/lib/lessons";
-import { filterOntologyByGroup, mergeOntologies } from "@/lib/ontology";
+import { mergeOntologies } from "@/lib/ontology";
 import { CATEGORY_PALETTE, GROUP_COMMON_COLOR } from "@/lib/palette";
 
 const PALETTE = CATEGORY_PALETTE;
 const COMMON = GROUP_COMMON_COLOR;
 
-type Item = {
-  key: string; // cid__lid__(group|all)
+// 한 학급의 한 차시(같은 수업)
+type Member = {
   cid: string;
-  lid: string;
   className: string;
-  lessonTitle: string;
   teacher: string;
-  groupName?: string; // 모둠 한정이면 모둠 이름
-  memberUids?: string[]; // 모둠 한정이면 구성원 uid
+  lid: string;
+  lessonTitle: string;
+};
+// 같은 수업(복제 계보) 묶음
+type LessonGroup = {
+  key: string; // originLessonId(또는 루트 lid)
+  title: string;
+  members: Member[];
 };
 
 async function loadLessonOntology(
   cid: string,
   lid: string,
-  phase: Phase,
-  memberUids?: string[]
+  phase: Phase
 ): Promise<Ontology> {
   const qs = await listQuestions(cid, lid).catch(() => []);
   const leaves: Ontology[] = [];
@@ -48,27 +49,17 @@ async function loadLessonOntology(
     const leaf = await getOntology(cid, lid, `q:${q.id}`).catch(() => null);
     if (leaf) leaves.push(leaf);
   }
-  const merged = mergeOntologies(leaves);
-  // 모둠 한정이면 해당 구성원이 기여한 부분만 추출
-  return memberUids && memberUids.length
-    ? filterOntologyByGroup(merged, memberUids)
-    : merged;
+  return mergeOntologies(leaves);
 }
 
 function CompareInner() {
   const { user, loading, profile, profileLoading } = useAuth();
   const router = useRouter();
 
-  const [sources, setSources] = useState<SourceClass[] | null>(null);
+  const [groups, setGroups] = useState<LessonGroup[] | null>(null);
+  const [selKey, setSelKey] = useState("");
   const [phase, setPhase] = useState<Phase>("pre");
-  const [items, setItems] = useState<Item[]>([]);
   const [ontos, setOntos] = useState<Record<string, Ontology>>({});
-
-  // 추가 피커
-  const [pickCid, setPickCid] = useState("");
-  const [pickLessons, setPickLessons] = useState<Lesson[] | null>(null);
-  const [pickGroups, setPickGroups] = useState<Group[]>([]);
-  const [pickGroup, setPickGroup] = useState(""); // "" = 전체
 
   const isTeacher = profile?.role === "teacher";
 
@@ -76,36 +67,74 @@ function CompareInner() {
     if (!loading && !user) router.replace("/");
   }, [user, loading, router]);
 
+  // 내 학급·팀원 학급의 차시를 모아 '같은 수업(복제 계보)' 묶음 구성
   useEffect(() => {
     if (!user) return;
-    listSourceClasses(user.uid).then(setSources).catch(() => setSources([]));
+    let alive = true;
+    (async () => {
+      const sources = await listSourceClasses(user.uid).catch(
+        () => [] as SourceClass[]
+      );
+      const map = new Map<string, LessonGroup>();
+      await Promise.all(
+        sources.map(async (c) => {
+          const lessons = await listLessons(c.cid).catch(() => []);
+          for (const l of lessons) {
+            const gk = l.originLessonId || l.id; // 계보 루트
+            const isRoot = !l.originLessonId; // 루트면 제목 우선 사용
+            const g = map.get(gk) ?? { key: gk, title: l.title, members: [] };
+            if (isRoot || !g.title) g.title = l.title || g.title;
+            g.members.push({
+              cid: c.cid,
+              className: c.name,
+              teacher: c.teacher,
+              lid: l.id,
+              lessonTitle: l.title || "(제목 없음)",
+            });
+            map.set(gk, g);
+          }
+        })
+      );
+      // 2개 이상 학급에 걸친 묶음만 비교 대상
+      const comparable = [...map.values()].filter(
+        (g) => new Set(g.members.map((m) => m.cid)).size >= 2
+      );
+      if (!alive) return;
+      setGroups(comparable);
+      setSelKey((cur) =>
+        cur && comparable.some((g) => g.key === cur)
+          ? cur
+          : comparable[0]?.key ?? ""
+      );
+    })();
+    return () => {
+      alive = false;
+    };
   }, [user]);
 
-  // 선택 학급의 차시·모둠 로드
-  useEffect(() => {
-    setPickGroup("");
-    if (!pickCid) {
-      setPickLessons(null);
-      setPickGroups([]);
-      return;
-    }
-    listLessons(pickCid)
-      .then((ls) => setPickLessons(ls.sort((a, b) => a.order - b.order)))
-      .catch(() => setPickLessons([]));
-    listGroups(pickCid).then(setPickGroups).catch(() => setPickGroups([]));
-  }, [pickCid]);
+  const selGroup = useMemo(
+    () => groups?.find((g) => g.key === selKey) ?? null,
+    [groups, selKey]
+  );
 
-  // 비교 항목 / phase 변경 → ontology 로드
+  // 선택 묶음의 각 학급 차시 ontology 로드 (학급당 1개; 같은 학급 중복 차시는 첫 번째)
+  const items = useMemo<Member[]>(() => {
+    if (!selGroup) return [];
+    const seen = new Set<string>();
+    return selGroup.members.filter((m) =>
+      seen.has(m.cid) ? false : (seen.add(m.cid), true)
+    );
+  }, [selGroup]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
       const next: Record<string, Ontology> = {};
-      for (const it of items) {
-        next[it.key] = await loadLessonOntology(
-          it.cid,
-          it.lid,
-          phase,
-          it.memberUids
+      for (const m of items) {
+        next[`${m.cid}__${m.lid}`] = await loadLessonOntology(
+          m.cid,
+          m.lid,
+          phase
         );
       }
       if (alive) setOntos(next);
@@ -115,28 +144,7 @@ function CompareInner() {
     };
   }, [items, phase]);
 
-  function addItem(l: Lesson) {
-    const c = sources?.find((s) => s.cid === pickCid);
-    if (!c) return;
-    const g = pickGroup ? pickGroups.find((x) => x.id === pickGroup) : null;
-    const key = `${c.cid}__${l.id}__${g?.id ?? "all"}`;
-    if (items.some((it) => it.key === key)) return;
-    setItems((prev) => [
-      ...prev,
-      {
-        key,
-        cid: c.cid,
-        lid: l.id,
-        className: c.name,
-        lessonTitle: l.title || "(제목 없음)",
-        teacher: c.teacher,
-        groupName: g?.name,
-        memberUids: g?.memberUids,
-      },
-    ]);
-  }
-
-  // 오버레이 + 색
+  // 오버레이 + 학급별 색
   const { overlay, colorByKey, perItemCount, commonCount } = useMemo(() => {
     const keyOf = (n: { id: string; label: string }) =>
       (n.label || n.id).trim().toLowerCase() || n.id;
@@ -145,8 +153,8 @@ function CompareInner() {
       { node: Ontology["nodes"][number]; inItems: Set<number> }
     >();
     const edgeMap = new Map<string, Ontology["edges"][number]>();
-    items.forEach((it, idx) => {
-      const ont = ontos[it.key];
+    items.forEach((m, idx) => {
+      const ont = ontos[`${m.cid}__${m.lid}`];
       if (!ont) return;
       const idToKey = new Map<string, string>();
       ont.nodes.forEach((n) => {
@@ -223,63 +231,37 @@ function CompareInner() {
           학급 간 지식맵 비교
         </h1>
         <p className="mt-1 text-sm text-black/55">
-          내 학급·팀원 학급의 같은 수업 지식맵을 학급별 색으로 겹쳐 비교합니다.
+          같은 수업(차시를 다른 학급으로 복제한 묶음)을 학급별 색으로 겹쳐
+          비교합니다. 비교하려면 차시 화면의 “다른 학급으로 복제”로 같은 수업을
+          여러 학급에 만들어 두세요.
         </p>
 
         {/* 컨트롤 */}
         <GlassCard className="mt-5 flex flex-wrap items-end gap-3 p-4">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-black/55">학급</span>
+            <span className="text-xs font-semibold text-black/55">
+              같은 수업 (복제 묶음)
+            </span>
             <select
-              value={pickCid}
-              onChange={(e) => setPickCid(e.target.value)}
+              value={selKey}
+              onChange={(e) => setSelKey(e.target.value)}
               className="m3-field !w-auto !py-2 !text-sm"
+              disabled={!groups || groups.length === 0}
             >
-              <option value="">학급 선택…</option>
-              {(sources ?? []).map((c) => (
-                <option key={c.cid} value={c.cid}>
-                  {c.name} · {c.teacher}
-                </option>
-              ))}
+              {groups === null ? (
+                <option value="">불러오는 중…</option>
+              ) : groups.length === 0 ? (
+                <option value="">비교 가능한 수업 없음</option>
+              ) : (
+                groups.map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {g.title || "(제목 없음)"} ·{" "}
+                    {new Set(g.members.map((m) => m.cid)).size}개 학급
+                  </option>
+                ))
+              )}
             </select>
           </div>
-          {pickCid && pickGroups.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-black/55">모둠</span>
-              <select
-                value={pickGroup}
-                onChange={(e) => setPickGroup(e.target.value)}
-                className="m3-field !w-auto !py-2 !text-sm"
-              >
-                <option value="">전체 (모둠 무관)</option>
-                {pickGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {pickCid && (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-black/55">차시</span>
-              <select
-                value=""
-                onChange={(e) => {
-                  const l = pickLessons?.find((x) => x.id === e.target.value);
-                  if (l) addItem(l);
-                }}
-                className="m3-field !w-auto !py-2 !text-sm"
-              >
-                <option value="">차시 추가…</option>
-                {(pickLessons ?? []).map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.title || "(제목 없음)"}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="ml-auto flex rounded-full bg-black/5 p-0.5 dark:bg-white/10">
             {(["pre", "post"] as const).map((p) => (
               <button
@@ -297,36 +279,23 @@ function CompareInner() {
           </div>
         </GlassCard>
 
-        {/* 비교 항목(범례) */}
+        {/* 범례(학급별) */}
         {items.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {items.map((it, idx) => (
+            {items.map((m, idx) => (
               <span
-                key={it.key}
+                key={m.cid}
                 className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-1.5 text-xs"
               >
                 <span
                   className="h-3 w-3 rounded-full"
                   style={{ background: PALETTE[idx % PALETTE.length] }}
                 />
-                <span className="font-semibold">{it.className}</span>
-                {it.groupName && (
-                  <span className="rounded-full bg-black/10 px-1.5 text-[10px] font-semibold">
-                    {it.groupName}
-                  </span>
-                )}
-                <span className="text-black/45">· {it.lessonTitle}</span>
+                <span className="font-semibold">{m.className}</span>
+                <span className="text-black/45">· {m.teacher}</span>
                 <span className="font-bold text-black/55">
                   {perItemCount[idx] ?? 0}
                 </span>
-                <button
-                  onClick={() =>
-                    setItems((prev) => prev.filter((x) => x.key !== it.key))
-                  }
-                  className="ml-0.5 text-black/35 hover:text-rose-500"
-                >
-                  <Icon name="close" size={13} />
-                </button>
               </span>
             ))}
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-1.5 text-xs">
@@ -339,13 +308,19 @@ function CompareInner() {
 
         {/* 그래프 */}
         <GlassCard className="mt-4 p-2">
-          {items.length < 2 ? (
+          {groups && groups.length === 0 ? (
             <p className="py-16 text-center text-sm text-black/40">
-              비교할 학급의 차시를 2개 이상 추가하세요.
+              비교 가능한 수업이 없습니다. 차시 화면의 “다른 학급으로 복제”로
+              같은 수업을 다른 학급에 만들면 여기서 학급별로 겹쳐 볼 수 있어요.
+            </p>
+          ) : items.length < 2 ? (
+            <p className="py-16 text-center text-sm text-black/40">
+              이 수업을 가진 학급이 2개 이상이어야 비교됩니다.
             </p>
           ) : overlay.nodes.length === 0 ? (
             <p className="py-16 text-center text-sm text-black/40">
-              표시할 지식맵이 없습니다. 각 차시를 먼저 분석했는지 확인하세요.
+              표시할 지식맵이 없습니다. 각 학급에서 이 차시를 먼저 “분석”했는지
+              확인하세요.
             </p>
           ) : (
             <GraphView

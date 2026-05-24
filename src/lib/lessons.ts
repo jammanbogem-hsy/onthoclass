@@ -35,6 +35,9 @@ export type Lesson = {
   color: string | null; // 색상 라벨 키
   icon: string | null; // Material Symbols 아이콘 이름
   pinned: boolean; // 상단 고정
+  // 학급 간 비교용 계보: 다른 학급으로 복제한 차시는 원본(루트) 차시 id를 공유한다.
+  // 없으면 자기 자신이 루트. 같은 originLessonId 끼리 '같은 수업'으로 묶임.
+  originLessonId?: string;
   createdBy: string;
   createdAt: number | null;
 };
@@ -138,6 +141,75 @@ export async function createLesson(
     createdAt: serverTimestamp(),
   });
   return ref.id;
+}
+
+/**
+ * 차시를 다른 학급으로 복제(활동 전부 포함, 학생 제출물 제외).
+ * 복제본은 원본과 같은 `originLessonId`(계보)를 공유 → 학급 간 비교에서 '같은 수업'으로 묶임.
+ * 반환: 대상 학급의 새 차시 id.
+ */
+export async function copyLessonToClass(
+  srcCid: string,
+  srcLid: string,
+  destCid: string,
+  user: User
+): Promise<string> {
+  const src = await getLesson(srcCid, srcLid);
+  if (!src) throw new Error("원본 차시를 찾을 수 없습니다.");
+  const origin = src.originLessonId || src.id; // 루트 차시 id
+  const db = getDbClient();
+  const newLessonRef = doc(lessonsCol(destCid));
+  const batch = writeBatch(db);
+  batch.set(newLessonRef, {
+    title: src.title,
+    date: src.date,
+    preQuestion: "",
+    postQuestion: "",
+    projectId: null, // 다른 학급에선 미분류로
+    parentLessonId: null,
+    order: Date.now(),
+    color: src.color ?? null,
+    icon: src.icon ?? null,
+    pinned: false,
+    originLessonId: origin,
+    createdBy: user.uid,
+    createdAt: serverTimestamp(),
+  });
+  // 활동(질문/문항/링크/보드/성찰) 복제 — 제출물·온톨로지는 복제하지 않음
+  const qs = await listQuestions(srcCid, srcLid).catch(() => [] as Question[]);
+  for (const q of qs) {
+    const qref = doc(
+      collection(db, "classes", destCid, "lessons", newLessonRef.id, "questions")
+    );
+    batch.set(qref, {
+      phase: q.phase,
+      kind: q.kind,
+      title: q.title,
+      text: q.text,
+      links: q.links,
+      options: q.options,
+      answerIndex: q.answerIndex,
+      audGroupIds: [], // 대상(모둠/학생)은 학급마다 다르므로 전체로 초기화
+      audUids: [],
+      order: q.order,
+      allowResubmit: q.allowResubmit,
+      revealAnswer: q.revealAnswer ?? false,
+      boardMode: q.boardMode ?? "shared",
+      clonedFrom: q.id,
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+    });
+  }
+  await batch.commit();
+  // 원본 차시에도 originLessonId 를 심어 계보 루트를 통일(없던 경우)
+  if (!src.originLessonId) {
+    await setDoc(
+      doc(db, "classes", srcCid, "lessons", srcLid),
+      { originLessonId: origin },
+      { merge: true }
+    ).catch(() => {});
+  }
+  return newLessonRef.id;
 }
 
 /** 차시 메타 수정 (제목·색상·고정) */
@@ -784,6 +856,10 @@ function mapLesson(id: string, v: Record<string, unknown>): Lesson {
     color: (v.color as string) ?? null,
     icon: (v.icon as string) ?? null,
     pinned: Boolean(v.pinned),
+    originLessonId:
+      typeof v.originLessonId === "string"
+        ? (v.originLessonId as string)
+        : undefined,
     createdBy: (v.createdBy as string) ?? "",
     createdAt: ts?.toMillis ? ts.toMillis() : null,
   };
