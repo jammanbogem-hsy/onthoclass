@@ -634,27 +634,29 @@ function ClassMap() {
         <div
           className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 text-xs ${
             staleEntries.length > 0
-              ? "border border-amber-300 bg-amber-50 dark:bg-amber-500/10"
-              : "bg-white/40 dark:bg-white/5"
+              ? "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]"
+              : "bg-[var(--md-sys-color-surface-container)] text-[var(--md-sys-color-on-surface-variant)]"
           }`}
         >
-          <span
-            className={`flex items-center gap-1.5 ${
-              staleEntries.length > 0
-                ? "font-semibold text-amber-700"
-                : "text-black/55 dark:text-white/55"
-            }`}
-          >
-            {staleEntries.length > 0 && (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[11px] font-extrabold text-white">
-                !
+          <span className="flex items-center gap-2">
+            {staleEntries.length > 0 ? (
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--md-sys-color-secondary)] text-[var(--md-sys-color-on-secondary)]">
+                <Icon name="sync_problem" size={15} />
               </span>
+            ) : (
+              <Icon
+                name="check_circle"
+                size={16}
+                className="text-[var(--md-sys-color-primary)]"
+              />
             )}
-            {entries === null
-              ? "리프 불러오는 중…"
-              : staleEntries.length > 0
-                ? `새 응답이 들어왔어요 — 미분석 질문 ${staleEntries.length}개. 재분석할까요?`
-                : `차시 ${targetLessonIds.length}개 · 모두 최신`}
+            <span className={staleEntries.length > 0 ? "font-semibold" : ""}>
+              {entries === null
+                ? "리프 불러오는 중…"
+                : staleEntries.length > 0
+                  ? `새 응답이 들어왔어요 — 미분석 질문 ${staleEntries.length}개. 재분석할까요?`
+                  : `차시 ${targetLessonIds.length}개 · 모두 최신`}
+            </span>
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -688,7 +690,7 @@ function ClassMap() {
             </GlassButton>
           </div>
           {gen === "error" && (
-            <p className="w-full text-red-500">{genMsg}</p>
+            <p className="w-full text-[var(--md-sys-color-error)]">{genMsg}</p>
           )}
         </div>
 
@@ -735,11 +737,11 @@ function ClassMap() {
               {merged && merged.nodes.length > 0 && (
                 <>
                   {normFresh ? (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                      정리됨 ✓
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
+                      정리됨 <Icon name="check" size={12} />
                     </span>
                   ) : norm ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
                       변경됨
                     </span>
                   ) : null}
@@ -757,7 +759,7 @@ function ClassMap() {
             </div>
           </div>
           {normGen === "error" && (
-            <p className="mt-2 text-xs text-red-500">{normMsg}</p>
+            <p className="mt-2 text-xs text-[var(--md-sys-color-error)]">{normMsg}</p>
           )}
 
           {tab === "summary" ? (
@@ -826,7 +828,7 @@ function ClassMap() {
                     )}
                   </div>
                   {insGen === "error" && (
-                    <p className="text-xs text-red-500">{insMsg}</p>
+                    <p className="text-xs text-[var(--md-sys-color-error)]">{insMsg}</p>
                   )}
                   {insights ? (
                     <div className="flex flex-col gap-3">
@@ -939,10 +941,22 @@ function ClassMap() {
                   <div className="flex flex-wrap gap-1.5">
                     {changes.slice(0, 40).map((c) => {
                       const m = {
-                        emerged: ["새로 등장", "bg-emerald-50 text-emerald-700"],
-                        shifted: ["정서 변화", "bg-amber-50 text-amber-700"],
-                        persisted: ["지속", "bg-blue-50 text-blue-700"],
-                        resolved: ["사라짐", "bg-zinc-100 text-zinc-600"],
+                        emerged: [
+                          "새로 등장",
+                          "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]",
+                        ],
+                        shifted: [
+                          "정서 변화",
+                          "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]",
+                        ],
+                        persisted: [
+                          "지속",
+                          "bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]",
+                        ],
+                        resolved: [
+                          "사라짐",
+                          "bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)]",
+                        ],
                       }[c.status];
                       return (
                         <span
@@ -964,8 +978,8 @@ function ClassMap() {
                 <p className="text-sm font-semibold">
                   종합·수업 설계 제안
                   {insFresh && (
-                    <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                      최신 ✓
+                    <span className="ml-2 inline-flex items-center gap-0.5 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
+                      최신 <Icon name="check" size={12} />
                     </span>
                   )}
                 </p>
@@ -983,7 +997,7 @@ function ClassMap() {
                 </GlassButton>
               </div>
               {insGen === "error" && (
-                <p className="text-xs text-red-500">{insMsg}</p>
+                <p className="text-xs text-[var(--md-sys-color-error)]">{insMsg}</p>
               )}
               {insights ? (
                 <div className="flex flex-col gap-4">

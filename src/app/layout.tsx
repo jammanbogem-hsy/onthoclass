@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DialogProvider } from "@/components/Dialog";
+import { ClassLive } from "@/components/ClassLive";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,7 +41,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <DialogProvider>{children}</DialogProvider>
+          <DialogProvider>
+            {children}
+            <ClassLive />
+          </DialogProvider>
         </AuthProvider>
       </body>
     </html>

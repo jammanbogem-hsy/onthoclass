@@ -158,6 +158,19 @@ service cloud.firestore {
         allow create, update, delete: if isTeacher(classId);
       }
 
+      // --- 실시간 효과 신호: 교사 → 특정 학생(본인만 읽기) ---
+      match /signals/{studentUid} {
+        allow read: if isMember(classId)
+          && (studentUid == uid() || isTeacher(classId));
+        allow write: if isTeacher(classId);
+      }
+
+      // --- 학급 전체 활동 잠금(Sandy 타이머) ---
+      match /control/{docId} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+      }
+
       // --- 모둠(그룹) ---
       match /groups/{groupId} {
         allow read: if isMember(classId);

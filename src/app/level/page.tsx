@@ -304,7 +304,8 @@ function LevelInner() {
 
         <style>{`
           .jam-level-hero{
-            background:linear-gradient(120deg,#7b5cff,#4f7cff 55%,#23b27a);
+            background:linear-gradient(120deg,
+              var(--md-sys-color-p-40),var(--md-sys-color-p-50) 55%,var(--md-sys-color-t-50));
           }
         `}</style>
       </main>

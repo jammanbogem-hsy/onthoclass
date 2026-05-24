@@ -1595,11 +1595,8 @@ function CardView({
       {isTeacher && (
         <div
           onPointerDown={onPointerDown}
-          style={{
-            height: HANDLE,
-            background: "linear-gradient(#f7f7f8,#e9e9ec)",
-          }}
-          className="group/bar flex shrink-0 cursor-grab items-center gap-1.5 border-b border-black/10 px-3 active:cursor-grabbing"
+          style={{ height: HANDLE }}
+          className="group/bar flex shrink-0 cursor-grab items-center gap-1.5 border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-high)] px-3 active:cursor-grabbing"
           title="끌어서 이동"
         >
           {/* 신호등 버튼 */}

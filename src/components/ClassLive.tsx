@@ -1,0 +1,108 @@
+"use client";
+
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { getMyRole, type Role } from "@/lib/classes";
+import { watchLock, watchSignal, type ActivityLock } from "@/lib/live";
+import { MissionCelebrate } from "@/components/MissionCelebrate";
+import { useCelebrateQueue } from "@/components/useCelebrateQueue";
+import { ActivityLockOverlay } from "@/components/ActivityLockOverlay";
+
+/**
+ * 학급 페이지 어디서나 동작하는 실시간 수신기.
+ * - 교사가 보낸 1회성 효과(미션완료/레벨업)를 받아 축하 연출
+ * - 학급 전체 활동 잠금(Sandy 타이머)을 학생 화면에 표시
+ * URL 의 ?class= / ?id= 로 현재 학급을 파악한다.
+ */
+function ClassLiveInner() {
+  const { user } = useAuth();
+  const params = useSearchParams();
+  const cid = params.get("class") || params.get("id");
+  const uid = user?.uid ?? null;
+
+  const [role, setRole] = useState<Role | null>(null);
+  const { current: celebrate, enqueue, done } = useCelebrateQueue();
+  const [lock, setLock] = useState<ActivityLock | null>(null);
+  const [lockDismissed, setLockDismissed] = useState(false);
+
+  // 역할 확인 (멤버 여부 + 학생/교사)
+  useEffect(() => {
+    setRole(null);
+    if (!cid || !uid) return;
+    let alive = true;
+    getMyRole(cid, uid)
+      .then((r) => alive && setRole(r))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [cid, uid]);
+
+  // 개별 효과 신호 구독 (최초 스냅샷은 무시 → 새 신호만 연출)
+  const seenNonce = useRef<number | null>(null);
+  useEffect(() => {
+    seenNonce.current = null;
+    if (!cid || !uid || !role) return;
+    return watchSignal(cid, uid, (sig) => {
+      if (!sig) return;
+      if (seenNonce.current === null) {
+        seenNonce.current = sig.nonce; // 페이지 진입 시 과거 신호 재생 방지
+        return;
+      }
+      if (sig.nonce === seenNonce.current) return;
+      seenNonce.current = sig.nonce;
+      enqueue({ kind: sig.kind, title: sig.title, subtitle: sig.subtitle });
+    });
+  }, [cid, uid, role, enqueue]);
+
+  // 활동 잠금 구독
+  useEffect(() => {
+    setLockDismissed(false);
+    if (!cid || !uid || !role) return;
+    return watchLock(cid, (l) => {
+      setLock(l);
+      setLockDismissed(false);
+    });
+  }, [cid, uid, role]);
+
+  // 학생만 잠금 대상. 만료 시각이 지난 잠금은 무시.
+  const lockActive =
+    role === "student" &&
+    !lockDismissed &&
+    !!lock?.active &&
+    (lock.until == null || lock.until > Date.now());
+
+  return (
+    <>
+      {celebrate && (
+        <MissionCelebrate
+          key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
+          title={celebrate.title}
+          subtitle={celebrate.subtitle}
+          kicker={celebrate.kind === "level" ? "LEVEL UP" : "MISSION CLEAR"}
+          lottieSrc={
+            celebrate.kind === "level" ? "/Confetti.json" : "/mission-success.json"
+          }
+          onDone={done}
+        />
+      )}
+      {lockActive && (
+        <ActivityLockOverlay
+          until={lock!.until}
+          onExpire={() => setLockDismissed(true)}
+        />
+      )}
+    </>
+  );
+}
+
+export function ClassLive() {
+  const { user } = useAuth();
+  if (!user) return null;
+  return (
+    <Suspense fallback={null}>
+      <ClassLiveInner />
+    </Suspense>
+  );
+}

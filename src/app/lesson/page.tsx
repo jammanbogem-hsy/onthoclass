@@ -890,10 +890,10 @@ function TeacherPanel({
                         <Icon
                           name="fiber_new"
                           size={15}
-                          className="shrink-0 text-amber-500"
+                          className="shrink-0 text-[var(--md-sys-color-secondary)]"
                         />
                         <span className="min-w-0 flex-1 truncate">{t}</span>
-                        <span className="shrink-0 text-[11px] font-semibold text-amber-600">
+                        <span className="shrink-0 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
                           새 응답
                         </span>
                       </li>
@@ -1792,7 +1792,7 @@ function QuestionRow({
                 </span>
                 {ontology &&
                   (stale ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
                       변경됨
                     </span>
                   ) : (
@@ -1802,7 +1802,7 @@ function QuestionRow({
                   ))}
               </p>
               {stale && (
-                <span className="text-[11px] text-amber-600">
+                <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
                   상단 “분석”에서 분석하세요
                 </span>
               )}
@@ -2033,7 +2033,7 @@ function QuestionRow({
                   제출 결과 ({answered.length})
                   {ontology &&
                     (stale ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                      <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
                         변경됨
                       </span>
                     ) : (
@@ -2043,7 +2043,7 @@ function QuestionRow({
                     ))}
                 </p>
                 {stale && (
-                  <span className="text-[11px] text-amber-600">
+                  <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
                     상단 “분석”에서 재분석하세요
                   </span>
                 )}
@@ -2255,25 +2255,27 @@ function StaleBar({
     <div
       className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 text-xs ${
         alert
-          ? "border border-amber-300 bg-amber-50 dark:bg-amber-500/10"
-          : "bg-white/40 dark:bg-white/5"
+          ? "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]"
+          : "bg-[var(--md-sys-color-surface-container)] text-[var(--md-sys-color-on-surface-variant)]"
       }`}
     >
-      <span
-        className={`flex items-center gap-1.5 ${
-          alert
-            ? "font-semibold text-amber-700"
-            : "text-black/55 dark:text-white/55"
-        }`}
-      >
-        {alert && (
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[11px] font-extrabold text-white">
-            !
+      <span className="flex items-center gap-2">
+        {alert ? (
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--md-sys-color-secondary)] text-[var(--md-sys-color-on-secondary)]">
+            <Icon name="sync_problem" size={15} />
           </span>
+        ) : (
+          <Icon
+            name="check_circle"
+            size={16}
+            className="text-[var(--md-sys-color-primary)]"
+          />
         )}
-        {alert
-          ? `새 응답이 들어왔어요 — 미분석 활동 ${staleCount}개. 재분석할까요?`
-          : "모든 활동이 최신입니다 · 학생별/통합은 LLM 호출 없이 파생"}
+        <span className={alert ? "font-semibold" : ""}>
+          {alert
+            ? `새 응답이 들어왔어요 — 미분석 활동 ${staleCount}개. 재분석할까요?`
+            : "모든 활동이 최신입니다 · 학생별/통합은 LLM 호출 없이 파생"}
+        </span>
       </span>
       <GlassButton
         variant="accent"
@@ -2550,7 +2552,7 @@ function MergedMapSection({
                   동의어 정리됨 ✓
                 </span>
               ) : norm ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
                   변경됨
                 </span>
               ) : null}

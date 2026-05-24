@@ -33,6 +33,13 @@ import {
   type QuestLink,
   type QuestTarget,
 } from "@/lib/xp";
+import {
+  sendEffect,
+  startLock,
+  stopLock,
+  watchLock,
+  type ActivityLock,
+} from "@/lib/live";
 
 const KIND_LABEL: Record<string, string> = {
   question: "질문",
@@ -95,8 +102,9 @@ function ClassAdminInner() {
   const [xpMap, setXpMap] = useState<Record<string, number>>({});
   const [quests, setQuests] = useState<Quest[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [modal, setModal] = useState<null | "grant" | "quest">(null);
+  const [modal, setModal] = useState<null | "grant" | "quest" | "wizard">(null);
   const [showAllQuests, setShowAllQuests] = useState(false);
+  const [lock, setLock] = useState<ActivityLock | null>(null);
   const lessonMeta = useLessonMeta(cid);
 
   useEffect(() => {
@@ -110,9 +118,11 @@ function ClassAdminInner() {
     listGroups(cid).then(setGroups).catch(() => {});
     const off1 = watchXp(cid, setXpMap);
     const off2 = watchQuests(cid, setQuests);
+    const off3 = watchLock(cid, setLock);
     return () => {
       off1();
       off2();
+      off3();
     };
   }, [user, cid]);
 
@@ -200,6 +210,17 @@ function ClassAdminInner() {
             >
               <Icon name="flag" size={16} />
               미션 만들기
+            </button>
+            <button
+              onClick={() => setModal("wizard")}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                lock?.active
+                  ? "border-transparent bg-amber-500 text-white"
+                  : "border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)] hover:bg-black/5"
+              }`}
+            >
+              <Icon name={lock?.active ? "hourglass_top" : "auto_awesome"} size={16} />
+              {lock?.active ? "활동 잠금 중" : "효과 마법사"}
             </button>
           </div>
         </div>
@@ -408,6 +429,23 @@ function ClassAdminInner() {
             await createQuest(cid, data, user.uid);
             setModal(null);
           }}
+        />
+      )}
+      {modal === "wizard" && (
+        <WizardModal
+          students={students}
+          selected={selected}
+          xpMap={xpMap}
+          nameOf={nameOf}
+          lock={lock}
+          onClose={() => setModal(null)}
+          onSendEffect={(uids, effect) =>
+            Promise.all(
+              uids.map((u) => sendEffect(cid, u, effect, user.uid))
+            ).then(() => {})
+          }
+          onStartLock={(ms) => startLock(cid, ms, user.uid)}
+          onStopLock={() => stopLock(cid)}
         />
       )}
     </>
@@ -1029,6 +1067,246 @@ function QuestModal({
         >
           {busy ? "만드는 중…" : `미션 등록 (${uids.length}명 대상)`}
         </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ---------- 기능 & 효과 마법사 ----------
+function WizardModal({
+  students,
+  selected,
+  xpMap,
+  nameOf,
+  lock,
+  onClose,
+  onSendEffect,
+  onStartLock,
+  onStopLock,
+}: {
+  students: Member[];
+  selected: Set<string>;
+  xpMap: Record<string, number>;
+  nameOf: Record<string, string>;
+  lock: ActivityLock | null;
+  onClose: () => void;
+  onSendEffect: (
+    uids: string[],
+    effect: { kind: "mission" | "level"; title: string; subtitle?: string }
+  ) => Promise<void>;
+  onStartLock: (ms: number) => Promise<void>;
+  onStopLock: () => Promise<void>;
+}) {
+  const uids = students
+    .filter((s) => selected.has(s.uid))
+    .map((s) => s.uid);
+  const single = uids.length === 1 ? uids[0] : null;
+
+  const [kind, setKind] = useState<"mission" | "level">("mission");
+  const [msg, setMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sentOk, setSentOk] = useState(false);
+
+  // 잠금 타이머 입력
+  const [min, setMin] = useState(1);
+  const [sec, setSec] = useState(0);
+  const [busyLock, setBusyLock] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const lockActive = !!lock?.active && (lock.until == null || lock.until > now);
+  useEffect(() => {
+    if (!lockActive) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [lockActive]);
+
+  function buildEffect() {
+    const name = single ? nameOf[single] : "";
+    if (kind === "level") {
+      return {
+        kind: "level" as const,
+        title: name ? `${name}님, 레벨업을 축하해요!` : "레벨업을 축하해요!",
+        subtitle:
+          msg.trim() ||
+          (single ? `레벨 ${xpLevel(xpMap[single] ?? 0).level} 달성` : undefined),
+      };
+    }
+    return {
+      kind: "mission" as const,
+      title: "미션 완료!",
+      subtitle: msg.trim() || "참 잘했어요! 🎉",
+    };
+  }
+
+  async function send() {
+    if (uids.length === 0) return;
+    setSending(true);
+    try {
+      await onSendEffect(uids, buildEffect());
+      setSentOk(true);
+      setTimeout(() => setSentOk(false), 1800);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const lockMs = (min * 60 + sec) * 1000;
+  const remaining = lock?.until != null ? lock.until - now : null;
+  function fmt(ms: number) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  async function toggleLock() {
+    setBusyLock(true);
+    try {
+      if (lockActive) await onStopLock();
+      else if (lockMs > 0) await onStartLock(lockMs);
+    } finally {
+      setBusyLock(false);
+    }
+  }
+
+  return (
+    <ModalShell title="기능 & 효과 마법사" icon="auto_awesome" onClose={onClose}>
+      <div className="flex flex-col gap-6">
+        {/* 효과 보내기 */}
+        <section className="flex flex-col gap-3">
+          <h3 className="flex items-center gap-1.5 text-sm font-bold">
+            <Icon name="celebration" size={16} className="text-[var(--md-sys-color-primary)]" />
+            효과 보내기
+            <span className="font-normal text-black/45">
+              · 놓친 학생에게 다시
+            </span>
+          </h3>
+          {uids.length === 0 ? (
+            <p className="rounded-xl bg-black/5 px-3 py-2.5 text-xs text-black/55">
+              먼저 위에서 학생 카드를 선택하세요. 선택한 학생에게 효과가
+              전달됩니다.
+            </p>
+          ) : (
+            <p className="text-xs text-black/55">
+              대상{" "}
+              <b className="text-[var(--md-sys-color-primary)]">
+                {uids.length}
+              </b>
+              명
+              {single && nameOf[single] ? ` · ${nameOf[single]}` : ""}
+            </p>
+          )}
+          <div className="flex gap-1.5">
+            {(
+              [
+                ["mission", "미션 완료", "flag"],
+                ["level", "레벨업", "trending_up"],
+              ] as const
+            ).map(([k, label, icon]) => (
+              <button
+                key={k}
+                onClick={() => setKind(k)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                  kind === k
+                    ? "bg-[var(--md-sys-color-primary)] text-white"
+                    : "border border-[var(--md-sys-color-outline)] text-black/60"
+                }`}
+              >
+                <Icon name={icon} size={16} />
+                {label}
+              </button>
+            ))}
+          </div>
+          <input
+            value={msg}
+            onChange={(e) => setMsg(e.target.value)}
+            placeholder="문구 (선택, 예: 참 잘했어요!)"
+            className="m3-field !py-2 !text-sm"
+          />
+          <button
+            onClick={send}
+            disabled={uids.length === 0 || sending}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-105 disabled:opacity-40"
+          >
+            <Icon name={sentOk ? "check" : "send"} size={16} />
+            {sentOk
+              ? "전달했어요!"
+              : sending
+                ? "보내는 중…"
+                : `효과 적용해서 보내기${uids.length ? ` (${uids.length}명)` : ""}`}
+          </button>
+        </section>
+
+        <div className="h-px bg-[var(--md-sys-color-outline-variant)]" />
+
+        {/* 활동 잠금 타이머 */}
+        <section className="flex flex-col gap-3">
+          <h3 className="flex items-center gap-1.5 text-sm font-bold">
+            <Icon name="hourglass_top" size={16} className="text-[var(--md-sys-color-primary)]" />
+            활동 잠금 타이머
+            <span className="font-normal text-black/45">· 생각/활동 시간</span>
+          </h3>
+          {lockActive ? (
+            <div className="flex items-center justify-between rounded-xl bg-amber-50 px-4 py-3">
+              <span className="flex items-center gap-2 text-sm font-semibold text-amber-700">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                </span>
+                학생 활동 잠금 중
+              </span>
+              {remaining != null && (
+                <span className="font-mono text-lg font-black tabular-nums text-amber-700">
+                  {fmt(remaining)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-end gap-2">
+              <label className="flex flex-col gap-1 text-xs text-black/55">
+                분
+                <input
+                  type="number"
+                  min={0}
+                  max={99}
+                  value={min}
+                  onChange={(e) =>
+                    setMin(Math.max(0, Math.min(99, Number(e.target.value) || 0)))
+                  }
+                  className="m3-field w-20 !py-1.5 !text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-black/55">
+                초
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={sec}
+                  onChange={(e) =>
+                    setSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
+                  }
+                  className="m3-field w-20 !py-1.5 !text-sm"
+                />
+              </label>
+              <p className="pb-2 text-xs text-black/45">동안 활동 멈춤</p>
+            </div>
+          )}
+          <button
+            onClick={toggleLock}
+            disabled={busyLock || (!lockActive && lockMs <= 0)}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-bold transition disabled:opacity-40 ${
+              lockActive
+                ? "bg-rose-500 text-white hover:brightness-105"
+                : "bg-amber-500 text-white hover:brightness-105"
+            }`}
+          >
+            <Icon name={lockActive ? "play_arrow" : "pause"} size={18} />
+            {lockActive ? "잠금 해제 (활동 재개)" : "활동 잠금 시작"}
+          </button>
+          <p className="text-[11px] leading-relaxed text-black/40">
+            잠금을 켜면 학생 화면에 모래시계가 뜨고 모든 활동이 멈춰요. 설정한
+            시간이 끝나거나 잠금을 해제하면 다시 활동할 수 있어요.
+          </p>
+        </section>
       </div>
     </ModalShell>
   );

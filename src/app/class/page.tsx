@@ -232,10 +232,12 @@ function ClassDetail() {
                 animation: jam-rainbow-pill 6s linear infinite;
               }
               .jam-levelup-pill{
-                background:linear-gradient(90deg,#7b5cff,#4f7cff,#23b27a,#7b5cff);
+                background:linear-gradient(90deg,
+                  var(--md-sys-color-p-40),var(--md-sys-color-t-50),
+                  var(--md-sys-color-p-50),var(--md-sys-color-p-40));
                 background-size:300% 100%;
                 animation: jam-rainbow-pill 5s linear infinite;
-                box-shadow:0 4px 14px color-mix(in srgb,#4f7cff 40%,transparent);
+                box-shadow:0 4px 14px color-mix(in srgb,var(--md-sys-color-primary) 35%,transparent);
               }
             `}</style>
           </div>
