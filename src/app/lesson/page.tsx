@@ -347,7 +347,7 @@ function CopyLessonButton({ cid, lid }: { cid: string; lid: string }) {
                         <span className="min-w-0 flex-1 truncate font-medium">
                           {c.name}
                         </span>
-                        <span className="shrink-0 text-[11px] text-black/45">
+                        <span className="shrink-0 text-xs text-black/45">
                           {busy === c.cid ? "복제 중…" : c.teacher}
                         </span>
                       </button>
@@ -421,7 +421,7 @@ function LinksEditor({
               </button>
             </div>
             {/* 링크별 대상 (기본 전체) */}
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <span className="text-black/45">대상:</span>
               {(
                 [
@@ -893,7 +893,7 @@ function TeacherPanel({
                           className="shrink-0 text-[var(--md-sys-color-secondary)]"
                         />
                         <span className="min-w-0 flex-1 truncate">{t}</span>
-                        <span className="shrink-0 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                        <span className="shrink-0 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
                           새 응답
                         </span>
                       </li>
@@ -988,7 +988,7 @@ function TeacherPanel({
                         <span className="block text-sm font-semibold">
                           {label}
                         </span>
-                        <span className="block text-[11px] text-black/45 dark:text-white/45">
+                        <span className="block text-xs text-black/45 dark:text-white/45">
                           {desc}
                         </span>
                       </span>
@@ -1462,10 +1462,10 @@ function QuestionRow({
                   {title.trim() || `${kindLabel} ${index + 1}`}
                 </span>
               )}
-              <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-primary-container)]">
+              <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-primary-container)]">
                 {kindLabel}
               </span>
-              <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+              <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
                 {question.phase === "pre" ? "수업 전" : "수업 후"}
               </span>
             </p>
@@ -1530,7 +1530,7 @@ function QuestionRow({
                       setOptions(options.filter((_, j) => j !== oi));
                       if (answerIdx === oi) setAnswerIdx(-1);
                     }}
-                    className="text-black/30 hover:text-rose-500"
+                    className="text-black/30 hover:text-[var(--md-sys-color-error)]"
                   >
                     <Icon name="close" size={16} />
                   </button>
@@ -1584,7 +1584,7 @@ function QuestionRow({
                 ))}
               </div>
               {boardMode === "group" && (
-                <span className="text-[11px] text-black/45">
+                <span className="text-xs text-black/45">
                   모둠마다 보드가 따로 생기고, 학생은 자기 모둠 보드만 편집합니다.
                 </span>
               )}
@@ -1757,7 +1757,7 @@ function QuestionRow({
             )}
 
             <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] text-black/40">
+              <p className="text-xs text-black/40">
                 {audMode === "all"
                   ? "전체 학생에게 표시됩니다."
                   : audMode === "groups"
@@ -1771,7 +1771,7 @@ function QuestionRow({
               {audMode === "all" && (
                 <button
                   onClick={() => setAudExpanded(false)}
-                  className="text-[11px] text-black/40 hover:text-black/60"
+                  className="text-xs text-black/40 hover:text-black/60"
                 >
                   접기
                 </button>
@@ -1792,17 +1792,17 @@ function QuestionRow({
                 </span>
                 {ontology &&
                   (stale ? (
-                    <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+                    <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
                       변경됨
                     </span>
                   ) : (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                    <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
                       최신 ✓
                     </span>
                   ))}
               </p>
               {stale && (
-                <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+                <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   상단 “분석”에서 분석하세요
                 </span>
               )}
@@ -1871,13 +1871,13 @@ function QuestionRow({
                       <>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="flex items-center gap-3">
-                          <span className="font-bold text-emerald-700">
+                          <span className="font-bold text-[var(--md-sys-color-on-tertiary-container)]">
                             정답 {correctList.length}명
                             <span className="ml-1 font-normal text-black/45">
                               ({cp}%)
                             </span>
                           </span>
-                          <span className="font-bold text-rose-600">
+                          <span className="font-bold text-[var(--md-sys-color-error)]">
                             오답 {wrongList.length}명
                             <span className="ml-1 font-normal text-black/45">
                               ({n ? 100 - cp : 0}%)
@@ -1897,14 +1897,14 @@ function QuestionRow({
                         </div>
                         {wrongList.length > 0 && (
                           <div className="mt-2">
-                            <p className="text-[11px] font-semibold text-rose-600">
+                            <p className="text-xs font-semibold text-[var(--md-sys-color-error)]">
                               오답 학생
                             </p>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {wrongList.map((s) => (
                                 <span
                                   key={s.uid}
-                                  className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] text-rose-700"
+                                  className="rounded-full bg-[var(--md-sys-color-error-container)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-error-container)]"
                                   title={s.content}
                                 >
                                   {s.studentName}
@@ -1943,7 +1943,7 @@ function QuestionRow({
                           <span
                             className={
                               correct
-                                ? "font-semibold text-emerald-700"
+                                ? "font-semibold text-[var(--md-sys-color-on-tertiary-container)]"
                                 : ""
                             }
                           >
@@ -2006,8 +2006,8 @@ function QuestionRow({
                             question.answerIndex < 0
                               ? "bg-black/5 dark:bg-white/10"
                               : ok
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-rose-100 text-rose-700"
+                                ? "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
+                                : "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]"
                           }`}
                         >
                           {s.content || "(무응답)"}
@@ -2033,17 +2033,17 @@ function QuestionRow({
                   제출 결과 ({answered.length})
                   {ontology &&
                     (stale ? (
-                      <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+                      <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
                         변경됨
                       </span>
                     ) : (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                      <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
                         최신 ✓
                       </span>
                     ))}
                 </p>
                 {stale && (
-                  <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+                  <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                     상단 “분석”에서 재분석하세요
                   </span>
                 )}
@@ -2175,8 +2175,8 @@ function QuestionRow({
                   <span
                     className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                       good
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-rose-100 text-rose-700"
+                        ? "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
+                        : "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]"
                     }`}
                   >
                     {s.content || "(무응답)"}
@@ -2186,7 +2186,7 @@ function QuestionRow({
               return (
                 <div className="grid gap-4 overflow-y-auto p-5 sm:grid-cols-2">
                   <div>
-                    <p className="mb-2 text-sm font-bold text-emerald-700">
+                    <p className="mb-2 text-sm font-bold text-[var(--md-sys-color-on-tertiary-container)]">
                       정답 {ok.length}명
                       {correctOpt && (
                         <span className="ml-1 font-normal text-black/45">
@@ -2207,7 +2207,7 @@ function QuestionRow({
                     </ul>
                   </div>
                   <div>
-                    <p className="mb-2 text-sm font-bold text-rose-600">
+                    <p className="mb-2 text-sm font-bold text-[var(--md-sys-color-error)]">
                       오답 {ng.length}명
                     </p>
                     <ul className="flex flex-col gap-1.5">
@@ -2292,7 +2292,7 @@ function StaleBar({
           </>
         )}
       </GlassButton>
-      {gen === "error" && <p className="w-full text-red-500">{genMsg}</p>}
+      {gen === "error" && <p className="w-full text-[var(--md-sys-color-error)]">{genMsg}</p>}
     </div>
   );
 }
@@ -2548,11 +2548,11 @@ function MergedMapSection({
           {merged.nodes.length > 0 && (
             <div className="flex items-center gap-2">
               {normFresh ? (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
                   동의어 정리됨 ✓
                 </span>
               ) : norm ? (
-                <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+                <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
                   변경됨
                 </span>
               ) : null}
@@ -2569,7 +2569,7 @@ function MergedMapSection({
           )}
         </div>
         {normGen === "error" && (
-          <p className="mt-2 text-xs text-red-500">{normMsg}</p>
+          <p className="mt-2 text-xs text-[var(--md-sys-color-error)]">{normMsg}</p>
         )}
 
         {merged.nodes.length > 0 ? (
@@ -2636,7 +2636,7 @@ function MergedMapSection({
               />
               인사이트 (중첩도·개별 응답)
               {insFresh && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                <span className="rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
                   최신 ✓
                 </span>
               )}
@@ -2655,7 +2655,7 @@ function MergedMapSection({
             </GlassButton>
           </div>
           {insGen === "error" && (
-            <p className="mt-2 text-xs text-red-500">{insMsg}</p>
+            <p className="mt-2 text-xs text-[var(--md-sys-color-error)]">{insMsg}</p>
           )}
           {insights ? (
             <div className="mt-3 flex flex-col gap-4">
@@ -2864,7 +2864,7 @@ function PrePostCompare({
                   />
                 )}
               </div>
-              <p className="mt-2 text-[11px] text-black/45">
+              <p className="mt-2 text-xs text-black/45">
                 주황=수업 전만 있던 개념, 자홍=전·후 공통(지속), 초록=수업 후
                 새로 등장. 위 버튼으로 사전/사후/공통/차이만 강조해 볼 수 있어요.
               </p>
@@ -3110,18 +3110,18 @@ function StudentQuestionCard({
       <div className="mb-3 flex items-center justify-between">
         <p className="flex items-center gap-2 text-sm font-semibold">
           {question.title.trim() || `${kindLabel} ${index + 1}`}
-          <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-primary-container)]">
+          <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-primary-container)]">
             {kindLabel}
           </span>
-          <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+          <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
             {question.phase === "pre" ? "수업 전" : "수업 후"}
           </span>
         </p>
         {!isLink && submitted && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2.5 py-1 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
             <Icon name="check" size={14} />
             제출 완료
-            <span className="font-normal text-emerald-700/70">
+            <span className="font-normal text-[var(--md-sys-color-on-tertiary-container)]/70">
               · {question.allowResubmit ? "수정 가능" : "수정 불가"}
             </span>
           </span>
@@ -3152,7 +3152,7 @@ function StudentQuestionCard({
             보드 참여하기
           </button>
           {question.boardMode === "group" && (
-            <p className="mt-2 flex items-center justify-center gap-1 text-[11px] text-black/45">
+            <p className="mt-2 flex items-center justify-center gap-1 text-xs text-black/45">
               <Icon name="workspaces" size={13} />
               우리 모둠 전용 보드로 들어갑니다.
             </p>
@@ -3200,7 +3200,7 @@ function StudentQuestionCard({
                       />
                       {opt || `선택지 ${oi + 1}`}
                       {revealOk && (
-                        <span className="ml-auto text-xs font-semibold text-emerald-700">
+                        <span className="ml-auto text-xs font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
                           정답
                         </span>
                       )}
@@ -3211,7 +3211,7 @@ function StudentQuestionCard({
               {quizRevealed && question.answerIndex >= 0 ? (
                 <p
                   className={`text-xs font-semibold ${
-                    correct ? "text-emerald-700" : "text-rose-600"
+                    correct ? "text-[var(--md-sys-color-on-tertiary-container)]" : "text-[var(--md-sys-color-error)]"
                   }`}
                 >
                   {correct ? "정답입니다 ✓" : "오답입니다"}
@@ -3235,7 +3235,7 @@ function StudentQuestionCard({
             />
           )}
           {locked ? (
-            <div className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-700">
+            <div className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-50 px-5 py-3 text-sm font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
               <Icon name="lock" size={18} />
               {quizRevealed
                 ? "제출 완료 · 정답이 공개되어 수정할 수 없습니다"
@@ -3578,12 +3578,12 @@ function ReflectionStudent({
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="flex items-center gap-2 text-sm font-semibold">
           {title}
-          <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-primary-container)]">
+          <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-primary-container)]">
             성찰
           </span>
         </p>
         {submitted && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2.5 py-1 text-xs font-medium text-[var(--md-sys-color-on-tertiary-container)]">
             <Icon name="check" size={14} />
             제출 완료
           </span>
@@ -3604,7 +3604,7 @@ function ReflectionStudent({
           </div>
           {mine!.content && (
             <div className="rounded-xl bg-[var(--md-sys-color-surface-container)] p-3 text-sm">
-              <p className="mb-0.5 text-[11px] font-semibold text-black/45">
+              <p className="mb-0.5 text-xs font-semibold text-black/45">
                 배운 내용 / 느낀 점
               </p>
               <p className="whitespace-pre-wrap">{mine!.content}</p>
@@ -3612,7 +3612,7 @@ function ReflectionStudent({
           )}
           {mine!.application && (
             <div className="rounded-xl bg-[var(--md-sys-color-surface-container)] p-3 text-sm">
-              <p className="mb-0.5 text-[11px] font-semibold text-black/45">
+              <p className="mb-0.5 text-xs font-semibold text-black/45">
                 어디에 쓸 수 있을까?
               </p>
               <p className="whitespace-pre-wrap">{mine!.application}</p>
@@ -3803,7 +3803,7 @@ function ReflectionTeacher({
             placeholder={`수업 후 성찰 ${index + 1}`}
             className="min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-[var(--md-sys-color-outline-variant)] focus:border-[var(--md-sys-color-primary)] focus:outline-none"
           />
-          <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-sys-color-on-primary-container)]">
+          <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-medium text-[var(--md-sys-color-on-primary-container)]">
             성찰
           </span>
         </div>
@@ -3832,7 +3832,7 @@ function ReflectionTeacher({
           </button>
           <button
             onClick={remove}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-black/35 hover:bg-rose-100 hover:text-rose-600"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-black/35 hover:bg-[var(--md-sys-color-error-container)] hover:text-[var(--md-sys-color-error)]"
             title="활동 삭제"
           >
             <Icon name="delete" size={16} />
@@ -4036,14 +4036,14 @@ function ImportPreModal({
                             }
                             className="h-5 w-5 shrink-0 accent-[var(--md-sys-color-primary)]"
                           />
-                          <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] font-medium text-black/55">
+                          <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs font-medium text-black/55">
                             {IMPORT_KIND_LABEL[q.kind] ?? q.kind}
                           </span>
                           <span className="min-w-0 flex-1 truncate font-medium">
                             {q.title.trim() || "(제목 없음)"}
                           </span>
                           {cloned && (
-                            <span className="shrink-0 text-[11px] font-semibold text-black/40">
+                            <span className="shrink-0 text-xs font-semibold text-black/40">
                               이미 가져옴
                             </span>
                           )}
@@ -4117,7 +4117,7 @@ function ImportLessonNode({
         <span className="min-w-0 flex-1 truncate font-medium">
           {l.title || "(제목 없음)"}
         </span>
-        <span className="shrink-0 text-[11px] text-black/40">{l.date}</span>
+        <span className="shrink-0 text-xs text-black/40">{l.date}</span>
       </button>
       {open && (
         <ul>
@@ -4154,10 +4154,10 @@ function ImportLessonNode({
                       onChange={() => ctx.toggleAct(l.id, q)}
                       className="h-4 w-4 shrink-0 accent-[var(--md-sys-color-primary)]"
                     />
-                    <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] font-medium text-black/55">
+                    <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs font-medium text-black/55">
                       {IMPORT_KIND_LABEL[q.kind] ?? q.kind}
                     </span>
-                    <span className="shrink-0 rounded-full bg-[var(--md-sys-color-secondary-container)] px-1.5 text-[10px] font-medium text-[var(--md-sys-color-on-secondary-container)]">
+                    <span className="shrink-0 rounded-full bg-[var(--md-sys-color-secondary-container)] px-1.5 text-xs font-medium text-[var(--md-sys-color-on-secondary-container)]">
                       {q.phase === "pre" ? "전" : "후"}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-medium">
@@ -4404,7 +4404,7 @@ function CrossImportModal({
                       <span className="min-w-0 flex-1 truncate font-medium">
                         {c.name}
                       </span>
-                      <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-[10px] text-black/55">
+                      <span className="shrink-0 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs text-black/55">
                         {c.teacher}
                       </span>
                     </button>

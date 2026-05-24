@@ -770,7 +770,84 @@ function ClassMap() {
                   : "아직 분석된 데이터가 없습니다. 위 “변경된 질문 분석”을 실행하면 종합 요약이 만들어집니다."}
               </p>
             ) : (
-              <div className="mt-4 flex flex-col gap-5">
+              <div className="mt-4 flex flex-col gap-6">
+                {/* 종합 인사이트 — 맨 위, 큰 글씨로 빠르게 결론 */}
+                <div className="rounded-3xl bg-[var(--md-sys-color-primary-container)] p-6">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="flex items-center gap-1.5 text-sm font-bold text-[var(--md-sys-color-on-primary-container)]">
+                      <Icon name="auto_stories" size={18} />
+                      종합 인사이트
+                    </p>
+                    {insGen === "running" ? (
+                      <span className="text-xs font-medium text-[var(--md-sys-color-on-primary-container)]/70">
+                        분석과 함께 생성 중…
+                      </span>
+                    ) : (
+                      !insFresh && (
+                        <button
+                          onClick={genInsights}
+                          className="rounded-full bg-[var(--md-sys-color-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--md-sys-color-on-primary)]"
+                        >
+                          {insights ? "새로고침" : "지금 생성"}
+                        </button>
+                      )
+                    )}
+                  </div>
+                  {insGen === "error" && (
+                    <p className="text-xs text-[var(--md-sys-color-error)]">
+                      {insMsg}
+                    </p>
+                  )}
+                  {insights ? (
+                    <>
+                      <p className="text-lg font-semibold leading-relaxed text-[var(--md-sys-color-on-primary-container)] sm:text-xl">
+                        {insights.narrative}
+                      </p>
+                      {(insights.highlights?.length ?? 0) > 0 && (
+                        <div className="mt-4">
+                          <p className="mb-1 flex items-center gap-1 text-xs font-semibold text-[var(--md-sys-color-on-primary-container)]/70">
+                            <Icon name="person" size={13} />
+                            개별 응답에서
+                          </p>
+                          <ul className="list-disc pl-5 text-sm text-[var(--md-sys-color-on-primary-container)]/90">
+                            {insights.highlights!.map((h, i) => (
+                              <li key={i}>{h}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        {[
+                          ["다음 수업 질문 제안", insights.followUps],
+                          ["관찰된 오개념·약점", insights.misconceptions],
+                          ["보강이 필요한 개념", insights.gaps],
+                        ].map(([title, arr]) =>
+                          (arr as string[])?.length ? (
+                            <div
+                              key={title as string}
+                              className="rounded-2xl bg-[color-mix(in_srgb,var(--md-sys-color-on-primary-container)_8%,transparent)] p-3"
+                            >
+                              <p className="mb-1 text-xs font-bold text-[var(--md-sys-color-on-primary-container)]">
+                                {title as string}
+                              </p>
+                              <ul className="list-disc pl-4 text-xs text-[var(--md-sys-color-on-primary-container)]/90">
+                                {(arr as string[]).map((x, i) => (
+                                  <li key={i}>{x}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-[var(--md-sys-color-on-primary-container)]/80">
+                      위 “변경된 질문 분석”을 실행하면 종합 결론이 여기에 함께
+                      만들어집니다.
+                    </p>
+                  )}
+                </div>
+
                 {/* 한눈에 */}
                 <div>
                   <p className="mb-2 text-sm font-semibold">한눈에</p>
@@ -804,76 +881,6 @@ function ClassMap() {
                     <PrePostTable changes={changes} />
                   </div>
                 )}
-
-                {/* 인사이트 */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="flex items-center gap-1.5 text-sm font-semibold">
-                      <Icon
-                        name="auto_stories"
-                        size={16}
-                        className="text-[var(--md-sys-color-primary)]"
-                      />
-                      종합 인사이트
-                    </p>
-                    {!insFresh && (
-                      <GlassButton
-                        variant="ghost"
-                        className="!h-8 !px-3 text-xs"
-                        onClick={genInsights}
-                        disabled={insGen === "running"}
-                      >
-                        {insGen === "running" ? "생성 중…" : "지금 생성"}
-                      </GlassButton>
-                    )}
-                  </div>
-                  {insGen === "error" && (
-                    <p className="text-xs text-[var(--md-sys-color-error)]">{insMsg}</p>
-                  )}
-                  {insights ? (
-                    <div className="flex flex-col gap-3">
-                      <p className="text-sm leading-relaxed text-black/75 dark:text-white/75">
-                        {insights.narrative}
-                      </p>
-                      {(insights.highlights?.length ?? 0) > 0 && (
-                        <div>
-                          <p className="mb-1 flex items-center gap-1 text-xs font-semibold text-black/55">
-                            <Icon name="person" size={13} />
-                            개별 응답에서
-                          </p>
-                          <ul className="list-disc pl-5 text-sm text-black/70 dark:text-white/70">
-                            {insights.highlights!.map((h, i) => (
-                              <li key={i}>{h}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {[
-                        ["다음 수업 질문 제안", insights.followUps],
-                        ["관찰된 오개념·약점", insights.misconceptions],
-                        ["보강이 필요한 개념", insights.gaps],
-                      ].map(([title, arr]) =>
-                        (arr as string[])?.length ? (
-                          <div key={title as string}>
-                            <p className="mb-1 text-xs font-semibold text-black/55">
-                              {title as string}
-                            </p>
-                            <ul className="list-disc pl-5 text-sm text-black/70 dark:text-white/70">
-                              {(arr as string[]).map((x, i) => (
-                                <li key={i}>{x}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-black/45">
-                      “변경된 질문 분석”을 실행하면 인사이트가 함께 자동
-                      생성됩니다. (또는 “지금 생성”)
-                    </p>
-                  )}
-                </div>
               </div>
             )
           ) : tab === "compare" ? (

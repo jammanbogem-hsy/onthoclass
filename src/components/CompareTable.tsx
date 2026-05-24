@@ -185,7 +185,7 @@ export function ClassDiffTable({
                 <td className="py-1.5 pr-2 font-medium">
                   {r.label}
                   {!r.common && (
-                    <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700">
+                    <span className="ml-1.5 rounded-full bg-[var(--md-sys-color-secondary-container)] px-1.5 text-xs font-semibold text-[var(--md-sys-color-on-secondary-container)]">
                       고유
                     </span>
                   )}

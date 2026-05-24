@@ -2,7 +2,6 @@
 //   classes/{cid}/signals/{uid}   : 특정 학생에게 보내는 1회성 효과(미션완료/레벨업)
 //   classes/{cid}/control/lock    : 학급 전체 활동 잠금(Sandy 타이머)
 import {
-  collection,
   deleteField,
   doc,
   onSnapshot,

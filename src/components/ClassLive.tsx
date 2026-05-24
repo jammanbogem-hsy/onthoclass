@@ -26,9 +26,9 @@ function ClassLiveInner() {
   const [lock, setLock] = useState<ActivityLock | null>(null);
   const [lockDismissed, setLockDismissed] = useState(false);
 
-  // 역할 확인 (멤버 여부 + 학생/교사)
+  // 역할 확인 (멤버 여부 + 학생/교사). cid 가 없으면 파생값에서 무시되므로
+  // 동기 초기화 없이 비동기 결과만 반영한다.
   useEffect(() => {
-    setRole(null);
     if (!cid || !uid) return;
     let alive = true;
     getMyRole(cid, uid)
@@ -56,9 +56,8 @@ function ClassLiveInner() {
     });
   }, [cid, uid, role, enqueue]);
 
-  // 활동 잠금 구독
+  // 활동 잠금 구독 — 새 잠금 스냅샷이 오면 이전의 로컬 해제 상태를 초기화
   useEffect(() => {
-    setLockDismissed(false);
     if (!cid || !uid || !role) return;
     return watchLock(cid, (l) => {
       setLock(l);
@@ -66,12 +65,9 @@ function ClassLiveInner() {
     });
   }, [cid, uid, role]);
 
-  // 학생만 잠금 대상. 만료 시각이 지난 잠금은 무시.
+  // 학생만 잠금 대상. 만료(until) 처리는 오버레이의 onExpire 가 담당한다.
   const lockActive =
-    role === "student" &&
-    !lockDismissed &&
-    !!lock?.active &&
-    (lock.until == null || lock.until > Date.now());
+    !!cid && role === "student" && !lockDismissed && !!lock?.active;
 
   return (
     <>

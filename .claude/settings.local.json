@@ -92,7 +92,8 @@
       "Bash(git commit -q -m 'feat\\(insights\\): 차시 통합 지식맵에 스토리텔링 인사이트\\(중첩도+개별 응답 하이라이트\\) *)",
       "Bash(git commit -q -m 'feat\\(class-map\\): 분석 시 인사이트 자동 생성 + 종합 탭 *)",
       "Bash(python3 *)",
-      "Bash(git commit -q -m 'style: 분석 상태바·변경 배지의 amber 하드코딩 → M3 토큰\\(secondary-container\\)으로 디자인 일관화 *)"
+      "Bash(git commit -q -m 'style: 분석 상태바·변경 배지의 amber 하드코딩 → M3 토큰\\(secondary-container\\)으로 디자인 일관화 *)",
+      "Bash(git commit -q -m 'ui\\(class-map\\): 종합 인사이트를 종합 탭 상단으로 + 큰 글씨 강조 카드\\(분석과 자동 세트 유지\\) *)"
     ]
   }
 }

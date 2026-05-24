@@ -24,9 +24,21 @@ export function EmotionPanel({
     label: string;
     cls: string;
   }[] = [
-    { key: "positive", label: "긍정", cls: "bg-emerald-50 text-emerald-700" },
-    { key: "neutral", label: "중립", cls: "bg-blue-50 text-blue-700" },
-    { key: "negative", label: "부정", cls: "bg-rose-50 text-rose-700" },
+    {
+      key: "positive",
+      label: "긍정",
+      cls: "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]",
+    },
+    {
+      key: "neutral",
+      label: "중립",
+      cls: "bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)]",
+    },
+    {
+      key: "negative",
+      label: "부정",
+      cls: "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]",
+    },
   ];
   return (
     <div className="flex flex-col gap-4">
@@ -51,7 +63,7 @@ export function EmotionPanel({
                 >
                   {n.label}
                   {(n.sourceCount ?? 0) > 0 && (
-                    <span className="rounded-full bg-white/70 px-1.5 text-[11px] font-bold">
+                    <span className="rounded-full bg-white/70 px-1.5 text-xs font-bold">
                       {n.sourceCount}
                     </span>
                   )}
