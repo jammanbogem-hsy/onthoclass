@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/lessons";
 import { mergeOntologies } from "@/lib/ontology";
 import { CATEGORY_PALETTE, GROUP_COMMON_COLOR } from "@/lib/palette";
+import { ClassDiffTable } from "@/components/CompareTable";
 
 const PALETTE = CATEGORY_PALETTE;
 const COMMON = GROUP_COMMON_COLOR;
@@ -55,10 +56,13 @@ async function loadLessonOntology(
 function CompareInner() {
   const { user, loading, profile, profileLoading } = useAuth();
   const router = useRouter();
+  const params = useSearchParams();
+  const wantGroup = params.get("group") || "";
 
   const [groups, setGroups] = useState<LessonGroup[] | null>(null);
   const [selKey, setSelKey] = useState("");
   const [phase, setPhase] = useState<Phase>("pre");
+  const [view, setView] = useState<"graph" | "table">("graph");
   const [ontos, setOntos] = useState<Record<string, Ontology>>({});
 
   const isTeacher = profile?.role === "teacher";
@@ -101,16 +105,18 @@ function CompareInner() {
       );
       if (!alive) return;
       setGroups(comparable);
-      setSelKey((cur) =>
-        cur && comparable.some((g) => g.key === cur)
-          ? cur
-          : comparable[0]?.key ?? ""
-      );
+      setSelKey((cur) => {
+        // URL ?group= 으로 들어온 수업을 우선 선택(학급 안에서 진입한 경우)
+        if (wantGroup && comparable.some((g) => g.key === wantGroup))
+          return wantGroup;
+        if (cur && comparable.some((g) => g.key === cur)) return cur;
+        return comparable[0]?.key ?? "";
+      });
     })();
     return () => {
       alive = false;
     };
-  }, [user]);
+  }, [user, wantGroup]);
 
   const selGroup = useMemo(
     () => groups?.find((g) => g.key === selKey) ?? null,
@@ -195,6 +201,30 @@ function CompareInner() {
       perItemCount,
       commonCount,
     };
+  }, [items, ontos]);
+
+  // 학급별 차이 표 행: 개념(라벨키) × 학급별 언급수(sourceCount)
+  const classRows = useMemo(() => {
+    const keyOf = (n: { id: string; label: string }) =>
+      (n.label || n.id).trim().toLowerCase() || n.id;
+    const map = new Map<string, { label: string; counts: number[] }>();
+    items.forEach((m, idx) => {
+      const ont = ontos[`${m.cid}__${m.lid}`];
+      if (!ont) return;
+      ont.nodes.forEach((n) => {
+        const k = keyOf(n);
+        const e =
+          map.get(k) ??
+          { label: n.label || k, counts: items.map(() => 0) };
+        e.counts[idx] = n.sourceCount ?? n.sources?.length ?? 1;
+        map.set(k, e);
+      });
+    });
+    return [...map.values()].map((e) => ({
+      label: e.label,
+      counts: e.counts,
+      common: e.counts.filter((c) => c > 0).length >= 2,
+    }));
   }, [items, ontos]);
 
   if (loading || profileLoading || !user) {
@@ -306,8 +336,32 @@ function CompareInner() {
           </div>
         )}
 
-        {/* 그래프 */}
-        <GlassCard className="mt-4 p-2">
+        {/* 그래프 / 표 토글 */}
+        {items.length >= 2 && overlay.nodes.length > 0 && (
+          <div className="mt-4 inline-flex rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+            {(
+              [
+                ["graph", "그래프"],
+                ["table", "표"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  view === v
+                    ? "bg-white/80 text-black/80 shadow-sm dark:bg-white/20"
+                    : "text-black/45"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 그래프 / 표 */}
+        <GlassCard className="mt-2 p-2">
           {groups && groups.length === 0 ? (
             <p className="py-16 text-center text-sm text-black/40">
               비교 가능한 수업이 없습니다. 차시 화면의 “다른 학급으로 복제”로
@@ -322,6 +376,16 @@ function CompareInner() {
               표시할 지식맵이 없습니다. 각 학급에서 이 차시를 먼저 “분석”했는지
               확인하세요.
             </p>
+          ) : view === "table" ? (
+            <div className="p-2">
+              <ClassDiffTable
+                classes={items.map((m, idx) => ({
+                  name: m.className,
+                  color: PALETTE[idx % PALETTE.length],
+                }))}
+                rows={classRows}
+              />
+            </div>
           ) : (
             <GraphView
               data={overlay}

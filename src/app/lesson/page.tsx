@@ -65,11 +65,14 @@ import { PREPOST_COLOR } from "@/lib/palette";
 import { canonicalizeOntology, extractOntology } from "@/lib/ai";
 import {
   applyLabelClusters,
+  diffPrePost,
+  EMPTY_ONTOLOGY,
   filterOntologyByStudent,
   hashLabels,
   hashResponses,
   mergeOntologies,
 } from "@/lib/ontology";
+import { PrePostTable } from "@/components/CompareTable";
 import {
   createResource,
   deleteResource,
@@ -165,6 +168,18 @@ function LessonDetail() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {isTeacher && lesson.originLessonId && (
+                <button
+                  onClick={() =>
+                    router.push(`/compare/?group=${lesson.originLessonId}`)
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2 text-xs font-semibold text-[var(--md-sys-color-primary)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+                  title="이 수업을 가진 학급들의 지식맵을 비교"
+                >
+                  <Icon name="compare" size={15} />
+                  이 수업 학급 비교
+                </button>
+              )}
               {isTeacher && <CopyLessonButton cid={cid} lid={lid} />}
               <ShareButton />
             </div>
@@ -2581,6 +2596,7 @@ function PrePostCompare({
   const [pre, setPre] = useState<Ontology | null>(null);
   const [post, setPost] = useState<Ontology | null>(null);
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"graph" | "table">("graph");
   const [mode, setMode] = useState<"all" | "pre" | "post" | "both" | "diff">(
     "all"
   );
@@ -2592,6 +2608,10 @@ function PrePostCompare({
 
   const { overlay, statusByKey, counts } = useMemo(
     () => buildPrePostOverlay(pre, post),
+    [pre, post]
+  );
+  const changes = useMemo(
+    () => diffPrePost(pre ?? EMPTY_ONTOLOGY, post ?? EMPTY_ONTOLOGY),
     [pre, post]
   );
 
@@ -2626,43 +2646,73 @@ function PrePostCompare({
       </button>
       {open && (
         <div className="mt-3">
-          {/* 강조 필터 탭 (바깥 + 확대 모달 공용) */}
-          <CompareTabs
-            colors={PREPOST_COLOR}
-            legend={legend}
-            mode={mode}
-            setMode={setMode}
-            className="mb-2"
-          />
-          <div className="overflow-hidden rounded-xl">
-            {display.nodes.length === 0 ? (
-              <p className="rounded-xl bg-white/50 px-4 py-6 text-center text-xs text-black/45 dark:bg-white/5">
-                해당하는 개념이 없습니다.
-              </p>
-            ) : (
-              <ExpandableGraph
-                data={display}
-                studentNames={names}
-                variant="button"
-                title={`수업 전/후 비교 · ${
-                  legend.find(([m]) => m === mode)?.[1] ?? "전체"
+          {/* 그래프 / 표 보기 토글 */}
+          <div className="mb-2 inline-flex rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+            {(
+              [
+                ["graph", "그래프"],
+                ["table", "표"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  view === v
+                    ? "bg-white/80 text-black/80 shadow-sm dark:bg-white/20"
+                    : "text-black/45"
                 }`}
-                nodeColor={(node) => PREPOST_COLOR[statusByKey[node.id] ?? "both"]}
-                modalHeader={
-                  <CompareTabs
-                    colors={PREPOST_COLOR}
-                    legend={legend}
-                    mode={mode}
-                    setMode={setMode}
-                  />
-                }
-              />
-            )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-          <p className="mt-2 text-[11px] text-black/45">
-            주황=수업 전만 있던 개념, 자홍=전·후 공통(지속), 초록=수업 후 새로
-            등장. 위 버튼으로 사전/사후/공통/차이만 강조해 볼 수 있어요.
-          </p>
+
+          {view === "table" ? (
+            <PrePostTable changes={changes} />
+          ) : (
+            <>
+              {/* 강조 필터 탭 (바깥 + 확대 모달 공용) */}
+              <CompareTabs
+                colors={PREPOST_COLOR}
+                legend={legend}
+                mode={mode}
+                setMode={setMode}
+                className="mb-2"
+              />
+              <div className="overflow-hidden rounded-xl">
+                {display.nodes.length === 0 ? (
+                  <p className="rounded-xl bg-white/50 px-4 py-6 text-center text-xs text-black/45 dark:bg-white/5">
+                    해당하는 개념이 없습니다.
+                  </p>
+                ) : (
+                  <ExpandableGraph
+                    data={display}
+                    studentNames={names}
+                    variant="button"
+                    title={`수업 전/후 비교 · ${
+                      legend.find(([m]) => m === mode)?.[1] ?? "전체"
+                    }`}
+                    nodeColor={(node) =>
+                      PREPOST_COLOR[statusByKey[node.id] ?? "both"]
+                    }
+                    modalHeader={
+                      <CompareTabs
+                        colors={PREPOST_COLOR}
+                        legend={legend}
+                        mode={mode}
+                        setMode={setMode}
+                      />
+                    }
+                  />
+                )}
+              </div>
+              <p className="mt-2 text-[11px] text-black/45">
+                주황=수업 전만 있던 개념, 자홍=전·후 공통(지속), 초록=수업 후
+                새로 등장. 위 버튼으로 사전/사후/공통/차이만 강조해 볼 수 있어요.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

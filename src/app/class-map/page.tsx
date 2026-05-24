@@ -35,6 +35,7 @@ import {
 import { listProjects, type Project } from "@/lib/projects";
 import { listGroups, type Group } from "@/lib/groups";
 import { buildPrePostOverlay, filterOverlayByMode } from "@/lib/compare";
+import { PrePostTable } from "@/components/CompareTable";
 import {
   CATEGORY_PALETTE,
   GROUP_COMMON_COLOR,
@@ -916,10 +917,12 @@ function ComparePanel({
   const [mode, setMode] = useState<"all" | "pre" | "post" | "both" | "diff">(
     "all"
   );
+  const [view, setView] = useState<"graph" | "table">("graph");
   const { overlay, statusByKey, counts } = useMemo(
     () => buildPrePostOverlay(pre, post),
     [pre, post]
   );
+  const changes = useMemo(() => diffPrePost(pre, post), [pre, post]);
 
   // 강조 모드에 맞는 노드만 남긴 그래프
   const display = useMemo(
@@ -948,6 +951,32 @@ function ComparePanel({
 
   return (
     <div className="mt-4">
+      {/* 그래프 / 표 보기 토글 */}
+      <div className="mb-3 inline-flex rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+        {(
+          [
+            ["graph", "그래프"],
+            ["table", "표"],
+          ] as const
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              view === v
+                ? "bg-white/80 text-black/80 shadow-sm dark:bg-white/20"
+                : "text-black/45"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "table" ? (
+        <PrePostTable changes={changes} />
+      ) : (
+        <>
       {/* 강조 필터 */}
       <div className="mb-3 flex flex-wrap gap-1.5">
         {filters.map(([m, label, n]) => {
@@ -1007,6 +1036,8 @@ function ComparePanel({
         등장(지속), 초록=수업 후 새로 등장. 위 버튼으로 사전/사후/공통/차이만
         강조해 볼 수 있어요.
       </p>
+        </>
+      )}
     </div>
   );
 }

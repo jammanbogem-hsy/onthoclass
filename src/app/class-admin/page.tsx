@@ -288,8 +288,8 @@ function ClassAdminInner() {
                   )}
 
                   <span className="mt-3" />
-                  <Avatar m={s} size={46} />
-                  <span className="line-clamp-1 w-full text-sm font-semibold">
+                  <Avatar m={s} size={68} />
+                  <span className="line-clamp-1 w-full text-base font-semibold">
                     {s.displayName}
                   </span>
 
