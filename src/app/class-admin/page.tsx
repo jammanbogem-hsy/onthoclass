@@ -1335,19 +1335,33 @@ function WizardModal({
                         } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
                       >
                         {presenting && (
-                          <span className="jam-present-bg absolute inset-x-0 top-0 h-1.5" />
+                          <span className="jam-present-bg pointer-events-none absolute inset-0" />
                         )}
                         {on && (
-                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--md-sys-color-primary)] text-white">
+                          <span className="absolute right-1.5 top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[var(--md-sys-color-primary)] shadow">
                             <Icon name={isPresent ? "campaign" : "check"} size={11} />
                           </span>
                         )}
-                        <Avatar m={s} size={44} />
-                        <span className="line-clamp-1 w-full text-center text-xs font-semibold">
+                        <span className="relative z-10">
+                          <Avatar m={s} size={44} />
+                        </span>
+                        <span
+                          className={`relative z-10 line-clamp-1 w-full text-center text-xs font-semibold ${
+                            presenting
+                              ? "text-white [text-shadow:0_1px_4px_rgba(0,0,0,0.4)]"
+                              : ""
+                          }`}
+                        >
                           {s.displayName}
                         </span>
-                        <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                          {presenting ? "발표 중" : `Lv.${lv.level}`}
+                        <span
+                          className={`relative z-10 text-xs ${
+                            presenting
+                              ? "font-bold text-white [text-shadow:0_1px_4px_rgba(0,0,0,0.4)]"
+                              : "text-[var(--md-sys-color-on-surface-variant)]"
+                          }`}
+                        >
+                          {presenting ? "발표중" : `Lv.${lv.level}`}
                         </span>
                       </button>
                     );
@@ -1429,7 +1443,7 @@ function WizardModal({
                   <div className="flex flex-col gap-2">
                     <p className="rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2 text-center text-xs font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
                       {presenterUid
-                        ? `${nameOf[presenterUid] ?? "학생"}님 발표 중 (무지개)`
+                        ? `${nameOf[presenterUid] ?? "학생"}님이 발표중`
                         : "전체 발표 모드 적용 중 · 카드를 눌러 발표자 지정"}
                     </p>
                     <button

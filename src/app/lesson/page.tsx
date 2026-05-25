@@ -61,7 +61,7 @@ import {
   type SurveyItem,
 } from "@/lib/lessons";
 import { SurveyBuilder } from "@/components/SurveyBuilder";
-import { SurveyResult } from "@/components/SurveyResult";
+import { SurveyResult, SurveyResponses } from "@/components/SurveyResult";
 import { SurveyImportModal } from "@/components/SurveyImportModal";
 import { ReflectAvgBadge } from "@/components/ReflectAvgBadge";
 import { grantXp } from "@/lib/xp";
@@ -1207,7 +1207,6 @@ function QuestionRow({
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [gen, setGen] = useState<"idle" | "running" | "error">("idle");
   const [genMsg, setGenMsg] = useState("");
-
   const scope = `q:${question.id}`;
 
   useEffect(() => {
@@ -1334,12 +1333,33 @@ function QuestionRow({
   }, [cid, lid, scope]);
 
   const answered = subs.filter((s) => s.content.trim());
+  // 설문(검증)은 content 가 비어 있고 surveyAnswers 에 응답이 담긴다
+  const answeredSurvey = subs.filter(
+    (s) => s.surveyAnswers && Object.keys(s.surveyAnswers).length > 0
+  );
   const curHash = hashResponses(
     answered.map((s) => ({ uid: s.uid, content: s.content }))
   );
   const stale = ontology
     ? ontology.inputHash !== curHash
     : answered.length > 0;
+
+  // 설문(검증): "검증 시작"으로 현재 응답을 수합·분석 — 지식 위계의 분석/최신·변경됨과 동일 패턴.
+  // surveyVerifiedHash(저장됨) == 현재 응답 해시면 최신, 다르면 새 응답이 들어온 것(재검증 필요).
+  const curSurveyHash = hashResponses(
+    answeredSurvey.map((s) => ({
+      uid: s.uid,
+      content: JSON.stringify(s.surveyAnswers ?? {}),
+    }))
+  );
+  const surveyVerified = !!question.surveyVerifiedHash;
+  const surveyStale =
+    surveyVerified && question.surveyVerifiedHash !== curSurveyHash;
+  function runSurveyVerify() {
+    updateQuestion(cid, lid, question.id, {
+      surveyVerifiedHash: curSurveyHash,
+    }).then(onChanged);
+  }
 
   // 현재 폼이 서버에 저장된 값과 다른가(=미저장 변경 있음)
   const dirty = useMemo(() => {
@@ -1450,7 +1470,7 @@ function QuestionRow({
     <GlassCard className="p-0">
       <div
         className={`grid gap-0 ${
-          isLink || isSurvey
+          isLink
             ? ""
             : "lg:grid-cols-2 lg:divide-x lg:divide-black/5 dark:lg:divide-white/10"
         }`}
@@ -1616,9 +1636,54 @@ function QuestionRow({
 
           {isSurvey && (
             <div className="mt-3">
-              <p className="mb-2 text-xs font-semibold text-black/55">
-                검증 문항 (사전/사후 효과성)
-              </p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-black/55">
+                  검증 문항 (사전/사후 효과성)
+                </p>
+                <button
+                  type="button"
+                  disabled={answeredSurvey.length === 0}
+                  onClick={runSurveyVerify}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition disabled:opacity-40 ${
+                    surveyVerified && !surveyStale
+                      ? "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
+                      : surveyStale
+                        ? "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)] hover:brightness-105"
+                        : "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] hover:brightness-105"
+                  }`}
+                  title={
+                    answeredSurvey.length === 0
+                      ? "학생 응답이 수합되면 검증을 시작할 수 있어요"
+                      : surveyStale
+                        ? "새 응답을 반영해 분석을 다시 수합합니다"
+                        : surveyVerified
+                          ? "현재 응답으로 분석을 다시 수합합니다"
+                          : "수합된 응답으로 결과 분석을 생성합니다"
+                  }
+                >
+                  <Icon
+                    name={
+                      surveyVerified && !surveyStale
+                        ? "check_circle"
+                        : surveyStale
+                          ? "sync"
+                          : "play_circle"
+                    }
+                    size={15}
+                  />
+                  {!surveyVerified
+                    ? "검증 시작"
+                    : surveyStale
+                      ? "재검증"
+                      : "검증됨"}
+                </button>
+              </div>
+              {surveyStale && (
+                <p className="mb-2 flex items-center gap-1 rounded-lg bg-[var(--md-sys-color-secondary-container)] px-2.5 py-1.5 text-xs text-[var(--md-sys-color-on-secondary-container)]">
+                  <Icon name="info" size={13} />
+                  검증 이후 새 응답이 들어왔어요 — “재검증”으로 분석을 갱신하세요.
+                </p>
+              )}
               <SurveyBuilder
                 items={surveyItems}
                 onChange={setSurveyItems}
@@ -1631,15 +1696,6 @@ function QuestionRow({
                   onAdd={(imported) =>
                     setSurveyItems((prev) => [...prev, ...imported])
                   }
-                />
-              )}
-              {compareInfo?.showHere && (question.surveyItems?.length ?? 0) > 0 && (
-                <SurveyResult
-                  cid={cid}
-                  lid={lid}
-                  preQid={compareInfo.preQid}
-                  postQid={compareInfo.postQid}
-                  items={question.surveyItems ?? []}
                 />
               )}
             </div>
@@ -1887,6 +1943,65 @@ function QuestionRow({
                   answered.map((s) => [s.uid, s.studentName])
                 )}
               />
+            )}
+          </div>
+        )}
+
+        {/* 우: 설문(검증) — 개별 응답 + 사전/사후 t검정 분석 */}
+        {isSurvey && (
+          <div className="bg-white/30 p-6 dark:bg-white/5">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              응답 결과 ({answeredSurvey.length})
+              <span className="text-xs font-normal text-black/40">
+                {question.phase === "pre" ? "수업 전" : "수업 후"}
+              </span>
+            </p>
+            {surveyItems.length === 0 ? (
+              <p className="py-6 text-center text-xs text-black/40">
+                왼쪽에서 검증 문항을 먼저 추가하세요.
+              </p>
+            ) : (
+              <SurveyResponses items={surveyItems} submissions={answeredSurvey} />
+            )}
+            {compareInfo && surveyItems.length > 0 && surveyVerified && (
+              <SurveyResult
+                cid={cid}
+                lid={lid}
+                preQid={compareInfo.preQid}
+                postQid={compareInfo.postQid}
+                items={surveyItems}
+              />
+            )}
+            {compareInfo && surveyItems.length > 0 && !surveyVerified && (
+              <div className="mt-4 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] px-4 py-6 text-center">
+                <Icon
+                  name="query_stats"
+                  size={28}
+                  className="text-[var(--md-sys-color-primary)] opacity-70"
+                />
+                <p className="text-sm font-semibold">
+                  응답 수합 후 “검증 시작”을 누르세요
+                </p>
+                <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  현재 {answeredSurvey.length}명 응답 · 누르면 사전/사후 t검정과
+                  연구 결과 요약이 생성됩니다.
+                </p>
+                <button
+                  type="button"
+                  disabled={answeredSurvey.length === 0}
+                  onClick={runSurveyVerify}
+                  className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
+                >
+                  <Icon name="play_circle" size={16} />
+                  검증 시작
+                </button>
+              </div>
+            )}
+            {!compareInfo && surveyItems.length > 0 && (
+              <p className="mt-4 rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                같은 이름의 ‘수업 {question.phase === "pre" ? "후" : "전"}’ 설문과
+                짝이 지어지면 사전/사후 t검정 분석이 여기에 나타납니다.
+              </p>
             )}
           </div>
         )}

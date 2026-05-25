@@ -60,7 +60,7 @@ export function CanvasIntro({
       }`}
     >
       {name && (
-        <p className="text-lg font-bold text-[var(--md-sys-color-primary)] sm:text-xl">
+        <p className="text-3xl font-extrabold text-[var(--md-sys-color-primary)] sm:text-4xl">
           {name}님,
         </p>
       )}

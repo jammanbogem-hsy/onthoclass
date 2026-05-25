@@ -99,6 +99,7 @@ export type Question = {
   revealAnswer?: boolean; // 문항(quiz): 제출 후 학생에게 정답 공개(공개 시 잠금)
   boardMode?: "shared" | "group"; // 보드(canvas): 공용 1개 / 모둠별 따로
   surveyItems?: SurveyItem[]; // 설문(survey) 문항 목록
+  surveyVerifiedHash?: string; // 설문 검증(분석 수합) 시점의 응답 해시 — 있으면 분석 생성됨, 불일치면 stale
   clonedFrom?: string; // 복제 원본 질문 id (수업 전→후 가져오기 등)
   createdBy: string;
   createdAt: number | null;
@@ -533,6 +534,7 @@ export async function updateQuestion(
     revealAnswer?: boolean;
     boardMode?: "shared" | "group";
     surveyItems?: SurveyItem[];
+    surveyVerifiedHash?: string;
     clonedFrom?: string;
   }
 ): Promise<void> {
@@ -1018,6 +1020,10 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
           return item;
         })
       : undefined,
+    surveyVerifiedHash:
+      typeof v.surveyVerifiedHash === "string"
+        ? (v.surveyVerifiedHash as string)
+        : undefined,
     clonedFrom:
       typeof v.clonedFrom === "string" ? (v.clonedFrom as string) : undefined,
     createdBy: (v.createdBy as string) ?? "",

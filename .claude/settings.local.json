@@ -101,7 +101,8 @@
       "Bash(git commit -q -m 'feat\\(survey\\): 설문\\(검증\\) 활동 — 데이터모델 + 교사 빌더 + 학생 응답 *)",
       "Bash(echo \"exit: $?\")",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only functions:parseSurveyDoc,hosting)",
-      "Bash(echo \"exit:$?\")"
+      "Bash(echo \"exit:$?\")",
+      "Bash(textutil -convert txt /tmp/test.docx -stdout)"
     ]
   }
 }
