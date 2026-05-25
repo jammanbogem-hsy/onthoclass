@@ -827,6 +827,176 @@ export const onLessonMessage = onDocumentCreated(
   }
 );
 
+/* ===================================================================== *
+ *  문서/이미지 → 설문 문항 파싱 (Claude 비전/PDF)
+ *  교사가 PDF·이미지·문서를 업로드하면 척도/객관식/주관식 문항을 추출.
+ *  반환 항목엔 id 없음 — 클라이언트가 변수키를 부여(전/후 페어링 기준).
+ * ===================================================================== */
+export interface ParsedSurvey {
+  items: {
+    type: "scale" | "choice" | "open";
+    prompt: string;
+    options: string[]; // choice 선택지 (그 외엔 빈 배열)
+    scaleMax: number; // scale 최대값(예: 5). 그 외엔 0
+    scaleLow: string; // scale 낮음 라벨 (없으면 "")
+    scaleHigh: string; // scale 높음 라벨 (없으면 "")
+  }[];
+}
+
+const PARSE_SURVEY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          type: {
+            type: "string",
+            enum: ["scale", "choice", "open"],
+            description:
+              "리커트/점수 척도면 scale, 보기에서 고르면 choice, 자유 서술이면 open",
+          },
+          prompt: { type: "string", description: "문항 내용(한국어, 원문 유지)" },
+          options: {
+            type: "array",
+            items: { type: "string" },
+            description: "choice 의 선택지. scale/open 이면 빈 배열",
+          },
+          scaleMax: {
+            type: "number",
+            description: "scale 의 최대 점수(예: 5점 척도면 5). scale 이 아니면 0",
+          },
+          scaleLow: {
+            type: "string",
+            description: "scale 낮은쪽 앵커 라벨(예: 전혀 아니다). 없으면 빈 문자열",
+          },
+          scaleHigh: {
+            type: "string",
+            description: "scale 높은쪽 앵커 라벨(예: 매우 그렇다). 없으면 빈 문자열",
+          },
+        },
+        required: ["type", "prompt", "options", "scaleMax", "scaleLow", "scaleHigh"],
+      },
+    },
+  },
+  required: ["items"],
+} as const;
+
+const PARSE_SURVEY_SYSTEM = `당신은 설문지 디지털화 도구입니다. 업로드된 문서/이미지(PDF·사진·캡처)에서 설문/검증 문항을 그대로 추출해 구조화합니다.
+규칙:
+- 각 문항을 유형으로 분류합니다: 리커트/점수 척도 → "scale", 보기에서 고르는 문항 → "choice", 자유 서술 → "open".
+- prompt 에는 문항 텍스트를 원문 그대로(불필요한 번호·기호는 정리) 담습니다.
+- choice 면 보기들을 options 에 순서대로 담고, scale/open 이면 options 는 빈 배열입니다.
+- scale 이면 scaleMax 에 최대 점수(예: 5점 척도면 5)를, 양끝 앵커 문구가 있으면 scaleLow/scaleHigh 에 담습니다(없으면 빈 문자열). scale 이 아니면 scaleMax 는 0.
+- 제목·안내문·인적사항 칸·머리글은 문항이 아니므로 제외합니다.
+- 문서에 없는 문항을 지어내지 않습니다. 읽은 순서를 유지합니다.`;
+
+type SurveyFile = { mediaType: string; data: string };
+
+export const parseSurveyDoc = onCall(
+  {
+    secrets: [ANTHROPIC_API_KEY],
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async (req): Promise<ParsedSurvey> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { classId, files } = (req.data ?? {}) as {
+      classId?: string;
+      files?: SurveyFile[];
+    };
+    if (!classId || !Array.isArray(files) || files.length === 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "classId 와 files(배열)가 필요합니다."
+      );
+    }
+    const memberSnap = await getFirestore()
+      .doc(`classes/${classId}/members/${req.auth.uid}`)
+      .get();
+    if (!memberSnap.exists || memberSnap.data()?.role !== "teacher") {
+      throw new HttpsError(
+        "permission-denied",
+        "해당 학급의 교사만 실행할 수 있습니다."
+      );
+    }
+
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+    const content: Anthropic.ContentBlockParam[] = files.map((f) =>
+      f.mediaType === "application/pdf"
+        ? {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: f.data,
+            },
+          }
+        : {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: f.mediaType as
+                | "image/png"
+                | "image/jpeg"
+                | "image/webp"
+                | "image/gif",
+              data: f.data,
+            },
+          }
+    );
+    content.push({
+      type: "text",
+      text: "위 자료에서 설문/검증 문항을 모두 추출해 구조화하세요.",
+    });
+
+    try {
+      const message = await client.messages.create({
+        model: "claude-opus-4-7",
+        max_tokens: 8000,
+        system: [
+          {
+            type: "text",
+            text: PARSE_SURVEY_SYSTEM,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        output_config: {
+          format: { type: "json_schema", schema: PARSE_SURVEY_SCHEMA },
+          effort: "medium",
+        },
+        messages: [{ role: "user", content }],
+      });
+      const jsonText = message.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      if (!jsonText.trim()) {
+        throw new HttpsError(
+          "internal",
+          "모델이 빈 응답을 반환했습니다 (stop_reason: " +
+            message.stop_reason +
+            ")."
+        );
+      }
+      return JSON.parse(jsonText) as ParsedSurvey;
+    } catch (err) {
+      if (err instanceof Anthropic.APIError) {
+        throw new HttpsError(
+          "internal",
+          `Claude API 오류 (${err.status}): ${err.message}`
+        );
+      }
+      throw err;
+    }
+  }
+);
+
 // 교사 권한 부여 — 코드 검증 후 users/{uid}.role='teacher' 설정(서버 전용).
 // 클라이언트가 role 을 직접 'teacher' 로 쓰지 못하도록 규칙으로 잠그고
 // 이 함수만 admin 권한으로 role 을 부여한다.

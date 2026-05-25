@@ -8,6 +8,8 @@ import {
   type Submission,
 } from "@/lib/lessons";
 import { cohenLabel, pairedTTest, type PairedResult } from "@/lib/stats";
+// ⚠️ DEV 전용 더미 시드 — 테스트 후 이 import 와 아래 DevSeedPanel 을 제거하세요.
+import { clearSurveyDummies, seedSurveyDummies } from "@/lib/devSeedSurvey";
 
 /** 사전/사후 설문 효과성 분석 (대응표본 t검정 등) — 교사용. */
 export function SurveyResult({
@@ -26,13 +28,14 @@ export function SurveyResult({
   const [pre, setPre] = useState<Submission[] | null>(null);
   const [post, setPost] = useState<Submission[] | null>(null);
   const [open, setOpen] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0); // DEV 시드 후 재조회
 
   useEffect(() => {
     listQuestionSubmissions(cid, lid, preQid).then(setPre).catch(() => setPre([]));
     listQuestionSubmissions(cid, lid, postQid)
       .then(setPost)
       .catch(() => setPost([]));
-  }, [cid, lid, preQid, postQid]);
+  }, [cid, lid, preQid, postQid, reloadNonce]);
 
   const preMap = useMemo(() => {
     const m = new Map<string, Submission>();
@@ -74,6 +77,18 @@ export function SurveyResult({
         </span>
         <Icon name={open ? "expand_less" : "expand_more"} size={18} />
       </button>
+
+      {/* ⚠️ DEV 전용 — 배포 빌드(production)에선 렌더링되지 않습니다. 테스트 후 제거하세요. */}
+      {process.env.NODE_ENV !== "production" && (
+        <DevSeedPanel
+          cid={cid}
+          lid={lid}
+          preQid={preQid}
+          postQid={postQid}
+          items={items}
+          onDone={() => setReloadNonce((v) => v + 1)}
+        />
+      )}
 
       {open && (
         <div className="mt-3 flex flex-col gap-5">
@@ -310,5 +325,72 @@ function Row({
         )}
       </td>
     </tr>
+  );
+}
+
+// ⚠️ DEV 전용 — 사전/사후 더미 데이터 주입 패널. 배포 빌드에선 렌더링 안 됨.
+// 테스트가 끝나면 이 컴포넌트와 import, 위의 호출부, src/lib/devSeedSurvey.ts 를 삭제하세요.
+function DevSeedPanel({
+  cid,
+  lid,
+  preQid,
+  postQid,
+  items,
+  onDone,
+}: {
+  cid: string;
+  lid: string;
+  preQid: string;
+  postQid: string;
+  items: SurveyItem[];
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState<null | "seed" | "clear">(null);
+  const [msg, setMsg] = useState("");
+
+  async function run(mode: "seed" | "clear") {
+    setBusy(mode);
+    setMsg("");
+    try {
+      if (mode === "seed") {
+        const { n } = await seedSurveyDummies({ cid, lid, preQid, postQid, items });
+        setMsg(`가상 학생 ${n}명의 사전·사후 응답을 주입했어요.`);
+      } else {
+        await clearSurveyDummies({ cid, lid, preQid, postQid });
+        setMsg("더미 응답을 삭제했어요.");
+      }
+      onDone();
+    } catch (e) {
+      setMsg(`실패: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] px-3 py-2 text-xs">
+      <span className="font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+        🧪 DEV
+      </span>
+      <button
+        type="button"
+        onClick={() => run("seed")}
+        disabled={busy !== null}
+        className="rounded-full bg-[var(--md-sys-color-primary)] px-3 py-1.5 font-semibold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
+      >
+        {busy === "seed" ? "주입 중…" : "더미 25+25 주입"}
+      </button>
+      <button
+        type="button"
+        onClick={() => run("clear")}
+        disabled={busy !== null}
+        className="rounded-full bg-[var(--md-sys-color-error-container)] px-3 py-1.5 font-semibold text-[var(--md-sys-color-on-error-container)] transition hover:brightness-105 disabled:opacity-40"
+      >
+        {busy === "clear" ? "삭제 중…" : "더미 삭제"}
+      </button>
+      {msg && (
+        <span className="text-[var(--md-sys-color-on-surface-variant)]">{msg}</span>
+      )}
+    </div>
   );
 }

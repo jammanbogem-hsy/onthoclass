@@ -62,6 +62,7 @@ import {
 } from "@/lib/lessons";
 import { SurveyBuilder } from "@/components/SurveyBuilder";
 import { SurveyResult } from "@/components/SurveyResult";
+import { SurveyImportModal } from "@/components/SurveyImportModal";
 import { ReflectAvgBadge } from "@/components/ReflectAvgBadge";
 import { grantXp } from "@/lib/xp";
 import { listSourceClasses, type SourceClass } from "@/lib/teams";
@@ -1183,6 +1184,7 @@ function QuestionRow({
   const [surveyItems, setSurveyItems] = useState<SurveyItem[]>(
     question.surveyItems ?? []
   );
+  const [surveyImport, setSurveyImport] = useState(false);
   const [audGroupIds, setAudGroupIds] = useState<string[]>(
     question.audGroupIds
   );
@@ -1617,7 +1619,20 @@ function QuestionRow({
               <p className="mb-2 text-xs font-semibold text-black/55">
                 검증 문항 (사전/사후 효과성)
               </p>
-              <SurveyBuilder items={surveyItems} onChange={setSurveyItems} />
+              <SurveyBuilder
+                items={surveyItems}
+                onChange={setSurveyItems}
+                onImport={() => setSurveyImport(true)}
+              />
+              {surveyImport && (
+                <SurveyImportModal
+                  classId={cid}
+                  onClose={() => setSurveyImport(false)}
+                  onAdd={(imported) =>
+                    setSurveyItems((prev) => [...prev, ...imported])
+                  }
+                />
+              )}
               {compareInfo?.showHere && (question.surveyItems?.length ?? 0) > 0 && (
                 <SurveyResult
                   cid={cid}

@@ -108,22 +108,15 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {!isTeacher && classes && classes.length > 0 && (
-          <TodoSection
-            classes={classes}
-            uid={user.uid}
-            onGo={(cid) => router.push(`/class/?id=${cid}`)}
-          />
-        )}
-
-        {!isTeacher && classes && classes.length > 0 && (
-          <StudentProgress
+        {!isTeacher && classes && classes.length > 0 ? (
+          <StudentClassBoard
             classes={classes}
             uid={user.uid}
             name={profile.name || user.displayName || "학생"}
+            onGoClass={(cid) => router.push(`/class/?id=${cid}`)}
+            onGoLevel={(cid) => router.push(`/level/?id=${cid}`)}
           />
-        )}
-
+        ) : (
         <section className="mt-8">
           {classes === null ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -179,6 +172,7 @@ export default function DashboardPage() {
             </div>
           )}
         </section>
+        )}
       </main>
 
       {modal === "create" && (
@@ -203,24 +197,38 @@ export default function DashboardPage() {
   );
 }
 
-function TodoSection({
+/**
+ * 학생 대시보드 메인 — 학급 카드를 먼저 보여주고, 각 학급 옆에
+ * 그 학급의 진행도(레벨/경험치)·미션·미제출 할 일을 함께 묶어 보여준다.
+ */
+function StudentClassBoard({
   classes,
   uid,
-  onGo,
+  name,
+  onGoClass,
+  onGoLevel,
 }: {
   classes: ClassRoom[];
   uid: string;
-  onGo: (cid: string) => void;
+  name: string;
+  onGoClass: (cid: string) => void;
+  onGoLevel: (cid: string) => void;
 }) {
+  const [data, setData] = useState<
+    Record<string, { xp: number; quests: Quest[] }>
+  >({});
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const { current: celebrate, enqueue: setCelebrate, done: celebrateDone } =
+    useCelebrateQueue();
 
+  // 미제출 할 일 수
   useEffect(() => {
     let alive = true;
     Promise.all(
-      classes.map(async (c) => [
-        c.id,
-        await studentOpenCount(c.id, uid).catch(() => 0),
-      ] as const)
+      classes.map(
+        async (c) =>
+          [c.id, await studentOpenCount(c.id, uid).catch(() => 0)] as const
+      )
     ).then((pairs) => {
       if (alive) setCounts(Object.fromEntries(pairs));
     });
@@ -229,82 +237,16 @@ function TodoSection({
     };
   }, [classes, uid]);
 
-  const pending = counts
-    ? classes.filter((c) => (counts[c.id] ?? 0) > 0)
-    : [];
-  const total = counts
-    ? Object.values(counts).reduce((a, b) => a + b, 0)
-    : 0;
-
-  return (
-    <GlassCard className="mt-6 p-5">
-      <p className="flex items-center gap-2 text-sm font-bold">
-        <Icon
-          name="assignment"
-          size={18}
-          className="text-[var(--md-sys-color-primary)]"
-        />
-        할 일
-        {counts && (
-          <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-semibold text-[var(--md-sys-color-on-primary-container)]">
-            미제출 {total}
-          </span>
-        )}
-      </p>
-      {!counts ? (
-        <p className="mt-3 text-sm text-black/40">확인 중…</p>
-      ) : pending.length === 0 ? (
-        <p className="mt-3 text-sm text-black/50 dark:text-white/50">
-          모든 질문에 답했어요. 잘하고 있어요!
-        </p>
-      ) : (
-        <ul className="mt-3 flex flex-col gap-2">
-          {pending.map((c) => (
-            <li key={c.id}>
-              <button
-                onClick={() => onGo(c.id)}
-                className="flex w-full items-center justify-between rounded-xl bg-[var(--md-sys-color-surface-container)] px-4 py-2.5 text-sm transition hover:bg-[var(--md-sys-color-surface-container-high)]"
-              >
-                <span className="font-medium">{c.name}</span>
-                <span className="flex items-center gap-1 text-xs font-semibold text-[var(--md-sys-color-primary)]">
-                  미제출 {counts[c.id]}
-                  <Icon name="chevron_right" size={16} />
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </GlassCard>
-  );
-}
-
-function StudentProgress({
-  classes,
-  uid,
-  name,
-}: {
-  classes: ClassRoom[];
-  uid: string;
-  name: string;
-}) {
-  const router = useRouter();
-  const [data, setData] = useState<
-    Record<string, { xp: number; quests: Quest[] }> | null
-  >(null);
-  const { current: celebrate, enqueue: setCelebrate, done: celebrateDone } =
-    useCelebrateQueue();
-
+  // 학급별 경험치/미션 실시간 구독 (교사 변경 즉시 반영 + 레벨업/미션 축하)
   useEffect(() => {
-    // 학급별 경험치/미션 실시간 구독 (교사 변경 즉시 반영 + 레벨업 축하)
     const offs: (() => void)[] = [];
     for (const c of classes) {
       offs.push(
         watchXp(c.id, (m) => {
           const xp = m[uid] ?? 0;
           setData((prev) => ({
-            ...(prev ?? {}),
-            [c.id]: { xp, quests: prev?.[c.id]?.quests ?? [] },
+            ...prev,
+            [c.id]: { xp, quests: prev[c.id]?.quests ?? [] },
           }));
           const lv = xpLevel(xp).level;
           const key = `lvlup:${c.id}:${uid}`;
@@ -326,10 +268,9 @@ function StudentProgress({
             (q) => q.targetType === "all" || q.assigneeUids.includes(uid)
           );
           setData((prev) => ({
-            ...(prev ?? {}),
-            [c.id]: { xp: prev?.[c.id]?.xp ?? 0, quests: mine },
+            ...prev,
+            [c.id]: { xp: prev[c.id]?.xp ?? 0, quests: mine },
           }));
-          // 완료된 미션 폭죽 축하 (아직 축하 안 한 건)
           const newly = mine.filter((q) => {
             const key = `mdone:${c.id}:${q.id}`;
             if (q.completions[uid]) {
@@ -354,105 +295,143 @@ function StudentProgress({
     return () => offs.forEach((o) => o());
   }, [classes, uid]);
 
-  if (!data) return null;
-  const rows = classes.filter(
-    (c) => (data[c.id]?.xp ?? 0) > 0 || (data[c.id]?.quests.length ?? 0) > 0
-  );
-  if (rows.length === 0) return null;
-
   return (
-    <GlassCard className="mt-6 p-5">
-      <p className="flex items-center gap-2 text-sm font-bold">
-        <Icon
-          name="stadia_controller"
-          size={18}
-          className="text-[var(--md-sys-color-primary)]"
-        />
-        내 성장 · 경험치 &amp; 미션
-        <span className="ml-auto text-xs font-medium text-black/40">
-          클릭하면 자세히
-        </span>
-      </p>
-      <div className="mt-4 flex flex-col gap-5">
-        {rows.map((c) => {
-          const xp = data[c.id]?.xp ?? 0;
-          const lv = xpLevel(xp);
-          const quests = data[c.id]?.quests ?? [];
-          return (
-            <div
-              key={c.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push(`/level/?id=${c.id}`)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  router.push(`/level/?id=${c.id}`);
-                }
-              }}
-              className="block w-full cursor-pointer rounded-xl text-left transition hover:bg-black/[0.03]"
-            >
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-xs font-extrabold text-white">
-                  Lv.{lv.level}
-                </span>
-                <span className="truncate text-sm font-semibold">
-                  {c.name}
-                </span>
-                <span className="ml-auto shrink-0 text-xs text-black/45">
-                  {xp.toLocaleString()} XP · 다음 레벨까지 {lv.remaining}
-                </span>
-              </div>
-              <span className="mt-1.5 block h-2 w-full overflow-hidden rounded-full bg-black/10">
-                <span
-                  className="block h-full rounded-full bg-[var(--md-sys-color-primary)] transition-all"
-                  style={{ width: `${Math.round(lv.pct * 100)}%` }}
-                />
-              </span>
-              {quests.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {quests.slice(0, 3).map((q) => {
-                    const done = !!q.completions[uid];
-                    return (
-                      <li
-                        key={q.id}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <Icon
-                          name={
-                            done ? "task_alt" : "radio_button_unchecked"
-                          }
-                          size={16}
-                          className={
-                            done
-                              ? "text-[var(--md-sys-color-primary)]"
-                              : "text-black/30"
-                          }
-                        />
-                        <span
-                          className={
-                            done ? "text-black/45 line-through" : ""
-                          }
-                        >
-                          {q.title}
-                        </span>
-                        <span className="ml-auto shrink-0 text-xs font-semibold text-[var(--md-sys-color-primary)]">
-                          +{q.xp} XP
-                        </span>
-                      </li>
-                    );
-                  })}
-                  {quests.length > 3 && (
-                    <li className="text-xs text-black/40">
-                      외 {quests.length - 3}개 · 클릭해 모두 보기
-                    </li>
+    <section className="mt-6 flex flex-col gap-4">
+      {classes.map((c) => {
+        const xp = data[c.id]?.xp ?? 0;
+        const lv = xpLevel(xp);
+        const quests = data[c.id]?.quests ?? [];
+        const todo = counts?.[c.id] ?? 0;
+        return (
+          <GlassCard key={c.id} className="overflow-hidden p-0">
+            <div className="grid md:grid-cols-[minmax(0,17rem)_1fr]">
+              {/* 좌: 학급 카드 (클릭 → 학급 입장) */}
+              <button
+                onClick={() => onGoClass(c.id)}
+                className="group flex flex-col text-left transition hover:bg-black/[0.02]"
+              >
+                <div
+                  className={`relative h-20 ${
+                    SUBJECT_GRADIENTS[c.colorIndex % SUBJECT_GRADIENTS.length]
+                  }`}
+                >
+                  {todo > 0 && (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-error)] px-2.5 py-1 text-xs font-bold text-white shadow-sm">
+                      <Icon name="assignment_late" size={14} />
+                      미제출 {todo}
+                    </span>
                   )}
-                </ul>
-              )}
+                </div>
+                <div className="flex flex-1 flex-col p-5">
+                  <h3 className="truncate text-lg font-bold">{c.name}</h3>
+                  <p className="mt-0.5 truncate text-sm text-black/55 dark:text-white/55">
+                    {c.subject || "과목 미지정"}
+                  </p>
+                  <div className="mt-auto flex items-center gap-1 pt-4 text-xs font-semibold text-[var(--md-sys-color-primary)]">
+                    학급 입장
+                    <Icon
+                      name="arrow_forward"
+                      size={14}
+                      className="transition group-hover:translate-x-0.5"
+                    />
+                  </div>
+                </div>
+              </button>
+
+              {/* 우: 진행도 · 미션 · 할 일 */}
+              <div className="flex flex-col gap-3 border-t border-[var(--md-sys-color-outline-variant)] p-5 md:border-l md:border-t-0">
+                {/* 진행도 (클릭 → 레벨 페이지) */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onGoLevel(c.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onGoLevel(c.id);
+                    }
+                  }}
+                  className="cursor-pointer rounded-xl transition hover:bg-black/[0.03]"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-[var(--md-sys-color-primary)] px-2 py-0.5 text-xs font-extrabold text-white">
+                      Lv.{lv.level}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">
+                      <Icon name="stadia_controller" size={15} />내 성장
+                    </span>
+                    <span className="ml-auto shrink-0 text-xs text-black/45">
+                      {xp.toLocaleString()} XP · 다음 레벨까지 {lv.remaining}
+                    </span>
+                  </div>
+                  <span className="mt-1.5 block h-2 w-full overflow-hidden rounded-full bg-black/10">
+                    <span
+                      className="block h-full rounded-full bg-[var(--md-sys-color-primary)] transition-all"
+                      style={{ width: `${Math.round(lv.pct * 100)}%` }}
+                    />
+                  </span>
+                </div>
+
+                {/* 미션 */}
+                {quests.length > 0 ? (
+                  <ul className="flex flex-col gap-1">
+                    {quests.slice(0, 3).map((q) => {
+                      const done = !!q.completions[uid];
+                      return (
+                        <li key={q.id} className="flex items-center gap-2 text-sm">
+                          <Icon
+                            name={done ? "task_alt" : "radio_button_unchecked"}
+                            size={16}
+                            className={
+                              done
+                                ? "text-[var(--md-sys-color-primary)]"
+                                : "text-black/30"
+                            }
+                          />
+                          <span className={done ? "text-black/45 line-through" : ""}>
+                            {q.title}
+                          </span>
+                          <span className="ml-auto shrink-0 text-xs font-semibold text-[var(--md-sys-color-primary)]">
+                            +{q.xp} XP
+                          </span>
+                        </li>
+                      );
+                    })}
+                    {quests.length > 3 && (
+                      <li className="text-xs text-black/40">
+                        외 {quests.length - 3}개 · 레벨에서 모두 보기
+                      </li>
+                    )}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-black/45">진행 중인 미션이 없어요.</p>
+                )}
+
+                {/* 할 일 (미제출 → 학급으로) */}
+                {todo > 0 && (
+                  <button
+                    onClick={() => onGoClass(c.id)}
+                    className="flex items-center justify-between rounded-xl bg-[var(--md-sys-color-surface-container)] px-4 py-2.5 text-sm transition hover:bg-[var(--md-sys-color-surface-container-high)]"
+                  >
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <Icon
+                        name="assignment"
+                        size={16}
+                        className="text-[var(--md-sys-color-primary)]"
+                      />
+                      할 일 · 답하지 않은 질문
+                    </span>
+                    <span className="flex items-center gap-1 text-xs font-semibold text-[var(--md-sys-color-primary)]">
+                      미제출 {todo}
+                      <Icon name="chevron_right" size={16} />
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
-          );
-        })}
-      </div>
+          </GlassCard>
+        );
+      })}
       {celebrate && (
         <MissionCelebrate
           key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
@@ -467,7 +446,7 @@ function StudentProgress({
           onDone={celebrateDone}
         />
       )}
-    </GlassCard>
+    </section>
   );
 }
 

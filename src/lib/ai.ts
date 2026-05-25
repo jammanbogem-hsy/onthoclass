@@ -78,3 +78,27 @@ export async function wikiInsights(input: {
   const res = await fn(input);
   return res.data;
 }
+
+export type ParsedSurvey = {
+  items: {
+    type: "scale" | "choice" | "open";
+    prompt: string;
+    options: string[];
+    scaleMax: number;
+    scaleLow: string;
+    scaleHigh: string;
+  }[];
+};
+
+/** PDF·이미지·문서(base64) → 설문 문항 추출 (Claude 비전/PDF). 교사 전용 */
+export async function parseSurveyDoc(input: {
+  classId: string;
+  files: { mediaType: string; data: string }[];
+}): Promise<ParsedSurvey> {
+  const fn = httpsCallable<typeof input, ParsedSurvey>(
+    getFunctionsClient(),
+    "parseSurveyDoc"
+  );
+  const res = await fn(input);
+  return res.data;
+}

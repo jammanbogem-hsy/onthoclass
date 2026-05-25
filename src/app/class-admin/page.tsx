@@ -1317,10 +1317,12 @@ function WizardModal({
                     const isPresent = kind === "present";
                     const presenting = isPresent && presenterUid === s.uid;
                     const on = isPresent ? presenting : sel.has(s.uid);
+                    const disabled = isPresent && !presentActive;
                     const lv = xpLevel(xpMap[s.uid] ?? 0);
                     return (
                       <button
                         key={s.uid}
+                        disabled={disabled}
                         onClick={() =>
                           isPresent
                             ? togglePresenter(s.uid, s.displayName)
@@ -1330,7 +1332,7 @@ function WizardModal({
                           on
                             ? "border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]"
                             : "border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] hover:border-[var(--md-sys-color-outline)]"
-                        }`}
+                        } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
                       >
                         {presenting && (
                           <span className="jam-present-bg absolute inset-x-0 top-0 h-1.5" />
@@ -1372,8 +1374,9 @@ function WizardModal({
               </h3>
               {kind === "present" ? (
                 <p className="rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
-                  왼쪽 학생 카드를 누르면 그 학생이 발표를 시작해요. 발표자는
-                  무지개 화면, 나머지 학생은 관람 화면으로 모두 잠깁니다.
+                  ① <b>효과 적용</b>하면 전체 학생에게 기본 발표 효과가 적용돼요(모두
+                  잠금). ② 왼쪽 학생 카드를 누르면 그 학생에게 무지개 발표 화면이
+                  추가로 제공됩니다.
                 </p>
               ) : uids.length === 0 ? (
                 <p className="rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
@@ -1422,20 +1425,29 @@ function WizardModal({
                 className="m3-field !py-2 !text-sm"
               />
               {kind === "present" ? (
-                presenterUid ? (
-                  <button
-                    onClick={onClearPresenter}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-error-container)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-error-container)] transition hover:brightness-105"
-                  >
-                    <Icon name="stop_circle" size={18} />
-                    {nameOf[presenterUid]
-                      ? `${nameOf[presenterUid]} 발표 종료`
-                      : "발표 종료"}
-                  </button>
+                presentActive ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2 text-center text-xs font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
+                      {presenterUid
+                        ? `${nameOf[presenterUid] ?? "학생"}님 발표 중 (무지개)`
+                        : "전체 발표 모드 적용 중 · 카드를 눌러 발표자 지정"}
+                    </p>
+                    <button
+                      onClick={onStopPresent}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-error-container)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-error-container)] transition hover:brightness-105"
+                    >
+                      <Icon name="stop_circle" size={18} />
+                      발표 모드 종료
+                    </button>
+                  </div>
                 ) : (
-                  <p className="text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                    아직 발표 중인 학생이 없어요.
-                  </p>
+                  <button
+                    onClick={onStartPresent}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105"
+                  >
+                    <Icon name="campaign" size={18} />
+                    효과 적용해서 보내기 (전체)
+                  </button>
                 )
               ) : (
                 <button

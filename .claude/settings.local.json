@@ -98,7 +98,10 @@
       "Bash(sort -t: -k1)",
       "Bash(sed -i '' 's/text-red-500/text-[var\\(--md-sys-color-error\\)]/g' src/app/dashboard/page.tsx)",
       "Bash(echo \"exit=$?\")",
-      "Bash(git commit -q -m 'feat\\(survey\\): 설문\\(검증\\) 활동 — 데이터모델 + 교사 빌더 + 학생 응답 *)"
+      "Bash(git commit -q -m 'feat\\(survey\\): 설문\\(검증\\) 활동 — 데이터모델 + 교사 빌더 + 학생 응답 *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx firebase deploy --only functions:parseSurveyDoc,hosting)",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }
