@@ -61,6 +61,7 @@ import {
   type SurveyItem,
 } from "@/lib/lessons";
 import { SurveyBuilder } from "@/components/SurveyBuilder";
+import { SurveyResult } from "@/components/SurveyResult";
 import { ReflectAvgBadge } from "@/components/ReflectAvgBadge";
 import { grantXp } from "@/lib/xp";
 import { listSourceClasses, type SourceClass } from "@/lib/teams";
@@ -1617,6 +1618,15 @@ function QuestionRow({
                 검증 문항 (사전/사후 효과성)
               </p>
               <SurveyBuilder items={surveyItems} onChange={setSurveyItems} />
+              {compareInfo?.showHere && (question.surveyItems?.length ?? 0) > 0 && (
+                <SurveyResult
+                  cid={cid}
+                  lid={lid}
+                  preQid={compareInfo.preQid}
+                  postQid={compareInfo.postQid}
+                  items={question.surveyItems ?? []}
+                />
+              )}
             </div>
           )}
 

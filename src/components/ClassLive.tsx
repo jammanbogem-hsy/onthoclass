@@ -7,8 +7,10 @@ import { getMyRole, type Role } from "@/lib/classes";
 import {
   stopLock,
   watchLock,
+  watchPresent,
   watchSignal,
   type ActivityLock,
+  type PresentState,
 } from "@/lib/live";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
 import { PresentOverlay } from "@/components/PresentOverlay";
@@ -31,6 +33,7 @@ function ClassLiveInner() {
   const { current: celebrate, enqueue, done } = useCelebrateQueue();
   const [lock, setLock] = useState<ActivityLock | null>(null);
   const [lockDismissed, setLockDismissed] = useState(false);
+  const [present, setPresent] = useState<PresentState | null>(null);
 
   // 역할 확인 (멤버 여부 + 학생/교사). cid 가 없으면 파생값에서 무시되므로
   // 동기 초기화 없이 비동기 결과만 반영한다.
@@ -85,35 +88,52 @@ function ClassLiveInner() {
     return () => clearTimeout(t);
   }, [role, cid, lock]);
 
+  // 발표 모드 구독
+  useEffect(() => {
+    if (!cid || !uid || !role) return;
+    return watchPresent(cid, setPresent);
+  }, [cid, uid, role]);
+
   // 학생만 잠금 대상. 만료(until) 처리는 오버레이의 onExpire 가 담당한다.
   const lockActive =
     !!cid && role === "student" && !lockDismissed && !!lock?.active;
 
+  // 발표 모드: 전체 기본 효과(관람·잠금). 발표자로 지정된 본인만 무지개.
+  const presentActive = !!cid && role === "student" && !!present?.active;
+  const iAmPresenter = presentActive && present?.uid === uid;
+
   return (
     <>
-      {celebrate &&
-        (celebrate.kind === "present" ? (
-          <PresentOverlay
-            key={`present:${celebrate.title}:${celebrate.subtitle ?? ""}`}
-            title={celebrate.title}
-            subtitle={celebrate.subtitle}
-            onDone={done}
-          />
-        ) : (
-          <MissionCelebrate
-            key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
-            title={celebrate.title}
-            subtitle={celebrate.subtitle}
-            kicker={celebrate.kind === "level" ? "LEVEL UP" : "MISSION CLEAR"}
-            lottieSrc={
-              celebrate.kind === "level"
-                ? "/Confetti.json"
+      {celebrate && (
+        <MissionCelebrate
+          key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
+          title={celebrate.title}
+          subtitle={celebrate.subtitle}
+          kicker={
+            celebrate.kind === "level"
+              ? "LEVEL UP"
+              : celebrate.kind === "present"
+                ? "PRESENTATION"
+                : "MISSION CLEAR"
+          }
+          lottieSrc={
+            celebrate.kind === "level"
+              ? "/Confetti.json"
+              : celebrate.kind === "present"
+                ? "/Sparkles%20Loop%20Loader%20ai.json"
                 : "/mission-success.json"
-            }
-            onDone={done}
-          />
-        ))}
-      {lockActive && (
+          }
+          onDone={done}
+        />
+      )}
+      {presentActive && (
+        <PresentOverlay
+          variant={iAmPresenter ? "presenter" : "audience"}
+          name={present?.name}
+          cheer={iAmPresenter ? present?.cheer : undefined}
+        />
+      )}
+      {lockActive && !presentActive && (
         <ActivityLockOverlay
           until={lock!.until}
           onExpire={() => setLockDismissed(true)}

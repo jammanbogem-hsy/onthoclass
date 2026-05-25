@@ -4,24 +4,22 @@ import { useEffect, useState } from "react";
 import Lottie from "lottie-react";
 
 /**
- * 발표 독려 효과 — 무지개 배경 + Sparkles 모션 + "발표해봅시다!" 문구.
- * 잠깐 보여주고 자동으로 사라진다(클릭하면 즉시 닫힘).
+ * 발표 모드 전체화면(지속형) — 교사가 종료할 때까지 유지하며 모든 입력을 막는다.
+ * - presenter: 발표 중인 학생 → 무지개 배경 + Sparkles + "발표해봅시다!"
+ * - audience : 나머지 학생 → 차분한 배경 + "○○님이 발표 중이에요" (관람·집중)
  */
 export function PresentOverlay({
-  title = "발표해봅시다!",
-  subtitle,
+  variant,
+  name,
+  cheer,
   lottieSrc = "/Sparkles%20Loop%20Loader%20ai.json",
-  duration = 5200,
-  onDone,
 }: {
-  title?: string;
-  subtitle?: string;
+  variant: "presenter" | "audience";
+  name?: string;
+  cheer?: string;
   lottieSrc?: string;
-  duration?: number;
-  onDone: () => void;
 }) {
   const [data, setData] = useState<object | null>(null);
-  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -34,47 +32,55 @@ export function PresentOverlay({
     };
   }, [lottieSrc]);
 
-  useEffect(() => {
-    const t1 = setTimeout(() => setClosing(true), duration);
-    const t2 = setTimeout(onDone, duration + 360);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [duration, onDone]);
+  const presenter = variant === "presenter";
 
   return (
     <div
-      onClick={() => {
-        setClosing(true);
-        setTimeout(onDone, 360);
-      }}
+      onClickCapture={(e) => e.stopPropagation()}
+      onPointerDownCapture={(e) => e.stopPropagation()}
+      onKeyDownCapture={(e) => e.stopPropagation()}
       role="dialog"
-      aria-label={title}
-      className={`jam-present-bg fixed inset-0 z-[85] flex flex-col items-center justify-center transition-opacity duration-300 ${
-        closing ? "opacity-0" : "opacity-100"
+      aria-label="발표 모드"
+      className={`fixed inset-0 z-[88] flex flex-col items-center justify-center ${
+        presenter
+          ? "jam-present-bg"
+          : "bg-[var(--md-sys-color-surface)]/95 backdrop-blur-md"
       }`}
     >
-      <div className="h-[min(50vh,460px)] w-[min(50vh,460px)] max-w-[88vw]">
+      <div className="h-[min(46vh,420px)] w-[min(46vh,420px)] max-w-[86vw]">
         {data ? (
           <Lottie animationData={data} loop autoplay />
         ) : (
           <div className="h-full w-full animate-pulse rounded-full bg-white/25" />
         )}
       </div>
-      <p
-        className="-mt-2 text-5xl font-black text-white sm:text-6xl"
-        style={{ textShadow: "0 2px 18px rgba(0,0,0,0.28)" }}
-      >
-        {title}
-      </p>
-      {subtitle && (
-        <p
-          className="mt-3 text-2xl font-bold text-white/90"
-          style={{ textShadow: "0 1px 10px rgba(0,0,0,0.25)" }}
-        >
-          {subtitle}
-        </p>
+
+      {presenter ? (
+        <>
+          <p
+            className="-mt-2 text-5xl font-black text-white sm:text-6xl"
+            style={{ textShadow: "0 2px 18px rgba(0,0,0,0.28)" }}
+          >
+            {name ? `${name}님, 발표해봅시다!` : "발표해봅시다!"}
+          </p>
+          {cheer && (
+            <p
+              className="mt-3 text-2xl font-bold text-white/90"
+              style={{ textShadow: "0 1px 10px rgba(0,0,0,0.25)" }}
+            >
+              {cheer}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="-mt-2 text-3xl font-extrabold text-[var(--md-sys-color-on-surface)] sm:text-4xl">
+            {name ? `${name}님이 발표 중이에요 👏` : "발표 시간이에요 ✋"}
+          </p>
+          <p className="mt-2 text-base text-[var(--md-sys-color-on-surface-variant)] sm:text-lg">
+            {name ? "발표에 집중해 주세요." : "잠시 화면을 멈추고 발표를 기다려요."}
+          </p>
+        </>
       )}
     </div>
   );

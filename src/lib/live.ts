@@ -122,3 +122,90 @@ export function watchLock(
     () => cb(null)
   );
 }
+
+// ---------- 발표 모드(전체 기본 효과 + 발표자 무지개) ----------
+// active : 전체 학생에게 기본 발표 효과 적용(관람·잠금)
+// uid    : 그 중 무지개 발표 화면을 추가로 받는 발표자(없으면 모두 기본)
+export type PresentState = {
+  active: boolean;
+  uid: string | null;
+  name: string;
+  cheer: string;
+  by: string;
+};
+
+const presentRef = (cid: string) =>
+  doc(getDbClient(), "classes", cid, "control", "present");
+
+/** 전체 학생에게 기본 발표 효과 적용(아직 발표자 없음) */
+export async function startPresent(cid: string, by: string): Promise<void> {
+  await setDoc(presentRef(cid), {
+    active: true,
+    uid: null,
+    name: "",
+    cheer: "",
+    by,
+    at: serverTimestamp(),
+  });
+}
+
+/** 발표자 지정 — 해당 학생은 무지개 발표 화면, 나머지는 기본(관람) */
+export async function setPresenter(
+  cid: string,
+  uid: string,
+  name: string,
+  cheer: string,
+  by: string
+): Promise<void> {
+  await setDoc(
+    presentRef(cid),
+    {
+      active: true,
+      uid,
+      name: name ?? "",
+      cheer: cheer ?? "",
+      by,
+      at: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+/** 발표자 해제 — 전체 기본 효과는 유지하고 무지개만 거둠 */
+export async function clearPresenter(cid: string): Promise<void> {
+  await setDoc(
+    presentRef(cid),
+    { uid: null, name: "", cheer: "", at: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+/** 발표 모드 완전 종료(전체 효과·발표자 모두 해제) */
+export async function stopPresent(cid: string): Promise<void> {
+  await setDoc(
+    presentRef(cid),
+    { active: false, uid: null, at: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export function watchPresent(
+  cid: string,
+  cb: (state: PresentState | null) => void
+): () => void {
+  return onSnapshot(
+    presentRef(cid),
+    (snap) => {
+      if (!snap.exists()) return cb(null);
+      const v = snap.data();
+      cb({
+        active: Boolean(v.active),
+        uid: (v.uid as string) || null,
+        name: (v.name as string) ?? "",
+        cheer: (v.cheer as string) ?? "",
+        by: (v.by as string) ?? "",
+      });
+    },
+    () => cb(null)
+  );
+}

@@ -34,11 +34,17 @@ import {
   type QuestTarget,
 } from "@/lib/xp";
 import {
+  clearPresenter,
   sendEffect,
+  setPresenter,
   startLock,
+  startPresent,
   stopLock,
+  stopPresent,
   watchLock,
+  watchPresent,
   type ActivityLock,
+  type PresentState,
 } from "@/lib/live";
 
 const KIND_LABEL: Record<string, string> = {
@@ -105,6 +111,7 @@ function ClassAdminInner() {
   const [modal, setModal] = useState<null | "grant" | "quest" | "wizard">(null);
   const [showAllQuests, setShowAllQuests] = useState(false);
   const [lock, setLock] = useState<ActivityLock | null>(null);
+  const [present, setPresent] = useState<PresentState | null>(null);
   const lessonMeta = useLessonMeta(cid);
 
   useEffect(() => {
@@ -119,10 +126,12 @@ function ClassAdminInner() {
     const off1 = watchXp(cid, setXpMap);
     const off2 = watchQuests(cid, setQuests);
     const off3 = watchLock(cid, setLock);
+    const off4 = watchPresent(cid, setPresent);
     return () => {
       off1();
       off2();
       off3();
+      off4();
     };
   }, [user, cid]);
 
@@ -214,13 +223,26 @@ function ClassAdminInner() {
             <button
               onClick={() => setModal("wizard")}
               className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                lock?.active
+                present?.active || lock?.active
                   ? "border-transparent bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
                   : "border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)] hover:bg-black/5"
               }`}
             >
-              <Icon name={lock?.active ? "hourglass_top" : "auto_awesome"} size={16} />
-              {lock?.active ? "활동 잠금 중" : "효과 마법사"}
+              <Icon
+                name={
+                  present?.active
+                    ? "campaign"
+                    : lock?.active
+                      ? "hourglass_top"
+                      : "auto_awesome"
+                }
+                size={16}
+              />
+              {present?.active
+                ? "발표 진행 중"
+                : lock?.active
+                  ? "활동 잠금 중"
+                  : "효과 마법사"}
             </button>
           </div>
         </div>
@@ -438,6 +460,7 @@ function ClassAdminInner() {
           xpMap={xpMap}
           nameOf={nameOf}
           lock={lock}
+          present={present}
           onClose={() => setModal(null)}
           onSendEffect={(uids, effect) =>
             Promise.all(
@@ -446,6 +469,12 @@ function ClassAdminInner() {
           }
           onStartLock={(ms) => startLock(cid, ms, user.uid)}
           onStopLock={() => stopLock(cid)}
+          onSetPresenter={(uid, name, cheer) =>
+            setPresenter(cid, uid, name, cheer, user.uid)
+          }
+          onClearPresenter={() => clearPresenter(cid)}
+          onStartPresent={() => startPresent(cid, user.uid)}
+          onStopPresent={() => stopPresent(cid)}
         />
       )}
     </>
@@ -1079,16 +1108,22 @@ function WizardModal({
   xpMap,
   nameOf,
   lock,
+  present,
   onClose,
   onSendEffect,
   onStartLock,
   onStopLock,
+  onSetPresenter,
+  onClearPresenter,
+  onStartPresent,
+  onStopPresent,
 }: {
   students: Member[];
   selected: Set<string>;
   xpMap: Record<string, number>;
   nameOf: Record<string, string>;
   lock: ActivityLock | null;
+  present: PresentState | null;
   onClose: () => void;
   onSendEffect: (
     uids: string[],
@@ -1100,12 +1135,25 @@ function WizardModal({
   ) => Promise<void>;
   onStartLock: (ms: number) => Promise<void>;
   onStopLock: () => Promise<void>;
+  onSetPresenter: (uid: string, name: string, cheer: string) => Promise<void>;
+  onClearPresenter: () => Promise<void>;
+  onStartPresent: () => Promise<void>;
+  onStopPresent: () => Promise<void>;
 }) {
   const [sel, setSel] = useState<Set<string>>(new Set(selected));
   const uids = students.filter((s) => sel.has(s.uid)).map((s) => s.uid);
   const single = uids.length === 1 ? uids[0] : null;
 
   const [kind, setKind] = useState<"mission" | "level" | "present">("mission");
+  const presentActive = !!present?.active;
+  const presenterUid = present?.uid ?? null;
+
+  // 발표 모드: 기본 효과가 켜진 상태에서만 카드 클릭으로 발표자(무지개) 토글
+  async function togglePresenter(uid: string, name: string) {
+    if (!presentActive) return;
+    if (presenterUid === uid) await onClearPresenter();
+    else await onSetPresenter(uid, name, msg.trim());
+  }
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
@@ -1141,6 +1189,13 @@ function WizardModal({
         subtitle:
           msg.trim() ||
           (single ? `레벨 ${xpLevel(xpMap[single] ?? 0).level} 달성` : undefined),
+      };
+    }
+    if (kind === "present") {
+      return {
+        kind: "present" as const,
+        title: name ? `${name}님, 발표해봅시다!` : "발표해봅시다!",
+        subtitle: msg.trim() || undefined,
       };
     }
     return {
@@ -1186,7 +1241,7 @@ function WizardModal({
     >
       <GlassCard
         strong
-        className="flex max-h-[88vh] w-full max-w-5xl animate-float-in flex-col overflow-hidden p-0"
+        className="flex h-[90vh] max-h-[860px] min-h-[520px] w-full max-w-6xl animate-float-in flex-col overflow-hidden p-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
@@ -1208,31 +1263,50 @@ function WizardModal({
         </div>
 
         {/* 본문: 좌 학생 / 우 컨트롤 */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-[1fr_340px]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_400px]">
           {/* 좌측: 학생 선택 */}
-          <div className="flex min-h-0 flex-col border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] sm:border-b-0 sm:border-r">
+          <div className="flex min-h-0 flex-col border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] md:border-b-0 md:border-r">
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                선택{" "}
-                <b className="text-[var(--md-sys-color-primary)]">{uids.length}</b>{" "}
-                / {students.length}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => setSel(new Set(students.map((s) => s.uid)))}
-                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
-                >
-                  전체
-                </button>
-                <button
-                  onClick={() => setSel(new Set())}
-                  className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
-                >
-                  해제
-                </button>
-              </div>
+              {kind === "present" ? (
+                <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  {presentActive ? (
+                    <>
+                      카드를 누르면 그 학생에게 <b>무지개 발표 화면</b> · 다시
+                      누르면 해제
+                    </>
+                  ) : (
+                    <>
+                      먼저 <b>효과 적용</b>으로 전체에 발표 모드를 켜세요
+                    </>
+                  )}
+                </span>
+              ) : (
+                <>
+                  <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    선택{" "}
+                    <b className="text-[var(--md-sys-color-primary)]">
+                      {uids.length}
+                    </b>{" "}
+                    / {students.length}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setSel(new Set(students.map((s) => s.uid)))}
+                      className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
+                    >
+                      전체
+                    </button>
+                    <button
+                      onClick={() => setSel(new Set())}
+                      className="rounded-full px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] transition hover:bg-black/5"
+                    >
+                      해제
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="max-h-52 min-h-0 flex-1 overflow-y-auto px-3 pb-3 sm:max-h-none">
+            <div className="max-h-48 min-h-0 flex-1 overflow-y-auto px-3 pb-3 md:max-h-none">
               {students.length === 0 ? (
                 <p className="px-2 py-6 text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   학생이 없습니다.
@@ -1240,21 +1314,30 @@ function WizardModal({
               ) : (
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
                   {students.map((s) => {
-                    const on = sel.has(s.uid);
+                    const isPresent = kind === "present";
+                    const presenting = isPresent && presenterUid === s.uid;
+                    const on = isPresent ? presenting : sel.has(s.uid);
                     const lv = xpLevel(xpMap[s.uid] ?? 0);
                     return (
                       <button
                         key={s.uid}
-                        onClick={() => toggle(s.uid)}
-                        className={`relative flex flex-col items-center gap-1 rounded-2xl border p-2.5 transition ${
+                        onClick={() =>
+                          isPresent
+                            ? togglePresenter(s.uid, s.displayName)
+                            : toggle(s.uid)
+                        }
+                        className={`relative flex flex-col items-center gap-1 overflow-hidden rounded-2xl border p-2.5 transition ${
                           on
                             ? "border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]"
                             : "border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] hover:border-[var(--md-sys-color-outline)]"
                         }`}
                       >
+                        {presenting && (
+                          <span className="jam-present-bg absolute inset-x-0 top-0 h-1.5" />
+                        )}
                         {on && (
                           <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--md-sys-color-primary)] text-white">
-                            <Icon name="check" size={11} />
+                            <Icon name={isPresent ? "campaign" : "check"} size={11} />
                           </span>
                         )}
                         <Avatar m={s} size={44} />
@@ -1262,7 +1345,7 @@ function WizardModal({
                           {s.displayName}
                         </span>
                         <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                          Lv.{lv.level}
+                          {presenting ? "발표 중" : `Lv.${lv.level}`}
                         </span>
                       </button>
                     );
@@ -1287,7 +1370,12 @@ function WizardModal({
                   · 놓친 학생에게 다시
                 </span>
               </h3>
-              {uids.length === 0 ? (
+              {kind === "present" ? (
+                <p className="rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                  왼쪽 학생 카드를 누르면 그 학생이 발표를 시작해요. 발표자는
+                  무지개 화면, 나머지 학생은 관람 화면으로 모두 잠깁니다.
+                </p>
+              ) : uids.length === 0 ? (
                 <p className="rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   왼쪽에서 학생을 선택하세요.
                 </p>
@@ -1306,12 +1394,13 @@ function WizardModal({
                   [
                     ["mission", "미션 완료", "flag"],
                     ["level", "레벨업", "trending_up"],
+                    ["present", "발표하기", "campaign"],
                   ] as const
                 ).map(([k, label, icon]) => (
                   <button
                     key={k}
                     onClick={() => setKind(k)}
-                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                    className={`flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 py-2 text-[13px] font-semibold transition ${
                       kind === k
                         ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
                         : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface-variant)]"
@@ -1325,21 +1414,43 @@ function WizardModal({
               <input
                 value={msg}
                 onChange={(e) => setMsg(e.target.value)}
-                placeholder="문구 (선택, 예: 참 잘했어요!)"
+                placeholder={
+                  kind === "present"
+                    ? "응원 문구 (선택, 예: gogo!)"
+                    : "문구 (선택, 예: 참 잘했어요!)"
+                }
                 className="m3-field !py-2 !text-sm"
               />
-              <button
-                onClick={send}
-                disabled={uids.length === 0 || sending}
-                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
-              >
-                <Icon name={sentOk ? "check" : "send"} size={16} />
-                {sentOk
-                  ? "전달했어요!"
-                  : sending
-                    ? "보내는 중…"
-                    : `효과 적용해서 보내기${uids.length ? ` (${uids.length}명)` : ""}`}
-              </button>
+              {kind === "present" ? (
+                presenterUid ? (
+                  <button
+                    onClick={onClearPresenter}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-error-container)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-error-container)] transition hover:brightness-105"
+                  >
+                    <Icon name="stop_circle" size={18} />
+                    {nameOf[presenterUid]
+                      ? `${nameOf[presenterUid]} 발표 종료`
+                      : "발표 종료"}
+                  </button>
+                ) : (
+                  <p className="text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    아직 발표 중인 학생이 없어요.
+                  </p>
+                )
+              ) : (
+                <button
+                  onClick={send}
+                  disabled={uids.length === 0 || sending}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
+                >
+                  <Icon name={sentOk ? "check" : "send"} size={16} />
+                  {sentOk
+                    ? "전달했어요!"
+                    : sending
+                      ? "보내는 중…"
+                      : `효과 적용해서 보내기${uids.length ? ` (${uids.length}명)` : ""}`}
+                </button>
+              )}
             </section>
 
             <div className="h-px bg-[var(--md-sys-color-outline-variant)]" />
