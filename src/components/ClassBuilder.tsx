@@ -17,6 +17,7 @@ import { Icon } from "@/components/Icon";
 import { BlockView } from "@/components/BlockEditor";
 import { useDialog } from "@/components/Dialog";
 import {
+  copyProjectToClass,
   createLesson,
   getOntology,
   listLessons,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/lessons";
 import { mergeOntologies } from "@/lib/ontology";
 import { ExpandableGraph } from "@/components/ExpandableGraph";
+import { WordCloud } from "@/components/WordCloud";
 import { ReflectAvgBadge } from "@/components/ReflectAvgBadge";
 import {
   createProject,
@@ -51,6 +53,18 @@ import {
   type Fav,
   type FavKind,
 } from "@/lib/favorites";
+import {
+  listMembers,
+  listMyClasses,
+  type ClassRoom,
+  type Member,
+} from "@/lib/classes";
+import { resolveStudentName } from "@/lib/names";
+import {
+  watchTeacherViewing,
+  TEACHER_VIEW_TTL,
+  type TeacherViewing,
+} from "@/lib/live";
 
 /* 색상 라벨 */
 const COLORS: Record<
@@ -119,10 +133,13 @@ type Ctx = {
   openHdd: (focusProjectId?: string) => void;
   isFav: (kind: FavKind, id: string) => boolean;
   toggleFav: (kind: FavKind, id: string) => void;
+  copyToClass: (projectId: string) => void;
   dropTarget: string | null;
   reload: () => Promise<void>;
   dragProps: (item: DragItem) => Record<string, unknown>;
   dropZone: (key: string, t: DropTarget) => Record<string, unknown>;
+  /** 교사가 지금 접속해 있는 차시 id 집합(학생에게 "선생님 접속 중" 표시) */
+  teacherLiveLids: Set<string>;
 };
 
 /* 인라인 이름 편집 */
@@ -195,6 +212,7 @@ function ItemMenu({
   onPin,
   onColor,
   onIcon,
+  onCopyToClass,
   onDelete,
 }: {
   pinned: boolean;
@@ -206,6 +224,7 @@ function ItemMenu({
   onPin: () => void;
   onColor: (k: string | null) => void;
   onIcon: (n: string) => void;
+  onCopyToClass?: () => void;
   onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -390,6 +409,23 @@ function ItemMenu({
                 기본(색 없음)
               </button>
             </div>
+            {onCopyToClass && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onCopyToClass();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-[var(--md-sys-color-surface-container-highest)]"
+              >
+                <Icon
+                  name="content_copy"
+                  size={18}
+                  className="text-[var(--md-sys-color-on-surface-variant)]"
+                />
+                다른 학급으로 복제
+              </button>
+            )}
             {onDelete && (
               <button
                 type="button"
@@ -516,8 +552,24 @@ function LessonNode({
             className="shrink-0 text-[var(--md-sys-color-primary)]"
           />
         )}
+        {ctx.teacherLiveLids.has(l.id) && (
+          <span
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2 py-0.5 text-xs font-bold text-[var(--md-sys-color-on-tertiary-container)]"
+            title="선생님이 지금 이 차시를 보고 있어요"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--md-sys-color-tertiary)] opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--md-sys-color-tertiary)]" />
+            </span>
+            선생님 접속 중
+          </span>
+        )}
         {isTeacher && (
-          <ReflectAvgBadge cid={classId} lid={l.id} className="ml-auto" />
+          <ReflectAvgBadge
+            cid={classId}
+            lid={l.id}
+            className={ctx.teacherLiveLids.has(l.id) ? "" : "ml-auto"}
+          />
         )}
         {isTeacher && (
           <ItemMenu
@@ -695,6 +747,7 @@ function FolderNode({
                 ctx.reload
               )
             }
+            onCopyToClass={() => ctx.copyToClass(project.id)}
             onDelete={async () => {
               if (
                 await dialog.confirm({
@@ -768,6 +821,7 @@ function DetailPane({
 }) {
   const [res, setRes] = useState<Resource[]>([]);
   const [subs, setSubs] = useState<Submission[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [graph, setGraph] = useState<Ontology | null>(null);
   const lesson = useMemo(() => {
@@ -785,6 +839,10 @@ function DetailPane({
     if (ctx.isTeacher)
       listSubmissions(ctx.classId, lessonId).then(setSubs).catch(() => {});
   }, [lessonId, ctx.classId, ctx.isTeacher]);
+
+  useEffect(() => {
+    listMembers(ctx.classId).then(setMembers).catch(() => {});
+  }, [ctx.classId]);
 
   // 차시 지식 그래프 (질문 리프 머지)
   useEffect(() => {
@@ -816,9 +874,9 @@ function DetailPane({
 
   const studentNames = useMemo(() => {
     const m: Record<string, string> = {};
-    for (const s of subs) m[s.uid] = s.studentName;
+    for (const s of subs) m[s.uid] = resolveStudentName(members, s.uid, s.studentName);
     return m;
-  }, [subs]);
+  }, [subs, members]);
 
   if (!lessonId || !lesson)
     return (
@@ -853,25 +911,54 @@ function DetailPane({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {/* 차시 지식 그래프 미리보기 (클릭=확대) */}
-        <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-          <Icon name="network_intelligence" size={18} />
-          지식 그래프
-        </p>
         {graph && graph.nodes.length > 0 ? (
-          <div className="mb-5 overflow-hidden rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-white/40 p-2">
-            <ExpandableGraph
-              data={graph}
-              studentNames={studentNames}
-              height={300}
-              title={`${lesson.title} 지식맵`}
-            />
-          </div>
+          <>
+            {/* 쉽게 보기 — 워드클라우드(언급 학생 수 기준 크기). 학생이 한눈에 */}
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+              <Icon name="cloud" size={18} />
+              한눈에 보기
+              <span className="text-xs font-medium text-[var(--md-sys-color-on-surface-variant)]">
+                많이 떠올린 개념일수록 크게
+              </span>
+            </p>
+            <div className="mb-5">
+              <WordCloud
+                items={graph.nodes.map((n) => ({
+                  word: n.label,
+                  count: n.sourceCount ?? n.sources?.length ?? 1,
+                }))}
+                max={40}
+              />
+            </div>
+
+            {/* 차시 지식 그래프 미리보기 (클릭=확대) */}
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+              <Icon name="network_intelligence" size={18} />
+              지식 그래프
+              <span className="text-xs font-medium text-[var(--md-sys-color-on-surface-variant)]">
+                개념이 어떻게 연결되는지
+              </span>
+            </p>
+            <div className="mb-5 overflow-hidden rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-white/40 p-2">
+              <ExpandableGraph
+                data={graph}
+                studentNames={studentNames}
+                height={300}
+                title={`${lesson.title} 지식맵`}
+              />
+            </div>
+          </>
         ) : (
-          <p className="mb-5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-            아직 분석된 지식 그래프가 없습니다. “차시 열기 → 지식 맵”에서
-            생성하세요.
-          </p>
+          <>
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+              <Icon name="network_intelligence" size={18} />
+              지식 그래프
+            </p>
+            <p className="mb-5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+              아직 분석된 지식 그래프가 없습니다. “차시 열기 → 지식 맵”에서
+              생성하세요.
+            </p>
+          </>
         )}
 
         <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
@@ -950,7 +1037,7 @@ function DetailPane({
                         className="text-[var(--md-sys-color-on-surface-variant)]"
                       />
                       <span className="flex-1 truncate font-medium">
-                        {s.studentName}
+                        {resolveStudentName(members, s.uid, s.studentName)}
                       </span>
                       <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
                         {s.phase === "pre" ? "수업 전" : "수업 후"}
@@ -1060,6 +1147,7 @@ function ProjectCard({
                 ctx.reload
               )
             }
+            onCopyToClass={() => ctx.copyToClass(project.id)}
             onDelete={async () => {
               if (
                 await dialog.confirm({
@@ -1158,6 +1246,24 @@ export function ClassBuilder({
   const dragRef = useRef<DragItem | null>(null);
   const ensuringRef = useRef(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // 교사 접속 차시 실시간 구독 + staleness 자동 정리(크래시 대비).
+  // 현재 시각은 30초마다 콜백에서 갱신(렌더 중 Date.now 호출 회피).
+  const [teacherViews, setTeacherViews] = useState<TeacherViewing[]>([]);
+  const [nowMs, setNowMs] = useState(0);
+  useEffect(() => watchTeacherViewing(classId, setTeacherViews), [classId]);
+  useEffect(() => {
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const iv = setInterval(tick, 30000);
+    return () => clearInterval(iv);
+  }, []);
+  const teacherLiveLids = useMemo(() => {
+    const s = new Set<string>();
+    for (const t of teacherViews)
+      if (t.at && nowMs - t.at <= TEACHER_VIEW_TTL) s.add(t.lid);
+    return s;
+  }, [teacherViews, nowMs]);
 
   const reload = useCallback(async () => {
     const [p0, l0, r] = await Promise.all([
@@ -1395,6 +1501,22 @@ export function ClassBuilder({
     [classId, user]
   );
 
+  // 프로젝트(폴더) 통째로 다른 학급으로 복제 — 구조만(학생 응답·지식맵 제외)
+  const [copyTarget, setCopyTarget] = useState<string | null>(null);
+  const [copyClasses, setCopyClasses] = useState<ClassRoom[] | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const copyToClass = useCallback(
+    (projectId: string) => {
+      if (!user) return;
+      setCopyTarget(projectId);
+      setCopyClasses(null);
+      listMyClasses(user.uid)
+        .then((cs) => setCopyClasses(cs.filter((c) => c.id !== classId)))
+        .catch(() => setCopyClasses([]));
+    },
+    [user, classId]
+  );
+
   const ctx: Ctx = {
     classId,
     isTeacher,
@@ -1412,10 +1534,12 @@ export function ClassBuilder({
     openHdd,
     isFav,
     toggleFav,
+    copyToClass,
     dropTarget,
     reload,
     dragProps,
     dropZone,
+    teacherLiveLids,
   };
 
   const rootHi = dropTarget === "folder:root";
@@ -1661,6 +1785,83 @@ export function ClassBuilder({
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 프로젝트(폴더) 다른 학급으로 복제 */}
+      {copyTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.32)] p-4"
+          onClick={() => !copyBusy && setCopyTarget(null)}
+        >
+          <GlassCard
+            strong
+            className="w-full max-w-sm animate-float-in p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl font-bold">다른 학급으로 복제</h2>
+            <p className="mt-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+              구조만 복제됩니다 · 학생 응답·지식맵은 가져가지 않습니다
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              {copyClasses === null ? (
+                <p className="py-4 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
+                  불러오는 중…
+                </p>
+              ) : copyClasses.length === 0 ? (
+                <p className="py-4 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
+                  복제할 다른 학급이 없습니다.
+                </p>
+              ) : (
+                copyClasses.map((c) => (
+                  <button
+                    key={c.id}
+                    disabled={copyBusy}
+                    onClick={async () => {
+                      if (!user || copyBusy) return;
+                      setCopyBusy(true);
+                      try {
+                        await copyProjectToClass(
+                          classId,
+                          copyTarget,
+                          c.id,
+                          user
+                        );
+                        setCopyTarget(null);
+                        await dialog.confirm({
+                          title: "복제 완료",
+                          body: `“${c.name}” 학급으로 폴더 구조(활동 포함)를 복제했습니다. 학생 응답·지식맵은 복제되지 않습니다.`,
+                          okLabel: "확인",
+                        });
+                      } catch (e) {
+                        await dialog.confirm({
+                          title: "복제 실패",
+                          body:
+                            e instanceof Error
+                              ? e.message
+                              : "복제 중 오류가 발생했습니다.",
+                          okLabel: "확인",
+                        });
+                      } finally {
+                        setCopyBusy(false);
+                      }
+                    }}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-[var(--md-sys-color-surface-container)] px-4 py-3 text-left text-sm hover:bg-[var(--md-sys-color-surface-container-high)] disabled:opacity-50"
+                  >
+                    <span className="truncate font-medium">{c.name}</span>
+                    <Icon name="content_copy" size={16} />
+                  </button>
+                ))
+              )}
+            </div>
+            <button
+              onClick={() => setCopyTarget(null)}
+              disabled={copyBusy}
+              className="mt-4 w-full rounded-xl px-4 py-2 text-sm text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+            >
+              {copyBusy ? "복제 중…" : "취소"}
+            </button>
+          </GlassCard>
         </div>
       )}
     </div>

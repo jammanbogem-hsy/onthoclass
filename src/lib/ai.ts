@@ -14,9 +14,27 @@ type ExtractInput = {
 export async function extractOntology(
   input: ExtractInput
 ): Promise<Ontology> {
+  // Claude(opus, adaptive thinking, effort:high, max_tokens 16k)는 응답에 1~3분이
+  // 걸릴 수 있다. httpsCallable 기본 타임아웃은 70초라 그대로 두면 분석이 "분석 중…"
+  // 에서 끊겨 매달린다 → 함수 서버 타임아웃(540s)에 맞춰 클라이언트 타임아웃을 늘린다.
   const fn = httpsCallable<ExtractInput, Ontology>(
     getFunctionsClient(),
-    "extractOntology"
+    "extractOntology",
+    { timeout: 540_000 }
+  );
+  const res = await fn(input);
+  return res.data;
+}
+
+/** PDF·이미지(패들렛 등 외부 응답 모음) → 지식맵 온톨로지 (Claude 비전/PDF, 교사 전용) */
+export async function extractOntologyFromDoc(input: {
+  classId: string;
+  files: { mediaType: string; data: string }[];
+}): Promise<Ontology> {
+  const fn = httpsCallable<typeof input, Ontology>(
+    getFunctionsClient(),
+    "extractOntologyFromDoc",
+    { timeout: 540_000 }
   );
   const res = await fn(input);
   return res.data;
@@ -37,7 +55,8 @@ export async function normalizeLabels(input: {
 }): Promise<LabelClusters> {
   const fn = httpsCallable<typeof input, LabelClusters>(
     getFunctionsClient(),
-    "normalizeLabels"
+    "normalizeLabels",
+    { timeout: 120_000 }
   );
   const res = await fn(input);
   return res.data;
@@ -51,7 +70,8 @@ export async function canonicalizeOntology(input: {
 }): Promise<LabelClusters> {
   const fn = httpsCallable<typeof input, LabelClusters>(
     getFunctionsClient(),
-    "canonicalizeOntology"
+    "canonicalizeOntology",
+    { timeout: 300_000 }
   );
   const res = await fn(input);
   return res.data;
@@ -73,7 +93,38 @@ export async function wikiInsights(input: {
 }): Promise<WikiInsights> {
   const fn = httpsCallable<typeof input, WikiInsights>(
     getFunctionsClient(),
-    "wikiInsights"
+    "wikiInsights",
+    { timeout: 300_000 }
+  );
+  const res = await fn(input);
+  return res.data;
+}
+
+/** 제출된 전체 개념어를 임베딩해 의미가 비슷한 개념을 연결한 지식맵 생성 (교사 전용) */
+export async function gameConceptGraph(input: {
+  classId: string;
+  concepts: { word: string; count: number }[];
+}): Promise<Ontology> {
+  const fn = httpsCallable<typeof input, Ontology>(
+    getFunctionsClient(),
+    "gameConceptGraph",
+    { timeout: 180_000 }
+  );
+  const res = await fn(input);
+  return res.data;
+}
+
+/** 게임 결과·개념어를 요약한 수업 후 학습 피드백 코멘트 생성 (Claude, 교사 전용) */
+export async function gameFeedbackComment(input: {
+  classId: string;
+  gameName: string;
+  concepts: { word: string; count: number }[];
+  ranks: { name: string; rank: number }[];
+}): Promise<{ comment: string }> {
+  const fn = httpsCallable<typeof input, { comment: string }>(
+    getFunctionsClient(),
+    "gameFeedbackComment",
+    { timeout: 120_000 }
   );
   const res = await fn(input);
   return res.data;
@@ -97,8 +148,26 @@ export async function parseSurveyDoc(input: {
 }): Promise<ParsedSurvey> {
   const fn = httpsCallable<typeof input, ParsedSurvey>(
     getFunctionsClient(),
-    "parseSurveyDoc"
+    "parseSurveyDoc",
+    { timeout: 300_000 }
   );
   const res = await fn(input);
   return res.data;
+}
+
+/**
+ * 다른 반 칭찬 — 받는 반 학생 이름 자동완성(접두사 매칭, 최대 8명, 이름만).
+ * 연결된(allowedCids) 반에 한해서만 서버가 허용한다.
+ */
+export async function suggestCrossPraiseNames(input: {
+  targetCid: string;
+  prefix: string;
+}): Promise<string[]> {
+  const fn = httpsCallable<typeof input, { names: string[] }>(
+    getFunctionsClient(),
+    "suggestCrossPraiseNames",
+    { timeout: 30_000 }
+  );
+  const res = await fn(input);
+  return res.data.names ?? [];
 }

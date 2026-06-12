@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { Icon } from "@/components/Icon";
 
@@ -166,6 +168,44 @@ function textStyle(type: BlockType): CSSProperties {
   }
 }
 
+// 본문 텍스트 안의 URL(https://…, www.…)을 자동으로 클릭 가능한 하이퍼링크로 변환.
+const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+// 블록 전체가 URL 한 개인지(편집 중 링크 블록 자동 변환 판정용)
+const FULL_URL_RE = /^(https?:\/\/\S+|www\.\S+)$/i;
+const toHref = (u: string) =>
+  /^https?:\/\//i.test(u) ? u : `https://${u.replace(/^\/+/, "")}`;
+// URL 자동 링크 변환을 적용할 텍스트형 블록
+const TEXTUAL_BLOCKS = new Set(["p", "bullet", "numbered", "quote", "callout"]);
+function linkify(text: string): ReactNode {
+  if (!text) return text;
+  const parts = text.split(URL_RE);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => {
+    if (!part) return null;
+    if (/^(https?:\/\/|www\.)/i.test(part)) {
+      // 끝에 붙은 문장부호()는 링크에서 제외해 깔끔하게.
+      const m = part.match(/[)\].,!?;:'"]+$/);
+      const trail = m ? m[0] : "";
+      const core = trail ? part.slice(0, part.length - trail.length) : part;
+      const href = /^https?:\/\//i.test(core) ? core : `https://${core}`;
+      return (
+        <Fragment key={i}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="break-all text-[var(--md-sys-color-primary)] underline hover:opacity-80"
+          >
+            {core}
+          </a>
+          {trail}
+        </Fragment>
+      );
+    }
+    return <Fragment key={i}>{part}</Fragment>;
+  });
+}
+
 /* ───────── 읽기 전용 ───────── */
 export function BlockView({ value }: { value: string }) {
   const blocks = parse(value).filter(
@@ -224,7 +264,7 @@ export function BlockView({ value }: { value: string }) {
                               : ""
                           }`}
                         >
-                          {cell}
+                          {linkify(cell)}
                         </td>
                       ))}
                     </tr>
@@ -240,7 +280,7 @@ export function BlockView({ value }: { value: string }) {
               className="flex gap-2 rounded-xl bg-[var(--md-sys-color-secondary-container)] p-3 text-sm text-[var(--md-sys-color-on-secondary-container)]"
             >
               <Icon name="lightbulb" size={18} />
-              <span>{b.text}</span>
+              <span>{linkify(b.text)}</span>
             </div>
           );
         if (b.type === "bullet")
@@ -249,7 +289,7 @@ export function BlockView({ value }: { value: string }) {
               <span className="text-[var(--md-sys-color-on-surface-variant)]">
                 •
               </span>
-              <span>{b.text}</span>
+              <span>{linkify(b.text)}</span>
             </div>
           );
         if (b.type === "numbered") {
@@ -259,7 +299,7 @@ export function BlockView({ value }: { value: string }) {
               <span className="text-[var(--md-sys-color-on-surface-variant)]">
                 {n}.
               </span>
-              <span>{b.text}</span>
+              <span>{linkify(b.text)}</span>
             </div>
           );
         }
@@ -273,7 +313,7 @@ export function BlockView({ value }: { value: string }) {
                 : ""
             }
           >
-            {b.text || " "}
+            {b.text ? linkify(b.text) : " "}
           </div>
         );
       })}
@@ -327,6 +367,16 @@ export default function BlockEditor({
 
   const update = (id: string, patch: Partial<Block>) =>
     emit(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+
+  // 텍스트형 블록에 URL만 입력하면 클릭 가능한 링크 블록으로 자동 변환
+  function autoLink(b: Block, raw: string): boolean {
+    const t = raw.trim();
+    if (TEXTUAL_BLOCKS.has(b.type) && FULL_URL_RE.test(t)) {
+      update(b.id, { type: "link", url: toHref(t), text: t });
+      return true;
+    }
+    return false;
+  }
 
   function addAfter(id: string) {
     const i = blocks.findIndex((b) => b.id === id);
@@ -495,6 +545,15 @@ export default function BlockEditor({
                     if (v.startsWith("/")) openSlash(b.id);
                     else if (slash?.id === b.id) setSlash(null);
                   }}
+                  onPaste={(e) => {
+                    // 빈 블록에 URL을 붙여넣으면 즉시 링크 블록으로
+                    const pasted = e.clipboardData.getData("text").trim();
+                    if (b.text.trim() === "" && FULL_URL_RE.test(pasted)) {
+                      e.preventDefault();
+                      autoLink(b, pasted);
+                    }
+                  }}
+                  onBlur={(e) => autoLink(b, e.target.value)}
                   onKeyDown={(e) => {
                     if (slash?.id === b.id && e.key === "Escape") {
                       setSlash(null);
@@ -536,9 +595,9 @@ export default function BlockEditor({
       <button
         type="button"
         onClick={() => addAfter(blocks[blocks.length - 1].id)}
-        className="mt-1 flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-high)]"
+        className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-high)]"
       >
-        <Icon name="add" size={16} />
+        <Icon name="add" size={18} />
         블록 추가
       </button>
 

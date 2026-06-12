@@ -14,6 +14,7 @@ export function ExpandableGraph({
   title,
   nodeColor,
   modalHeader,
+  viewerUid,
 }: {
   data: Ontology;
   studentNames?: Record<string, string>;
@@ -23,6 +24,8 @@ export function ExpandableGraph({
   nodeColor?: (n: OntologyNode) => string | undefined;
   // 확대 모달 상단에 함께 표시할 요소(예: 사전/사후/공통/차이 탭)
   modalHeader?: ReactNode;
+  // 학생 본인 뷰: 본인 기여 노드 강조 + 또래 이름 숨김
+  viewerUid?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -78,6 +81,7 @@ export function ExpandableGraph({
             height={height}
             title={title}
             nodeColor={nodeColor}
+            viewerUid={viewerUid}
           />
         </>
       )}
@@ -110,6 +114,7 @@ export function ExpandableGraph({
                 studentNames={studentNames}
                 title={title}
                 nodeColor={nodeColor}
+                viewerUid={viewerUid}
                 height={
                   typeof window !== "undefined"
                     ? Math.round(window.innerHeight * 0.78)

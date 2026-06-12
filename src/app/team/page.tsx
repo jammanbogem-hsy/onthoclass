@@ -35,10 +35,11 @@ export default function TeamPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (!user) return;
+    // 교사만 팀 코드를 생성/매핑(teamCodes 쓰기 규칙도 교사 한정). 학생은 시도 안 함.
+    if (!user || !isTeacher) return;
     getOrCreateTeamCode(user.uid).then(setMyCode).catch(() => {});
     return watchTeamLinks(user.uid, setLinks);
-  }, [user]);
+  }, [user, isTeacher]);
 
   if (loading || profileLoading || !user) {
     return (
@@ -153,7 +154,7 @@ export default function TeamPage() {
               onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
               placeholder="예: ABC123"
               maxLength={6}
-              className="m3-field flex-1 !py-2.5 text-center text-lg font-bold tracking-[0.2em]"
+              className="m3-field flex-1 text-center text-lg font-bold tracking-[0.2em]"
               onKeyDown={(e) => {
                 if (e.key === "Enter") addByCode();
               }}
@@ -186,13 +187,13 @@ export default function TeamPage() {
                   </span>
                   <button
                     onClick={() => acceptTeam(l.id)}
-                    className="btn-accent px-3 py-1.5 text-xs font-semibold"
+                    className="btn-accent inline-flex min-h-[44px] items-center px-4 py-2.5 text-sm font-semibold"
                   >
                     수락
                   </button>
                   <button
                     onClick={() => removeTeamLink(l.id)}
-                    className="rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium text-black/55 hover:bg-black/5"
+                    className="inline-flex min-h-[44px] items-center rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2.5 text-sm font-medium text-black/55 hover:bg-black/5"
                   >
                     거절
                   </button>
@@ -228,7 +229,7 @@ export default function TeamPage() {
                   </span>
                   <button
                     onClick={() => removeTeamLink(l.id)}
-                    className="rounded-full px-3 py-1.5 text-xs font-medium text-black/45 hover:bg-black/10"
+                    className="inline-flex min-h-[44px] items-center rounded-full px-4 py-2.5 text-sm font-medium text-black/45 hover:bg-black/10"
                   >
                     팀 해제
                   </button>
@@ -256,7 +257,7 @@ export default function TeamPage() {
                   </span>
                   <button
                     onClick={() => removeTeamLink(l.id)}
-                    className="rounded-full px-3 py-1 text-xs text-black/45 hover:bg-black/10"
+                    className="inline-flex min-h-[44px] items-center rounded-full px-4 py-2.5 text-sm text-black/45 hover:bg-black/10"
                   >
                     취소
                   </button>

@@ -9,9 +9,32 @@ import { ClassBuilder } from "@/components/ClassBuilder";
 import { GroupBuilder } from "@/components/GroupBuilder";
 import { Icon } from "@/components/Icon";
 import { MessagesFab } from "@/components/MessagesFab";
+import { PraiseModal } from "@/components/PraiseModal";
+import { PraiseManageModal } from "@/components/PraiseManageModal";
+import { XpRequestInboxModal } from "@/components/XpRequestInboxModal";
+import { PresentationRequestModal } from "@/components/PresentationRequestModal";
+import { PresentationManageModal } from "@/components/PresentationManageModal";
+import {
+  watchPresentationRequests,
+  approvePresentationRequest,
+  rejectPresentationRequest,
+  type PresentationRequest,
+} from "@/lib/presentations";
+import { CanvasListModal } from "@/components/CanvasListModal";
+import { ClassThermometer } from "@/components/ClassThermometer";
+import { MissionCelebrate } from "@/components/MissionCelebrate";
+import {
+  approvePraise,
+  rejectPraise,
+  watchPraises,
+  watchThermometer,
+  listCrossPeers,
+  type Praise,
+  type CrossPeer,
+} from "@/lib/praise";
 import { listLessons, type Lesson } from "@/lib/lessons";
 import { Leaderboard } from "@/components/Leaderboard";
-import { getXpMap } from "@/lib/xp";
+import { getXpMap, watchXpRequests, type XpRequest } from "@/lib/xp";
 import {
   getClass,
   getMyRole,
@@ -39,6 +62,18 @@ function ClassDetail() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [praiseOpen, setPraiseOpen] = useState(false);
+  const [praiseManageOpen, setPraiseManageOpen] = useState(false);
+  const [xpReqOpen, setXpReqOpen] = useState(false);
+  const [praiseSent, setPraiseSent] = useState(false);
+  const [presentOpen, setPresentOpen] = useState(false);
+  const [praises, setPraises] = useState<Praise[]>([]);
+  const [xpReqs, setXpReqs] = useState<XpRequest[]>([]);
+  const [presReqs, setPresReqs] = useState<PresentationRequest[]>([]);
+  const [presManageOpen, setPresManageOpen] = useState(false);
+  const [crossPeers, setCrossPeers] = useState<CrossPeer[]>([]);
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [degree, setDegree] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -50,7 +85,27 @@ function ClassDetail() {
     getMyRole(id, user.uid).then(setRole);
     listMembers(id).then(setMembers).catch(() => {});
     listLessons(id).then(setLessons).catch(() => {});
+    listCrossPeers(id).then(setCrossPeers).catch(() => {});
+    return watchThermometer(id, setDegree);
   }, [user, id]);
+
+  // 칭찬 목록은 교사만 구독(규칙상 학생은 전체 list 불가)
+  useEffect(() => {
+    if (!id || role !== "teacher") return;
+    return watchPraises(id, setPraises);
+  }, [id, role]);
+
+  // 경험치 요청도 교사만 구독 — 받은함 배지로 새 요청을 알린다.
+  useEffect(() => {
+    if (!id || role !== "teacher") return;
+    return watchXpRequests(id, setXpReqs);
+  }, [id, role]);
+
+  // 발표 승인 요청도 교사만 구독 — 학급 화면에서 바로 배지로 알린다.
+  useEffect(() => {
+    if (!id || role !== "teacher") return;
+    return watchPresentationRequests(id, setPresReqs);
+  }, [id, role]);
 
   async function saveName() {
     setEditingName(false);
@@ -145,21 +200,24 @@ function ClassDetail() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setCodeOpen(true)}
-              title="초대 코드 크게 보기"
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)] py-1.5 pl-3 pr-3 text-sm hover:bg-[var(--md-sys-color-surface-container-high)]"
-            >
-              <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                초대 코드
-              </span>
-              <span className="font-bold tracking-wide">{room.code}</span>
-              <Icon
-                name="fullscreen"
-                size={16}
-                className="text-[var(--md-sys-color-on-surface-variant)]"
-              />
-            </button>
+            {/* 참여 코드는 교사만 노출 — 학생이 코드를 보고 외부에 재공유하는 경로 차단 */}
+            {isTeacher && (
+              <button
+                onClick={() => setCodeOpen(true)}
+                title="초대 코드 크게 보기"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)] py-1.5 pl-3 pr-3 text-sm hover:bg-[var(--md-sys-color-surface-container-high)]"
+              >
+                <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  초대 코드
+                </span>
+                <span className="font-bold tracking-wide">{room.code}</span>
+                <Icon
+                  name="fullscreen"
+                  size={16}
+                  className="text-[var(--md-sys-color-on-surface-variant)]"
+                />
+              </button>
+            )}
             <button
               onClick={() => setMembersOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
@@ -177,7 +235,7 @@ function ClassDetail() {
               </button>
             )}
             <button
-              onClick={() => router.push(`/canvas/?class=${room.id}`)}
+              onClick={() => setCanvasOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
             >
               <Icon name="dashboard" size={16} />
@@ -195,13 +253,76 @@ function ClassDetail() {
                 랭킹
               </button>
             )}
+            <button
+              onClick={() =>
+                isTeacher ? setPraiseManageOpen(true) : setPraiseOpen(true)
+              }
+              className="relative inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+            >
+              <Icon name="favorite" size={16} />
+              {isTeacher ? "칭찬 관리" : "친구 칭찬"}
+              {isTeacher &&
+                praises.filter((p) => p.status === "pending").length > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
+                    {praises.filter((p) => p.status === "pending").length}
+                  </span>
+                )}
+            </button>
+            {isTeacher && (
+              <button
+                onClick={() => setXpReqOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+                title="활동에서 온 경험치 요청 승인"
+              >
+                <Icon name="bolt" size={16} />
+                경험치 요청
+                {xpReqs.filter((r) => r.status === "pending").length > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
+                    {xpReqs.filter((r) => r.status === "pending").length}
+                  </span>
+                )}
+              </button>
+            )}
+            {isTeacher && (
+              <button
+                onClick={() => setPresManageOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+                title="학생이 보낸 발표 승인 요청"
+              >
+                <Icon name="co_present" size={16} />
+                발표 승인
+                {presReqs.filter((r) => r.status === "pending").length > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
+                    {presReqs.filter((r) => r.status === "pending").length}
+                  </span>
+                )}
+              </button>
+            )}
+            {!isTeacher && (
+              <button
+                onClick={() => setPresentOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              >
+                <Icon name="co_present" size={16} />
+                발표 승인 요청
+              </button>
+            )}
             {!isTeacher && (
               <button
                 onClick={() => router.push(`/level/?id=${room.id}`)}
                 className="jam-levelup-pill inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold text-white transition hover:brightness-105"
               >
                 <Icon name="military_tech" size={16} fill />
-                LEVEL UP
+                마이페이지
+              </button>
+            )}
+            {isTeacher && (
+              <button
+                onClick={() => router.push(`/class-dashboard/?id=${room.id}`)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              >
+                <Icon name="insights" size={16} />
+                대시보드
               </button>
             )}
             {isTeacher && (
@@ -242,6 +363,8 @@ function ClassDetail() {
             `}</style>
           </div>
         </div>
+
+        <ClassThermometer degree={degree} />
 
         <ClassBuilder classId={room.id} isTeacher={isTeacher} />
       </main>
@@ -425,6 +548,81 @@ function ClassDetail() {
         students={members.filter((m) => m.role === "student")}
         lessons={lessons}
       />
+
+      {praiseOpen && user && (
+        <PraiseModal
+          cid={room.id}
+          className={room.name}
+          fromUser={user}
+          friends={members.filter(
+            (m) => m.role === "student" && m.uid !== user.uid
+          )}
+          peers={crossPeers}
+          onClose={() => setPraiseOpen(false)}
+          onSent={() => {
+            setPraiseOpen(false);
+            setPraiseSent(true);
+          }}
+        />
+      )}
+
+      {presentOpen && user && (
+        <PresentationRequestModal
+          cid={room.id}
+          user={user}
+          onClose={() => setPresentOpen(false)}
+        />
+      )}
+
+      {praiseManageOpen && user && (
+        <PraiseManageModal
+          praises={praises}
+          cid={room.id}
+          teacherUid={user.uid}
+          members={members}
+          onApprove={(p, assignTo) =>
+            approvePraise(room.id, p, user.uid, assignTo)
+          }
+          onReject={(id) => rejectPraise(room.id, id)}
+          onClose={() => setPraiseManageOpen(false)}
+        />
+      )}
+
+      {xpReqOpen && user && (
+        <XpRequestInboxModal
+          cid={room.id}
+          teacherUid={user.uid}
+          onClose={() => setXpReqOpen(false)}
+        />
+      )}
+
+      {presManageOpen && user && (
+        <PresentationManageModal
+          requests={presReqs}
+          members={members}
+          onApprove={(r) => approvePresentationRequest(room.id, r, user.uid)}
+          onReject={(id) => rejectPresentationRequest(room.id, id)}
+          onClose={() => setPresManageOpen(false)}
+        />
+      )}
+
+      {praiseSent && (
+        <MissionCelebrate
+          kicker="칭찬을 보냈어요"
+          title="선생님 승인을 기다리고 있어요"
+          subtitle="승인되면 친구에게 전달되고 학급 온도가 0.1도 올라가요"
+          lottieSrc="/Loading%2040%20_%20Paperplane.json"
+          onDone={() => setPraiseSent(false)}
+        />
+      )}
+
+      {canvasOpen && (
+        <CanvasListModal
+          cid={room.id}
+          lessons={lessons}
+          onClose={() => setCanvasOpen(false)}
+        />
+      )}
     </>
   );
 }

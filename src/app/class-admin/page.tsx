@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
@@ -35,17 +35,54 @@ import {
 } from "@/lib/xp";
 import {
   clearPresenter,
+  NOTICE_COLORS,
   sendEffect,
   setPresenter,
   startLock,
+  startNotice,
   startPresent,
   stopLock,
+  stopNotice,
   stopPresent,
   watchLock,
+  watchNotice,
   watchPresent,
   type ActivityLock,
+  type NoticeState,
   type PresentState,
 } from "@/lib/live";
+import { awardBadge, getBadge, BADGE_CATALOG } from "@/lib/badges";
+import { BadgeChip } from "@/components/BadgeChip";
+import {
+  approvePraise,
+  backfillInbox,
+  rejectPraise,
+  watchPraises,
+  type Praise,
+} from "@/lib/praise";
+import { PraiseManageModal } from "@/components/PraiseManageModal";
+import { PresentationManageModal } from "@/components/PresentationManageModal";
+import {
+  approvePresentationRequest,
+  rejectPresentationRequest,
+  watchPresentationRequests,
+  type PresentationRequest,
+} from "@/lib/presentations";
+import { MarketManageModal } from "@/components/MarketManageModal";
+import { GameStartModal } from "@/components/GameStartModal";
+import { GameConsole } from "@/components/GameConsole";
+import { GameHistoryModal } from "@/components/GameHistoryModal";
+import { FeedbackInboxModal } from "@/components/FeedbackInboxModal";
+import { watchFeedback, type Feedback } from "@/lib/feedback";
+import { GameDockButton } from "@/components/GameDockButton";
+import { ActiveGameBanner } from "@/components/ActiveGameBanner";
+import { GameAutoPilot } from "@/components/GameAutoPilot";
+import {
+  watchActiveGame,
+  watchGameSubmissions,
+  type Game,
+  type GameSubmission,
+} from "@/lib/games";
 
 const KIND_LABEL: Record<string, string> = {
   question: "질문",
@@ -108,11 +145,47 @@ function ClassAdminInner() {
   const [xpMap, setXpMap] = useState<Record<string, number>>({});
   const [quests, setQuests] = useState<Quest[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [modal, setModal] = useState<null | "grant" | "quest" | "wizard">(null);
+  const [modal, setModal] = useState<
+    | null
+    | "grant"
+    | "quest"
+    | "wizard"
+    | "praise"
+    | "presentation"
+    | "market"
+    | "game"
+    | "game-console"
+    | "game-history"
+    | "feedback-inbox"
+  >(null);
   const [showAllQuests, setShowAllQuests] = useState(false);
   const [lock, setLock] = useState<ActivityLock | null>(null);
   const [present, setPresent] = useState<PresentState | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [praises, setPraises] = useState<Praise[]>([]);
+  const [presReqs, setPresReqs] = useState<PresentationRequest[]>([]);
+  const [activeGame, setActiveGame] = useState<Game | null>(null);
+  const [gameSubs, setGameSubs] = useState<GameSubmission[]>([]);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
   const lessonMeta = useLessonMeta(cid);
+  const pendingPraises = useMemo(
+    () => praises.filter((p) => p.status === "pending"),
+    [praises]
+  );
+  const pendingPresReqs = useMemo(
+    () => presReqs.filter((r) => r.status === "pending"),
+    [presReqs]
+  );
+
+  // 받은함 도입 이전에 승인된 칭찬을 1회 백필(교사 진입 시)
+  const backfilledRef = useRef(false);
+  useEffect(() => {
+    if (!cid || backfilledRef.current) return;
+    if (praises.some((p) => p.status === "approved")) {
+      backfilledRef.current = true;
+      backfillInbox(cid, praises).catch(() => {});
+    }
+  }, [cid, praises]);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -127,13 +200,27 @@ function ClassAdminInner() {
     const off2 = watchQuests(cid, setQuests);
     const off3 = watchLock(cid, setLock);
     const off4 = watchPresent(cid, setPresent);
+    const off5 = watchNotice(cid, setNotice);
+    const off6 = watchPraises(cid, setPraises);
+    const off7 = watchActiveGame(cid, setActiveGame);
+    const off8 = watchPresentationRequests(cid, setPresReqs);
     return () => {
       off1();
       off2();
       off3();
       off4();
+      off5();
+      off6();
+      off7();
+      off8();
     };
   }, [user, cid]);
+
+  // 활성 게임의 학생 제출 구독 — 한 번만 구독해 Banner/Dock/Console 셋에 prop 으로 전달
+  useEffect(() => {
+    if (!cid || !activeGame) return;
+    return watchGameSubmissions(cid, activeGame.id, setGameSubs);
+  }, [cid, activeGame]);
 
   const students = useMemo(
     () => members.filter((m) => m.role === "student"),
@@ -221,6 +308,69 @@ function ClassAdminInner() {
               미션 만들기
             </button>
             <button
+              onClick={() => setModal("praise")}
+              className="relative inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+            >
+              <Icon name="favorite" size={16} />
+              칭찬 승인
+              {pendingPraises.length > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
+                  {pendingPraises.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setModal("presentation")}
+              className="relative inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+            >
+              <Icon name="co_present" size={16} />
+              발표 승인
+              {pendingPresReqs.length > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
+                  {pendingPresReqs.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setModal("market")}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+            >
+              <Icon name="storefront" size={16} />
+              러닝마켓
+            </button>
+            <button
+              onClick={() =>
+                setModal(activeGame ? "game-console" : "game")
+              }
+              className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                activeGame
+                  ? "border-transparent bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
+                  : "border-[var(--md-sys-color-primary)] text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              }`}
+            >
+              <Icon name="grid_view" size={16} />
+              {activeGame ? "게임 진행 중" : "학급 게임"}
+            </button>
+            <button
+              onClick={() => setModal("game-history")}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition hover:bg-black/5"
+            >
+              <Icon name="history" size={16} />
+              게임 이력
+            </button>
+            <button
+              onClick={() => setModal("feedback-inbox")}
+              className="relative inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition hover:bg-black/5"
+            >
+              <Icon name="feedback" size={16} />
+              피드백
+              {feedback.filter((f) => f.status === "open").length > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
+                  {feedback.filter((f) => f.status === "open").length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setModal("wizard")}
               className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 present?.active || lock?.active
@@ -246,6 +396,20 @@ function ClassAdminInner() {
             </button>
           </div>
         </div>
+
+        {/* 진행 중인 학급 게임 안내 (있을 때만) */}
+        {activeGame && (
+          <ActiveGameBanner
+            cid={cid}
+            game={activeGame}
+            subs={gameSubs}
+            onOpenConsole={() => setModal("game-console")}
+          />
+        )}
+        {/* 자동 종료·차례 이관 — 콘솔을 닫아도 항상 동작(상시 마운트) */}
+        {activeGame && (
+          <GameAutoPilot cid={cid} game={activeGame} subs={gameSubs} />
+        )}
 
         {/* 선택 도구 */}
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
@@ -453,6 +617,69 @@ function ClassAdminInner() {
           }}
         />
       )}
+      {modal === "praise" && (
+        <PraiseManageModal
+          praises={praises}
+          cid={cid}
+          teacherUid={user.uid}
+          members={members}
+          onApprove={(p, assignTo) => approvePraise(cid, p, user.uid, assignTo)}
+          onReject={(id) => rejectPraise(cid, id)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "presentation" && (
+        <PresentationManageModal
+          requests={presReqs}
+          members={members}
+          onApprove={(r) => approvePresentationRequest(cid, r, user.uid)}
+          onReject={(id) => rejectPresentationRequest(cid, id)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "market" && (
+        <MarketManageModal
+          cid={cid}
+          user={user}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "game" && (
+        <GameStartModal
+          cid={cid}
+          by={user.uid}
+          onClose={() => setModal(null)}
+          onStarted={() => setModal("game-console")}
+        />
+      )}
+      {modal === "game-console" && activeGame && (
+        <GameConsole
+          cid={cid}
+          game={activeGame}
+          members={members}
+          students={students}
+          subs={gameSubs}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "game-history" && (
+        <GameHistoryModal
+          cid={cid}
+          user={user}
+          nameOf={nameOf}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "feedback-inbox" && (
+        <FeedbackInboxModal cid={cid} onClose={() => setModal(null)} />
+      )}
+      {activeGame && modal !== "game-console" && (
+        <GameDockButton
+          game={activeGame}
+          subs={gameSubs}
+          onOpen={() => setModal("game-console")}
+        />
+      )}
       {modal === "wizard" && (
         <WizardModal
           students={students}
@@ -461,6 +688,7 @@ function ClassAdminInner() {
           nameOf={nameOf}
           lock={lock}
           present={present}
+          notice={notice}
           onClose={() => setModal(null)}
           onSendEffect={(uids, effect) =>
             Promise.all(
@@ -475,6 +703,29 @@ function ClassAdminInner() {
           onClearPresenter={() => clearPresenter(cid)}
           onStartPresent={() => startPresent(cid, user.uid)}
           onStopPresent={() => stopPresent(cid)}
+          onStartNotice={(text, color) =>
+            startNotice(cid, text, color, user.uid)
+          }
+          onStopNotice={() => stopNotice(cid)}
+          onAwardBadge={(uids, badgeId) => {
+            const b = getBadge(badgeId);
+            return Promise.all(
+              uids.map((u) =>
+                awardBadge(cid, u, badgeId, user.uid).then(() =>
+                  sendEffect(
+                    cid,
+                    u,
+                    {
+                      kind: "badge",
+                      title: `배지 획득: ${b?.label ?? "배지"}`,
+                      subtitle: b?.desc,
+                    },
+                    user.uid
+                  )
+                )
+              )
+            ).then(() => {});
+          }}
         />
       )}
     </>
@@ -773,7 +1024,7 @@ function TargetPicker({
         <select
           value={groupId}
           onChange={(e) => setGroupId(e.target.value)}
-          className="m3-field !py-2 !text-sm"
+          className="m3-field"
         >
           <option value="">모둠 선택…</option>
           {groups.map((g) => (
@@ -864,7 +1115,7 @@ function GrantModal({
               type="number"
               value={amount}
               onChange={(e) => setAmount(parseInt(e.target.value, 10) || 0)}
-              className="m3-field w-20 !py-1.5 !text-sm"
+              className="m3-field w-20"
             />
           </div>
         </div>
@@ -872,7 +1123,7 @@ function GrantModal({
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="사유 (선택, 예: 발표 우수)"
-          className="m3-field !py-2 !text-sm"
+          className="m3-field"
         />
         <button
           disabled={busy || uids.length === 0 || !amount}
@@ -984,14 +1235,14 @@ function QuestModal({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="미션 제목 (예: 단어 20개 외우기)"
           autoFocus
-          className="m3-field !py-2 !text-sm"
+          className="m3-field"
         />
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="설명 (선택)"
           rows={2}
-          className="m3-field !py-2 !text-sm"
+          className="m3-field"
         />
         <div>
           <p className="mb-1 text-sm font-semibold text-black/60">보상 경험치</p>
@@ -1013,7 +1264,7 @@ function QuestModal({
               type="number"
               value={xp}
               onChange={(e) => setXp(parseInt(e.target.value, 10) || 0)}
-              className="m3-field w-20 !py-1.5 !text-sm"
+              className="m3-field w-20"
             />
           </div>
         </div>
@@ -1026,7 +1277,7 @@ function QuestModal({
             <select
               value={lessonId}
               onChange={(e) => setLessonId(e.target.value)}
-              className="m3-field !py-2 !text-sm"
+              className="m3-field"
             >
               <option value="">차시 선택 안 함</option>
               {lessons.map((l) => (
@@ -1042,7 +1293,7 @@ function QuestModal({
                   setActivityId(e.target.value);
                   applyActivityTitle(activities, e.target.value);
                 }}
-                className="m3-field !py-2 !text-sm"
+                className="m3-field"
               >
                 <option value="">차시 전체 (활동 미지정)</option>
                 {activities.map((a) => (
@@ -1109,6 +1360,7 @@ function WizardModal({
   nameOf,
   lock,
   present,
+  notice,
   onClose,
   onSendEffect,
   onStartLock,
@@ -1117,6 +1369,9 @@ function WizardModal({
   onClearPresenter,
   onStartPresent,
   onStopPresent,
+  onStartNotice,
+  onStopNotice,
+  onAwardBadge,
 }: {
   students: Member[];
   selected: Set<string>;
@@ -1124,6 +1379,7 @@ function WizardModal({
   nameOf: Record<string, string>;
   lock: ActivityLock | null;
   present: PresentState | null;
+  notice: NoticeState | null;
   onClose: () => void;
   onSendEffect: (
     uids: string[],
@@ -1139,12 +1395,18 @@ function WizardModal({
   onClearPresenter: () => Promise<void>;
   onStartPresent: () => Promise<void>;
   onStopPresent: () => Promise<void>;
+  onStartNotice: (text: string, color: string) => Promise<void>;
+  onStopNotice: () => Promise<void>;
+  onAwardBadge: (uids: string[], badgeId: string) => Promise<void>;
 }) {
   const [sel, setSel] = useState<Set<string>>(new Set(selected));
   const uids = students.filter((s) => sel.has(s.uid)).map((s) => s.uid);
   const single = uids.length === 1 ? uids[0] : null;
 
-  const [kind, setKind] = useState<"mission" | "level" | "present">("mission");
+  const [kind, setKind] = useState<
+    "mission" | "level" | "present" | "badge"
+  >("mission");
+  const [selBadge, setSelBadge] = useState<string>(BADGE_CATALOG[0]?.id ?? "");
   const presentActive = !!present?.active;
   const presenterUid = present?.uid ?? null;
 
@@ -1163,6 +1425,27 @@ function WizardModal({
   const [sec, setSec] = useState(0);
   const [busyLock, setBusyLock] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+
+  // 공지 전광판 입력
+  const noticeActive = !!notice?.active;
+  const [noticeText, setNoticeText] = useState("");
+  const [noticeColorId, setNoticeColorId] = useState(NOTICE_COLORS[0].id);
+  const [busyNotice, setBusyNotice] = useState(false);
+  const [noticeErr, setNoticeErr] = useState("");
+
+  async function toggleNotice() {
+    setBusyNotice(true);
+    setNoticeErr("");
+    try {
+      if (noticeActive) await onStopNotice();
+      else if (noticeText.trim())
+        await onStartNotice(noticeText.trim(), noticeColorId);
+    } catch (e) {
+      setNoticeErr(e instanceof Error ? e.message : "공지 전송에 실패했습니다.");
+    } finally {
+      setBusyNotice(false);
+    }
+  }
 
   const lockActive = !!lock?.active && (lock.until == null || lock.until > now);
   useEffect(() => {
@@ -1210,6 +1493,18 @@ function WizardModal({
     setSending(true);
     try {
       await onSendEffect(uids, buildEffect());
+      setSentOk(true);
+      setTimeout(() => setSentOk(false), 1800);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendBadge() {
+    if (uids.length === 0 || !selBadge) return;
+    setSending(true);
+    try {
+      await onAwardBadge(uids, selBadge);
       setSentOk(true);
       setTimeout(() => setSentOk(false), 1800);
     } finally {
@@ -1412,6 +1707,7 @@ function WizardModal({
                     ["mission", "미션 완료", "flag"],
                     ["level", "레벨업", "trending_up"],
                     ["present", "발표하기", "campaign"],
+                    ["badge", "배지 수여", "workspace_premium"],
                   ] as const
                 ).map(([k, label, icon]) => (
                   <button
@@ -1428,17 +1724,45 @@ function WizardModal({
                   </button>
                 ))}
               </div>
-              <input
-                value={msg}
-                onChange={(e) => setMsg(e.target.value)}
-                placeholder={
-                  kind === "present"
-                    ? "응원 문구 (선택, 예: gogo!)"
-                    : "문구 (선택, 예: 참 잘했어요!)"
-                }
-                className="m3-field !py-2 !text-sm"
-              />
-              {kind === "present" ? (
+              {kind !== "badge" && (
+                <input
+                  value={msg}
+                  onChange={(e) => setMsg(e.target.value)}
+                  placeholder={
+                    kind === "present"
+                      ? "응원 문구 (선택, 예: gogo!)"
+                      : "문구 (선택, 예: 참 잘했어요!)"
+                  }
+                  className="m3-field"
+                />
+              )}
+              {kind === "badge" ? (
+                <>
+                  <div className="grid grid-cols-4 gap-2 rounded-2xl bg-[var(--md-sys-color-surface-container-low)] p-3">
+                    {BADGE_CATALOG.map((b) => (
+                      <BadgeChip
+                        key={b.id}
+                        badge={b}
+                        size={44}
+                        selected={selBadge === b.id}
+                        onClick={() => setSelBadge(b.id)}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={sendBadge}
+                    disabled={uids.length === 0 || !selBadge || sending}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
+                  >
+                    <Icon name={sentOk ? "check" : "workspace_premium"} size={16} />
+                    {sentOk
+                      ? "수여했어요!"
+                      : sending
+                        ? "수여 중…"
+                        : `배지 수여${uids.length ? ` (${uids.length}명)` : ""}`}
+                  </button>
+                </>
+              ) : kind === "present" ? (
                 presentActive ? (
                   <div className="flex flex-col gap-2">
                     <p className="rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2 text-center text-xs font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
@@ -1521,7 +1845,7 @@ function WizardModal({
                       onChange={(e) =>
                         setMin(Math.max(0, Math.min(99, Number(e.target.value) || 0)))
                       }
-                      className="m3-field w-20 !py-1.5 !text-sm"
+                      className="m3-field w-20"
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
@@ -1534,7 +1858,7 @@ function WizardModal({
                       onChange={(e) =>
                         setSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
                       }
-                      className="m3-field w-20 !py-1.5 !text-sm"
+                      className="m3-field w-20"
                     />
                   </label>
                   <p className="pb-2 text-xs text-[var(--md-sys-color-on-surface-variant)]">
@@ -1557,6 +1881,84 @@ function WizardModal({
               <p className="text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
                 잠금을 켜면 학생 화면에 모래시계가 뜨고 모든 활동이 멈춰요. 설정한
                 시간이 끝나거나 잠금을 해제하면 다시 활동할 수 있어요.
+              </p>
+            </section>
+
+            <div className="h-px bg-[var(--md-sys-color-outline-variant)]" />
+
+            {/* 공지 전광판 */}
+            <section className="flex flex-col gap-3">
+              <h3 className="flex items-center gap-1.5 text-sm font-bold">
+                <Icon
+                  name="campaign"
+                  size={16}
+                  className="text-[var(--md-sys-color-primary)]"
+                />
+                공지 전광판
+                <span className="font-normal text-[var(--md-sys-color-on-surface-variant)]">
+                  · 학생 헤더에 흐르는 공지
+                </span>
+              </h3>
+              {noticeActive ? (
+                <p className="flex items-center gap-2 rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2.5 text-xs font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
+                  <Icon name="notifications_active" size={15} />
+                  <span className="truncate">송출 중 · {notice?.text}</span>
+                </p>
+              ) : (
+                <>
+                  <input
+                    value={noticeText}
+                    onChange={(e) => setNoticeText(e.target.value)}
+                    placeholder="공지 내용 (예: 5분 뒤 발표 시작합니다)"
+                    className="m3-field"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && noticeText.trim()) toggleNotice();
+                    }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-[var(--md-sys-color-on-surface-variant)]">
+                      색상
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {NOTICE_COLORS.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setNoticeColorId(c.id)}
+                          title={c.label}
+                          aria-label={c.label}
+                          className={`h-7 w-7 rounded-full transition ${
+                            noticeColorId === c.id
+                              ? "ring-2 ring-[var(--md-sys-color-on-surface)] ring-offset-2 ring-offset-[var(--md-sys-color-surface)]"
+                              : "hover:scale-110"
+                          }`}
+                          style={{ backgroundColor: c.bg }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+              <button
+                onClick={toggleNotice}
+                disabled={busyNotice || (!noticeActive && !noticeText.trim())}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-bold transition hover:brightness-105 disabled:opacity-40 ${
+                  noticeActive
+                    ? "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]"
+                    : "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                }`}
+              >
+                <Icon name={noticeActive ? "stop_circle" : "play_arrow"} size={18} />
+                {noticeActive ? "공지 종료" : "공지 시작"}
+              </button>
+              {noticeErr && (
+                <p className="rounded-xl bg-[var(--md-sys-color-error-container)] px-3 py-2 text-xs text-[var(--md-sys-color-on-error-container)]">
+                  {noticeErr}
+                </p>
+              )}
+              <p className="text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                시작을 누르면 종료할 때까지 학생 화면 상단에 공지가 좌우로
+                흐르는 전광판처럼 표시돼요.
               </p>
             </section>
           </div>

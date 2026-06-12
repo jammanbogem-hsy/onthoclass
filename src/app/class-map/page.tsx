@@ -15,7 +15,7 @@ import { Icon } from "@/components/Icon";
 import { SentimentBar, GraphView } from "@/components/GraphView";
 import { ExpandableGraph } from "@/components/ExpandableGraph";
 import { EmotionPanel } from "@/components/EmotionPanel";
-import { getMyRole } from "@/lib/classes";
+import { getMyRole, listMembers } from "@/lib/classes";
 import {
   getClassInsights,
   getClassOntology,
@@ -86,6 +86,26 @@ function useMultiLeaves(cid: string, lessonIds: string[]) {
   const [gen, setGen] = useState<"idle" | "running" | "error">("idle");
   const [genMsg, setGenMsg] = useState("");
 
+  // 학급 멤버 이름을 기본으로 채운다 — 질문에 답 안 한 게임 참여 학생도 이름으로 표시
+  // (게임 개념 노드의 sources 는 uid 라 멤버 이름이 없으면 코드처럼 보임).
+  useEffect(() => {
+    if (!cid) return;
+    listMembers(cid)
+      .then((ms) =>
+        setNames((prev) => {
+          const next = { ...prev };
+          // 명단의 실명은 굳은 응답자 이름을 덮어써서 항상 우선(순서 무관)
+          for (const m of ms) {
+            const rn = (m.displayName ?? "").trim();
+            if (rn && rn !== "이름없음") next[m.uid] = rn;
+            else if (next[m.uid] === undefined) next[m.uid] = m.displayName;
+          }
+          return next;
+        })
+      )
+      .catch(() => {});
+  }, [cid]);
+
   useEffect(() => {
     let alive = true;
     setEntries(null);
@@ -118,7 +138,16 @@ function useMultiLeaves(cid: string, lessonIds: string[]) {
       );
       if (alive) {
         setEntries(all);
-        setNames(nm);
+        // 응답자 이름은 명단에 없거나(게임 학생) 일반값일 때만 채운다 —
+        // 명단의 실명을 굳은 "학생"으로 덮어쓰지 않도록.
+        setNames((prev) => {
+          const next = { ...prev };
+          for (const uid of Object.keys(nm)) {
+            const cur = (next[uid] ?? "").trim();
+            if (!cur || cur === "학생" || cur === "이름없음") next[uid] = nm[uid];
+          }
+          return next;
+        });
       }
     })();
     return () => {
@@ -256,6 +285,8 @@ function ClassMap() {
     "idle"
   );
   const [normMsg, setNormMsg] = useState("");
+
+  // 게임(개념 빙고) 개념은 이 지식맵에 머지하지 않는다 — 게임 이력 모달에서 별도 표시.
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -419,7 +450,7 @@ function ClassMap() {
           uidSet.add(s.uid);
           if (samples.length < 8)
             samples.push({
-              student: s.studentName,
+              student: names[s.uid] || s.studentName,
               text: blocksToPlainText(s.content).slice(0, 300),
             });
         }
@@ -563,7 +594,7 @@ function ClassMap() {
 
           {scope.mode === "project" && (
             <select
-              className="m3-field mt-3 !py-2 !text-sm"
+              className="m3-field mt-3"
               value={scope.projectId}
               onChange={(e) =>
                 setScope({ mode: "project", projectId: e.target.value })
@@ -585,10 +616,12 @@ function ClassMap() {
               )}
               {lessons.map((l) => {
                 const on = scope.lessonIds.includes(l.id);
+                const solo =
+                  scope.lessonIds.length === 1 && scope.lessonIds[0] === l.id;
                 return (
-                  <label
+                  <div
                     key={l.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
                   >
                     <input
                       type="checkbox"
@@ -601,12 +634,27 @@ function ClassMap() {
                             : [...scope.lessonIds, l.id],
                         })
                       }
+                      className="cursor-pointer"
                     />
                     <span className="truncate">{l.title}</span>
                     <span className="ml-auto shrink-0 text-xs text-black/40">
                       {l.date}
                     </span>
-                  </label>
+                    <button
+                      onClick={() =>
+                        setScope({ mode: "select", lessonIds: [l.id] })
+                      }
+                      title="이 차시의 지식맵만 단독으로 보기(저장된 분석)"
+                      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${
+                        solo
+                          ? "bg-[var(--md-sys-color-primary)] text-white"
+                          : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-primary)] hover:bg-black/5"
+                      }`}
+                    >
+                      <Icon name="hub" size={12} />
+                      단독 보기
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -722,7 +770,7 @@ function ClassMap() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="m3-field !w-auto !py-1.5 !text-xs"
+                className="m3-field !w-auto"
                 value={studentUid}
                 onChange={(e) => setStudentUid(e.target.value)}
                 title="학생 필터 (LLM 호출 0)"
@@ -905,13 +953,15 @@ function ClassMap() {
             </p>
           ) : tab === "graph" ? (
             <div className="mt-4">
-              {display.summary && (
+              {/* 요약은 질문 기반(base)만 (게임 개념은 게임 이력 모달에서 별도) */}
+              {base?.summary && (
                 <p className="text-sm leading-relaxed text-black/70 dark:text-white/70">
-                  {display.summary}
+                  {base.summary}
                 </p>
               )}
               <div className="mt-4">
-                <SentimentBar s={display.overallSentiment} />
+                {/* 감정 극성 바는 질문 기반(base) 기준 — 게임 개념(중립)에 쏠리지 않게 */}
+                <SentimentBar s={(base ?? display).overallSentiment} />
               </div>
               <div className="mt-4 overflow-hidden rounded-2xl bg-white/30 p-2 dark:bg-white/5">
                 <ExpandableGraph

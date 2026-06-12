@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon } from "@/components/Icon";
+import { Button, IconButton } from "@/components/ui";
 import type { SurveyItem, SurveyItemType } from "@/lib/lessons";
 
 function newId() {
@@ -130,7 +131,7 @@ export function SurveyBuilder({
             value={it.prompt}
             onChange={(e) => patch(i, { prompt: e.target.value })}
             placeholder="문항 내용 (예: 나는 영어로 자기소개를 할 수 있다)"
-            className="m3-field !py-2 !text-sm"
+            className="m3-field"
           />
 
           {it.type === "scale" && (
@@ -142,7 +143,7 @@ export function SurveyBuilder({
                   onChange={(e) =>
                     patch(i, { scaleMax: parseInt(e.target.value, 10) })
                   }
-                  className="m3-field !w-auto !py-1 !text-xs"
+                  className="m3-field !w-auto"
                 >
                   <option value={3}>3점</option>
                   <option value={4}>4점</option>
@@ -161,7 +162,7 @@ export function SurveyBuilder({
                   })
                 }
                 placeholder="낮음 라벨 (예: 전혀 아니다)"
-                className="m3-field !w-40 !py-1 !text-xs"
+                className="m3-field !w-40"
               />
               <input
                 value={it.scaleLabels?.high ?? ""}
@@ -174,7 +175,7 @@ export function SurveyBuilder({
                   })
                 }
                 placeholder="높음 라벨 (예: 매우 그렇다)"
-                className="m3-field !w-40 !py-1 !text-xs"
+                className="m3-field !w-40"
               />
             </div>
           )}
@@ -194,31 +195,33 @@ export function SurveyBuilder({
                       })
                     }
                     placeholder={`선택지 ${oi + 1}`}
-                    className="m3-field !py-1 !text-xs"
+                    className="m3-field"
                   />
-                  <button
-                    type="button"
+                  <IconButton
+                    icon="close"
+                    label={`선택지 ${oi + 1} 삭제`}
+                    size="md"
+                    variant="danger"
                     onClick={() =>
                       patch(i, {
                         options: (it.options ?? []).filter((_, k) => k !== oi),
                       })
                     }
-                    className="rounded p-1 text-black/30 hover:text-rose-500"
-                  >
-                    <Icon name="close" size={13} />
-                  </button>
+                  />
                 </div>
               ))}
-              <button
+              <Button
                 type="button"
+                variant="text"
+                size="md"
+                icon="add"
+                className="mt-0.5 w-fit"
                 onClick={() =>
                   patch(i, { options: [...(it.options ?? []), ""] })
                 }
-                className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full border border-dashed border-[var(--md-sys-color-outline)] px-2.5 py-1 text-[11px] text-[var(--md-sys-color-primary)]"
               >
-                <Icon name="add" size={13} />
                 선택지 추가
-              </button>
+              </Button>
             </div>
           )}
 
@@ -232,26 +235,28 @@ export function SurveyBuilder({
 
       <div className="flex flex-wrap items-center gap-2">
         {TYPE_META.map((t) => (
-          <button
+          <Button
             key={t.type}
             type="button"
+            variant="outlined"
+            size="md"
+            icon={t.icon}
             onClick={() => add(t.type)}
-            className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
           >
-            <Icon name={t.icon} size={14} />
             {t.label} 추가
-          </button>
+          </Button>
         ))}
         {onImport && (
-          <button
+          <Button
             type="button"
+            variant="outlined"
+            size="md"
+            icon="upload_file"
             onClick={onImport}
-            className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
             title="PDF·이미지·문서에서 문항 자동 추출"
           >
-            <Icon name="upload_file" size={14} />
             문서에서 문항 가져오기
-          </button>
+          </Button>
         )}
       </div>
     </div>

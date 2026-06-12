@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
@@ -123,6 +124,28 @@ export async function reorderProject(
     { order },
     { merge: true }
   );
+}
+
+/** 단일 프로젝트 조회 */
+export async function getProject(
+  cid: string,
+  pid: string
+): Promise<Project | null> {
+  const d = await getDoc(doc(getDbClient(), "classes", cid, "projects", pid));
+  if (!d.exists()) return null;
+  const v = d.data();
+  const ts = v.createdAt as { toMillis?: () => number } | undefined;
+  return {
+    id: d.id,
+    name: (v.name as string) ?? "",
+    order: (v.order as number) ?? 0,
+    parentProjectId: (v.parentProjectId as string) ?? null,
+    color: (v.color as string) ?? null,
+    icon: (v.icon as string) ?? null,
+    pinned: Boolean(v.pinned),
+    createdBy: (v.createdBy as string) ?? "",
+    createdAt: ts?.toMillis ? ts.toMillis() : null,
+  };
 }
 
 export async function deleteProject(

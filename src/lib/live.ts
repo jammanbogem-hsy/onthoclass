@@ -11,7 +11,12 @@ import {
 import { getDbClient } from "@/lib/firebase";
 
 // ---------- 개별 효과 신호 ----------
-export type EffectKind = "mission" | "level" | "present";
+export type EffectKind =
+  | "mission"
+  | "level"
+  | "present"
+  | "badge"
+  | "praise";
 
 export type EffectSignal = {
   kind: EffectKind;
@@ -203,6 +208,154 @@ export function watchPresent(
         uid: (v.uid as string) || null,
         name: (v.name as string) ?? "",
         cheer: (v.cheer as string) ?? "",
+        by: (v.by as string) ?? "",
+      });
+    },
+    () => cb(null)
+  );
+}
+
+// ---------- 교사 접속 차시(학생에게 "선생님 접속 중" 실시간 표시) ----------
+// classes/{cid}/control/teacherViewing 의 teachers 맵에 교사별 현재 차시를 기록.
+// 교사는 차시 페이지에서 하트비트로 갱신, 떠나면 lid=null 로 비운다. 학생은
+// onSnapshot 으로 실시간 구독하고, 최근(TTL 이내) 갱신만 "접속 중"으로 본다.
+export const TEACHER_VIEW_TTL = 90_000; // 90초 내 갱신만 유효(크래시 자동 정리용)
+export type TeacherViewing = {
+  uid: string;
+  name: string;
+  lid: string;
+  title: string;
+  at: number | null;
+};
+
+const teacherViewingRef = (cid: string) =>
+  doc(getDbClient(), "classes", cid, "control", "teacherViewing");
+
+/** 교사가 보고 있는 차시를 기록(하트비트마다 호출). */
+export async function setTeacherViewing(
+  cid: string,
+  uid: string,
+  name: string,
+  lid: string,
+  title: string
+): Promise<void> {
+  await setDoc(
+    teacherViewingRef(cid),
+    { teachers: { [uid]: { name, lid, title, at: serverTimestamp() } } },
+    { merge: true }
+  );
+}
+
+/** 교사가 차시에서 나감(접속 표시 해제). */
+export async function clearTeacherViewing(
+  cid: string,
+  uid: string
+): Promise<void> {
+  await setDoc(
+    teacherViewingRef(cid),
+    { teachers: { [uid]: { lid: null, at: serverTimestamp() } } },
+    { merge: true }
+  );
+}
+
+/** 학생용 실시간 구독 — 현재 교사가 보고 있는 차시 목록(staleness 필터는 호출측). */
+export function watchTeacherViewing(
+  cid: string,
+  cb: (list: TeacherViewing[]) => void
+): () => void {
+  return onSnapshot(
+    teacherViewingRef(cid),
+    (snap) => {
+      const teachers = (snap.data()?.teachers ?? {}) as Record<
+        string,
+        {
+          name?: string;
+          lid?: string | null;
+          title?: string;
+          at?: { toMillis?: () => number };
+        }
+      >;
+      const list: TeacherViewing[] = [];
+      for (const [uid, v] of Object.entries(teachers)) {
+        if (!v.lid) continue;
+        list.push({
+          uid,
+          name: v.name || "선생님",
+          lid: v.lid,
+          title: v.title || "",
+          at: v.at?.toMillis ? v.at.toMillis() : null,
+        });
+      }
+      cb(list);
+    },
+    () => cb([])
+  );
+}
+
+// ---------- 공지 전광판(헤더 슬라이딩 배너) ----------
+// active 인 동안 학생 헤더에 text 가 마퀴(흐르는) 애니메이션으로 표시된다.
+// 교사가 고른 색상 팔레트(id) 로 배너 톤을 결정한다.
+export type NoticeColor = { id: string; label: string; bg: string; fg: string };
+export const NOTICE_COLORS: NoticeColor[] = [
+  { id: "slate", label: "차분", bg: "#37474f", fg: "#ffffff" },
+  { id: "green", label: "초록", bg: "#2e7d32", fg: "#ffffff" },
+  { id: "blue", label: "파랑", bg: "#1565c0", fg: "#ffffff" },
+  { id: "violet", label: "보라", bg: "#5e35b1", fg: "#ffffff" },
+  { id: "rose", label: "핑크", bg: "#c2185b", fg: "#ffffff" },
+  { id: "amber", label: "노랑", bg: "#ff8f00", fg: "#1a1a1a" },
+];
+export function noticeColor(id: string): NoticeColor {
+  return NOTICE_COLORS.find((c) => c.id === id) ?? NOTICE_COLORS[0];
+}
+
+export type NoticeState = {
+  active: boolean;
+  text: string;
+  color: string;
+  by: string;
+};
+
+const noticeRef = (cid: string) =>
+  doc(getDbClient(), "classes", cid, "control", "notice");
+
+/** 공지 시작 — 종료할 때까지 학생 헤더에 흐르는 배너로 표시 */
+export async function startNotice(
+  cid: string,
+  text: string,
+  color: string,
+  by: string
+): Promise<void> {
+  await setDoc(noticeRef(cid), {
+    active: true,
+    text: text ?? "",
+    color: color ?? NOTICE_COLORS[0].id,
+    by,
+    at: serverTimestamp(),
+  });
+}
+
+/** 공지 종료 */
+export async function stopNotice(cid: string): Promise<void> {
+  await setDoc(
+    noticeRef(cid),
+    { active: false, at: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export function watchNotice(
+  cid: string,
+  cb: (state: NoticeState | null) => void
+): () => void {
+  return onSnapshot(
+    noticeRef(cid),
+    (snap) => {
+      if (!snap.exists()) return cb(null);
+      const v = snap.data();
+      cb({
+        active: Boolean(v.active),
+        text: (v.text as string) ?? "",
+        color: (v.color as string) || NOTICE_COLORS[0].id,
         by: (v.by as string) ?? "",
       });
     },

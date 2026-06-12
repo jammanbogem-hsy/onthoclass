@@ -81,6 +81,7 @@ export function GraphView({
   height = 460,
   title = "지식맵",
   nodeColor,
+  viewerUid,
 }: {
   data: Ontology;
   studentNames?: Record<string, string>;
@@ -88,6 +89,9 @@ export function GraphView({
   title?: string;
   /** 노드 색을 강제로 지정(사전/사후 비교 등). 반환 없으면 기본 색 사용 */
   nodeColor?: (n: OntologyNode) => string | undefined;
+  /** 학생 본인 뷰: 이 uid 가 기여한(sources 포함) 노드에 굵은 테두리로 강조하고,
+   *  상세에서 다른 학생 이름 목록을 숨긴다(개념·인원수만 노출 — 또래 PII 보호). */
+  viewerUid?: string;
 }) {
   const nodes = useMemo(() => data.nodes ?? [], [data]);
   const edges = useMemo(
@@ -121,6 +125,8 @@ export function GraphView({
   const [localDepth, setLocalDepth] = useState(1);
   const [showArrows, setShowArrows] = useState(true);
   const [labelOpacity, setLabelOpacity] = useState(1);
+  // 모든 노드 라벨 항상 표시(기본 ON) — 끄면 허브/선택/호버만 표시(이전 동작)
+  const [showAllLabels, setShowAllLabels] = useState(true);
   const [hideIsolated, setHideIsolated] = useState(false);
   const [sizeMode, setSizeMode] = useState<
     "importance" | "degree" | "sources"
@@ -604,7 +610,8 @@ ${nodeSvg}
         sentiment: nd.sentiment,
         sc: nd.sourceCount ?? nd.sources?.length ?? 0,
         hub: maxImp ? importance[i] / maxImp >= 0.6 : false,
-        by: (nd.sources ?? []).map((s) => nameOf(s)),
+        // 학생 본인 뷰에서는 다른 학생 이름을 내보내지 않는다(또래 PII 보호).
+        by: viewerUid ? [] : (nd.sources ?? []).map((s) => nameOf(s)),
       };
     });
     const expEdges = edges.map((e) => ({
@@ -890,7 +897,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="검색 (라벨 포함)"
-            className="m3-field w-full !py-1.5 !text-xs"
+            className="m3-field w-full"
           />
           <div className="mt-3 flex flex-col gap-2">
             <label className="flex flex-col gap-0.5">
@@ -980,6 +987,14 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
               />
               고립 노드 숨김
             </label>
+            <label className="col-span-2 flex items-center gap-1 text-black/55">
+              <input
+                type="checkbox"
+                checked={showAllLabels}
+                onChange={(e) => setShowAllLabels(e.target.checked)}
+              />
+              모든 노드 이름 표시
+            </label>
             <label className="col-span-2 flex flex-col gap-0.5">
               <span className="flex items-center justify-between text-black/55">
                 <span>라벨 투명도</span>
@@ -1007,7 +1022,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                   e.target.value as "importance" | "degree" | "sources"
                 )
               }
-              className="m3-field !w-full !py-1.5 !text-xs"
+              className="m3-field !w-full"
             >
               <option value="importance">중요도(중첩+연결)</option>
               <option value="degree">연결도</option>
@@ -1084,7 +1099,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                       )
                     }
                     placeholder="검색어"
-                    className="m3-field flex-1 !py-1 !text-xs"
+                    className="m3-field flex-1"
                   />
                   <button
                     onClick={() =>
@@ -1218,7 +1233,8 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
               !matchHide &&
               !localHide &&
               !isoHide &&
-              (isHub ||
+              (showAllLabels ||
+                isHub ||
                 isSel ||
                 hover === nd.id ||
                 (neighborIds?.has(nd.id) ?? false) ||
@@ -1247,6 +1263,30 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                     strokeDasharray="4 3"
                   />
                 )}
+                {/* 게임에서 나온 개념 노드 — 보라 점선 테두리로 구분(색상 모드와 무관) */}
+                {nd.id.startsWith("bingo-") && (
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={r + 4}
+                    fill="none"
+                    stroke="#7c5cff"
+                    strokeWidth={2.5}
+                    strokeDasharray="2 3"
+                  />
+                )}
+                {/* 본인(viewerUid) 기여 개념 — 굵은 테두리로 "내 답이 여기 있어요" 강조 */}
+                {!!viewerUid &&
+                  (nd.sources?.includes(viewerUid) ?? false) && (
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={r + 3}
+                      fill="none"
+                      stroke="#111827"
+                      strokeWidth={4}
+                    />
+                  )}
                 <circle
                   cx={p.x}
                   cy={p.y}
@@ -1304,10 +1344,17 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                     y={p.y + r + 14}
                     textAnchor="middle"
                     className="fill-black/80 dark:fill-white/85"
-                    opacity={labelOpacity}
+                    opacity={
+                      // 작은 노드는 라벨을 살짝 연하게(가독성 우선, 너무 빽빽하지 않게)
+                      isHub ? labelOpacity : labelOpacity * (isMid ? 0.9 : 0.75)
+                    }
                     style={{
-                      fontSize: isHub ? 14 : 12,
+                      fontSize: isHub ? 14 : isMid ? 12 : 11,
                       fontWeight: isHub ? 700 : 500,
+                      paintOrder: "stroke",
+                      stroke: "var(--md-sys-color-surface, #fff)",
+                      strokeWidth: 3,
+                      strokeLinejoin: "round",
                     }}
                   >
                     {nd.label || nd.id}
@@ -1352,7 +1399,14 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
           <p className="mt-3 text-xs font-semibold text-black/55 dark:text-white/55">
             언급한 학생 {selNode.sourceCount ?? selNode.sources?.length ?? 0}명
           </p>
-          {selNode.sources && selNode.sources.length > 0 && (
+          {/* 학생 본인 뷰(viewerUid): 내 답이 포함됐는지만 표시하고 다른 학생 이름은 숨긴다 */}
+          {viewerUid ? (
+            (selNode.sources?.includes(viewerUid) ?? false) && (
+              <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-primary-container)] px-2.5 py-0.5 text-xs font-bold text-[var(--md-sys-color-on-primary-container)]">
+                <Icon name="check" size={13} /> 내 답이 들어간 개념이에요
+              </p>
+            )
+          ) : selNode.sources && selNode.sources.length > 0 ? (
             <div className="mt-1 flex flex-wrap gap-1">
               {selNode.sources.map((s) => (
                 <span
@@ -1363,7 +1417,7 @@ header h1{font-size:15px;margin:0;font-weight:800;align-self:center}header .sub{
                 </span>
               ))}
             </div>
-          )}
+          ) : null}
 
           {data.aliases?.[selNode.id]?.length ? (
             <>

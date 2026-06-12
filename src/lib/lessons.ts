@@ -20,6 +20,7 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { getDbClient } from "@/lib/firebase";
+import { getProject, createProject, updateProject } from "@/lib/projects";
 
 export type Phase = "pre" | "post";
 
@@ -42,6 +43,17 @@ export type Lesson = {
   createdAt: number | null;
 };
 
+// 제출 첨부(사진/음성) — Cloud Storage 업로드 후 URL·메타데이터를 제출 문서에 보관
+export type Attachment = {
+  id: string;
+  type: "image" | "audio";
+  url: string; // Storage 다운로드 URL
+  path: string; // Storage 경로(삭제용)
+  name: string;
+  size: number; // bytes
+  durationMs?: number; // 음성 길이
+};
+
 export type Submission = {
   uid: string;
   studentName: string;
@@ -52,6 +64,7 @@ export type Submission = {
   application?: string; // 수업 후 성찰: 배운 걸 어디에 쓸 수 있을까
   // 설문(검증) 응답: 문항 변수키(item.id) → 값(척도=숫자, 객관식=선택 라벨, 주관식=텍스트)
   surveyAnswers?: Record<string, number | string>;
+  attachments?: Attachment[]; // 사진/음성 첨부
   submittedAt: number | null;
 };
 
@@ -70,7 +83,8 @@ export type ActivityKind =
   | "link"
   | "canvas"
   | "reflection"
-  | "survey";
+  | "survey"
+  | "game-result"; // 학급 게임 결과 피드백(읽기 전용) — 순위·워드클라우드·개념지식맵·AI코멘트
 
 // 설문(검증) 문항 — 사전/사후 효과성 분석용. id 는 전·후를 잇는 변수키.
 export type SurveyItemType = "scale" | "choice" | "open";
@@ -96,11 +110,13 @@ export type Question = {
   audUids: string[]; // 대상 학생 uid
   order: number;
   allowResubmit: boolean; // 제출 후 학생 수정 허용 여부 (교사 설정)
+  published?: boolean; // 학생 공개 여부. false=예약(학생에게 숨김), 미설정/true=공개
   revealAnswer?: boolean; // 문항(quiz): 제출 후 학생에게 정답 공개(공개 시 잠금)
   boardMode?: "shared" | "group"; // 보드(canvas): 공용 1개 / 모둠별 따로
   surveyItems?: SurveyItem[]; // 설문(survey) 문항 목록
   surveyVerifiedHash?: string; // 설문 검증(분석 수합) 시점의 응답 해시 — 있으면 분석 생성됨, 불일치면 stale
   clonedFrom?: string; // 복제 원본 질문 id (수업 전→후 가져오기 등)
+  gameResult?: GameResultPayload; // kind="game-result" 일 때 게임 결과 피드백 데이터(스냅샷)
   createdBy: string;
   createdAt: number | null;
 };
@@ -131,6 +147,25 @@ export type Ontology = {
   inputHash?: string; // 더티 체크용 입력 해시 (질문 리프에만 기록)
   /** 정준화(동의어 통합) 결과의 별칭 맵 — canonicalId → [원본 라벨들] */
   aliases?: Record<string, string[]>;
+};
+
+/**
+ * 학급 게임(개념 빙고) 결과 피드백 — 차시 "수업 후 활동"(kind="game-result")에
+ * 박제되는 스냅샷. 이름·순위·개념어는 생성 시점에 구워 넣어(게임 문서 의존 X) 차시에서 바로 표시.
+ */
+export type GameResultPayload = {
+  gameId: string;
+  gameName: string;
+  boardSize: number;
+  playedAt: number | null;
+  /** 올림픽 순위 (이름 포함) */
+  ranks: { uid: string; name: string; rank: number; doneAtTurn: number }[];
+  /** 워드클라우드 — 제출된 전체 개념어 빈도 */
+  wordCloud: { word: string; count: number }[];
+  /** 임베딩 기반 개념 지식맵 (선택) */
+  ontology?: Ontology;
+  /** AI 학습 피드백 코멘트 (선택) */
+  comment?: string;
 };
 
 const lessonsCol = (cid: string) =>
@@ -227,6 +262,45 @@ export async function copyLessonToClass(
     ).catch(() => {});
   }
   return newLessonRef.id;
+}
+
+/**
+ * 프로젝트(폴더)를 통째로 다른 학급으로 복제 — 구조(활동·위계)만, 학생 데이터 제외.
+ * 복제 대상: 대상 학급에 같은 이름/색/아이콘의 새 프로젝트를 만들고,
+ *   projectId === srcPid 인 차시들을 (원래 순서대로) copyLessonToClass 로 복제한 뒤
+ *   복제본을 새 프로젝트에 배속한다.
+ * 제외 대상: 학생 제출물·온톨로지(지식맵)는 copyLessonToClass 가 이미 제외한다(구조만 복제).
+ *   하위(중첩) 프로젝트는 재귀 복제하지 않고, 해당 프로젝트의 직속 차시만 복제한다.
+ * 빈 프로젝트는 새 프로젝트만 생성하고 종료. 반환: 대상 학급의 새 프로젝트 id.
+ */
+export async function copyProjectToClass(
+  srcCid: string,
+  srcPid: string,
+  destCid: string,
+  user: User
+): Promise<string> {
+  const srcProject = await getProject(srcCid, srcPid);
+  if (!srcProject) throw new Error("원본 프로젝트를 찾을 수 없습니다.");
+
+  // 대상 학급에 새 프로젝트 생성 (이름만 createProject 로, 색/아이콘은 이후 패치)
+  const newPid = await createProject(destCid, user, srcProject.name);
+  if (srcProject.color != null || srcProject.icon != null) {
+    await updateProject(destCid, newPid, {
+      color: srcProject.color,
+      icon: srcProject.icon,
+    });
+  }
+
+  // 이 프로젝트에 직속된 차시들을 원래 순서대로 복제 → 새 프로젝트에 배속
+  const srcLessons = (await listLessons(srcCid))
+    .filter((l) => l.projectId === srcPid)
+    .sort((a, b) => a.order - b.order);
+  for (const lesson of srcLessons) {
+    const newLid = await copyLessonToClass(srcCid, lesson.id, destCid, user);
+    await moveLesson(destCid, newLid, { projectId: newPid });
+  }
+
+  return newPid;
 }
 
 /**
@@ -435,6 +509,7 @@ export async function createQuestion(
     revealAnswer?: boolean;
     boardMode?: "shared" | "group";
     surveyItems?: SurveyItem[];
+    gameResult?: GameResultPayload;
   }
 ): Promise<string> {
   const ref = doc(questionsCol(cid, lid));
@@ -453,6 +528,7 @@ export async function createQuestion(
     revealAnswer: data.revealAnswer ?? false,
     boardMode: data.boardMode ?? "shared",
     surveyItems: cleanSurveyItems(data.surveyItems),
+    ...(data.gameResult ? { gameResult: data.gameResult } : {}),
     createdBy: user.uid,
     createdAt: serverTimestamp(),
   });
@@ -531,6 +607,7 @@ export async function updateQuestion(
     audUids?: string[];
     order?: number;
     allowResubmit?: boolean;
+    published?: boolean;
     revealAnswer?: boolean;
     boardMode?: "shared" | "group";
     surveyItems?: SurveyItem[];
@@ -605,7 +682,8 @@ export async function submitQuestionResponse(
   qid: string,
   user: User,
   phase: Phase,
-  content: string
+  content: string,
+  attachments: Attachment[] = []
 ): Promise<void> {
   await setDoc(
     doc(qSubCol(cid, lid, qid), user.uid),
@@ -614,6 +692,7 @@ export async function submitQuestionResponse(
       studentName: user.displayName ?? "이름없음",
       phase,
       content,
+      attachments,
       submittedAt: serverTimestamp(),
     },
     { merge: true }
@@ -996,6 +1075,7 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
       .filter((l) => l.title || l.url),
     order: (v.order as number) ?? 0,
     allowResubmit: v.allowResubmit !== false, // 미설정/기존 문서는 허용(true)
+    published: v.published !== false, // 미설정/기존 문서는 공개(true), false 만 예약
     revealAnswer: v.revealAnswer === true,
     boardMode: v.boardMode === "group" ? "group" : "shared",
     surveyItems: Array.isArray(v.surveyItems)
@@ -1026,6 +1106,10 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
         : undefined,
     clonedFrom:
       typeof v.clonedFrom === "string" ? (v.clonedFrom as string) : undefined,
+    gameResult:
+      v.gameResult !== undefined
+        ? (v.gameResult as GameResultPayload)
+        : undefined,
     createdBy: (v.createdBy as string) ?? "",
     createdAt: ts?.toMillis ? ts.toMillis() : null,
   };
@@ -1050,6 +1134,9 @@ function mapSubmission(v: Record<string, unknown>): Submission {
       v.surveyAnswers && typeof v.surveyAnswers === "object"
         ? (v.surveyAnswers as Record<string, number | string>)
         : undefined,
+    attachments: Array.isArray(v.attachments)
+      ? (v.attachments as Attachment[])
+      : undefined,
     submittedAt: ts?.toMillis ? ts.toMillis() : null,
   };
 }

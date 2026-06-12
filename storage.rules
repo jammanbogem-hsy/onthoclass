@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// Cloud Storage 보안 규칙
+// 제출 첨부(사진/음성): classes/{cid}/lessons/{lid}/questions/{qid}/submissions/{uid}/{file}
+// 보드 카드 첨부:        classes/{cid}/canvas/{uid}/{file}
+// 피드백/오류 사진:       classes/{cid}/feedback/{uid}/{fid}/{file}
+//
+// - 읽기: 로그인 사용자 (교사가 학생 제출을 검토하고, 멤버가 협업 보드를 보려면
+//         비소유자 읽기가 필요해 멤버십을 경로로 좁히지 못한다)
+// - 쓰기: 본인(uid 경로) 폴더에만, 8MB 이하, 안전한 image/audio 형식만(svg 등 제외)
+// - 삭제: 본인만
+//
+// NOTE: 학급 멤버십으로 읽기/쓰기를 더 좁히려면 Storage 규칙이 Firestore 멤버 문서를
+//   봐야 하는데, 이 프로젝트에서 storage→firestore 교차참조(firestore.exists)가
+//   동작하지 않아(정당한 멤버도 권한 거부) 사용하지 않는다. 더 엄격히 가두려면
+//   가입/개설 시 Auth 커스텀 클레임에 학급 목록을 넣고 token 으로 검사하는 방식이 필요.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // 허용 파일 형식(active content 인 svg 등 제외). matches()는 전체 일치이므로
+    // 'audio/webm;codecs=opus' 같은 파라미터 접미사를 (;.*)? 로 허용한다.
+    function safeMedia() {
+      return request.resource.contentType.matches(
+        '(image/(png|jpe?g|gif|webp|heic|heif)|audio/(webm|mp4|mpeg|ogg|wav|m4a|aac|x-m4a))(;.*)?'
+      );
+    }
+    function safeImage() {
+      return request.resource.contentType.matches(
+        'image/(png|jpe?g|gif|webp|heic|heif)(;.*)?'
+      );
+    }
+
+    // 제출 첨부(사진/음성)
+    match /classes/{cid}/lessons/{lid}/questions/{qid}/submissions/{uid}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 8 * 1024 * 1024
+        && safeMedia();
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // 보드(캔버스) 카드 첨부
+    match /classes/{cid}/canvas/{uid}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 8 * 1024 * 1024
+        && safeMedia();
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // 피드백/오류 신고 사진
+    match /classes/{cid}/feedback/{uid}/{fid}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 8 * 1024 * 1024
+        && safeImage();
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // 그 외 경로는 모두 차단
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

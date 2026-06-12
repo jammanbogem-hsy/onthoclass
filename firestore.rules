@@ -13,7 +13,11 @@ service cloud.firestore {
       return signedIn() && exists(memberDoc(cid));
     }
     function isTeacher(cid) {
-      return isMember(cid) && get(memberDoc(cid)).data.role == 'teacher';
+      // 학급 단위 권한: 해당 학급의 멤버이면서 role==teacher 여야 한다.
+      // (전역 token.role=='teacher' 빠른경로 제거 — 한 학급의 교사 권한이 모든
+      //  학급으로 번지던 구조적 취약점 차단. 교사 계정 여부는 isTeacherAccount 별도.)
+      return signedIn() && isMember(cid)
+        && get(memberDoc(cid)).data.role == 'teacher';
     }
     // 계정 역할: users/{uid}.role == 'teacher'
     function isTeacherAccount() {
@@ -38,13 +42,28 @@ service cloud.firestore {
       return isMember(cid) || isTeammate(classOwner(cid));
     }
 
+    // 공개 메타(로그인 화면 회원 수 카운터 등): 비로그인 포함 누구나 읽기.
+    // 쓰기는 Admin Cloud Function(publicMemberCount)만 — 클라이언트 쓰기 금지(변조 차단).
+    match /meta/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // 읽기전용 공유 지식맵 스냅샷: 링크를 가진 누구나 열람(비로그인 포함),
     // 생성은 교사 계정 본인, 수정/삭제는 소유자만. (학생 식별정보는 저장 시 제거)
     match /shares/{shareId} {
       allow read: if true;
+      // 발행은 publishShare Cloud Function(admin)만 — 서버에서 학생 식별정보(sources)
+      // 를 제거해 쓴다. 클라이언트 직접 create/update 금지(변조·미정제 발행 차단).
+      allow create, update: if false;
+      allow delete: if signedIn() && resource.data.ownerUid == uid();
+    }
+
+    // 학급 그룹(폴더) — 교사 본인 소유. 데이터 병합 없이 학급 참조만 보관.
+    match /classGroups/{groupId} {
+      allow read: if signedIn() && resource.data.ownerUid == uid();
       allow create: if isTeacherAccount()
         && request.resource.data.ownerUid == uid();
-      // 소유자만 수정/삭제, 수정 시 ownerUid 변경 금지
       allow update: if signedIn() && resource.data.ownerUid == uid()
         && request.resource.data.ownerUid == resource.data.ownerUid;
       allow delete: if signedIn() && resource.data.ownerUid == uid();
@@ -64,8 +83,208 @@ service cloud.firestore {
         && uid() in resource.data.members;
     }
 
+    // 교사 팀 코드 매핑: code → { uid, name }. name 은 교사 실명(PII)이므로
+    // 교사 계정만 단건 조회(get) 가능 — 학생/임의 계정의 교사 실명 디렉터리화 차단.
+    // list 금지(대량 수집 방지), 쓰기는 교사 본인(uid·name 키만).
+    match /teamCodes/{code} {
+      allow get: if isTeacherAccount();
+      allow list: if false;
+      allow write: if isTeacherAccount()
+        && request.resource.data.uid == uid()
+        && request.resource.data.keys().hasOnly(['uid', 'name']);
+    }
+
+    // 학급 참여 코드 인덱스: code → { classId, ownerId }. 코드 유일성/충돌검사용.
+    // 교사 본인만 생성(예약), 목록 금지. 가입 조회는 joinClassByCode(admin)가 수행.
+    match /classCodes/{code} {
+      allow get: if isTeacherAccount();
+      allow list: if false;
+      allow create: if isTeacherAccount()
+        && request.resource.data.classId is string
+        && request.resource.data.ownerId == uid();
+      allow update: if false;
+      allow delete: if isTeacherAccount() && resource.data.ownerId == uid();
+    }
+
+    // 영어 수업활동(별도 라우트 /eng/<unit>-<lesson>) — LMS 학급과 분리.
+    // 길찾기 또래 챌린지(5-3):
+    //   challenges/{cid}                  공개 지도+안내문(정답 미포함)
+    //   challenges/{cid}/private/answer    비공개 정답(만든이/교사만)
+    //   challenges/{cid}/solvers/{uid}     정답자 — 규칙이 비공개 정답과 대조해 채점
+    match /engActivities/{activityId} {
+      // 참가자 식별(학교 + 6학년 반). 본인만 쓰기, 로그인 사용자 읽기(출제자·교사가
+      // 응답을 학교·반으로 묶어 보기 위함). 실명·PII 없음.
+      match /players/{playerUid} {
+        allow read: if signedIn();
+        allow write: if signedIn() && playerUid == uid()
+          && request.resource.data.uid == uid();
+      }
+
+      match /challenges/{cid} {
+        // 풀기용: 로그인 사용자 누구나 지도/안내문 열람
+        allow read: if signedIn();
+        // 공개 문서에 실명(creatorName) 저장 금지 — 전 사용자에게 실명이 노출되던
+        // 누수 재유입 방지. 작성자 식별은 creatorUid(불투명)만.
+        allow create: if signedIn()
+          && request.resource.data.creatorUid == uid()
+          && !('creatorName' in request.resource.data);
+        allow update, delete: if signedIn()
+          && (resource.data.creatorUid == uid() || isTeacherAccount());
+
+        // 비공개 정답: creatorUid 로 소유권 검증(배치 생성 시 challenge get 불가 회피)
+        match /private/{docId} {
+          allow read: if signedIn()
+            && (resource.data.creatorUid == uid() || isTeacherAccount());
+          allow create: if signedIn()
+            && request.resource.data.creatorUid == uid();
+          allow update: if signedIn()
+            && resource.data.creatorUid == uid()
+            && request.resource.data.creatorUid == uid();
+          allow delete: if signedIn()
+            && (resource.data.creatorUid == uid() || isTeacherAccount());
+        }
+
+        // 정답자: 본인 문서만, 자기 챌린지 제외, 제출 답이 비공개 정답과 일치할 때만 생성.
+        //  → 오답이면 규칙이 막아 '채점' 효과. 점수(+5)는 클라이언트가 정답자 수로 도출.
+        // 풀이 제출 + 사람 채점(출제자 1차 → 교사 확정). 자동채점(정답 대조) 폐지.
+        match /solvers/{solverUid} {
+          allow read: if signedIn()
+            && (solverUid == uid()
+              || isTeacherAccount()
+              || get(/databases/$(database)/documents/engActivities/$(activityId)/challenges/$(cid)).data.creatorUid == uid());
+          // 본인 제출/재제출: 자기 챌린지 제외, 항상 pending, 자가채점 불가(creatorMark null)
+          allow create: if signedIn()
+            && solverUid == uid()
+            && request.resource.data.uid == uid()
+            && request.resource.data.status == 'pending'
+            && request.resource.data.creatorMark == null
+            && get(/databases/$(database)/documents/engActivities/$(activityId)/challenges/$(cid)).data.creatorUid != uid();
+          allow update: if signedIn()
+            && (
+              // 본인 재제출: pending·creatorMark null 유지(approved/ok 자가설정 차단).
+              // 이미 '정답 확정(approved)'된 제출은 되돌릴 수 없음(점수 무효화 방지).
+              (solverUid == uid()
+                && request.resource.data.uid == uid()
+                && request.resource.data.status == 'pending'
+                && request.resource.data.creatorMark == null
+                && resource.data.status != 'approved')
+              // 출제자 1차: creatorMark 만 변경
+              || (get(/databases/$(database)/documents/engActivities/$(activityId)/challenges/$(cid)).data.creatorUid == uid()
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creatorMark']))
+              // 교사 확정
+              || isTeacherAccount()
+            );
+          allow delete: if isTeacherAccount() || (signedIn() && solverUid == uid());
+        }
+      }
+
+      // 우리 동네 감정 지도(/eng/54):
+      //   pins/{pinId}      학생 핀(좌표+장소+할 수 있는 일+감정) — 실명 없음(creatorUid만)
+      //   settings/{sid}    학급 설정(서로 보기 토글) — sid = `${학교명}__${반}`, 교사만 쓰기
+      // 서로 보기(share)가 꺼지면 다른 학생 핀 읽기를 규칙이 차단(기본: 문서 없으면 공개).
+      function townShareOn(activityId, school, classNo) {
+        return !exists(/databases/$(database)/documents/engActivities/$(activityId)/settings/$(school + '__' + string(classNo)))
+          || get(/databases/$(database)/documents/engActivities/$(activityId)/settings/$(school + '__' + string(classNo))).data.share == true;
+      }
+
+      match /pins/{pinId} {
+        // 본인 핀·교사는 항상, 같은 반 친구 핀은 share 가 켜져 있을 때만.
+        // (학생 쿼리는 schoolName+classNo equality 필터 → 규칙이 설정 문서와 대조 가능)
+        allow read: if signedIn()
+          && (resource.data.creatorUid == uid()
+            || isTeacherAccount()
+            || townShareOn(activityId, resource.data.schoolName, resource.data.classNo));
+        allow create: if signedIn()
+          && request.resource.data.creatorUid == uid()
+          && request.resource.data.keys().hasOnly(
+               ['creatorUid', 'schoolName', 'classNo', 'lat', 'lng',
+                'placeName', 'placeType', 'canDo', 'emotion',
+                'category', 'memory', 'photoURL', 'createdAt'])
+          && request.resource.data.schoolName is string
+          && request.resource.data.schoolName.size() <= 40
+          && request.resource.data.classNo is int
+          && request.resource.data.lat is number
+          && request.resource.data.lng is number
+          && request.resource.data.placeName is string
+          && request.resource.data.placeName.size() <= 60
+          && request.resource.data.placeType is string
+          && request.resource.data.canDo is string
+          && request.resource.data.canDo.size() <= 140
+          && request.resource.data.emotion is string
+          && request.resource.data.category in ['visited', 'wish']
+          && request.resource.data.memory is string
+          && request.resource.data.memory.size() <= 300
+          && request.resource.data.photoURL is string
+          && request.resource.data.photoURL.size() <= 500;
+        allow update: if signedIn()
+          && resource.data.creatorUid == uid()
+          && request.resource.data.creatorUid == uid()
+          && request.resource.data.keys().hasOnly(
+               ['creatorUid', 'schoolName', 'classNo', 'lat', 'lng',
+                'placeName', 'placeType', 'canDo', 'emotion',
+                'category', 'memory', 'photoURL', 'createdAt'])
+          && request.resource.data.placeName is string
+          && request.resource.data.placeName.size() <= 60
+          && request.resource.data.canDo is string
+          && request.resource.data.canDo.size() <= 140
+          && request.resource.data.category in ['visited', 'wish']
+          && request.resource.data.memory is string
+          && request.resource.data.memory.size() <= 300
+          && request.resource.data.photoURL is string
+          && request.resource.data.photoURL.size() <= 500;
+        allow delete: if signedIn()
+          && (resource.data.creatorUid == uid() || isTeacherAccount());
+
+        // 부모 핀이 보이는 사람만 반응·댓글 접근(핀 read 게이트와 동일 기준)
+        function pinVisible(activityId, pinId) {
+          let pin = get(/databases/$(database)/documents/engActivities/$(activityId)/pins/$(pinId)).data;
+          return pin.creatorUid == uid()
+            || isTeacherAccount()
+            || townShareOn(activityId, pin.schoolName, pin.classNo);
+        }
+
+        // 반응(공감/최고 등) — 학생 1명당 1개(문서 id = 본인 uid), 토글/교체
+        match /reactions/{reactorUid} {
+          allow read: if signedIn() && pinVisible(activityId, pinId);
+          allow create, update: if signedIn()
+            && reactorUid == uid()
+            && request.resource.data.uid == uid()
+            && request.resource.data.keys().hasOnly(['uid', 'reaction', 'createdAt'])
+            && request.resource.data.reaction in ['heart', 'best', 'fun', 'wow', 'clap']
+            && pinVisible(activityId, pinId);
+          allow delete: if signedIn() && (reactorUid == uid() || isTeacherAccount());
+        }
+
+        // 댓글 — 실명 저장 금지(uid+사진만), 본인 작성·본인/교사 삭제
+        match /comments/{commentId} {
+          allow read: if signedIn() && pinVisible(activityId, pinId);
+          allow create: if signedIn()
+            && request.resource.data.uid == uid()
+            && request.resource.data.keys().hasOnly(['uid', 'text', 'photoURL', 'createdAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 200
+            && request.resource.data.photoURL is string
+            && request.resource.data.photoURL.size() <= 500
+            && pinVisible(activityId, pinId);
+          allow update: if false;
+          allow delete: if signedIn()
+            && (resource.data.uid == uid() || isTeacherAccount());
+        }
+      }
+
+      match /settings/{settingId} {
+        allow read: if signedIn();
+        allow write: if isTeacherAccount()
+          && request.resource.data.share is bool
+          && request.resource.data.keys().hasOnly(['share', 'updatedBy', 'updatedAt']);
+      }
+    }
+
     match /users/{userId} {
-      allow read: if signedIn();
+      // 본인 프로필 + 교사 계정만 읽기. 학생은 타인 프로필(이메일 등 PII) 열람 불가.
+      // (교사는 신뢰 주체 — 팀원 학급 가져오기 등에서 타 교사 문서 조회 필요)
+      allow read: if signedIn() && (uid() == userId || isTeacherAccount());
       // 본인 문서만 쓰기. 단 role 을 'teacher' 로 자가 설정 금지(권한 상승 차단).
       //   교사 권한은 claimTeacherRole Cloud Function(admin)만 부여한다.
       //   기존에 teacher 였던 문서는 role 을 그대로 유지하는 수정은 허용.
@@ -82,8 +301,10 @@ service cloud.firestore {
     }
 
     match /classes/{classId} {
-      // 코드로 학급 검색은 비멤버도 필요 → 로그인 사용자 read 허용
-      allow read: if signedIn();
+      // 학급 메타(초대코드 포함) 노출 차단 — 멤버 또는 팀원만 단건 조회(get).
+      // 코드로 참여는 joinClassByCode Cloud Function(admin)이 처리하므로
+      // 비멤버의 classes 컬렉션 직접 검색(list)은 필요 없다(허용 안 함).
+      allow get: if isMember(classId) || isTeammate(classOwner(classId));
       allow create: if isTeacherAccount()
         && request.resource.data.ownerId == uid();
       allow update, delete: if isTeacher(classId);
@@ -120,8 +341,12 @@ service cloud.firestore {
 
       // --- 1:1 메시지: 클래스 레벨 (교사 ↔ 학생) ---
       match /threads/{studentUid}/messages/{mid} {
-        allow read, create: if signedIn()
+        allow read: if signedIn()
           && (uid() == studentUid || isTeacher(classId));
+        // authorUid 를 본인으로 고정 — 알림 트리거의 발신자 판별/표시 신뢰성 확보(사칭 차단)
+        allow create: if signedIn()
+          && (uid() == studentUid || isTeacher(classId))
+          && request.resource.data.authorUid == uid();
         allow delete: if isTeacher(classId)
           || (signedIn() && resource.data.authorUid == uid());
       }
@@ -152,10 +377,140 @@ service cloud.firestore {
         }
       }
 
+      // --- 활동 → 경험치 요청 커넥터 ---
+      // 학생(멤버)이 외부 활동 점수로 XP를 요청(pending) → 교사가 승인 시 xp 에 지급.
+      // 학생은 xp 를 직접 못 쓰므로(위 규칙) 자가지급 불가 — 교사 승인이 유일 경로.
+      match /xpRequests/{reqId} {
+        allow read: if isTeacher(classId)
+          || (signedIn() && resource.data.uid == uid());
+        // 요청 XP(points)·점수(score)를 정수·합리적 범위로 강제 — 학생이 임의 거액을
+        // 자가요청하지 못하도록 차단(실제 지급은 교사 승인 + 서버 클램프).
+        allow create: if isMember(classId)
+          && request.resource.data.uid == uid()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.points is int
+          && request.resource.data.points >= 0
+          && request.resource.data.points <= 500
+          && request.resource.data.score is number
+          && request.resource.data.score >= 0;
+        allow update: if isTeacher(classId)
+          || (isMember(classId) && resource.data.uid == uid()
+            && resource.data.status != 'granted'
+            && request.resource.data.status == 'pending');
+        // 이미 지급된(granted) 요청은 학생이 삭제할 수 없음 — 삭제 후 재생성으로
+        // 이중 지급을 노리는 경로 차단(교사는 정리 가능).
+        allow delete: if isTeacher(classId)
+          || (signedIn() && resource.data.uid == uid()
+            && resource.data.status != 'granted');
+      }
+
+      // --- 만보(사용 가능한 재화) 지갑 ---
+      // 적립은 grantXp/미션 보상(교사 쓰기), 차감은 buyMarketItem Cloud Function(admin)만.
+      match /manbo/{studentUid} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+        // 만보 적립/사용 내역 로그
+        match /log/{logId} {
+          allow read: if isMember(classId);
+          allow create, delete: if isTeacher(classId);
+        }
+      }
+
+      // --- 만보 상점 상품 ---
+      match /market/{itemId} {
+        allow read: if isMember(classId);
+        allow create, update, delete: if isTeacher(classId);
+      }
+
+      // --- 만보 상점 구매 내역 ---
+      // 교사는 전체, 학생은 본인 구매만 읽기. 쓰기는 buyMarketItem Cloud Function(admin)만.
+      match /purchases/{pid} {
+        allow read: if isTeacher(classId)
+          || (signedIn() && resource.data.buyerUid == uid());
+        allow create, update, delete: if false;
+      }
+
+      // --- 게이미피케이션: 수집형 배지 ---
+      match /badges/{studentUid} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+      }
+
       // --- 게이미피케이션: 퀘스트(미션) ---
       match /quests/{questId} {
         allow read: if isMember(classId);
         allow create, update, delete: if isTeacher(classId);
+      }
+
+      // --- 또래 칭찬: 학생 작성(pending) → 교사 승인 ---
+      // 받는 사람에겐 익명. 목록(list)은 교사 전체 / 학생은 본인이 '보낸' 것만(fromUid==uid).
+      // 받은 내역은 익명 받은함(praiseInbox)으로 분리해 보낸 사람을 노출하지 않는다.
+      match /praises/{praiseId} {
+        allow list: if isTeacher(classId)
+          || (signedIn() && resource.data.fromUid == uid());
+        allow get: if isTeacher(classId)
+          || (signedIn() && resource.data.fromUid == uid());
+        allow create: if request.resource.data.fromUid == uid()
+          && request.resource.data.toUid != uid()
+          && request.resource.data.status == 'pending'
+          && (
+            // 같은 반 칭찬(기존): 이 반의 멤버가 작성.
+            isMember(classId)
+            ||
+            // 다른 반 칭찬(신규): 보내는 학생이 출처 반(fromCid)의 멤버이고,
+            // 출처 반이 이 반(classId)을 칭찬 허용 목록(allowedCids)에 넣었을 때만.
+            // 받을 학생(toUid)은 빈 값으로 강제 — 받는 반 교사가 실제 학생과 매칭해 승인.
+            // 필드 구성·타입·길이를 고정해 임의 필드/대용량 텍스트 주입을 차단한다.
+            (
+              request.resource.data.crossClass == true
+              && request.resource.data.keys().hasOnly([
+                'fromUid', 'fromName', 'toUid', 'toName', 'reason',
+                'status', 'createdAt', 'decidedAt',
+                'crossClass', 'fromCid', 'fromCidName'
+              ])
+              && request.resource.data.toUid == ''
+              && request.resource.data.fromName is string
+              && request.resource.data.fromName.size() <= 40
+              && request.resource.data.toName is string
+              && request.resource.data.toName.size() > 0
+              && request.resource.data.toName.size() <= 20
+              && request.resource.data.reason is string
+              && request.resource.data.reason.size() > 0
+              && request.resource.data.reason.size() <= 200
+              && request.resource.data.fromCidName is string
+              && request.resource.data.fromCidName.size() <= 60
+              && request.resource.data.fromCid is string
+              && request.resource.data.fromCid != classId
+              && isMember(request.resource.data.fromCid)
+              && exists(/databases/$(database)/documents/classes/$(request.resource.data.fromCid)/control/crossPraise)
+              && get(/databases/$(database)/documents/classes/$(request.resource.data.fromCid)/control/crossPraise)
+                  .data.get('allowedCids', []).hasAny([classId])
+            )
+          );
+        allow update: if isTeacher(classId);
+        allow delete: if isTeacher(classId)
+          || (signedIn() && resource.data.fromUid == uid());
+      }
+
+      // 받은함(익명) — 본인/교사만 읽기, 작성은 교사 승인 시
+      match /praiseInbox/{studentUid}/items/{itemId} {
+        allow read: if isTeacher(classId) || studentUid == uid();
+        allow write: if isTeacher(classId);
+      }
+
+      // --- 발표 승인 신청: 학생 작성(pending) → 교사 승인 시 XP 지급 ---
+      // 읽기는 교사 전체 / 학생은 본인이 신청한 것만(fromUid==uid). 승인/반려는 교사.
+      match /presentationRequests/{reqId} {
+        allow list, get: if isTeacher(classId)
+          || (signedIn() && resource.data.fromUid == uid());
+        allow create: if isMember(classId)
+          && request.resource.data.fromUid == uid()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.count is int
+          && request.resource.data.count > 0;
+        allow update: if isTeacher(classId);
+        allow delete: if isTeacher(classId)
+          || (signedIn() && resource.data.fromUid == uid());
       }
 
       // --- 실시간 효과 신호: 교사 → 특정 학생(본인만 읽기) ---
@@ -165,10 +520,45 @@ service cloud.firestore {
         allow write: if isTeacher(classId);
       }
 
-      // --- 학급 전체 활동 잠금(Sandy 타이머) ---
+      // --- 학급 전체 활동 잠금(Sandy 타이머) + 활성 게임 포인터 ---
       match /control/{docId} {
         allow read: if isMember(classId);
         allow write: if isTeacher(classId);
+      }
+
+      // --- 학생 오류 신고 / 피드백 ---
+      // 읽기: 교사(목록 검토) + 작성 본인. 생성: 멤버 본인(byUid==uid).
+      // 수정: 교사(상태 처리). 삭제: 교사.
+      match /feedback/{fid} {
+        allow read: if isTeacher(classId)
+          || (signedIn() && resource.data.byUid == uid());
+        allow create: if isMember(classId)
+          && request.resource.data.byUid == uid();
+        allow update: if isTeacher(classId);
+        allow delete: if isTeacher(classId);
+      }
+
+      // --- 학급 게임(개념 빙고 등) ---
+      match /games/{gameId} {
+        allow read: if isMember(classId);
+        allow create, delete: if isTeacher(classId);
+        // 교사는 자유.
+        // 학생은 플레이 단계에서 turn(차례 회전) / ranks(빙고 완성 등록) 만 수정 가능.
+        // 트랜잭션 로직(클라이언트)이 caller 정합성/올림픽 랭킹/캡+동률을 보장한다.
+        allow update: if isTeacher(classId)
+          || (
+            isMember(classId)
+            && resource.data.status == "play"
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["turn", "ranks", "updatedAt"])
+          );
+
+        // 학생별 제출/상태: 본인만 자기 문서 작성, 멤버 모두 열람
+        match /submissions/{studentUid} {
+          allow read: if isMember(classId);
+          allow create, update: if signedIn() && uid() == studentUid && isMember(classId);
+          allow delete: if isTeacher(classId);
+        }
       }
 
       // --- 모둠(그룹) ---
@@ -222,10 +612,15 @@ service cloud.firestore {
           }
         }
 
-        // 차시 보드(캔버스): 멤버(학생+교사) 협업 작성, 삭제는 교사만
+        // 차시 보드(캔버스): 멤버(학생+교사) 협업 작성, 삭제는 교사만.
+        // 학생은 협업 필드(카드/연결/이름/페이지)만 수정 — 메타데이터 임의 변경 차단.
         match /canvas/{docId} {
           allow read: if isMember(classId);
-          allow create, update: if isMember(classId);
+          allow create: if isMember(classId);
+          allow update: if isTeacher(classId)
+            || (isMember(classId)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['nodes', 'edges', 'name', 'pages', 'updatedAt']));
           allow delete: if isTeacher(classId);
 
           // 카드 피드백(댓글/반응)
@@ -240,8 +635,11 @@ service cloud.firestore {
 
         // 1:1 메시지: 차시 레벨
         match /threads/{studentUid}/messages/{mid} {
-          allow read, create: if signedIn()
+          allow read: if signedIn()
             && (uid() == studentUid || isTeacher(classId));
+          allow create: if signedIn()
+            && (uid() == studentUid || isTeacher(classId))
+            && request.resource.data.authorUid == uid();
           allow delete: if isTeacher(classId)
             || (signedIn() && resource.data.authorUid == uid());
         }

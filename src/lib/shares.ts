@@ -1,14 +1,9 @@
-// 읽기전용 공유 지식맵 — 현재 온톨로지를 스냅샷으로 저장하고
-// 로그인 없이 열람 가능한 공개 문서(shares/{id})로 발행한다.
-// 학생 식별정보(sources uid)는 저장 시 제거하고 집계 수(sourceCount)만 남긴다.
-import {
-  collection,
-  doc,
-  getDoc,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
-import { getDbClient } from "@/lib/firebase";
+// 읽기전용 공유 지식맵 — 현재 온톨로지를 스냅샷으로 발행한다.
+// 발행은 publishShare Cloud Function(admin)이 처리해 노드의 sources(학생 uid)를
+// 서버에서 제거한다. 클라이언트의 shares 직접 쓰기는 규칙으로 차단(변조 방지).
+import { doc, getDoc } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { getDbClient, getFunctionsClient } from "@/lib/firebase";
 import type { Ontology } from "@/lib/lessons";
 
 export type ShareDoc = {
@@ -19,32 +14,18 @@ export type ShareDoc = {
   createdAt: number | null;
 };
 
-// 공개 문서에서 개인정보 제거: 노드의 sources(학생 uid) 삭제, 집계는 유지
-function sanitize(o: Ontology): Ontology {
-  return {
-    ...o,
-    nodes: (o.nodes ?? []).map((n) => {
-      const { sources: _drop, ...rest } = n;
-      void _drop;
-      return { ...rest, sourceCount: n.sourceCount ?? n.sources?.length ?? 0 };
-    }),
-    edges: (o.edges ?? []).map((e) => ({ ...e })),
-  };
-}
-
 export async function createShare(
   ontology: Ontology,
   title: string,
   ownerUid: string
 ): Promise<string> {
-  const ref = doc(collection(getDbClient(), "shares")); // 임의 20자 토큰
-  await setDoc(ref, {
-    ownerUid,
-    title,
-    ontology: sanitize(ontology),
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
+  void ownerUid; // 서버가 인증된 호출자로 ownerUid 를 설정한다.
+  const fn = httpsCallable<{ ontology: Ontology; title: string }, { id: string }>(
+    getFunctionsClient(),
+    "publishShare"
+  );
+  const res = await fn({ ontology, title });
+  return res.data.id;
 }
 
 export async function getShare(id: string): Promise<ShareDoc | null> {

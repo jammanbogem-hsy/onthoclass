@@ -106,7 +106,7 @@ export function GroupBuilder({
     <div className="flex flex-col gap-4">
       <div className="flex gap-2">
         <input
-          className="m3-field !py-2 !text-sm flex-1"
+          className="m3-field flex-1"
           placeholder="새 모둠 이름"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
@@ -116,7 +116,7 @@ export function GroupBuilder({
         />
         <button
           onClick={addGroup}
-          className="btn-accent rounded-full px-4 text-sm font-semibold"
+          className="btn-accent min-h-[44px] rounded-full px-4 py-2.5 text-sm font-semibold"
         >
           모둠 추가
         </button>
@@ -200,9 +200,9 @@ export function GroupBuilder({
                     reload();
                   }
                 }}
-                className="text-black/30 hover:text-[var(--md-sys-color-error)]"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-black/30 hover:bg-black/5 hover:text-[var(--md-sys-color-error)]"
               >
-                <Icon name="delete" size={18} />
+                <Icon name="delete" size={20} />
               </button>
             </div>
             <div
@@ -237,10 +237,10 @@ export function GroupBuilder({
                     {nameOf(uid)}
                     <button
                       onClick={() => move(uid, null)}
-                      className="text-current/60 hover:text-[var(--md-sys-color-error)]"
+                      className="-mr-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-current/60 hover:bg-black/10 hover:text-[var(--md-sys-color-error)]"
                       title="미배정으로"
                     >
-                      <Icon name="close" size={14} />
+                      <Icon name="close" size={18} />
                     </button>
                   </span>
                 ))
@@ -248,7 +248,7 @@ export function GroupBuilder({
             </div>
             {unassigned.length > 0 && (
               <select
-                className="m3-field !py-2 !text-sm"
+                className="m3-field"
                 value=""
                 onChange={(e) => e.target.value && move(e.target.value, g.id)}
               >

@@ -132,7 +132,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               <div className="px-6 pt-4">
                 <input
                   ref={inputRef}
-                  className="m3-field w-full !py-2.5 text-sm"
+                  className="m3-field w-full"
                   placeholder={pending.opts.placeholder}
                   value={text}
                   onChange={(e) => setText(e.target.value)}

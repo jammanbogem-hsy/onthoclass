@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 export type CelebrateItem = {
-  kind: "level" | "mission" | "present";
+  kind: "level" | "mission" | "present" | "badge" | "praise";
   title: string;
   subtitle?: string;
   kicker?: string;

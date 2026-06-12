@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
+import { SchoolPicker } from "@/components/SchoolPicker";
 import {
   AVATARS,
   completeStudentOnboarding,
@@ -20,6 +21,7 @@ export default function OnboardingPage() {
   const [tab, setTab] = useState<"student" | "teacher">("student");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [school, setSchool] = useState("");
   const [avatar, setAvatar] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -57,7 +59,7 @@ export default function OnboardingPage() {
       if (tab === "student") {
         await completeStudentOnboarding(user!, name, code);
       } else {
-        await completeTeacherOnboarding(user!, name, code);
+        await completeTeacherOnboarding(user!, name, code, school);
       }
       if (avatar)
         await setUserAvatar(user!.uid, avatar, user!.photoURL ?? "").catch(
@@ -157,6 +159,9 @@ export default function OnboardingPage() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
+          {!isStudent && (
+            <SchoolPicker value={school} onChange={setSchool} />
+          )}
           {err && <p className="text-xs text-[var(--md-sys-color-error)]">{err}</p>}
           <button
             className="btn-accent mt-1 px-5 py-3 text-sm font-semibold"

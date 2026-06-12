@@ -59,6 +59,9 @@ const xpDocRef = (cid: string, uid: string) =>
   doc(getDbClient(), "classes", cid, "xp", uid);
 const questsCol = (cid: string) =>
   collection(getDbClient(), "classes", cid, "quests");
+// 만보 지갑 — 양(+)의 XP 적립을 그대로 미러링한다(src/lib/manbo.ts 와 동일 경로).
+const manboDocRef = (cid: string, uid: string) =>
+  doc(getDbClient(), "classes", cid, "manbo", uid);
 
 // ---------- 레벨 곡선 ----------
 // 레벨업에 필요한 경험치: 첫 레벨업 100, 이후 레벨업마다 +10씩 증가.
@@ -203,6 +206,28 @@ export async function grantXp(
       by,
       at: serverTimestamp(),
     });
+    // 양(+)의 경험치 적립 시 같은 양의 만보를 함께 적립(병행 원장). 차감 시엔 손대지 않음.
+    if (amount > 0) {
+      const mRef = manboDocRef(cid, uid);
+      batch.set(
+        mRef,
+        {
+          uid,
+          balance: increment(amount),
+          earned: increment(amount),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      const mLogRef = doc(collection(mRef, "log"));
+      batch.set(mLogRef, {
+        type: "earn",
+        amount,
+        reason: reason || "경험치 적립",
+        by,
+        at: serverTimestamp(),
+      });
+    }
   }
   await batch.commit();
 }
@@ -300,6 +325,8 @@ export async function toggleQuestComplete(
   const qRef = doc(questsCol(cid), quest.id);
   const xpRef = xpDocRef(cid, uid);
   const logRef = doc(collection(xpRef, "log"));
+  const mRef = manboDocRef(cid, uid);
+  const mLogRef = doc(collection(mRef, "log"));
   await runTransaction(db, async (tx) => {
     const qSnap = await tx.get(qRef);
     if (!qSnap.exists()) return;
@@ -309,6 +336,7 @@ export async function toggleQuestComplete(
     if (complete === already) return; // 서버 기준으로도 변화 없음 → no-op
     const reward = typeof data.xp === "number" ? (data.xp as number) : 0;
     const delta = complete ? reward : -reward;
+    const title = (data.title as string) ?? quest.title;
     tx.update(qRef, {
       [`completions.${uid}`]: complete ? { at: Date.now(), by } : deleteField(),
     });
@@ -319,12 +347,30 @@ export async function toggleQuestComplete(
     );
     tx.set(logRef, {
       amount: delta,
-      reason: `${complete ? "미션 완료" : "미션 취소"}: ${
-        (data.title as string) ?? quest.title
-      }`,
+      reason: `${complete ? "미션 완료" : "미션 취소"}: ${title}`,
       by,
       at: serverTimestamp(),
     });
+    // 양(+)의 보상 지급(미션 완료) 시에만 같은 양의 만보를 함께 적립. 회수(음수)는 만보 불변.
+    if (delta > 0) {
+      tx.set(
+        mRef,
+        {
+          uid,
+          balance: increment(delta),
+          earned: increment(delta),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      tx.set(mLogRef, {
+        type: "earn",
+        amount: delta,
+        reason: `미션 완료: ${title}`,
+        by,
+        at: serverTimestamp(),
+      });
+    }
   });
 }
 
@@ -335,4 +381,175 @@ export async function updateQuest(
   patch: Partial<Pick<Quest, "title" | "description" | "xp">>
 ): Promise<void> {
   await updateDoc(doc(questsCol(cid), qid), patch);
+}
+
+// ─────── 활동 → 학급 경험치 요청 커넥터 (외부 활동을 러닝크루와 연결) ───────
+// classes/{cid}/xpRequests/{activity__uid}
+//   { uid, activity, label, score, points, reason, status, studentName, createdAt }
+// 학급 멤버(학생)가 활동 점수로 경험치를 요청 → 교사가 승인하면 grantXp 로 지급.
+// (같은 프로젝트·같은 로그인이라 API 키 불필요 — 어떤 활동이든 requestClassXp 한 줄로 연결)
+export type XpRequestStatus = "pending" | "granted" | "declined";
+export type XpRequest = {
+  id: string;
+  uid: string;
+  activity: string;
+  label: string;
+  score: number;
+  points: number; // 요청 XP (= ceil(score/3))
+  reason: string;
+  status: XpRequestStatus;
+  studentName: string;
+  createdAt: number | null;
+};
+
+const xpReqCol = (cid: string) =>
+  collection(getDbClient(), "classes", cid, "xpRequests");
+const xpReqId = (activity: string, uid: string) =>
+  `${activity.replace(/[^a-zA-Z0-9_-]/g, "_")}__${uid}`;
+// 요청 경험치 상한 — 클라이언트가 임의 거액을 요청하지 못하도록 캡. 규칙에서도 동일 검증.
+export const XP_REQ_CAP = 500;
+
+/** 활동에서 학급 교사에게 경험치 요청. points 미지정 시 ceil(score/3). */
+export async function requestClassXp(
+  cid: string,
+  uid: string,
+  input: {
+    activity: string;
+    label?: string;
+    score: number;
+    points?: number;
+    reason?: string;
+    studentName?: string;
+  }
+): Promise<void> {
+  // 점수·요청 XP를 정수·합리적 범위로 정규화(악용/오버플로 방지). 실제 지급도 서버에서 재클램프.
+  const score = Math.max(0, Math.min(100000, Math.floor(input.score || 0)));
+  const points = Math.max(
+    0,
+    Math.min(XP_REQ_CAP, Math.floor(input.points ?? Math.ceil(score / 3)))
+  );
+  await setDoc(doc(xpReqCol(cid), xpReqId(input.activity, uid)), {
+    uid,
+    activity: input.activity,
+    label: input.label ?? input.activity,
+    score,
+    points,
+    reason: input.reason ?? "",
+    studentName: input.studentName ?? "",
+    status: "pending",
+    createdAt: serverTimestamp(),
+  });
+}
+
+function toXpRequest(id: string, v: Record<string, unknown>): XpRequest {
+  const ts = v.createdAt as { toMillis?: () => number } | undefined;
+  return {
+    id,
+    uid: (v.uid as string) ?? "",
+    activity: (v.activity as string) ?? "",
+    label: (v.label as string) ?? (v.activity as string) ?? "활동",
+    score: (v.score as number) ?? 0,
+    points: (v.points as number) ?? 0,
+    reason: (v.reason as string) ?? "",
+    status: (v.status as XpRequestStatus) ?? "pending",
+    studentName: (v.studentName as string) ?? "",
+    createdAt: ts?.toMillis ? ts.toMillis() : null,
+  };
+}
+
+/** 내 경험치 요청(활동별) 상태 조회 */
+export async function getMyXpRequest(
+  cid: string,
+  uid: string,
+  activity: string
+): Promise<XpRequest | null> {
+  const d = await getDoc(doc(xpReqCol(cid), xpReqId(activity, uid)));
+  return d.exists() ? toXpRequest(d.id, d.data()) : null;
+}
+
+/** 교사 실시간 구독(경험치 요청함) */
+export function watchXpRequests(
+  cid: string,
+  cb: (reqs: XpRequest[]) => void
+): () => void {
+  return onSnapshot(
+    xpReqCol(cid),
+    (snap) =>
+      cb(
+        snap.docs
+          .map((d) => toXpRequest(d.id, d.data()))
+          .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      ),
+    () => cb([])
+  );
+}
+
+/**
+ * 교사 승인 → XP 지급 + granted, 거절 → declined.
+ * 트랜잭션으로 서버의 최신 요청을 다시 읽어 status==='pending' 일 때만 처리한다 →
+ * 부분 실패 재시도/중복 클릭에도 XP가 두 번 지급되지 않는다(멱등). 지급액은
+ * 서버 문서값을 다시 클램프(XP_REQ_CAP)해 클라이언트 조작도 무력화한다.
+ */
+export async function decideXpRequest(
+  cid: string,
+  req: XpRequest,
+  approve: boolean,
+  by: string
+): Promise<void> {
+  const db = getDbClient();
+  const reqRef = doc(xpReqCol(cid), req.id);
+  if (!approve) {
+    await runTransaction(db, async (tx) => {
+      const s = await tx.get(reqRef);
+      if (!s.exists() || s.data().status !== "pending") return;
+      tx.update(reqRef, { status: "declined" });
+    });
+    return;
+  }
+  const xpRef = xpDocRef(cid, req.uid);
+  const logRef = doc(collection(xpRef, "log"));
+  const mRef = manboDocRef(cid, req.uid);
+  const mLogRef = doc(collection(mRef, "log"));
+  await runTransaction(db, async (tx) => {
+    const s = await tx.get(reqRef);
+    if (!s.exists()) return;
+    const d = s.data();
+    if (d.status !== "pending") return; // 이미 처리됨 → 멱등(중복지급 방지)
+    const points = Math.max(
+      0,
+      Math.min(XP_REQ_CAP, Math.floor((d.points as number) || 0))
+    );
+    const label = (d.label as string) || (d.activity as string) || "활동";
+    if (points > 0) {
+      tx.set(
+        xpRef,
+        { uid: req.uid, xp: increment(points), updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      tx.set(logRef, {
+        amount: points,
+        reason: `활동 보상: ${label}`,
+        by,
+        at: serverTimestamp(),
+      });
+      tx.set(
+        mRef,
+        {
+          uid: req.uid,
+          balance: increment(points),
+          earned: increment(points),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      tx.set(mLogRef, {
+        type: "earn",
+        amount: points,
+        reason: `활동 보상: ${label}`,
+        by,
+        at: serverTimestamp(),
+      });
+    }
+    tx.update(reqRef, { status: "granted" });
+  });
 }

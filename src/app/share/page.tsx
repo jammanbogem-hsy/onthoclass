@@ -52,9 +52,9 @@ function ShareInner() {
     <main className="flex h-screen flex-col">
       <header className="flex items-center gap-2 border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] px-5 py-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--md-sys-color-primary)] text-white">
-          <Icon name="school" size={16} />
+          <Icon name="directions_run" size={16} fill weight={600} />
         </span>
-        <span className="text-sm font-bold">잼클래스</span>
+        <span className="text-sm font-bold">러닝크루</span>
         <span className="mx-1 text-black/20">·</span>
         <span className="truncate text-sm font-semibold">{doc.title}</span>
         <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2.5 py-1 text-xs font-medium text-[var(--md-sys-color-on-surface-variant)]">

@@ -19,6 +19,16 @@ import {
   type Quest,
   type XpLogEntry,
 } from "@/lib/xp";
+import { BADGE_CATALOG, watchBadges, type BadgeMap } from "@/lib/badges";
+import { BadgeChip } from "@/components/BadgeChip";
+import {
+  watchReceivedPraises,
+  watchSentPraises,
+  type Praise,
+  type ReceivedPraise,
+} from "@/lib/praise";
+import { watchWallet, type ManboWallet } from "@/lib/manbo";
+import { MarketStoreModal } from "@/components/MarketStoreModal";
 
 function fmtDate(ms: number | null) {
   if (!ms) return "";
@@ -37,6 +47,15 @@ function LevelInner() {
   const [xpMap, setXpMap] = useState<Record<string, number>>({});
   const [quests, setQuests] = useState<Quest[]>([]);
   const [log, setLog] = useState<XpLogEntry[]>([]);
+  const [badges, setBadges] = useState<BadgeMap>({});
+  const [sentPraises, setSentPraises] = useState<Praise[]>([]);
+  const [receivedPraises, setReceivedPraises] = useState<ReceivedPraise[]>([]);
+  const [wallet, setWallet] = useState<ManboWallet>({
+    balance: 0,
+    earned: 0,
+    spent: 0,
+  });
+  const [marketOpen, setMarketOpen] = useState(false);
   const { current: celebrate, enqueue: setCelebrate, done: celebrateDone } =
     useCelebrateQueue();
   const lastLevelRef = useRef<number | null>(null);
@@ -58,23 +77,27 @@ function LevelInner() {
     getClass(cid).then((r) => setClassName(r?.name ?? ""));
     getMyRole(cid, user.uid); // 멤버 확인용(권한은 규칙이 강제)
     // 미션 / 경험치 내역 — 실시간 구독 (교사 변경 즉시 반영)
+    // 첫 스냅샷에선 이미 완료된 미션을 축하하지 않고 키만 시드한다(새 기기/캐시 초기화 오발생 방지).
+    let questsPrimed = false;
     const offQuests = watchQuests(cid, (qs) => {
       const mine = qs.filter(
         (q) => q.targetType === "all" || q.assigneeUids.includes(user.uid)
       );
       setQuests(mine);
       // 아직 축하하지 않은 '완료된 미션'이 있으면 폭죽 축하
+      const wasPrimed = questsPrimed;
       const newly = mine.filter((q) => {
         const key = `mdone:${cid}:${q.id}`;
         if (q.completions[user.uid]) {
-          if (localStorage.getItem(key)) return false;
+          const seen = !!localStorage.getItem(key);
           localStorage.setItem(key, "1");
-          return true;
+          return wasPrimed && !seen;
         }
         localStorage.removeItem(key);
         return false;
       });
-      if (newly.length > 0) {
+      questsPrimed = true;
+      if (wasPrimed && newly.length > 0) {
         const q = newly[newly.length - 1];
         setCelebrate({
           kind: "mission",
@@ -113,10 +136,18 @@ function LevelInner() {
         localStorage.setItem(key, String(lv));
       }
     });
+    const offBadges = watchBadges(cid, user.uid, setBadges);
+    const offSent = watchSentPraises(cid, user.uid, setSentPraises);
+    const offRecv = watchReceivedPraises(cid, user.uid, setReceivedPraises);
+    const offWallet = watchWallet(cid, user.uid, setWallet);
     return () => {
       offQuests();
       offLog();
       offXp();
+      offBadges();
+      offSent();
+      offRecv();
+      offWallet();
     };
   }, [user, cid]);
 
@@ -234,6 +265,29 @@ function LevelInner() {
           />
         </div>
 
+        {/* 내 만보 — 경험치로 쌓인 사용 화폐 + 러닝마켓 */}
+        <GlassCard className="mt-4 flex flex-wrap items-center gap-4 p-5">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]">
+            <Icon name="payments" size={26} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-black/55">내 만보</p>
+            <p className="text-2xl font-extrabold text-[var(--md-sys-color-primary)]">
+              {wallet.balance.toLocaleString()}
+            </p>
+            <p className="mt-0.5 text-xs text-black/45">
+              경험치로 쌓인 사용 화폐
+            </p>
+          </div>
+          <button
+            onClick={() => setMarketOpen(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl bg-[var(--md-sys-color-primary)] px-5 py-3 text-sm font-bold text-[var(--md-sys-color-on-primary)] shadow-sm transition hover:brightness-105"
+          >
+            <Icon name="storefront" size={18} />
+            러닝마켓
+          </button>
+        </GlassCard>
+
         {/* 내 미션 */}
         <h2 className="mb-2 mt-8 flex items-center gap-2 text-lg font-bold">
           <Icon name="flag" size={20} className="text-[var(--md-sys-color-primary)]" />
@@ -301,6 +355,132 @@ function LevelInner() {
             )}
           </div>
         )}
+
+        {/* 내 배지 */}
+        <h2 className="mb-2 mt-8 flex items-center gap-2 text-lg font-bold">
+          <Icon
+            name="workspace_premium"
+            size={20}
+            className="text-[var(--md-sys-color-primary)]"
+          />
+          내 배지
+          <span className="text-sm font-normal text-black/40">
+            {Object.keys(badges).length} / {BADGE_CATALOG.length}
+          </span>
+        </h2>
+        <GlassCard className="p-5">
+          <div className="grid grid-cols-4 gap-4 sm:grid-cols-6">
+            {BADGE_CATALOG.map((b) => (
+              <BadgeChip
+                key={b.id}
+                badge={b}
+                earned={!!badges[b.id]}
+                title={badges[b.id] ? `획득! ${b.desc}` : `미획득 · ${b.desc}`}
+              />
+            ))}
+          </div>
+        </GlassCard>
+
+        {/* 칭찬 내역 */}
+        <h2 className="mb-2 mt-8 flex items-center gap-2 text-lg font-bold">
+          <Icon
+            name="favorite"
+            size={20}
+            className="text-[var(--md-sys-color-primary)]"
+          />
+          칭찬 내역
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* 받은 칭찬 (익명) */}
+          <GlassCard className="p-5">
+            <p className="mb-3 flex items-center gap-1.5 text-sm font-bold">
+              <Icon
+                name="inbox"
+                size={16}
+                className="text-[var(--md-sys-color-primary)]"
+              />
+              받은 칭찬
+              <span className="font-normal text-black/40">
+                {receivedPraises.length}
+              </span>
+            </p>
+            {receivedPraises.length === 0 ? (
+              <p className="py-6 text-center text-xs text-black/40">
+                아직 받은 칭찬이 없어요.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {receivedPraises.map((r) => (
+                  <li
+                    key={r.id}
+                    className="rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2 text-sm text-[var(--md-sys-color-on-tertiary-container)]"
+                  >
+                    <span className="mr-1.5 text-xs font-semibold opacity-70">
+                      친구가
+                    </span>
+                    “{r.reason}”
+                  </li>
+                ))}
+              </ul>
+            )}
+          </GlassCard>
+
+          {/* 보낸 칭찬 (상태) */}
+          <GlassCard className="p-5">
+            <p className="mb-3 flex items-center gap-1.5 text-sm font-bold">
+              <Icon
+                name="send"
+                size={16}
+                className="text-[var(--md-sys-color-primary)]"
+              />
+              보낸 칭찬
+              <span className="font-normal text-black/40">
+                {sentPraises.length}
+              </span>
+            </p>
+            {sentPraises.length === 0 ? (
+              <p className="py-6 text-center text-xs text-black/40">
+                아직 보낸 칭찬이 없어요.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {sentPraises.map((p) => {
+                  const meta =
+                    p.status === "approved"
+                      ? {
+                          label: "승인됨",
+                          cls: "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]",
+                        }
+                      : p.status === "rejected"
+                        ? {
+                            label: "반려됨",
+                            cls: "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]",
+                          }
+                        : {
+                            label: "대기 중",
+                            cls: "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]",
+                          };
+                  return (
+                    <li
+                      key={p.id}
+                      className="rounded-xl bg-[var(--md-sys-color-surface-container)] px-3 py-2 text-sm"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">{p.toName}</span>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${meta.cls}`}
+                        >
+                          {meta.label}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-black/60">“{p.reason}”</p>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </GlassCard>
+        </div>
 
         <style>{`
           .jam-level-hero{
@@ -420,6 +600,14 @@ function LevelInner() {
             </div>
           );
         })()}
+
+      {marketOpen && (
+        <MarketStoreModal
+          cid={cid}
+          uid={user.uid}
+          onClose={() => setMarketOpen(false)}
+        />
+      )}
 
       {celebrate && (
         <MissionCelebrate

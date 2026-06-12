@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { Button, IconButton } from "@/components/ui";
 import { parseSurveyDoc } from "@/lib/ai";
 import type { SurveyItem } from "@/lib/lessons";
 
@@ -137,13 +138,13 @@ export function SurveyImportModal({
             className="text-[var(--md-sys-color-primary)]"
           />
           <h3 className="text-base font-semibold">문서에서 문항 가져오기</h3>
-          <button
-            type="button"
+          <IconButton
+            icon="close"
+            label="닫기"
+            size="md"
             onClick={onClose}
-            className="ml-auto rounded-full p-1.5 text-black/45 hover:bg-black/5"
-          >
-            <Icon name="close" size={18} />
-          </button>
+            className="ml-auto"
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 pb-5">
@@ -207,15 +208,16 @@ export function SurveyImportModal({
                         {(f.size / 1024).toFixed(0)}KB
                       </span>
                       {stage !== "parsing" && (
-                        <button
-                          type="button"
+                        <IconButton
+                          icon="close"
+                          label={`${f.name} 제거`}
+                          size="sm"
+                          variant="danger"
                           onClick={() =>
                             setFiles(files.filter((_, j) => j !== i))
                           }
-                          className="rounded p-0.5 text-black/30 hover:text-rose-500"
-                        >
-                          <Icon name="close" size={14} />
-                        </button>
+                          className="-my-1"
+                        />
                       )}
                     </li>
                   ))}
@@ -293,31 +295,34 @@ export function SurveyImportModal({
         <div className="flex items-center justify-end gap-2 border-t border-[var(--md-sys-color-outline-variant)] px-5 py-3">
           {stage === "review" ? (
             <>
-              <button
+              <Button
                 type="button"
+                variant="text"
+                size="md"
                 onClick={() => setStage("pick")}
-                className="rounded-full px-4 py-2 text-sm font-medium text-black/55 hover:bg-black/5"
               >
                 다시 선택
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="filled"
+                size="md"
                 onClick={confirm}
                 disabled={picked.size === 0}
-                className="btn-accent px-5 py-2 text-sm disabled:opacity-40"
               >
                 {picked.size}개 추가
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
               type="button"
+              variant="filled"
+              size="md"
               onClick={run}
               disabled={files.length === 0 || stage === "parsing"}
-              className="btn-accent px-5 py-2 text-sm disabled:opacity-40"
             >
               문항 추출
-            </button>
+            </Button>
           )}
         </div>
       </div>

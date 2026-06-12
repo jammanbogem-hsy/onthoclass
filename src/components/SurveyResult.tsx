@@ -2,12 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { IconButton } from "@/components/ui";
 import {
   listQuestionSubmissions,
   type SurveyItem,
   type Submission,
 } from "@/lib/lessons";
-import { cohenLabel, pairedTTest, type PairedResult } from "@/lib/stats";
+import { listMembers, type Member } from "@/lib/classes";
+import { resolveStudentName } from "@/lib/names";
+import {
+  cohenLabel,
+  holmAdjust,
+  pairedTTest,
+  type PairedResult,
+} from "@/lib/stats";
 import { downloadDocx, wPara, wRow, wTable } from "@/lib/docx";
 
 /** 사전/사후 설문 효과성 분석 (대응표본 t검정 등) — 교사용. */
@@ -26,7 +34,12 @@ export function SurveyResult({
 }) {
   const [pre, setPre] = useState<Submission[] | null>(null);
   const [post, setPost] = useState<Submission[] | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
   const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    listMembers(cid).then(setMembers).catch(() => {});
+  }, [cid]);
 
   useEffect(() => {
     listQuestionSubmissions(cid, lid, preQid).then(setPre).catch(() => setPre([]));
@@ -97,6 +110,7 @@ export function SurveyResult({
                   item={it}
                   preMap={preMap}
                   postMap={postMap}
+                  members={members}
                 />
               ))}
             </div>
@@ -140,28 +154,26 @@ export function SurveyResponses({
   return (
     <div className="mt-3">
       <div className="mb-2 flex items-center justify-between">
-        <button
+        <IconButton
+          icon="chevron_left"
+          label="이전 학생"
+          size="md"
           onClick={() => setIdx(Math.max(0, i - 1))}
           disabled={i === 0}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/5 disabled:opacity-30 dark:bg-white/10"
-          title="이전 학생"
-        >
-          <Icon name="chevron_left" size={18} />
-        </button>
+        />
         <span className="text-xs font-semibold text-black/55 dark:text-white/55">
           {s.studentName}{" "}
           <span className="font-normal text-black/35">
             ({i + 1}/{answered.length})
           </span>
         </span>
-        <button
+        <IconButton
+          icon="chevron_right"
+          label="다음 학생"
+          size="md"
           onClick={() => setIdx(Math.min(answered.length - 1, i + 1))}
           disabled={i >= answered.length - 1}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/5 disabled:opacity-30 dark:bg-white/10"
-          title="다음 학생"
-        >
-          <Icon name="chevron_right" size={18} />
-        </button>
+        />
       </div>
       <div className="flex flex-col gap-2.5 rounded-2xl bg-white/60 px-4 py-3 dark:bg-white/10">
         {items.map((it, qi) => (
@@ -229,11 +241,13 @@ function ItemResult({
   item,
   preMap,
   postMap,
+  members,
 }: {
   index: number;
   item: SurveyItem;
   preMap: Map<string, Submission>;
   postMap: Map<string, Submission>;
+  members: Member[];
 }) {
   const header = (
     <p className="mb-1.5 text-sm font-medium">
@@ -295,11 +309,45 @@ function ItemResult({
                   badgeOk={r.p < 0.05}
                 />
                 <Row
+                  label="평균차 95% CI"
+                  value={
+                    isFinite(r.ciLow)
+                      ? `[${r.ciLow.toFixed(2)}, ${r.ciHigh.toFixed(2)}]`
+                      : "—"
+                  }
+                />
+                <Row
                   label="효과크기 (Cohen's d)"
                   value={`${isFinite(r.d) ? r.d.toFixed(2) : "∞"} · ${cohenLabel(r.d)}`}
                 />
+                <Row
+                  label="보정 효과크기 (Hedges' g)"
+                  value={`${isFinite(r.g) ? r.g.toFixed(2) : "∞"} · ${cohenLabel(r.g)}`}
+                />
+                {r.wilcoxon && (
+                  <Row
+                    label="비모수 Wilcoxon p"
+                    value={
+                      r.wilcoxon.p < 0.001
+                        ? "< .001"
+                        : r.wilcoxon.p.toFixed(3)
+                    }
+                    badge={
+                      r.wilcoxon.p < 0.05 ? "유의 (p<.05)" : "유의하지 않음"
+                    }
+                    badgeOk={r.wilcoxon.p < 0.05}
+                  />
+                )}
               </tbody>
             </table>
+            {r.n < 15 && (
+              <p className="mt-2 rounded-lg bg-[var(--md-sys-color-secondary-container)] px-3 py-2 text-xs leading-relaxed text-[var(--md-sys-color-on-secondary-container)]">
+                표본이 작아요(n={r.n}). 정규성 가정이 약하므로 t검정보다{" "}
+                <b>비모수(Wilcoxon)</b> 결과와 <b>효과크기·신뢰구간</b>을 함께
+                해석하세요. 효과크기는 소표본 편향을 보정한 <b>Hedges&apos; g</b>{" "}
+                권장합니다.
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -364,7 +412,7 @@ function ItemResult({
   const texts = (m: Map<string, Submission>) =>
     [...m.values()]
       .map((s) => ({
-        name: s.studentName,
+        name: resolveStudentName(members, s.uid, s.studentName),
         text: String(s.surveyAnswers?.[item.id] ?? ""),
       }))
       .filter((x) => x.text.trim());
@@ -463,6 +511,7 @@ type ScaleRow = {
   mPost: number;
   sdPost: number;
   result: PairedResult | null;
+  pAdj?: number; // Holm 다중비교 보정 p
 };
 
 /** 척도 문항별 대응표본 기술통계 + t검정 결과 */
@@ -501,6 +550,14 @@ function buildScaleRows(
       result: pairedTTest(pairs),
     });
   });
+  // 여러 문항을 동시에 검정 → Holm-Bonferroni 다중비교 보정
+  const valid = rows.filter((r) => r.result && isFinite(r.result.p));
+  if (valid.length > 1) {
+    const adj = holmAdjust(valid.map((r) => r.result!.p));
+    valid.forEach((r, i) => {
+      r.pAdj = adj[i];
+    });
+  }
   return rows;
 }
 
@@ -575,7 +632,9 @@ function SurveyReport({
     const valid = rows.filter((r) => r.result);
     if (valid.length === 0 || !overall?.result) return "";
     const n = overall.result.n;
-    const sig = valid.filter((r) => (r.result?.p ?? 1) < 0.05);
+    // 표의 '보정 p'(Holm) 열과 일치하도록, 유의 문항 수도 보정 p로 집계한다
+    // (보정 p가 없으면 단일검정 → 원시 p 사용).
+    const sig = valid.filter((r) => (r.pAdj ?? r.result?.p ?? 1) < 0.05);
     const top = [...valid].sort(
       (a, b) => Math.abs(b.result!.d) - Math.abs(a.result!.d)
     )[0];
@@ -585,7 +644,9 @@ function SurveyReport({
       `본 설문은 척도 문항 ${valid.length}개로 구성되었으며, 사전·사후에 모두 응답한 학생 ${n}명을 대상으로 대응표본 t검정을 실시하였다.`
     );
     lines.push(
-      `분석 결과, ${valid.length}개 문항 중 ${sig.length}개 문항에서 통계적으로 유의한 변화가 나타났다(p < .05).`
+      `분석 결과, ${valid.length}개 문항 중 ${sig.length}개 문항에서 통계적으로 유의한 변화가 나타났다(${
+        valid.length > 1 ? "Holm 보정 p" : "p"
+      } < .05).`
     );
     lines.push(
       `전체 척도 평균은 사전 ${f2(overall.mPre)}(SD = ${f2(
@@ -896,6 +957,12 @@ function SurveyReport({
                 <th className="px-2 py-1.5 text-center font-semibold">t</th>
                 <th className="px-2 py-1.5 text-center font-semibold">df</th>
                 <th className="px-2 py-1.5 text-center font-semibold">p</th>
+                <th
+                  className="px-2 py-1.5 text-center font-semibold"
+                  title="Holm-Bonferroni 다중비교 보정 p"
+                >
+                  보정 p
+                </th>
                 <th className="px-2 py-1.5 text-center font-semibold">d</th>
               </tr>
             </thead>
@@ -951,6 +1018,21 @@ function SurveyReport({
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-center tabular-nums">
+                    {r.pAdj != null ? (
+                      <span
+                        className={
+                          r.pAdj < 0.05
+                            ? "font-semibold text-[var(--md-sys-color-primary)]"
+                            : "text-black/45"
+                        }
+                      >
+                        {apaP(r.pAdj)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-center tabular-nums">
                     {r.result ? f2(r.result.d) : "-"}
                   </td>
                 </tr>
@@ -976,6 +1058,9 @@ function SurveyReport({
                   <td className="px-2 py-1.5 text-center tabular-nums text-[var(--md-sys-color-primary)]">
                     {apaP(overall.result.p)}
                   </td>
+                  <td className="px-2 py-1.5 text-center tabular-nums text-black/45">
+                    —
+                  </td>
                   <td className="px-2 py-1.5 text-center tabular-nums">
                     {f2(overall.result.d)}
                   </td>
@@ -985,6 +1070,7 @@ function SurveyReport({
           </table>
           <p className="mt-1 text-[var(--md-sys-color-on-surface-variant)] text-xs">
             * p&lt;.05, ** p&lt;.01, *** p&lt;.001. Δ=사후−사전, d=Cohen&apos;s d.
+            보정 p=Holm-Bonferroni(문항 동시검정 보정).
           </p>
         </div>
       )}

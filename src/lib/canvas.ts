@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { getDbClient } from "@/lib/firebase";
+import type { Attachment } from "@/lib/lessons";
 
 export type CardKind = "text" | "link";
 
@@ -27,6 +28,7 @@ export type CardNode = {
   color?: string | null;
   authorUid?: string;
   authorName?: string;
+  attachments?: Attachment[]; // 사진/음성 첨부(패들렛식)
   page?: string; // 소속 페이지 id (없으면 첫 페이지)
 };
 

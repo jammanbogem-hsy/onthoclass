@@ -5,14 +5,36 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Icon } from "@/components/Icon";
 import { NotificationBell } from "@/components/NotificationBell";
 import { AvatarPicker } from "@/components/AvatarPicker";
+import { NoticeTicker } from "@/components/NoticeTicker";
+import { TypedText } from "@/components/TypedText";
 import { setUserAvatar } from "@/lib/users";
+import { FONTS, getFont, setFont, type FontKey } from "@/lib/fontTheme";
+
+const FONT_PREVIEW: Record<FontKey, string> = {
+  default: "var(--md-sys-font-plain)",
+  susukkang: "SchoolSafetySusukkang, sans-serif",
+  paperozi: "Paperozi, sans-serif",
+  a2z: "A2z, sans-serif",
+  maruburi: "MaruBuri, serif",
+  cafe24air: "Cafe24SurroundAir, sans-serif",
+};
 
 export function TopBar() {
   const { user, profile, signOut, refreshProfile } = useAuth();
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [font, setFontState] = useState<FontKey>("default");
   const ref = useRef<HTMLDivElement>(null);
   const avatarSrc = profile?.avatar || user?.photoURL || "";
+
+  useEffect(() => {
+    setFontState(getFont());
+  }, []);
+
+  function pickFont(k: FontKey) {
+    setFont(k);
+    setFontState(k);
+  }
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -33,11 +55,16 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-40 px-4 pt-4">
       <div className="glass mx-auto flex max-w-5xl items-center justify-between px-5 py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--md-sys-color-on-primary-container)]">
-            <Icon name="school" size={22} />
-          </span>
-          <span className="text-lg font-bold tracking-tight">잼클래스</span>
+        <div
+          className="flex items-center text-xl font-bold tracking-tight text-[var(--md-sys-color-primary)] sm:text-2xl"
+          style={{ fontFamily: "'Galmuri11', monospace" }}
+        >
+          <TypedText
+            words={["러닝크루", "함께 달려요", "함께 배워요"]}
+            typeMs={150}
+            deleteMs={60}
+            holdMs={2200}
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -97,6 +124,30 @@ export function TopBar() {
                   {roleLabel}
                 </span>
               </div>
+              {/* 글꼴 선택 — 기기별 저장, 전체 UI 폰트 변경 */}
+              <div className="mt-3 rounded-xl bg-[var(--md-sys-color-surface-container)] p-2">
+                <p className="mb-1 flex items-center gap-1.5 px-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                  <Icon name="font_download" size={14} />
+                  글꼴
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {FONTS.map((f) => (
+                    <button
+                      key={f.key}
+                      onClick={() => pickFont(f.key)}
+                      className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left transition ${
+                        font === f.key
+                          ? "bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]"
+                          : "hover:bg-black/5"
+                      }`}
+                      style={{ fontFamily: FONT_PREVIEW[f.key] }}
+                    >
+                      <span className="text-sm font-semibold">{f.label}</span>
+                      {font === f.key && <Icon name="check" size={15} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button
                 onClick={() => {
                   setOpen(false);
@@ -118,6 +169,8 @@ export function TopBar() {
           </div>
         </div>
       </div>
+
+      <NoticeTicker />
 
       {pickerOpen && (
         <AvatarPicker

@@ -142,6 +142,82 @@ export function watchAllForStudent(
   return () => unsubs.forEach((u) => u());
 }
 
+/** 메시지함(교사용): 학생별 '최근 한 줄' 요약 */
+export type InboxRow = {
+  studentUid: string;
+  studentName: string;
+  lastText: string;
+  lastAuthorRole: "teacher" | "student";
+  lastAt: number | null;
+  count: number; // 그 학생의 클래스 스레드 메시지 수
+};
+
+/**
+ * 학급 전체 학생의 메시지(클래스 + 모든 차시 스레드)를 한 번에 구독해
+ * 학생별 최근 메시지 요약을 만든다. 교사 메시지함(모든 학생이 보낸 것을 한눈에)용.
+ * 학생이 차시 화면에서 보낸 메시지(차시 레벨 스레드)도 포함한다.
+ */
+export function watchClassInbox(
+  cid: string,
+  students: { uid: string; displayName: string }[],
+  lessonIds: string[],
+  cb: (rows: InboxRow[]) => void
+): () => void {
+  // 학생별로 (클래스 + 각 차시) 메시지를 버킷에 모은다.
+  const buckets = new Map<string, Map<string, Msg[]>>(); // uid → (sourceKey → msgs)
+  const nameOf = new Map(students.map((s) => [s.uid, s.displayName]));
+  for (const s of students) buckets.set(s.uid, new Map());
+
+  const emit = () => {
+    const rows: InboxRow[] = students.map((s) => {
+      const bySrc = buckets.get(s.uid);
+      const all: Msg[] = [];
+      if (bySrc) for (const arr of bySrc.values()) all.push(...arr);
+      all.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+      const recent = all[all.length - 1];
+      return {
+        studentUid: s.uid,
+        studentName: nameOf.get(s.uid) ?? "학생",
+        lastText: recent?.text ?? "",
+        lastAuthorRole: recent?.authorRole ?? "student",
+        lastAt: recent?.createdAt ?? null,
+        count: all.length,
+      };
+    });
+    // 대화가 있는 학생을 위로(최근순), 없는 학생은 아래로(이름순)
+    rows.sort((a, b) => {
+      if (a.count > 0 && b.count === 0) return -1;
+      if (a.count === 0 && b.count > 0) return 1;
+      if (a.count > 0 && b.count > 0)
+        return (b.lastAt ?? 0) - (a.lastAt ?? 0);
+      return a.studentName.localeCompare(b.studentName);
+    });
+    cb(rows);
+  };
+
+  const unsubs: (() => void)[] = [];
+  for (const s of students) {
+    // 클래스 레벨
+    unsubs.push(
+      watchClassMessages(cid, s.uid, (m) => {
+        buckets.get(s.uid)?.set("__class", m);
+        emit();
+      })
+    );
+    // 차시 레벨 (학생이 차시 화면에서 보낸 메시지 포함)
+    for (const lid of lessonIds) {
+      unsubs.push(
+        watchLessonMessages(cid, lid, s.uid, (m) => {
+          buckets.get(s.uid)?.set(`lesson:${lid}`, m);
+          emit();
+        })
+      );
+    }
+  }
+  emit();
+  return () => unsubs.forEach((u) => u());
+}
+
 export async function sendClassMessage(
   cid: string,
   studentUid: string,

@@ -41,27 +41,37 @@ function randCode() {
   return s;
 }
 
-// 내 공유 코드 보장(없으면 생성)
+// 내 공유 코드 보장(없으면 생성). 코드→교사 매핑(teamCodes)도 함께 기록.
 export async function getOrCreateTeamCode(uid: string): Promise<string> {
-  const ref = doc(getDbClient(), "users", uid);
+  const db = getDbClient();
+  const ref = doc(db, "users", uid);
   const snap = await getDoc(ref);
-  const cur = snap.exists() ? (snap.data().teamCode as string | undefined) : undefined;
-  if (cur) return cur;
+  const data = snap.exists() ? snap.data() : {};
+  const name = (data.name as string) || (data.displayName as string) || "교사";
+  const cur = data.teamCode as string | undefined;
+  if (cur) {
+    // 기존 코드도 매핑 보장(이전 사용자 호환)
+    await setDoc(doc(db, "teamCodes", cur), { uid, name }, { merge: true });
+    return cur;
+  }
   const code = randCode();
+  // 코드→교사 매핑(uid·name만, PII 없음)을 먼저 기록 — 규칙 거부 시 users.teamCode
+  // 가 매핑 없이 오염되는 일을 막는다. 그 다음 사용자 문서에 코드 보관.
+  await setDoc(doc(db, "teamCodes", code), { uid, name });
   await setDoc(ref, { teamCode: code }, { merge: true });
   return code;
 }
 
-// 코드로 교사 찾기
+// 코드로 교사 찾기 — teamCodes 매핑 단건 조회(타 사용자 PII 노출 없음)
 export async function findTeacherByCode(
   code: string
 ): Promise<{ uid: string; name: string } | null> {
-  const snap = await getDocs(
-    query(collection(getDbClient(), "users"), where("teamCode", "==", code.trim().toUpperCase()))
+  const d = await getDoc(
+    doc(getDbClient(), "teamCodes", code.trim().toUpperCase())
   );
-  const d = snap.docs.find((x) => (x.data().role as string) === "teacher");
-  if (!d) return null;
-  return { uid: d.id, name: (d.data().name as string) ?? "교사" };
+  if (!d.exists()) return null;
+  const v = d.data();
+  return { uid: v.uid as string, name: (v.name as string) ?? "교사" };
 }
 
 // 팀 요청 보내기 (이미 있으면 무시)

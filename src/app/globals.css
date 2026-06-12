@@ -1,6 +1,28 @@
 @import "tailwindcss";
 @import "./material3.css";
 
+@font-face {
+  font-family: "Galmuri11";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2506-1@1.0/Galmuri11-Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* 타이핑 효과 커서 깜빡임 */
+@keyframes jam-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.jam-caret {
+  display: inline-block;
+  width: 0.08em;
+  margin-left: 0.06em;
+  background: currentColor;
+  align-self: stretch;
+  animation: jam-caret-blink 1s steps(1) infinite;
+}
+
 /* 다크 유틸리티를 클래스 기반으로 전환(.dark 하위에서만 적용).
    현재는 .dark 를 부여하지 않아 라이트 테마로 일관 고정 — OS 다크에서
    토큰(라이트)과 dark: 유틸리티가 충돌해 '반쪽 다크'로 깨지는 문제 방지.
@@ -8,7 +30,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ===========================================================
-   Material 3 (Material You) — 잼클래스
+   Material 3 (Material You) — 러닝크루
    브랜드: Teal #0F6E56 / Peach #F5C4B3 / Mint #E1F5EE / Sage #C0DD97
    토큰은 material3.css. 아래는 베이스 + 레거시 클래스의 M3 매핑.
    =========================================================== */
@@ -44,8 +66,9 @@ body {
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
   font-family: var(--md-sys-font-plain);
-  font-size: 14px;
-  line-height: 20px;
+  /* 초등 친화: 본문 기본 크기 상향(14→16px). text-sm 남용 효과 완화 */
+  font-size: 16px;
+  line-height: 24px;
   letter-spacing: 0.25px;
   /* M3 는 screen-first: 장식 배경/그라데이션/블러 없음 */
 }
@@ -93,6 +116,49 @@ body {
     cursor: not-allowed;
   }
 
+  /* M3 Radio — OS 기본 작은 동그라미 대신 토큰 기반 큰 라디오(초등 친화) */
+  input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: 50%;
+    background-color: transparent;
+    cursor: pointer;
+    display: inline-grid;
+    place-content: center;
+    transition: border-color var(--md-sys-motion-duration-short2);
+  }
+  input[type="radio"]::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transform: scale(0);
+    background-color: var(--md-sys-color-primary);
+    transition: transform var(--md-sys-motion-duration-short2)
+      var(--md-sys-motion-easing-standard);
+  }
+  input[type="radio"]:hover:not(:disabled) {
+    border-color: var(--md-sys-color-on-surface);
+  }
+  input[type="radio"]:checked {
+    border-color: var(--md-sys-color-primary);
+  }
+  input[type="radio"]:checked::before {
+    transform: scale(1);
+  }
+  input[type="radio"]:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+  }
+  input[type="radio"]:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+
   /* M3 Select (outlined) — 커스텀 화살표 */
   select {
     appearance: none;
@@ -100,9 +166,9 @@ body {
     background-color: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: var(--md-sys-shape-corner-extra-small);
-    padding: 10px 40px 10px 14px;
-    font: 400 14px/1.4 var(--md-sys-font-plain);
+    border-radius: var(--md-sys-shape-corner-small);
+    padding: 13px 44px 13px 16px;
+    font: 400 16px/1.4 var(--md-sys-font-plain);
     letter-spacing: 0.25px;
     cursor: pointer;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
@@ -196,25 +262,41 @@ body {
     box-shadow: none;
   }
 
-  /* M3 텍스트 필드(아웃라인) — inputCls 대체 */
+  /* M3 텍스트 필드(아웃라인) — inputCls 대체. 초등 친화 큰 터치 타깃 */
   .m3-field {
     width: 100%;
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: var(--md-sys-shape-corner-extra-small);
+    border-radius: var(--md-sys-shape-corner-small);
     padding: 14px 16px;
     font: 400 16px/1.4 var(--md-sys-font-plain);
-    letter-spacing: 0.5px;
+    letter-spacing: 0.25px;
     outline: none;
     transition: border-color var(--md-sys-motion-duration-short2);
   }
   .m3-field::placeholder {
     color: var(--md-sys-color-on-surface-variant);
   }
+  .m3-field:hover:not(:disabled):not(:focus) {
+    border-color: var(--md-sys-color-on-surface);
+  }
   .m3-field:focus {
     border: 2px solid var(--md-sys-color-primary);
     padding: 13px 15px;
+  }
+  .m3-field:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* 큰 사이즈(초등 기본) — 높이 ~56px */
+  .m3-field-lg {
+    padding: 16px 18px;
+    font-size: 17px;
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .m3-field-lg:focus {
+    padding: 15px 17px;
   }
   /* m3-field 가 붙은 select: background 단축속성이 화살표를 지우므로 복구 */
   select.m3-field {
@@ -223,6 +305,13 @@ body {
     background-repeat: no-repeat;
     background-position: right 12px center;
     background-size: 20px;
+  }
+
+  /* 크롬(Noto) 컬러 이모지 — 기기와 상관없이 같은 이모지 모양(통일감).
+     이모지만 담는 span 에 붙인다(혼합 텍스트엔 X — 한글 폰트가 밀림). */
+  .emoji-noto {
+    font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji",
+      sans-serif;
   }
 
   /* Material Symbols 아이콘 헬퍼 */
@@ -269,6 +358,293 @@ body {
   }
 }
 
+/* ===========================================================
+   선택형 UI 폰트 — <html data-font="..."> 로 전체 폰트 전환.
+   본문/브랜드 토큰(--md-sys-font-plain/brand)만 바꾸면 전 UI 반영.
+   =========================================================== */
+@font-face {
+  font-family: "SchoolSafetySusukkang";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2508-2@1.0/HakgyoansimSusukkangL.woff2")
+    format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Paperozi";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-2ExtraLight.woff2")
+    format("woff2");
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Paperozi";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-4Regular.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Paperozi";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-6SemiBold.woff2")
+    format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Paperozi";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-7Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "A2z";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/에이투지체-2ExtraLight.woff2")
+    format("woff2");
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: "A2z";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/에이투지체-4Regular.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "A2z";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/에이투지체-6SemiBold.woff2")
+    format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "A2z";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/에이투지체-7Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MaruBuri";
+  src: url("https://hangeul.pstatic.net/hangeul_static/webfont/MaruBuri/MaruBuri-ExtraLight.woff2");
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MaruBuri";
+  src: url("https://hangeul.pstatic.net/hangeul_static/webfont/MaruBuri/MaruBuri-Regular.woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MaruBuri";
+  src: url("https://hangeul.pstatic.net/hangeul_static/webfont/MaruBuri/MaruBuri-SemiBold.woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MaruBuri";
+  src: url("https://hangeul.pstatic.net/hangeul_static/webfont/MaruBuri/MaruBuri-Bold.woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Cafe24SurroundAir";
+  src: url("https://gcore.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/Cafe24SsurroundAir.woff")
+    format("woff");
+  font-weight: normal;
+  font-display: swap;
+}
+
+/* data-font 별 폰트 토큰 오버라이드 (Pretendard fallback 유지) */
+html[data-font="susukkang"] {
+  --md-sys-font-plain: "SchoolSafetySusukkang", "Pretendard", sans-serif;
+  --md-sys-font-brand: "SchoolSafetySusukkang", "Pretendard", sans-serif;
+}
+html[data-font="paperozi"] {
+  --md-sys-font-plain: "Paperozi", "Pretendard", sans-serif;
+  --md-sys-font-brand: "Paperozi", "Pretendard", sans-serif;
+}
+html[data-font="a2z"] {
+  --md-sys-font-plain: "A2z", "Pretendard", sans-serif;
+  --md-sys-font-brand: "A2z", "Pretendard", sans-serif;
+}
+html[data-font="maruburi"] {
+  --md-sys-font-plain: "MaruBuri", "Pretendard", serif;
+  --md-sys-font-brand: "MaruBuri", "Pretendard", serif;
+}
+html[data-font="cafe24air"] {
+  --md-sys-font-plain: "Cafe24SurroundAir", "Pretendard", sans-serif;
+  --md-sys-font-brand: "Cafe24SurroundAir", "Pretendard", sans-serif;
+}
+/* body 가 토큰을 직접 쓰도록(전 UI 반영) */
+html[data-font] body {
+  font-family: var(--md-sys-font-plain);
+}
+
+/* OmuDaye(omyu pretty) — 학급 게임 선정 단계의 단어 표시용 */
+@font-face {
+  font-family: "OmuDaye";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2304-01@1.0/omyu_pretty.woff2")
+    format("woff2");
+  font-weight: normal;
+  font-display: swap;
+}
+.font-omu {
+  font-family: "OmuDaye", "Apple SD Gothic Neo", sans-serif;
+}
+
+/* 공지 전광판 — 헤더에서 좌로 흐르는 마퀴(단일 카피 티커) */
+@keyframes jam-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+.jam-marquee-track {
+  display: inline-block;
+  white-space: nowrap;
+  padding-left: 100%; /* 오른쪽 끝에서 등장 → 한 화면에 한 번만 노출 */
+  will-change: transform;
+  animation: jam-marquee var(--jam-marquee-dur, 12s) linear infinite;
+}
+
+/* macOS Dock 느낌의 패널 열기/닫기 — 우하단(=Dock 위치)에서 휙 */
+@keyframes jam-genie-in {
+  from {
+    transform: scale(0.35) translate(20%, 20%);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(1) translate(0, 0);
+    opacity: 1;
+  }
+}
+@keyframes jam-genie-out {
+  from {
+    transform: scale(1) translate(0, 0);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.35) translate(20%, 20%);
+    opacity: 0;
+  }
+}
+.jam-genie-in {
+  transform-origin: bottom right;
+  animation: jam-genie-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1.1) both;
+}
+.jam-genie-out {
+  transform-origin: bottom right;
+  animation: jam-genie-out 220ms cubic-bezier(0.4, 0.0, 0.6, 1) both;
+}
+
+/* 색 혼합 축하 — 연결 지점에서 퍼지는 링 + 팝업 라벨 */
+@keyframes jam-burst-ring {
+  from {
+    transform: translate(-50%, -50%) scale(0.25);
+    opacity: 0.85;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(2.6);
+    opacity: 0;
+  }
+}
+.jam-burst-ring {
+  animation: jam-burst-ring 1.2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes jam-burst-pop {
+  0% {
+    transform: scale(0) translateY(8px);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(1.12) translateY(0);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(1) translateY(-2px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(-14px);
+    opacity: 0;
+  }
+}
+.jam-burst-pop {
+  animation: jam-burst-pop 2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+/* 개념 빙고 — 완료된 단어를 화면 중앙에 크게 강조했다가 사라짐 */
+@keyframes bingo-reveal {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  16% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+  28% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  76% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+}
+.bingo-reveal {
+  animation: bingo-reveal 1.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+/* 내 보드의 해당 칸이 강조됐다가(선택 효과) 제자리로 */
+@keyframes bingo-cell-pop {
+  0% {
+    transform: scale(1);
+  }
+  22% {
+    transform: scale(1.16);
+  }
+  60% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.bingo-cell-pop {
+  animation: bingo-cell-pop 1.9s cubic-bezier(0.2, 0.7, 0.3, 1);
+  z-index: 1;
+}
+/* 교사 모니터링 — 참여/제출 완료 학생 카드의 은은한 테두리 글로우(색은 --glow 로 주입) */
+@keyframes bingo-card-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--glow) 30%, transparent),
+      0 4px 14px color-mix(in srgb, var(--glow) 26%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--glow) 60%, transparent),
+      0 8px 22px color-mix(in srgb, var(--glow) 50%, transparent);
+  }
+}
+.bingo-card-glow {
+  animation: bingo-card-glow 1.8s ease-in-out infinite;
+}
+
 /* M3 emphasized-decelerate 진입 모션 */
 @keyframes float-in {
   from {
@@ -298,5 +674,128 @@ body {
   100% {
     transform: scale(1) rotate(0);
     opacity: 1;
+  }
+}
+
+/* /touch 뽑기 — 당첨 결과가 크게 튀어나왔다 두어 번 통통 튀며 안착(끝까지 보임) */
+@keyframes touch-pop {
+  0% {
+    transform: scale(0.2) rotate(-10deg);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1.3) rotate(4deg);
+    opacity: 1;
+  }
+  64% {
+    transform: scale(0.9) rotate(-2deg);
+  }
+  82% {
+    transform: scale(1.07) rotate(1deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+.touch-pop {
+  animation: touch-pop 640ms cubic-bezier(0.2, 0.7, 0.3, 1.2) both;
+}
+
+/* (룰렛이 굴러가는 동안의 크기/회전 흔들림은 JS에서 인라인 transform으로 처리) */
+
+/* /touch 뽑기 — 당첨 순간 머리 위로 떨어지는 색종이 */
+@keyframes touch-confetti {
+  0% {
+    transform: translateY(-12vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(96vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+.touch-confetti-piece {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 14px;
+  border-radius: 2px;
+  will-change: transform, opacity;
+  animation: touch-confetti var(--dur, 1800ms) cubic-bezier(0.3, 0.6, 0.5, 1)
+    var(--delay, 0ms) forwards;
+}
+/* 이모지 색종이 — 같은 낙하 애니메이션, 배경 없이 큰 글자 */
+.touch-confetti-emoji {
+  position: absolute;
+  top: 0;
+  font-size: 26px;
+  line-height: 1;
+  will-change: transform, opacity;
+  animation: touch-confetti var(--dur, 1800ms) cubic-bezier(0.3, 0.6, 0.5, 1)
+    var(--delay, 0ms) forwards;
+}
+
+/* /touch 뽑기 — 장난스러운 흔들림(두구두구 라벨) */
+@keyframes touch-wiggle {
+  0%,
+  100% {
+    transform: rotate(-4deg) scale(1);
+  }
+  50% {
+    transform: rotate(4deg) scale(1.08);
+  }
+}
+.touch-wiggle {
+  animation: touch-wiggle 360ms ease-in-out infinite;
+}
+
+/* /touch 뽑기 — 당첨자 옆 파티 이모지가 통통 튐 */
+@keyframes touch-bounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(8deg);
+  }
+}
+.touch-bounce {
+  animation: touch-bounce 620ms cubic-bezier(0.3, 0.7, 0.3, 1) infinite;
+}
+
+/* /touch 뽑기 — 대기 중인 뽑기 버튼이 가끔 "눌러봐!" 하고 까딱 */
+@keyframes touch-jiggle {
+  0%,
+  86%,
+  100% {
+    transform: rotate(0) scale(1);
+  }
+  90% {
+    transform: rotate(-3deg) scale(1.04);
+  }
+  94% {
+    transform: rotate(3deg) scale(1.06);
+  }
+  98% {
+    transform: rotate(-2deg) scale(1.03);
+  }
+}
+.touch-jiggle {
+  animation: touch-jiggle 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-pop,
+  .touch-wiggle,
+  .touch-bounce,
+  .touch-jiggle {
+    animation: none;
+  }
+  /* 색종이는 떨어지는 애니메이션이 전부라, 멈추면 화면 위에 굳어 버린다 →
+     동작 줄이기에서는 아예 감춘다(JS에서도 렌더를 건너뜀). */
+  .touch-confetti-piece,
+  .touch-confetti-emoji {
+    display: none;
   }
 }

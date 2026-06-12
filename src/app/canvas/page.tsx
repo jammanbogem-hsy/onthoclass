@@ -9,12 +9,20 @@ import {
   useState,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
+import Lottie from "lottie-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
 import { Icon } from "@/components/Icon";
 import { useDialog } from "@/components/Dialog";
 import { CanvasIntro } from "@/components/CanvasIntro";
+import {
+  AttachmentField,
+  AttachmentList,
+  uploadImageFiles,
+} from "@/components/AttachmentField";
+import type { Attachment } from "@/lib/lessons";
 import { getMyRole, watchMembers, type Role } from "@/lib/classes";
 import { listGroups, type Group } from "@/lib/groups";
 import {
@@ -79,6 +87,122 @@ const PAGE_COLORS = [
   "#14b8a6",
   "#64748b",
 ];
+
+// 학생 구분용 카드 색 팔레트 (스펙트럼 + 톤 다양화)
+const CARD_COLORS = [
+  "#ef4444", // 빨강
+  "#fb7185", // 산호
+  "#f97316", // 주황
+  "#f59e0b", // 호박
+  "#fbbf24", // 노랑
+  "#a3e635", // 라임
+  "#22c55e", // 초록
+  "#10b981", // 에메랄드
+  "#14b8a6", // 청록
+  "#06b6d4", // 시안
+  "#0ea5e9", // 하늘
+  "#3b82f6", // 파랑
+  "#6366f1", // 인디고
+  "#8b5cf6", // 보라
+  "#d946ef", // 자홍
+  "#ec4899", // 분홍
+  "#f43f5e", // 로즈
+  "#78716c", // 토프
+];
+
+function hexToRgb(h: string): [number, number, number] {
+  const s = h.replace("#", "");
+  return [
+    parseInt(s.slice(0, 2), 16),
+    parseInt(s.slice(2, 4), 16),
+    parseInt(s.slice(4, 6), 16),
+  ];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return [h, s, l];
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const to = (v: number) =>
+    Math.round((v + m) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+// 여러 색을 "색상환(hue)" 기준으로 혼합 — 채도·명도를 선명하게 유지해
+// 색이 많아져도 어두워지지 않고 생생한 새 색이 된다. (빨강+파랑=선명한 보라)
+function blendColors(colors: string[]): string {
+  if (colors.length === 0) return "#94a3b8";
+  if (colors.length === 1) return colors[0];
+  let sx = 0,
+    sy = 0,
+    sSat = 0,
+    sLight = 0;
+  for (const c of colors) {
+    const [r, g, b] = hexToRgb(c);
+    const [h, s, l] = rgbToHsl(r, g, b);
+    const rad = (h * Math.PI) / 180;
+    // 채도 가중(회색에 가까운 색이 색조를 흔들지 않게)
+    const w = 0.25 + s;
+    sx += Math.cos(rad) * w;
+    sy += Math.sin(rad) * w;
+    sSat += s;
+    sLight += l;
+  }
+  const n = colors.length;
+  let h = (Math.atan2(sy, sx) * 180) / Math.PI;
+  if (h < 0) h += 360;
+  const s = Math.min(0.85, Math.max(0.55, sSat / n)); // 채도 하한 → 칙칙함 방지
+  const l = Math.min(0.62, Math.max(0.48, sLight / n)); // 명도 범위 → 어두워짐 방지
+  return hslToHex(h, s, l);
+}
+
+// 색을 화사하게(채도·명도 올림) — 무지개 그라데이션 스톱용
+function vivid(color: string): string {
+  const [r, g, b] = hexToRgb(color);
+  const [h] = rgbToHsl(r, g, b);
+  return hslToHex(h, 0.82, 0.56);
+}
+
+// 여러 색 → 화사한 그라데이션 (색조 순 정렬, 섞일수록 무지개처럼)
+function gradientFrom(colors: string[]): string {
+  const stops = colors.map(vivid);
+  if (stops.length === 1) return stops[0];
+  return `linear-gradient(135deg, ${stops.join(", ")})`;
+}
+
+export type TeamColor = { solid: string; gradient: string | null };
 const PAGE_PATTERNS: { id: string; label: string }[] = [
   { id: "none", label: "없음" },
   { id: "dots", label: "점" },
@@ -198,6 +322,15 @@ function CanvasInner() {
 
   const [role, setRole] = useState<Role | null>(null);
   const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
+  // 색 혼합 축하: 서로 다른 색 카드가 새로 연결되면 그 지점에서 폭발 연출
+  const [burst, setBurst] = useState<{
+    id: number;
+    x: number;
+    y: number;
+    color: string;
+  } | null>(null);
+  const seenEdgesRef = useRef<Set<string> | null>(null);
+  const burstClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [authorMap, setAuthorMap] = useState<
     Record<string, { name: string; photo: string }>
@@ -347,6 +480,56 @@ function CanvasInner() {
     };
   }, [user, cid, lid, effectiveBoardId, isLessonBoard, groupBoardPending]);
 
+  // 연결 축하 버스트 표시 (2초 후 자동 사라짐)
+  const showBurst = useCallback((x: number, y: number, color: string) => {
+    const id = Date.now();
+    setBurst({ id, x, y, color });
+    if (burstClearRef.current) clearTimeout(burstClearRef.current);
+    burstClearRef.current = setTimeout(
+      () => setBurst((cur) => (cur?.id === id ? null : cur)),
+      2000
+    );
+  }, []);
+
+  // 보드 전환 시: 새 보드의 기존 연결을 "새 연결"로 오인하지 않도록 추적 초기화
+  useEffect(() => {
+    seenEdgesRef.current = null;
+  }, [effectiveBoardId, lid]);
+
+  // 새로 추가된 "서로 다른 색" 연결을 감지해 혼합색 폭발 연출 (로컬·원격 모두)
+  useEffect(() => {
+    const edges = canvas?.edges ?? [];
+    const nodes = canvas?.nodes ?? [];
+    if (seenEdgesRef.current === null) {
+      // 첫 스냅샷의 기존 연결은 무시
+      seenEdgesRef.current = new Set(edges.map((e) => e.id));
+      return;
+    }
+    const seen = seenEdgesRef.current;
+    const byId = new Map(nodes.map((nd) => [nd.id, nd]));
+    let hit: { x: number; y: number; color: string } | null = null;
+    for (const e of edges) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      const a = byId.get(e.from);
+      const b = byId.get(e.to);
+      if (!a || !b) continue;
+      // 모든 연결에 "생각이 연결됐어요" 연출. 색은 두 카드 색의 혼합(없으면 기본).
+      const cs = [a.color, b.color].filter((c): c is string => !!c);
+      const color = cs.length ? blendColors(cs) : "#6d7cff";
+      hit = {
+        x: (a.x + a.w / 2 + (b.x + b.w / 2)) / 2,
+        y: (a.y + a.h / 2 + (b.y + b.h / 2)) / 2,
+        color,
+      };
+    }
+    if (!hit) return;
+    const h = hit;
+    // 렌더 중 setState 회피용으로 다음 틱에 표시(취소 cleanup 없음 → 리사이즈
+    // 재렌더로 버스트가 사라지지 않게). 중복은 seen 집합으로 방지.
+    setTimeout(() => showBurst(h.x, h.y, h.color), 0);
+  }, [canvas?.edges, canvas?.nodes, showBurst]);
+
   // 모둠 → 색상, uid → 모둠 색/이름
   const groupInfo = useMemo(() => {
     const m: Record<string, { color: string; name: string }> = {};
@@ -450,6 +633,51 @@ function CanvasInner() {
     );
   });
 
+  // 연결된 카드 = 하나의 팀. 팀 구성원의 색을 혼합한 "팀 색"을 모두에게 적용.
+  // (혼자면 본인 색 그대로, 색 없는 카드가 팀에 끼면 팀 색을 함께 입음)
+  const teamColorByNode = useMemo(() => {
+    const adj = new Map<string, string[]>();
+    for (const e of pageEdges) {
+      (adj.get(e.from) ?? adj.set(e.from, []).get(e.from)!).push(e.to);
+      (adj.get(e.to) ?? adj.set(e.to, []).get(e.to)!).push(e.from);
+    }
+    const colorOf = new Map(pageNodes.map((n) => [n.id, n.color || null]));
+    const seen = new Set<string>();
+    const result = new Map<string, TeamColor>();
+    for (const start of pageNodes) {
+      if (seen.has(start.id)) continue;
+      const comp: string[] = [];
+      const stack = [start.id];
+      seen.add(start.id);
+      while (stack.length) {
+        const cur = stack.pop()!;
+        comp.push(cur);
+        for (const nb of adj.get(cur) ?? []) {
+          if (!seen.has(nb)) {
+            seen.add(nb);
+            stack.push(nb);
+          }
+        }
+      }
+      const colors = comp
+        .map((id) => colorOf.get(id))
+        .filter((c): c is string => !!c);
+      if (colors.length === 0) continue;
+      // 색조 순으로 정렬한 고유 색 → 섞일수록 무지개 그라데이션
+      const distinct = Array.from(new Set(colors)).sort((p, q) => {
+        const [hp] = rgbToHsl(...hexToRgb(p));
+        const [hq] = rgbToHsl(...hexToRgb(q));
+        return hp - hq;
+      });
+      const team: TeamColor = {
+        solid: blendColors(colors),
+        gradient: distinct.length >= 2 ? gradientFrom(distinct) : null,
+      };
+      for (const id of comp) result.set(id, team);
+    }
+    return result;
+  }, [pageNodes, pageEdges]);
+
   function addPage() {
     const id = "p" + Math.random().toString(36).slice(2, 7);
     update((c) => ({
@@ -549,6 +777,19 @@ function CanvasInner() {
         };
         update((c) => ({ ...c, edges: [...c.edges, newEdge] }));
         setPendingFrom(null);
+        // 한 번 연결하면 연결 모드 자동 종료 (학생 혼란 방지)
+        setConnectMode(false);
+        // 연결 효과 즉시 발동(본인). 감지 effect 중복 방지 위해 seen 에 미리 등록.
+        seenEdgesRef.current?.add(newEdge.id);
+        const a = canvas?.nodes.find((x) => x.id === pendingFrom);
+        if (a) {
+          const cs = [a.color, n.color].filter((c): c is string => !!c);
+          showBurst(
+            (a.x + a.w / 2 + (n.x + n.w / 2)) / 2,
+            (a.y + a.h / 2 + (n.y + n.h / 2)) / 2,
+            cs.length ? blendColors(cs) : "#6d7cff"
+          );
+        }
       }
       return;
     }
@@ -762,11 +1003,12 @@ function CanvasInner() {
           <span className="ml-1 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
             {canEdit ? "편집 가능" : "보기만"}
           </span>
+          <ShareBoardButton />
           {canEdit && (
             <>
               <button
                 onClick={addTextCard}
-                className="ml-3 inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
               >
                 <Icon name="note_add" size={14} />
                 텍스트 카드
@@ -1114,7 +1356,7 @@ function CanvasInner() {
                   markerHeight="6"
                   orient="auto-start-reverse"
                 >
-                  <path d="M0,0 L10,5 L0,10 z" fill="rgba(80,90,120,0.6)" />
+                  <path d="M0,0 L10,5 L0,10 z" fill="context-stroke" />
                 </marker>
               </defs>
               {pageEdges.map((e) => {
@@ -1134,6 +1376,11 @@ function CanvasInner() {
                 const c2x = horiz ? bx - dx * 0.45 : bx;
                 const c2y = horiz ? by : by - dy * 0.45;
                 const d = `M ${ax} ${ay} C ${c1x} ${c1y} ${c2x} ${c2y} ${bx} ${by}`;
+                // 연결선 색 = 팀 색(연결된 카드들의 조합색). 색 없으면 회색.
+                const teamC =
+                  teamColorByNode.get(e.from) || teamColorByNode.get(e.to);
+                const stroke = teamC?.solid || "rgba(80,90,120,0.55)";
+                const colored = !!teamC;
                 return (
                   <g
                     key={e.id}
@@ -1147,8 +1394,8 @@ function CanvasInner() {
                     <path
                       d={d}
                       fill="none"
-                      stroke="rgba(80,90,120,0.55)"
-                      strokeWidth={2}
+                      stroke={stroke}
+                      strokeWidth={colored ? 3 : 2}
                       strokeLinecap="round"
                       markerEnd="url(#canvas-arrow)"
                     />
@@ -1173,6 +1420,10 @@ function CanvasInner() {
               <CardView
                 key={n.id}
                 n={n}
+                team={
+                  teamColorByNode.get(n.id) ??
+                  (n.color ? { solid: n.color, gradient: null } : null)
+                }
                 isTeacher={
                   isTeacher || (canEdit && n.authorUid === user?.uid)
                 }
@@ -1248,6 +1499,23 @@ function CanvasInner() {
                     ),
                   }))
                 }
+                onChangeAttachments={(next) =>
+                  update((c) => ({
+                    ...c,
+                    nodes: c.nodes.map((x) =>
+                      x.id === n.id ? { ...x, attachments: next } : x
+                    ),
+                  }))
+                }
+                onChangeColor={(color) =>
+                  update((c) => ({
+                    ...c,
+                    nodes: c.nodes.map((x) =>
+                      x.id === n.id ? { ...x, color } : x
+                    ),
+                  }))
+                }
+                uploadTarget={user ? { cid, uid: user.uid } : null}
                 onResize={(h) => {
                   if (Math.abs(h - n.h) > 2)
                     update((c) => ({
@@ -1260,6 +1528,14 @@ function CanvasInner() {
                 onDelete={() => deleteCard(n.id)}
               />
             ))}
+            {burst && (
+              <ColorMergeBurst
+                key={burst.id}
+                x={burst.x}
+                y={burst.y}
+                color={burst.color}
+              />
+            )}
           </div>
 
           {/* 모둠 미선택(교사) — 위 모둠 바에서 보드 선택 안내 */}
@@ -1462,7 +1738,7 @@ function CommentsPopover({
             placeholder="댓글 입력… (Enter 전송)"
             rows={1}
             autoFocus
-            className="m3-field max-h-24 flex-1 resize-none !py-1.5 !text-sm"
+            className="m3-field max-h-24 flex-1 resize-none"
           />
           <button
             onClick={submit}
@@ -1479,6 +1755,7 @@ function CommentsPopover({
 
 function CardView({
   n,
+  team,
   isTeacher,
   isFrom,
   connectMode,
@@ -1495,11 +1772,15 @@ function CardView({
   onToggleCheck,
   onPointerDown,
   onChangeText,
+  onChangeAttachments,
+  onChangeColor,
+  uploadTarget,
   onResize,
   onDelete,
   onSendToMap,
 }: {
   n: CardNode;
+  team: TeamColor | null;
   isTeacher: boolean;
   isFrom: boolean;
   connectMode: boolean;
@@ -1516,6 +1797,9 @@ function CardView({
   onToggleCheck: () => void;
   onPointerDown: (e: React.PointerEvent) => void;
   onChangeText: (t: string) => void;
+  onChangeAttachments: (next: Attachment[]) => void;
+  onChangeColor: (color: string | null) => void;
+  uploadTarget: { cid: string; uid: string } | null;
   onResize?: (h: number) => void;
   onDelete: () => void;
   onSendToMap?: () => void;
@@ -1528,6 +1812,8 @@ function CardView({
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
+  const [colorOpen, setColorOpen] = useState(false);
+  const [colorRect, setColorRect] = useState<DOMRect | null>(null);
 
   // 텍스트 입력 → 높이 자동 확장
   useEffect(() => {
@@ -1562,7 +1848,13 @@ function CardView({
               borderColor: groupColor,
               boxShadow: `0 0 0 2px color-mix(in srgb, ${groupColor} 35%, transparent)`,
             }
-          : {}),
+          : team && !highlighted
+            ? {
+                borderColor: team.solid,
+                backgroundColor: `color-mix(in srgb, ${team.solid} 16%, white)`,
+                boxShadow: `0 0 0 1px color-mix(in srgb, ${team.solid} 45%, transparent)`,
+              }
+            : {}),
       }}
       className={`absolute flex flex-col overflow-hidden rounded-2xl border bg-white shadow ${
         isFrom
@@ -1572,6 +1864,14 @@ function CardView({
             : "border-[var(--md-sys-color-outline-variant)]"
       }`}
     >
+      {/* 팀 색 상단 띠 — 섞일수록 무지개. 모두에게 보임(편집 불가자 포함) */}
+      {team && !highlighted && (
+        <div
+          className="h-1.5 w-full shrink-0"
+          style={{ background: team.gradient ?? team.solid }}
+        />
+      )}
+
       {/* 선택 체크박스 (교사·차시 보드) */}
       {selectable && (
         <button
@@ -1595,7 +1895,14 @@ function CardView({
       {isTeacher && (
         <div
           onPointerDown={onPointerDown}
-          style={{ height: HANDLE }}
+          style={{
+            height: HANDLE,
+            ...(team
+              ? {
+                  backgroundColor: `color-mix(in srgb, ${team.solid} 28%, var(--md-sys-color-surface-container-high))`,
+                }
+              : {}),
+          }}
           className="group/bar flex shrink-0 cursor-grab items-center gap-1.5 border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-high)] px-3 active:cursor-grabbing"
           title="끌어서 이동"
         >
@@ -1606,17 +1913,43 @@ function CardView({
               onDelete();
             }}
             onPointerDown={(e) => e.stopPropagation()}
-            className="flex h-3 w-3 items-center justify-center rounded-full bg-[#ff5f57] ring-1 ring-black/10"
+            className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#ff5f57] ring-1 ring-black/10"
             title="카드 삭제"
           >
-            <Icon
-              name="close"
-              size={8}
-              className="text-black/55 opacity-0 transition group-hover/bar:opacity-100"
-            />
+            {/* X 를 항상 표시 — 터치(태블릿) 학생도 삭제 버튼임을 알 수 있게(호버 의존 X) */}
+            <Icon name="close" size={10} className="text-black/55" />
           </button>
           <span className="h-3 w-3 rounded-full bg-[#febc2e] ring-1 ring-black/10" />
           <span className="h-3 w-3 rounded-full bg-[#28c840] ring-1 ring-black/10" />
+
+          {/* 카드 색 선택 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setColorRect(e.currentTarget.getBoundingClientRect());
+              setColorOpen((v) => !v);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="ml-1 flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-black/15"
+            style={{ backgroundColor: n.color || "transparent" }}
+            title="카드 색"
+          >
+            {!n.color && (
+              <Icon name="palette" size={11} className="text-black/45" />
+            )}
+          </button>
+          {colorOpen && colorRect && (
+            <CardColorPopover
+              rect={colorRect}
+              current={n.color ?? null}
+              onPick={(c) => {
+                onChangeColor(c);
+                setColorOpen(false);
+              }}
+              onCustom={(c) => onChangeColor(c)}
+              onClose={() => setColorOpen(false)}
+            />
+          )}
 
           {n.kind === "text" && onSendToMap && (
             <button
@@ -1659,13 +1992,59 @@ function CardView({
             ref={taRef}
             value={n.text}
             onChange={(e) => onChangeText(e.target.value)}
-            placeholder="텍스트…"
+            onPaste={async (e) => {
+              // 클립보드의 이미지(스크린샷·복사한 사진)를 바로 카드 첨부로
+              const imgs = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+                f.type.startsWith("image/")
+              );
+              if (imgs.length === 0 || !uploadTarget) return;
+              e.preventDefault();
+              try {
+                onChangeAttachments(
+                  await uploadImageFiles(
+                    { kind: "canvas", ...uploadTarget },
+                    imgs,
+                    n.attachments ?? []
+                  )
+                );
+              } catch {
+                /* 업로드 실패 무시 */
+              }
+            }}
+            placeholder="텍스트… (사진 붙여넣기 가능)"
             rows={1}
             className="block min-h-[56px] w-full resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent p-3 text-sm leading-relaxed outline-none"
           />
         ) : (
           <div className="w-full whitespace-pre-wrap break-words p-3 text-sm leading-relaxed">
             {n.text}
+          </div>
+        )}
+
+        {/* 사진·음성 첨부 (패들렛식) — 편집 가능하면 추가/삭제, 아니면 표시만.
+            연결 모드에서도 내용(사진·음성)은 그대로 보이게 하고 편집 UI만 숨긴다. */}
+        {n.kind !== "link" && (
+          <div
+            className="px-3 pb-3"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {isTeacher && uploadTarget && !connectMode ? (
+              <AttachmentField
+                target={{ kind: "canvas", ...uploadTarget }}
+                value={n.attachments ?? []}
+                onChange={onChangeAttachments}
+                compact
+                imageLayout="full"
+              />
+            ) : (
+              (n.attachments?.length ?? 0) > 0 && (
+                <AttachmentList
+                  attachments={n.attachments!}
+                  compact
+                  imageLayout="full"
+                />
+              )
+            )}
           </div>
         )}
 
@@ -1752,6 +2131,152 @@ function normUrlSafe(u: string) {
   if (!s) return "#";
   if (/^(https?:|mailto:|tel:)/i.test(s)) return s;
   return "https://" + s.replace(/^\/+/, "");
+}
+
+/** 현재 보드 링크 복사 — 주소(class·lesson·q·group)가 곧 이 보드 식별자 */
+function ShareBoardButton() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard?.writeText(window.location.href);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className={`ml-3 inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+        copied
+          ? "border-transparent bg-[var(--md-sys-color-primary)] text-white"
+          : "border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+      }`}
+      title="이 보드 링크를 복사해 공유"
+    >
+      <Icon name={copied ? "check" : "share"} size={14} />
+      {copied ? "링크 복사됨" : "보드 공유"}
+    </button>
+  );
+}
+
+/** 카드 색 선택 팝업 — 카드 overflow 에 잘리지 않도록 body 로 portal 렌더 */
+function CardColorPopover({
+  rect,
+  current,
+  onPick,
+  onCustom,
+  onClose,
+}: {
+  rect: DOMRect;
+  current: string | null;
+  onPick: (c: string | null) => void;
+  onCustom: (c: string) => void;
+  onClose: () => void;
+}) {
+  if (typeof document === "undefined") return null;
+  const W = 188;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const left = Math.min(Math.max(8, rect.left), vw - W - 8);
+  const top = Math.min(rect.bottom + 6, vh - 220);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[110]"
+      onClick={onClose}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{ left, top, width: W }}
+        className="fixed rounded-xl border border-[var(--md-sys-color-outline-variant)] bg-white p-2 shadow-[var(--md-sys-elevation-3)]"
+      >
+        <div className="grid grid-cols-6 gap-1.5">
+          {CARD_COLORS.map((c) => (
+            <button
+              key={c}
+              onClick={() => onPick(c)}
+              className={`h-5 w-5 rounded-full ring-1 ring-black/10 transition hover:scale-110 ${
+                current === c ? "ring-2 ring-black/60" : ""
+              }`}
+              style={{ backgroundColor: c }}
+              title={c}
+            />
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-1.5 border-t border-[var(--md-sys-color-outline-variant)] pt-2">
+          <label
+            className="flex h-6 flex-1 cursor-pointer items-center gap-1 rounded-lg px-1.5 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+            title="직접 색 고르기"
+          >
+            <span
+              className="h-4 w-4 rounded-full ring-1 ring-black/15"
+              style={{
+                background:
+                  "conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red)",
+              }}
+            />
+            직접 선택
+            <input
+              type="color"
+              value={current || "#3b82f6"}
+              onChange={(e) => onCustom(e.target.value)}
+              className="h-0 w-0 opacity-0"
+            />
+          </label>
+          <button
+            onClick={() => onPick(null)}
+            className="flex h-6 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+            title="색 없음"
+          >
+            <Icon name="format_color_reset" size={14} />
+            없음
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** 카드가 연결될 때 그 지점에서 "우리의 생각이 연결됐어요" 축하 연출 */
+function ColorMergeBurst({
+  x,
+  y,
+  color,
+}: {
+  x: number;
+  y: number;
+  color: string;
+}) {
+  const [data, setData] = useState<object | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/Geometric%20shape%20loader.json")
+      .then((r) => r.json())
+      .then((d) => alive && setData(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return (
+    <div
+      className="pointer-events-none absolute z-30 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+      style={{ left: x, top: y }}
+    >
+      <span
+        className="jam-burst-ring absolute left-1/2 top-8 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-4"
+        style={{ borderColor: color }}
+      />
+      <div className="h-24 w-24">
+        {data && <Lottie animationData={data} loop autoplay />}
+      </div>
+      <span
+        className="jam-burst-pop -mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-extrabold text-white shadow-lg"
+        style={{ backgroundColor: color }}
+      >
+        🔗 우리의 생각이 연결됐어요
+      </span>
+    </div>
+  );
 }
 
 // 페이지 버튼 위에 뜨는 말풍선 메뉴 — 색상/패턴/이름변경/삭제

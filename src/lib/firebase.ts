@@ -11,6 +11,7 @@ import {
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getFunctions, type Functions } from "firebase/functions";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -28,6 +29,7 @@ let _app: FirebaseApp | undefined;
 let _auth: Auth | undefined;
 let _db: Firestore | undefined;
 let _fns: Functions | undefined;
+let _storage: FirebaseStorage | undefined;
 
 function app(): FirebaseApp {
   if (!_app) _app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -48,6 +50,11 @@ export function getFunctionsClient(): Functions {
   // Cloud Functions 배포 리전과 일치해야 함 (서울)
   if (!_fns) _fns = getFunctions(app(), "asia-northeast3");
   return _fns;
+}
+
+export function getStorageClient(): FirebaseStorage {
+  if (!_storage) _storage = getStorage(app());
+  return _storage;
 }
 
 export const googleProvider = new GoogleAuthProvider();

@@ -81,7 +81,7 @@ export function LessonsSection({
         {isTeacher && (
           <GlassButton
             variant="accent"
-            className="!px-4 !py-2 text-xs"
+            className="min-h-[44px] !px-4 !py-2.5 text-sm"
             onClick={() => setCreating(true)}
           >
             + 차시 만들기
@@ -111,7 +111,7 @@ export function LessonsSection({
             type="date"
             value={anchor}
             onChange={(e) => setAnchor(e.target.value || today())}
-            className="m3-field !w-auto !px-3 !py-1.5 !text-xs"
+            className="m3-field !w-auto"
           />
         )}
         {mode === "week" && (
