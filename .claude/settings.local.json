@@ -150,7 +150,20 @@
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"http://localhost:3001/eng/5-3/?p=$\\(date +%s\\)\")",
       "Bash(git *)",
       "Bash(echo \"=== ESLINT EXIT: $? ===\")",
-      "Bash(echo \"ESLINT_EXIT=$?\")"
+      "Bash(echo \"ESLINT_EXIT=$?\")",
+      "Bash(firebase projects:list)",
+      "Bash(find . -name \"firestore.rules\" -not -path \"*/node_modules/*\")",
+      "Bash(grep -n \"canvas\" firebase.json)",
+      "Bash(clodex models *)",
+      "Bash(clodex patch *)",
+      "Read(//Users/hongseong-yong/.clodex/**)",
+      "Read(//Users/hongseong-yong/.config/**)",
+      "Read(//Users/hongseong-yong/**)",
+      "Bash(echo \"--- exit $? ---\")",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(firebase --version)",
+      "Bash(echo \"=== EXIT $? ===\")",
+      "Bash(awk '/^export const [a-zA-Z]+ = \\(onCall|onSchedule|onDocument|onRequest\\)/{name=$3; start=NR} /req\\\\.auth/{if\\(name!=\"\"\\){seen[name]=1}} END{}' functions/src/index.ts)"
     ]
   }
 }

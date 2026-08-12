@@ -14,6 +14,8 @@ import { GlassCard, GlassButton } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
 import { RichEditor, blocksToPlainText } from "@/components/RichEditor";
 import { BlockView } from "@/components/BlockEditor";
+import { useUndoableInput } from "@/components/useUndoableInput";
+import { UndoableInput } from "@/components/UndoableInput";
 import { Icon } from "@/components/Icon";
 import { Switch } from "@/components/ui";
 import { TypedText } from "@/components/TypedText";
@@ -21,6 +23,11 @@ import { SentimentBar } from "@/components/GraphView";
 import { ExpandableGraph } from "@/components/ExpandableGraph";
 import { EmotionPanel } from "@/components/EmotionPanel";
 import { CommentThread } from "@/components/CommentThread";
+import {
+  NameMaskProvider,
+  NameMaskToggle,
+  useNameMask,
+} from "@/components/NameMask";
 import { MessagesFab } from "@/components/MessagesFab";
 import { useDialog } from "@/components/Dialog";
 import {
@@ -259,12 +266,14 @@ function LessonDetail() {
         </GlassCard>
 
         {isTeacher ? (
-          <TeacherPanel
-            cid={cid}
-            lid={lid}
-            phase={phase}
-            lesson={lesson}
-          />
+          <NameMaskProvider>
+            <TeacherPanel
+              cid={cid}
+              lid={lid}
+              phase={phase}
+              lesson={lesson}
+            />
+          </NameMaskProvider>
         ) : (
           <StudentPanel cid={cid} lid={lid} phase={phase} />
         )}
@@ -424,6 +433,7 @@ function LinksEditor({
   groups?: Group[];
   students?: Member[];
 }) {
+  const { mask } = useNameMask();
   const set = (i: number, patch: Partial<QLink>) =>
     onChange(links.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const linkMode = (lk: QLink): "all" | "groups" | "students" =>
@@ -449,17 +459,17 @@ function LinksEditor({
             className="flex flex-col gap-2 rounded-xl border border-[var(--md-sys-color-outline-variant)] p-2.5"
           >
             <div className="flex items-center gap-2">
-              <input
+              <UndoableInput
                 className="m3-field flex-1"
                 placeholder="링크 제목"
                 value={lk.title}
-                onChange={(e) => set(i, { title: e.target.value })}
+                onValueChange={(v) => set(i, { title: v })}
               />
-              <input
+              <UndoableInput
                 className="m3-field flex-[2]"
                 placeholder="https://…"
                 value={lk.url}
-                onChange={(e) => set(i, { url: e.target.value })}
+                onValueChange={(v) => set(i, { url: v })}
               />
               <button
                 onClick={() => onChange(links.filter((_, j) => j !== i))}
@@ -544,7 +554,7 @@ function LinksEditor({
                           : "bg-black/5 dark:bg-white/10"
                       }`}
                     >
-                      {s.displayName}
+                      {mask(s.displayName)}
                     </button>
                   );
                 })}
@@ -837,7 +847,10 @@ function TeacherPanel({
 
   const [menuOpen, setMenuOpen] = useState(false);
 
-  async function addActivity(kind: ActivityKind) {
+  async function addActivity(
+    kind: ActivityKind,
+    opts?: { ungraded?: boolean }
+  ) {
     if (!user) return;
     setMenuOpen(false);
     setAdding(true);
@@ -847,6 +860,7 @@ function TeacherPanel({
         phase,
         kind,
         options: kind === "quiz" ? ["", ""] : [],
+        ungraded: opts?.ungraded ?? false,
         order: maxOrder + 1,
       });
       load();
@@ -864,6 +878,60 @@ function TeacherPanel({
       setImportOpen(false);
     } finally {
       setImporting(false);
+    }
+  }
+
+  // 이 phase(수업 전/후)의 질문·성찰·문항·설문 제출을 전부 모아 CSV 한 장으로.
+  // 링크·보드·게임결과는 학생 텍스트 제출이 없어 제외.
+  const [exportingAll, setExportingAll] = useState(false);
+  async function exportAllCsv() {
+    if (exportingAll) return;
+    const targets = phaseQs.filter((q) =>
+      (["question", "reflection", "quiz", "survey"] as ActivityKind[]).includes(
+        q.kind
+      )
+    );
+    if (targets.length === 0) return;
+    setExportingAll(true);
+    try {
+      const lists = await Promise.all(
+        targets.map((q) => listQuestionSubmissions(cid, lid, q.id))
+      );
+      const nameOf = (uid: string, fallback?: string) => {
+        const roster = students.find((x) => x.uid === uid)?.displayName;
+        if (roster && roster !== "이름없음") return roster;
+        if (fallback && fallback !== "이름없음") return fallback;
+        return roster || fallback || "이름없음";
+      };
+      const header = ["질문", "유형", "학생", "응답", "제출시각"];
+      const rows: string[][] = [];
+      targets.forEach((q, qi) => {
+        const subs = lists[qi].filter((s) =>
+          q.kind === "survey"
+            ? s.surveyAnswers && Object.keys(s.surveyAnswers).length > 0
+            : s.content.trim() || (s.attachments?.length ?? 0) > 0
+        );
+        for (const s of subs) {
+          rows.push([
+            q.title || kindLabel(q),
+            kindLabel(q),
+            nameOf(s.uid, s.studentName),
+            submissionAnswerText(q, s),
+            fmtTs(s.submittedAt),
+          ]);
+        }
+      });
+      const bom = String.fromCharCode(0xfeff);
+      const csv =
+        bom +
+        [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+      const phaseLabel = phase === "pre" ? "수업전" : "수업후";
+      downloadCsv(
+        `${(lesson.title || "차시").replace(/[\\/:*?"<>|]/g, "_")}_${phaseLabel}_전체응답.csv`,
+        csv
+      );
+    } finally {
+      setExportingAll(false);
     }
   }
 
@@ -892,6 +960,9 @@ function TeacherPanel({
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* 발표·화면 공유용 학생 이름 가리기 (표시 전용 — CSV·분석은 원본 이름) */}
+          <NameMaskToggle />
+
           {/* 차시 전체 분석 (단일 진입점) */}
           <div className="relative">
             <GlassButton
@@ -983,6 +1054,18 @@ function TeacherPanel({
             외부 자료(PDF) 지식맵
           </GlassButton>
 
+          {/* 이 phase(수업 전/후)의 모든 질문·성찰·문항·설문 제출을 CSV 한 장으로 */}
+          <GlassButton
+            variant="ghost"
+            className="!px-4 !py-2 text-xs"
+            onClick={exportAllCsv}
+            disabled={exportingAll}
+            title="이 수업의 모든 질문 응답을 CSV 한 장으로 내려받기"
+          >
+            <Icon name="download" size={16} />
+            {exportingAll ? "내보내는 중…" : "전체 응답 CSV"}
+          </GlassButton>
+
           {view === "qa" && (
             <>
             {phase === "post" && (
@@ -1023,43 +1106,38 @@ function TeacherPanel({
                 <div className="glass-strong absolute right-0 top-11 z-20 w-44 animate-float-in p-1.5">
                   {(
                     [
-                      ["question", "edit_note", "질문 추가", "자유 서술 응답"],
-                      ["quiz", "quiz", "문항 출제", "선택지 + 정답"],
-                      ["link", "link", "링크 제공", "자료 링크 (제출 없음)"],
-                      ["canvas", "dashboard", "보드 (캔버스)", "학생 협업 카드 보드"],
-                      [
-                        "reflection",
-                        "rate_review",
-                        "수업 후 성찰",
-                        "이해도·흥미도 + 배운 점",
-                      ],
-                      [
-                        "survey",
-                        "fact_check",
-                        "설문 (검증)",
-                        "사전/사후 효과성 검증 (t검정)",
-                      ],
+                      { kind: "question", icon: "edit_note", label: "질문 추가", desc: "자유 서술 응답" },
+                      { kind: "quiz", icon: "quiz", label: "문항 출제", desc: "선택지 + 정답" },
+                      { kind: "quiz", icon: "how_to_vote", label: "투표·설문", desc: "정답 없는 선택형 · 응답 분포", ungraded: true },
+                      { kind: "link", icon: "link", label: "링크 제공", desc: "자료 링크 (제출 없음)" },
+                      { kind: "canvas", icon: "dashboard", label: "보드 (캔버스)", desc: "학생 협업 카드 보드" },
+                      { kind: "reflection", icon: "rate_review", label: "수업 후 성찰", desc: "이해도·흥미도 + 배운 점" },
+                      { kind: "survey", icon: "fact_check", label: "설문 (검증)", desc: "사전/사후 효과성 검증 (t검정)" },
                     ] as const
                   )
                     // 수업 전에는 '수업 후 성찰' 활동을 제공하지 않음
-                    .filter(([k]) => !(phase === "pre" && k === "reflection"))
-                    .map(([k, icon, label, desc]) => (
+                    .filter((it) => !(phase === "pre" && it.kind === "reflection"))
+                    .map((it) => (
                     <button
-                      key={k}
-                      onClick={() => addActivity(k)}
+                      key={it.label}
+                      onClick={() =>
+                        addActivity(it.kind, {
+                          ungraded: (it as { ungraded?: boolean }).ungraded ?? false,
+                        })
+                      }
                       className="flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left transition hover:bg-black/5 dark:hover:bg-white/10"
                     >
                       <Icon
-                        name={icon}
+                        name={it.icon}
                         size={18}
                         className="mt-0.5 text-[var(--md-sys-color-primary)]"
                       />
                       <span>
                         <span className="block text-sm font-semibold">
-                          {label}
+                          {it.label}
                         </span>
                         <span className="block text-xs text-black/45 dark:text-white/45">
-                          {desc}
+                          {it.desc}
                         </span>
                       </span>
                     </button>
@@ -1244,6 +1322,160 @@ function TeacherPanel({
   );
 }
 
+/* ---------- 표(table) 제출 → CSV 내보내기 ---------- */
+// 제출 content(BlockEditor JSON)에서 표 블록의 행을 꺼낸다. rows[0]은 헤더.
+function extractTableRows(content: string): string[][] {
+  if (!content || !content.trim()) return [];
+  try {
+    const blocks = JSON.parse(content);
+    if (!Array.isArray(blocks)) return [];
+    const t = blocks.find(
+      (b) =>
+        b && typeof b === "object" && (b as { type?: string }).type === "table"
+    ) as { rows?: unknown } | undefined;
+    if (!Array.isArray(t?.rows)) return [];
+    return (t.rows as unknown[]).map((r) =>
+      Array.isArray(r) ? r.map((c) => String(c ?? "")) : []
+    );
+  } catch {
+    return [];
+  }
+}
+
+// answered 제출 중 표 블록이 하나라도 있으면 true (표 활동 판별)
+function hasTableSubmission(subs: { content: string }[]): boolean {
+  return subs.some((s) => extractTableRows(s.content).length > 0);
+}
+
+// CSV 한 칸 이스케이프: 쉼표/따옴표/줄바꿈 포함 시 큰따옴표로 감싸고 내부 " → ""
+function csvCell(v: string): string {
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+// 표 제출들을 long-format CSV 로. 헤더: 학생, <표의 헤더 열들…>
+// 한 학생이 여러 행을 적었으면 행마다 한 줄(학생 이름 반복) — 지식그래프에 바로 먹이기 좋은 형태.
+function tableSubmissionsToCsv(
+  subs: { studentName: string; content: string }[]
+): string {
+  let header: string[] = [];
+  const body: string[][] = [];
+  for (const s of subs) {
+    const rows = extractTableRows(s.content);
+    if (rows.length === 0) continue;
+    if (header.length === 0) header = rows[0]; // 첫 표의 헤더를 기준 열로
+    for (const r of rows.slice(1)) {
+      if (!r.some((c) => c.trim())) continue; // 빈 행 스킵
+      body.push([s.studentName, ...r]);
+    }
+  }
+  const lines = [["학생", ...header], ...body].map((row) =>
+    row.map(csvCell).join(",")
+  );
+  // Excel 한글 깨짐 방지용 UTF-8 BOM + CRLF
+  const bom = String.fromCharCode(0xfeff);
+  return bom + lines.join("\r\n");
+}
+
+function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- 모든 활동 유형 공용 CSV 내보내기 ---------- */
+// 제출 시각을 "YYYY-MM-DD HH:mm"로 (없으면 빈 칸)
+function fmtTs(ms: number | null): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// 활동 유형 한글 라벨 — 전체 내보내기의 "유형" 열, 파일명 등에 사용.
+function kindLabel(q: { kind: ActivityKind; ungraded?: boolean }): string {
+  switch (q.kind) {
+    case "quiz":
+      return q.ungraded ? "투표·설문" : "문항";
+    case "survey":
+      return "설문(검증)";
+    case "reflection":
+      return "수업후 성찰";
+    case "link":
+      return "링크";
+    case "canvas":
+      return "보드";
+    case "game-result":
+      return "게임 결과";
+    default:
+      return "질문";
+  }
+}
+
+// 제출 1건을 한 줄 텍스트 응답으로 — 설문(검증)은 문항별 응답을 이어붙이고,
+// 그 외(질문/성찰/문항)는 blocksToPlainText 로 평문화(표 블록도 "칸 | 칸" 형태로 포함).
+function submissionAnswerText(
+  q: { kind: ActivityKind; surveyItems?: SurveyItem[] },
+  s: Submission
+): string {
+  if (q.kind === "survey") {
+    const items = q.surveyItems ?? [];
+    return items
+      .map((it) => `${it.prompt || it.id}: ${s.surveyAnswers?.[it.id] ?? ""}`)
+      .join(" / ");
+  }
+  return blocksToPlainText(s.content || "");
+}
+
+// 질문 1개의 제출을 CSV 로 — 표 블록이 있으면 기존 long-format(지식그래프 입력 호환),
+// 설문(검증)은 문항별 열, 그 외는 학생·응답(평문)·이해도·흥미도·활용·제출시각.
+function submissionsToCsv(question: Question, subs: Submission[]): string {
+  const bom = String.fromCharCode(0xfeff);
+  if (question.kind === "survey") {
+    const items = question.surveyItems ?? [];
+    const header = ["학생", ...items.map((it) => it.prompt || it.id), "제출시각"];
+    const rows = subs.map((s) => [
+      s.studentName,
+      ...items.map((it) => String(s.surveyAnswers?.[it.id] ?? "")),
+      fmtTs(s.submittedAt),
+    ]);
+    return bom + [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+  }
+  if (hasTableSubmission(subs)) {
+    return tableSubmissionsToCsv(subs); // 이미 BOM 포함
+  }
+  const isQuiz = question.kind === "quiz";
+  const header = isQuiz
+    ? ["학생", "응답", "정답여부", "제출시각"]
+    : ["학생", "제출내용", "이해도(1~5)", "흥미도(1~5)", "활용", "제출시각"];
+  const rows = subs.map((s) => {
+    const text = blocksToPlainText(s.content || "");
+    if (isQuiz) {
+      const correct =
+        question.answerIndex >= 0
+          ? s.content.trim() === question.options[question.answerIndex]
+            ? "정답"
+            : "오답"
+          : "";
+      return [s.studentName, text, correct, fmtTs(s.submittedAt)];
+    }
+    return [
+      s.studentName,
+      text,
+      s.understanding != null ? String(s.understanding) : "",
+      s.interest != null ? String(s.interest) : "",
+      s.application ?? "",
+      fmtTs(s.submittedAt),
+    ];
+  });
+  return bom + [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+}
+
 /* ---------- 질문 1개: 좌(편집) ↔ 우(제출 결과) 마스터-디테일 ---------- */
 function QuestionRow({
   cid,
@@ -1275,6 +1507,7 @@ function QuestionRow({
   const [published, setPublished] = useState(question.published !== false);
   const [pubBusy, setPubBusy] = useState(false);
   const [revealAnswer, setRevealAnswer] = useState(!!question.revealAnswer);
+  const [ungraded, setUngraded] = useState(!!question.ungraded);
   const [boardMode, setBoardMode] = useState<"shared" | "group">(
     question.boardMode === "group" ? "group" : "shared"
   );
@@ -1294,6 +1527,7 @@ function QuestionRow({
         : "all"
   );
   const [title, setTitle] = useState(question.title);
+  const titleUndo = useUndoableInput(title, setTitle);
   const [editingTitle, setEditingTitle] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [savedFlash, setSavedFlash] = useState(false);
@@ -1314,6 +1548,7 @@ function QuestionRow({
     setAllowResubmit(question.allowResubmit);
     setPublished(question.published !== false);
     setRevealAnswer(!!question.revealAnswer);
+    setUngraded(!!question.ungraded);
     setBoardMode(question.boardMode === "group" ? "group" : "shared");
     setSurveyItems(question.surveyItems ?? []);
     setAudGroupIds(question.audGroupIds);
@@ -1333,7 +1568,9 @@ function QuestionRow({
   const isCanvas = question.kind === "canvas";
   const isSurvey = question.kind === "survey";
   const kindLabel = isQuiz
-    ? "문항"
+    ? question.ungraded
+      ? "설문"
+      : "문항"
     : isLink
       ? "링크"
       : isCanvas
@@ -1443,6 +1680,10 @@ function QuestionRow({
     ...s,
     studentName: nameOf(s.uid, s.studentName),
   });
+  // 발표용 이름 가리기 — 화면에 찍는 이름에만 적용한다(CSV·분석 payload 는 원본).
+  const { mask, maskMap } = useNameMask();
+  const nameMap = (subs: Submission[]) =>
+    maskMap(Object.fromEntries(subs.map((s) => [s.uid, s.studentName])));
 
   const answered = subs
     .filter((s) => s.content.trim() || (s.attachments?.length ?? 0) > 0)
@@ -1457,6 +1698,28 @@ function QuestionRow({
   const stale = ontology
     ? ontology.inputHash !== curHash
     : answered.length > 0;
+
+  function exportCsv() {
+    const base = (question.title || "질문").replace(/[\\/:*?"<>|]/g, "_").trim();
+    downloadCsv(
+      `${base || "질문"}_제출${answered.length}.csv`,
+      submissionsToCsv(question, answered)
+    );
+  }
+  function exportQuizCsv() {
+    const base = (question.title || "문항").replace(/[\\/:*?"<>|]/g, "_").trim();
+    downloadCsv(
+      `${base || "문항"}_응답${answered.length}.csv`,
+      submissionsToCsv(question, answered)
+    );
+  }
+  function exportSurveyCsv() {
+    const base = (question.title || "설문").replace(/[\\/:*?"<>|]/g, "_").trim();
+    downloadCsv(
+      `${base || "설문"}_응답${answeredSurvey.length}.csv`,
+      submissionsToCsv(question, answeredSurvey)
+    );
+  }
 
   // 설문(검증): "검증 시작"으로 현재 응답을 수합·분석 — 지식 위계의 분석/최신·변경됨과 동일 패턴.
   // surveyVerifiedHash(저장됨) == 현재 응답 해시면 최신, 다르면 새 응답이 들어온 것(재검증 필요).
@@ -1492,6 +1755,7 @@ function QuestionRow({
       u: audUids,
       r: allowResubmit,
       v: revealAnswer,
+      m: ungraded,
       b: boardMode,
       s: surveyItems,
     });
@@ -1505,6 +1769,7 @@ function QuestionRow({
       u: question.audUids,
       r: question.allowResubmit,
       v: !!question.revealAnswer,
+      m: !!question.ungraded,
       b: question.boardMode === "group" ? "group" : "shared",
       s: question.surveyItems ?? [],
     });
@@ -1519,38 +1784,52 @@ function QuestionRow({
     audUids,
     allowResubmit,
     revealAnswer,
+    ungraded,
     boardMode,
     surveyItems,
     question,
   ]);
 
-  async function save() {
-    await updateQuestion(cid, lid, question.id, {
+  // 저장 페이로드 — save() 와 setPublishedNow() 가 공유한다. 예약/공개 전환이 저장을
+  // 건너뛰면, 편집 중이던(아직 "저장" 안 누른) 내용이 onChanged() 의 목록 재조회로
+  // 서버의 옛 값에 덮여 사라지는 버그가 있었다(/ 커맨드로 링크를 넣고 바로 전환한 경우 등).
+  // 전환 시에도 항상 현재 편집 상태를 함께 저장해 이 유실을 막는다.
+  function buildPayload() {
+    return {
       title: title.trim(),
       text: draft,
       links: links.filter((l) => l.title || l.url),
       options: options.map((o) => o.trim()).filter(Boolean),
-      answerIndex: answerIdx,
+      answerIndex: ungraded ? -1 : answerIdx,
       audGroupIds,
       audUids,
       allowResubmit,
-      revealAnswer,
+      revealAnswer: ungraded ? false : revealAnswer,
+      ungraded,
       boardMode,
       surveyItems,
-    });
+    };
+  }
+
+  async function save() {
+    await updateQuestion(cid, lid, question.id, buildPayload());
     setSavedAt(new Date().toLocaleTimeString());
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1500);
     onChanged();
   }
 
-  // 공개/예약 즉시 전환 — 저장 흐름과 분리해 바로 반영(수업 중 활성화).
-  // 학생 화면은 watchQuestions 로 실시간 반영된다.
+  // 공개/예약 즉시 전환 — 버튼 하나로 바로 반영(수업 중 활성화)하되, 현재 편집 중인
+  // 내용도 함께 저장해 유실을 막는다. 학생 화면은 watchQuestions 로 실시간 반영된다.
   async function setPublishedNow(next: boolean) {
     setPublished(next);
     setPubBusy(true);
     try {
-      await updateQuestion(cid, lid, question.id, { published: next });
+      await updateQuestion(cid, lid, question.id, {
+        ...buildPayload(),
+        published: next,
+      });
+      setSavedAt(new Date().toLocaleTimeString());
       onChanged();
     } catch {
       setPublished(!next); // 실패 시 롤백
@@ -1617,9 +1896,10 @@ function QuestionRow({
                 <input
                   autoFocus
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => titleUndo.change(e.target.value)}
                   onBlur={saveTitleAndMaybePair}
                   onKeyDown={(e) => {
+                    if (titleUndo.handleKey(e)) return;
                     if (e.key === "Enter" && !e.nativeEvent.isComposing)
                       (e.target as HTMLInputElement).blur();
                     if (e.key === "Escape") {
@@ -1714,27 +1994,57 @@ function QuestionRow({
 
           {isQuiz && (
             <div className="mt-3 flex flex-col gap-2">
+              {/* 채점 방식: 자동 채점(정답 지정) ↔ 설문·투표(정답 없음) */}
+              <div className="inline-flex w-fit overflow-hidden rounded-full border border-[var(--md-sys-color-outline)]">
+                {(
+                  [
+                    [false, "정답 채점", "task_alt"],
+                    [true, "설문 · 정답 없음", "how_to_vote"],
+                  ] as const
+                ).map(([mode, label, icon]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      setUngraded(mode);
+                      if (mode) setAnswerIdx(-1);
+                    }}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition ${
+                      ungraded === mode
+                        ? "bg-[var(--md-sys-color-primary)] text-white"
+                        : "text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+                    }`}
+                  >
+                    <Icon name={icon} size={14} />
+                    {label}
+                  </button>
+                ))}
+              </div>
               <p className="text-xs font-semibold text-black/55 dark:text-white/55">
-                선택지 (정답 라디오 선택)
+                {ungraded
+                  ? "선택지 (정답 없음 · 응답만 모아요)"
+                  : "선택지 (정답 라디오 선택)"}
               </p>
               {options.map((opt, oi) => (
                 <div key={oi} className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    checked={answerIdx === oi}
-                    onChange={() => setAnswerIdx(oi)}
-                    title="정답으로 지정"
-                  />
-                  <input
+                  {ungraded ? (
+                    <span className="w-5 shrink-0 text-center text-xs text-black/35">
+                      {oi + 1}.
+                    </span>
+                  ) : (
+                    <input
+                      type="radio"
+                      checked={answerIdx === oi}
+                      onChange={() => setAnswerIdx(oi)}
+                      title="정답으로 지정"
+                    />
+                  )}
+                  <UndoableInput
                     className="m3-field flex-1"
                     placeholder={`선택지 ${oi + 1}`}
                     value={opt}
-                    onChange={(e) =>
-                      setOptions(
-                        options.map((x, j) =>
-                          j === oi ? e.target.value : x
-                        )
-                      )
+                    onValueChange={(v) =>
+                      setOptions(options.map((x, j) => (j === oi ? v : x)))
                     }
                   />
                   <button
@@ -1755,6 +2065,20 @@ function QuestionRow({
                 <Icon name="add" size={14} />
                 선택지 추가
               </button>
+              {ungraded ? (
+                <p className="flex items-center gap-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  <Icon name="info" size={13} />
+                  정답·오답 채점 없이 응답 분포만 모읍니다.
+                </p>
+              ) : (
+                answerIdx < 0 &&
+                options.some((o) => o.trim()) && (
+                  <p className="flex items-center gap-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    <Icon name="info" size={13} />
+                    정답 미지정 — 라디오로 정답을 고르거나 ‘설문’으로 전환하세요.
+                  </p>
+                )
+              )}
             </div>
           )}
 
@@ -1889,7 +2213,7 @@ function QuestionRow({
             </div>
           )}
 
-          {isQuiz && (
+          {isQuiz && !ungraded && (
             <div
               className="ml-2 mt-3 inline-block"
               title="켜면 학생이 제출한 뒤 정답이 공개되고, 답은 더 이상 수정할 수 없습니다 (저장 필요)"
@@ -2010,7 +2334,7 @@ function QuestionRow({
                             : "bg-black/5 dark:bg-white/10"
                         }`}
                       >
-                        {s.displayName}
+                        {mask(s.displayName)}
                       </button>
                     );
                   })
@@ -2073,9 +2397,7 @@ function QuestionRow({
               <div className="mt-3">
                 <MiniOntology
                   data={ontology}
-                  names={Object.fromEntries(
-                    answered.map((s) => [s.uid, s.studentName])
-                  )}
+                  names={nameMap(answered)}
                   title={`${question.title || "보드"} 지식맵`}
                 />
               </div>
@@ -2091,9 +2413,7 @@ function QuestionRow({
                 lid={lid}
                 preQid={compareInfo.preQid}
                 postQid={compareInfo.postQid}
-                names={Object.fromEntries(
-                  answered.map((s) => [s.uid, s.studentName])
-                )}
+                names={nameMap(answered)}
               />
             )}
           </div>
@@ -2102,12 +2422,24 @@ function QuestionRow({
         {/* 우: 설문(검증) — 개별 응답 + 사전/사후 t검정 분석 */}
         {isSurvey && (
           <div className="bg-white/30 p-6 dark:bg-white/5">
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              응답 결과 ({answeredSurvey.length})
-              <span className="text-xs font-normal text-black/40">
-                {question.phase === "pre" ? "수업 전" : "수업 후"}
-              </span>
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                응답 결과 ({answeredSurvey.length})
+                <span className="text-xs font-normal text-black/40">
+                  {question.phase === "pre" ? "수업 전" : "수업 후"}
+                </span>
+              </p>
+              {answeredSurvey.length > 0 && (
+                <button
+                  onClick={exportSurveyCsv}
+                  title="이 설문의 응답을 CSV로 내려받기"
+                  className="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs font-medium text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
+                >
+                  <Icon name="download" size={14} />
+                  CSV
+                </button>
+              )}
+            </div>
             {surveyItems.length === 0 ? (
               <p className="py-6 text-center text-xs text-black/40">
                 왼쪽에서 검증 문항을 먼저 추가하세요.
@@ -2163,9 +2495,21 @@ function QuestionRow({
         <div className="bg-white/30 p-6 dark:bg-white/5">
           {isQuiz ? (
             <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-semibold">
                 응답 분포 ({answered.length})
               </p>
+              {answered.length > 0 && (
+                <button
+                  onClick={exportQuizCsv}
+                  title="이 문항의 응답을 CSV로 내려받기"
+                  className="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs font-medium text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
+                >
+                  <Icon name="download" size={14} />
+                  CSV
+                </button>
+              )}
+              </div>
               {(() => {
                 const hasAnswer = question.answerIndex >= 0;
                 const correctOpt = hasAnswer
@@ -2184,9 +2528,17 @@ function QuestionRow({
                 return (
                   <button
                     type="button"
-                    onClick={() => setStatsOpen(true)}
-                    className="mt-3 block w-full rounded-2xl bg-white/60 p-3 text-left transition hover:bg-white/90 dark:bg-white/10"
-                    title="클릭하면 정답·오답 전체 현황을 봅니다"
+                    onClick={() => {
+                      if (!question.ungraded) setStatsOpen(true);
+                    }}
+                    className={`mt-3 block w-full rounded-2xl bg-white/60 p-3 text-left transition dark:bg-white/10 ${
+                      question.ungraded ? "cursor-default" : "hover:bg-white/90"
+                    }`}
+                    title={
+                      question.ungraded
+                        ? "설문 문항 — 응답 분포만 모읍니다"
+                        : "클릭하면 정답·오답 전체 현황을 봅니다"
+                    }
                   >
                     {hasAnswer ? (
                       <>
@@ -2228,13 +2580,17 @@ function QuestionRow({
                                   className="rounded-full bg-[var(--md-sys-color-error-container)] px-2 py-0.5 text-xs text-[var(--md-sys-color-on-error-container)]"
                                   title={s.content}
                                 >
-                                  {s.studentName}
+                                  {mask(s.studentName)}
                                 </span>
                               ))}
                             </div>
                           </div>
                         )}
                       </>
+                    ) : question.ungraded ? (
+                      <p className="text-xs text-black/45">
+                        설문 문항 — 정답 없이 응답 분포만 모아요. (응답 {n}명)
+                      </p>
                     ) : (
                       <p className="text-xs text-black/45">
                         정답을 지정하면 정답률·오답이 집계됩니다. (응답{" "}
@@ -2315,7 +2671,7 @@ function QuestionRow({
                           <Icon name="chevron_left" size={18} />
                         </button>
                         <span className="text-xs font-semibold">
-                          {s.studentName} ({i + 1}/{answered.length})
+                          {mask(s.studentName)} ({i + 1}/{answered.length})
                         </span>
                         <button
                           onClick={() =>
@@ -2372,11 +2728,23 @@ function QuestionRow({
                       </span>
                     ))}
                 </p>
-                {stale && (
-                  <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                    상단 “분석”에서 재분석하세요
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {stale && (
+                    <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                      상단 “분석”에서 재분석하세요
+                    </span>
+                  )}
+                  {answered.length > 0 && (
+                    <button
+                      onClick={exportCsv}
+                      title="이 질문의 제출을 CSV로 내려받기"
+                      className="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs font-medium text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
+                    >
+                      <Icon name="download" size={14} />
+                      CSV
+                    </button>
+                  )}
+                </div>
               </div>
               {answered.length === 0 ? (
                 <p className="py-6 text-center text-sm text-black/40">
@@ -2398,7 +2766,7 @@ function QuestionRow({
                           <Icon name="chevron_left" size={18} />
                         </button>
                         <span className="text-xs font-semibold text-black/55 dark:text-white/55">
-                          {s.studentName}{" "}
+                          {mask(s.studentName)}{" "}
                           <span className="font-normal text-black/35">
                             ({i + 1}/{answered.length})
                           </span>
@@ -2444,9 +2812,7 @@ function QuestionRow({
                 <div className="mt-4">
                   <MiniOntology
                     data={ontology}
-                    names={Object.fromEntries(
-                      answered.map((s) => [s.uid, s.studentName])
-                    )}
+                    names={nameMap(answered)}
                     title={`${question.title || "질문"} 지식맵`}
                   />
                 </div>
@@ -2457,9 +2823,7 @@ function QuestionRow({
                   lid={lid}
                   preQid={compareInfo.preQid}
                   postQid={compareInfo.postQid}
-                  names={Object.fromEntries(
-                    answered.map((s) => [s.uid, s.studentName])
-                  )}
+                  names={nameMap(answered)}
                 />
               )}
             </>
@@ -2507,7 +2871,7 @@ function QuestionRow({
                 good: boolean;
               }) => (
                 <li className="flex items-center justify-between gap-3 rounded-xl bg-white/60 px-4 py-2.5 text-sm dark:bg-white/10">
-                  <span className="font-medium">{s.studentName}</span>
+                  <span className="font-medium">{mask(s.studentName)}</span>
                   <span
                     className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                       good
@@ -2699,13 +3063,16 @@ function StudentCard({
   ontology: Ontology;
 }) {
   const has = ontology.nodes.length > 0;
+  // 정렬은 원본 이름 기준(토글해도 카드 순서가 흔들리지 않게), 표시만 가린다.
+  const { mask } = useNameMask();
+  const shown = mask(bundle.name);
   return (
     <GlassCard className="flex flex-col p-6">
       <div className="mb-3 flex items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--md-sys-color-primary-container)] text-xs font-bold text-[var(--md-sys-color-on-primary-container)]">
-          {bundle.name.slice(0, 1)}
+          {shown.slice(0, 1)}
         </span>
-        <p className="text-sm font-semibold">{bundle.name}</p>
+        <p className="text-sm font-semibold">{shown}</p>
         <span className="text-xs font-normal text-black/40">
           · 답변 {bundle.answers.length}
         </span>
@@ -2729,8 +3096,8 @@ function StudentCard({
         {has ? (
           <MiniOntology
             data={ontology}
-            names={{ [bundle.uid]: bundle.name }}
-            title={`${bundle.name} 지식맵`}
+            names={{ [bundle.uid]: shown }}
+            title={`${shown} 지식맵`}
           />
         ) : (
           <p className="rounded-2xl bg-white/40 py-4 text-center text-xs text-black/40 dark:bg-white/5">
@@ -2763,6 +3130,9 @@ function MergedMapSection({
   );
   const leafCount = Object.values(data.leaves).filter(Boolean).length;
   const scope = `norm:${phase}`;
+  // 지식맵·감정 패널의 학생 라벨 — 발표용 가리기 적용(LLM 분석 payload 는 원본 유지)
+  const { maskMap } = useNameMask();
+  const shownNames = maskMap(data.names);
 
   const [tab, setTab] = useState<"graph" | "emotion">("graph");
   const [norm, setNorm] = useState<Ontology | null>(null);
@@ -2947,14 +3317,14 @@ function MergedMapSection({
                 <div className="mt-4">
                   <ExpandableGraph
                     data={display}
-                    studentNames={data.names}
+                    studentNames={shownNames}
                     variant="button"
                     title={`${lessonTitle ?? "차시"} 지식맵`}
                   />
                 </div>
               </>
             ) : (
-              <EmotionPanel data={display} names={data.names} />
+              <EmotionPanel data={display} names={shownNames} />
             )}
           </div>
         ) : (
@@ -3440,7 +3810,9 @@ function StudentQuestionCard({
   const isCanvas = question.kind === "canvas";
   const isSurvey = question.kind === "survey";
   const kindLabel = isQuiz
-    ? "문항"
+    ? question.ungraded
+      ? "설문"
+      : "문항"
     : isLink
       ? "링크"
       : isCanvas
@@ -3488,7 +3860,9 @@ function StudentQuestionCard({
   const submitted =
     !!mine && (!!mine.submittedAt || mine.content.trim().length > 0);
   // 문항 정답 공개: 제출 후 공개되며, 공개되면 답을 더 못 바꾼다(부정행위 방지)
-  const quizRevealed = isQuiz && submitted && !!question.revealAnswer;
+  // 설문(ungraded)은 정답이 없으므로 공개 개념이 없다.
+  const quizRevealed =
+    isQuiz && !question.ungraded && submitted && !!question.revealAnswer;
   const locked = (submitted && !question.allowResubmit) || quizRevealed;
   const prevAns = isQuiz
     ? (mine?.content ?? "")
@@ -3796,7 +4170,9 @@ function StudentQuestionCard({
                 </p>
               ) : submitted ? (
                 <p className="text-xs text-black/45">
-                  제출 완료 — 정답은 선생님이 공개하면 표시됩니다.
+                  {question.ungraded
+                    ? "응답이 제출되었어요. 결과는 선생님 화면에 모여요."
+                    : "제출 완료 — 정답은 선생님이 공개하면 표시됩니다."}
                 </p>
               ) : null}
             </div>
@@ -4346,6 +4722,7 @@ function ReflectionTeacher({
 }) {
   const dialog = useDialog();
   const { user } = useAuth();
+  const { mask } = useNameMask();
   const [subs, setSubs] = useState<Submission[]>([]);
   const [title, setTitle] = useState(question.title);
   const [rewarded, setRewarded] = useState<Record<string, number>>({});
@@ -4380,7 +4757,7 @@ function ReflectionTeacher({
   async function reward(s: Submission) {
     if (!user) return;
     const v = await dialog.prompt({
-      title: `${nameOf(s)}에게 경험치`,
+      title: `${mask(nameOf(s))}에게 경험치`,
       description: "성찰 응답에 대한 보상 경험치를 입력하세요.",
       defaultValue: "10",
       placeholder: "숫자",
@@ -4430,9 +4807,9 @@ function ReflectionTeacher({
     <GlassCard className="p-6">
       <div className="mb-4 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <input
+          <UndoableInput
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onValueChange={setTitle}
             onBlur={saveTitle}
             placeholder={`수업 후 성찰 ${index + 1}`}
             className="min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-[var(--md-sys-color-outline-variant)] focus:border-[var(--md-sys-color-primary)] focus:outline-none"
@@ -4517,7 +4894,7 @@ function ReflectionTeacher({
                   key={s.uid}
                   className="border-b border-[var(--md-sys-color-outline-variant)] align-top"
                 >
-                  <td className="py-2 pr-3 font-medium">{nameOf(s)}</td>
+                  <td className="py-2 pr-3 font-medium">{mask(nameOf(s))}</td>
                   <td className="py-2 pr-3">
                     <span className="inline-flex items-center gap-0.5">
                       <Icon name="star" size={14} fill style={{ color: "#f5a623" }} />

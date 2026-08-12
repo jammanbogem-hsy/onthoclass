@@ -1,23 +1,34 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { getMemberProfile, type Role } from "@/lib/classes";
+import {
+  getMemberProfile,
+  watchMembers,
+  type Member,
+  type Role,
+} from "@/lib/classes";
 import {
   stopLock,
+  watchClassApp,
   watchLock,
   watchPresent,
   watchSignal,
   type ActivityLock,
+  type ClassAppControl,
   type PresentState,
 } from "@/lib/live";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
 import { PresentOverlay } from "@/components/PresentOverlay";
+import { FocusLockOverlay } from "@/components/FocusLockOverlay";
+import { LinkPushModal } from "@/components/LinkPushModal";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { ActivityLockOverlay } from "@/components/ActivityLockOverlay";
 import { GameStudentStage } from "@/components/GameStudentStage";
 import { GameStudentDock } from "@/components/GameStudentDock";
+import { MyTurnIntro } from "@/components/MyTurnIntro";
+import { TurnBanner } from "@/components/TurnBanner";
 import { FeedbackWidget } from "@/components/FeedbackWidget";
 import { FeedbackInboxFab } from "@/components/FeedbackInboxFab";
 import {
@@ -46,8 +57,14 @@ function ClassLiveInner() {
   const [lock, setLock] = useState<ActivityLock | null>(null);
   const [lockDismissed, setLockDismissed] = useState(false);
   const [present, setPresent] = useState<PresentState | null>(null);
+  const [classApp, setClassApp] = useState<ClassAppControl | null>(null);
+  // 학생이 닫은 링크의 nonce — 새 링크(nonce 변경)면 다시 띄운다
+  const [linkClosedNonce, setLinkClosedNonce] = useState<number | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [mySub, setMySub] = useState<GameSubmission | null>(null);
+  // 빙고 차례 알림: 멤버 맵(이름/아바타) + 내 차례 진입 인트로 트리거
+  const [members, setMembers] = useState<Member[]>([]);
+  const [turnIntroKey, setTurnIntroKey] = useState(0); // 0=숨김, >0=표시(rising-edge마다 증가)
   // 학생이 명시적으로 닫은 "단계 키" — 단계가 바뀌면 자동으로 다시 떠야 하므로
   // 단순 boolean 이 아니라 어떤 단계에서 닫았는지를 저장한다.
   const [dismissedStage, setDismissedStage] = useState<string | null>(null);
@@ -116,6 +133,12 @@ function ClassLiveInner() {
     return watchPresent(cid, setPresent);
   }, [cid, uid, role]);
 
+  // 클래스앱 콘솔 제어(집중 잠금 + 링크 모달) 구독
+  useEffect(() => {
+    if (!cid || !uid || !role) return;
+    return watchClassApp(cid, setClassApp);
+  }, [cid, uid, role]);
+
   // 학급 게임(활성) 구독
   useEffect(() => {
     if (!cid || !uid || !role) return;
@@ -132,13 +155,31 @@ function ClassLiveInner() {
     return watchMySubmission(cid, game.id, uid, setMySub);
   }, [cid, uid, game]);
 
+  // 빙고 차례 알림용 멤버 맵 — 게임 활성(존재) 시에만 구독(상시 읽기 비용 회피).
+  useEffect(() => {
+    if (!cid || !uid || role !== "student" || !game) {
+      setMembers([]);
+      return;
+    }
+    return watchMembers(cid, setMembers);
+  }, [cid, uid, role, game]);
+  const memberByUid = useMemo(() => {
+    const m = new Map<string, Member>();
+    members.forEach((x) => m.set(x.uid, x));
+    return m;
+  }, [members]);
+
   // 플레이 중 내 차례가 되면(다른 차례→내 차례) 최소화(닫기)했더라도 스테이지를
   // 자동으로 다시 띄운다. stageKey 만으로는 currentUid 변화를 못 잡으므로 별도 처리.
+  // 같은 rising-edge 에서 "내 차례!" 인트로도 함께 띄운다(누가 차례인지 못 알아채는 문제 해결).
   const isMyBingoTurn =
     !!game && game.status === "play" && game.turn.currentUid === uid;
   const prevMyTurnRef = useRef(false);
   useEffect(() => {
-    if (isMyBingoTurn && !prevMyTurnRef.current) setDismissedStage(null);
+    if (isMyBingoTurn && !prevMyTurnRef.current) {
+      setDismissedStage(null);
+      setTurnIntroKey((k) => k + 1); // 인트로 표시(연속 내 차례는 rising-edge 미발생 → 억제)
+    }
     prevMyTurnRef.current = isMyBingoTurn;
   }, [isMyBingoTurn]);
 
@@ -170,6 +211,15 @@ function ClassLiveInner() {
   // 발표 모드: 전체 기본 효과(관람·잠금). 발표자로 지정된 본인만 무지개.
   const presentActive = !!cid && role === "student" && !!present?.active;
   const iAmPresenter = presentActive && present?.uid === uid;
+
+  // 클래스앱: 집중 잠금(학생만), 링크 모달(학생만, 닫은 nonce 아닐 때만)
+  const focusActive = !!cid && role === "student" && !!classApp?.focusActive;
+  const linkActive =
+    !!cid &&
+    role === "student" &&
+    !!classApp?.linkActive &&
+    !!classApp.linkUrl &&
+    classApp.linkNonce !== linkClosedNonce;
 
   // 학급 게임 학생 스테이지 — 단계가 바뀌면 자동으로 다시 표시되도록 키로 비교
   const stageKey =
@@ -229,6 +279,14 @@ function ClassLiveInner() {
           onExpire={() => setLockDismissed(true)}
         />
       )}
+      {focusActive && <FocusLockOverlay message={classApp?.focusMessage} />}
+      {linkActive && classApp && (
+        <LinkPushModal
+          url={classApp.linkUrl}
+          title={classApp.linkTitle}
+          onClose={() => setLinkClosedNonce(classApp.linkNonce)}
+        />
+      )}
       {showStudentStage && cid && uid && game && (
         <GameStudentStage
           cid={cid}
@@ -245,6 +303,25 @@ function ClassLiveInner() {
           game={game}
           mySub={mySub}
           onOpen={() => setDismissedStage(null)}
+        />
+      )}
+      {/* 빙고: 지금 누구 차례인지 모두에게 알리는 상단 배너(플레이 중 상시) */}
+      {role === "student" &&
+        !!uid &&
+        !!game &&
+        game.status === "play" && (
+          <TurnBanner
+            currentUid={game.turn.currentUid}
+            myUid={uid}
+            memberByUid={memberByUid}
+          />
+        )}
+      {/* 빙고: 내 차례가 막 돌아온 순간 "○○야, 네 차례!" 풀스크린 인트로(1.8초 자동) */}
+      {role === "student" && turnIntroKey > 0 && (
+        <MyTurnIntro
+          key={turnIntroKey}
+          name={myName || user?.displayName || ""}
+          onDone={() => setTurnIntroKey(0)}
         />
       )}
       {/* 학생: 좌하단 오류·의견 보내기 버튼 (어느 학급 화면에서나) */}

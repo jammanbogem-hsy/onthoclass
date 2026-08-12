@@ -215,6 +215,99 @@ export function watchPresent(
   );
 }
 
+// ---------- 클래스앱 콘솔(교안 슬라이드쇼 + 교사 제어) ----------
+// classes/{cid}/control/classapp 한 문서에 집중 잠금 + 링크 모달 상태를 함께 담는다.
+//  · focus : 학생 화면 전체를 덮는 집중 모달(교사가 끌 때까지 유지, 타이머 없음)
+//  · link  : 학생 화면에 띄우는 링크 모달(nonce 가 바뀌면 다시 표시)
+export type ClassAppControl = {
+  focusActive: boolean;
+  focusMessage: string;
+  linkActive: boolean;
+  linkUrl: string;
+  linkTitle: string;
+  linkNonce: number;
+  by: string;
+};
+
+const classAppRef = (cid: string) =>
+  doc(getDbClient(), "classes", cid, "control", "classapp");
+
+/** 집중 잠금 켜기/끄기 — active=true 면 학생 화면을 덮어 활동 차단(교사가 끌 때까지). */
+export async function setFocusLock(
+  cid: string,
+  active: boolean,
+  message: string,
+  by: string
+): Promise<void> {
+  await setDoc(
+    classAppRef(cid),
+    { focusActive: active, focusMessage: message ?? "", by, at: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+/** 학생 화면에 링크 모달 띄우기(nonce 갱신 → 닫았던 학생도 다시 표시). */
+export async function pushLink(
+  cid: string,
+  url: string,
+  title: string,
+  by: string
+): Promise<void> {
+  await setDoc(
+    classAppRef(cid),
+    {
+      linkActive: true,
+      linkUrl: url ?? "",
+      linkTitle: title ?? "",
+      linkNonce: Date.now() + Math.floor(Math.random() * 1000),
+      by,
+      at: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+/** 링크 모달 내리기 */
+export async function clearLink(cid: string, by: string): Promise<void> {
+  await setDoc(
+    classAppRef(cid),
+    { linkActive: false, by, at: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+/** 콘솔 종료 시 모든 제어 해제(집중 잠금·링크) — 학생이 잠긴 채 남지 않도록. */
+export async function clearClassApp(cid: string, by: string): Promise<void> {
+  await setDoc(
+    classAppRef(cid),
+    { focusActive: false, linkActive: false, by, at: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export function watchClassApp(
+  cid: string,
+  cb: (state: ClassAppControl | null) => void
+): () => void {
+  return onSnapshot(
+    classAppRef(cid),
+    (snap) => {
+      if (!snap.exists()) return cb(null);
+      const v = snap.data();
+      cb({
+        focusActive: Boolean(v.focusActive),
+        focusMessage: (v.focusMessage as string) ?? "",
+        linkActive: Boolean(v.linkActive),
+        linkUrl: (v.linkUrl as string) ?? "",
+        linkTitle: (v.linkTitle as string) ?? "",
+        linkNonce: (v.linkNonce as number) ?? 0,
+        by: (v.by as string) ?? "",
+      });
+    },
+    () => cb(null)
+  );
+}
+
 // ---------- 교사 접속 차시(학생에게 "선생님 접속 중" 실시간 표시) ----------
 // classes/{cid}/control/teacherViewing 의 teachers 맵에 교사별 현재 차시를 기록.
 // 교사는 차시 페이지에서 하트비트로 갱신, 떠나면 lid=null 로 비운다. 학생은

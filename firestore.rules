@@ -49,6 +49,20 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 만보 트레이딩 — 시세/캔들 캐시: 로그인 사용자 읽기, 쓰기는 Cloud Function(admin)만.
+    match /tradingPrices/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /tradingCandles/{symbol} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    // 토스 토큰 캐시 + 갱신 스로틀 메타: 클라이언트 접근 전면 금지(admin 전용).
+    match /tradingMeta/{docId} {
+      allow read, write: if false;
+    }
+
     // 읽기전용 공유 지식맵 스냅샷: 링크를 가진 누구나 열람(비로그인 포함),
     // 생성은 교사 계정 본인, 수정/삭제는 소유자만. (학생 식별정보는 저장 시 제거)
     match /shares/{shareId} {
@@ -352,9 +366,21 @@ service cloud.firestore {
       }
 
       // --- 무한 캔버스 (Canvas) ---
+      // 메타(name/pages/schema/groupColorMode/layoutMode)는 교사만 수정 —
+      // 배치 모드(layoutMode: free|grid) 토글도 교사 전용(아래 update 규칙에 포함).
       match /canvas/{docId} {
         allow read: if isMember(classId);
         allow create, update, delete: if isTeacher(classId);
+
+        // 카드/연결(카드별 문서) — 학급 보드는 교사 전용 편집
+        match /nodes/{nodeId} {
+          allow read: if isMember(classId);
+          allow write: if isTeacher(classId);
+        }
+        match /edges/{edgeId} {
+          allow read: if isMember(classId);
+          allow write: if isTeacher(classId);
+        }
 
         // 카드 피드백(댓글/반응): 멤버는 본인 것 작성, 본인/교사 삭제
         match /feedback/{fid} {
@@ -364,6 +390,12 @@ service cloud.firestore {
           allow delete: if isMember(classId)
             && (resource.data.uid == uid() || isTeacher(classId));
         }
+      }
+
+      // --- 이름으로 이어가기: 계정 재연결 감사 로그(서버 admin 기록, 교사 열람) ---
+      match /profileClaims/{claimId} {
+        allow read: if isTeacher(classId);
+        allow write: if false; // claimStudentProfile(admin)만 기록
       }
 
       // --- 게이미피케이션: 학생 경험치(XP) ---
@@ -416,6 +448,25 @@ service cloud.firestore {
         }
       }
 
+      // --- 만보 트레이딩(모의 주식투자) ---
+      // 개장 설정: 멤버 읽기, 교사만 쓰기(config 문서).
+      match /trading/{docId} {
+        allow read: if isMember(classId);
+        allow write: if isTeacher(classId);
+      }
+      // 포지션(보유 주식): 본인 단건 또는 교사만 읽기, 목록은 교사만.
+      // 쓰기는 executeTrade Cloud Function(admin)만 — 자가 조작 차단.
+      match /positions/{studentUid} {
+        allow get: if signedIn() && (studentUid == uid() || isTeacher(classId));
+        allow list: if isTeacher(classId);
+        allow write: if false;
+      }
+      // 체결 내역: 멤버(교사 포함) 읽기, 쓰기는 executeTrade Cloud Function(admin)만.
+      match /trades/{tradeId} {
+        allow read: if isMember(classId);
+        allow write: if false;
+      }
+
       // --- 만보 상점 상품 ---
       match /market/{itemId} {
         allow read: if isMember(classId);
@@ -427,6 +478,14 @@ service cloud.firestore {
       match /purchases/{pid} {
         allow read: if isTeacher(classId)
           || (signedIn() && resource.data.buyerUid == uid());
+        allow create, update, delete: if false;
+      }
+
+      // --- 러닝 크라우드펀딩 ---
+      // 읽기는 멤버 전체(진행상황 실시간 표시). 모든 쓰기(개설·기여·완료·취소)는
+      // Cloud Function(admin)만 — 만보 이동을 서버 트랜잭션으로만 처리.
+      match /fundings/{fid} {
+        allow read: if isMember(classId);
         allow create, update, delete: if false;
       }
 
@@ -613,15 +672,46 @@ service cloud.firestore {
         }
 
         // 차시 보드(캔버스): 멤버(학생+교사) 협업 작성, 삭제는 교사만.
-        // 학생은 협업 필드(카드/연결/이름/페이지)만 수정 — 메타데이터 임의 변경 차단.
+        // 메타(name/pages)만 멤버 수정 허용 — schema/groupColorMode 및 레거시 배열
+        // (nodes/edges)은 교사만(구버전 클라이언트의 전체배열 덮어쓰기·토글 변조 차단).
+        // 카드/연결은 아래 nodes/edges 서브컬렉션에서 카드별 권한으로 관리.
         match /canvas/{docId} {
           allow read: if isMember(classId);
           allow create: if isMember(classId);
+          // 배치 모드(layoutMode)·schema·groupColorMode 는 교사만 —
+          // 멤버는 name/pages/updatedAt 만 수정 가능(layoutMode 제외 → 학생 토글 차단).
           allow update: if isTeacher(classId)
             || (isMember(classId)
               && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['nodes', 'edges', 'name', 'pages', 'updatedAt']));
+                  .hasOnly(['name', 'pages', 'updatedAt']));
           allow delete: if isTeacher(classId);
+
+          // 카드(카드별 문서): 생성은 멤버(협업·레거시 마이그레이션 시드 허용),
+          // 수정/삭제는 작성자 본인 또는 교사만 — authorUid 위조 변경·무주공(authorless)
+          // 카드 탈취를 차단(이전 단일doc 모델보다 강한 보호). 첨부 개수 상한(서버 강제).
+          match /nodes/{nodeId} {
+            allow read: if isMember(classId);
+            allow create: if isMember(classId);
+            // 본인 카드 또는 무주공(authorless·레거시 마이그레이션) 카드만 수정.
+            // authorUid 를 남의 uid 로 바꾸는 위조는 차단(없거나 본인 uid 만 허용).
+            allow update: if isTeacher(classId)
+              || (isMember(classId)
+                && (resource.data.authorUid == uid()
+                    || !('authorUid' in resource.data))
+                && (!('authorUid' in request.resource.data)
+                    || request.resource.data.authorUid == uid())
+                && (!('attachments' in request.resource.data)
+                    || request.resource.data.attachments.size() <= 8));
+            allow delete: if isTeacher(classId)
+              || (isMember(classId)
+                && (resource.data.authorUid == uid()
+                    || !('authorUid' in resource.data)));
+          }
+          // 연결(화살표): 멤버 협업. 카드 삭제 시 참조 엣지를 함께 정리해야 하므로
+          // (다른 학생 소유 카드와 이은 엣지 포함) 멤버에게 관대하게 허용.
+          match /edges/{edgeId} {
+            allow read, create, update, delete: if isMember(classId);
+          }
 
           // 카드 피드백(댓글/반응)
           match /feedback/{fid} {

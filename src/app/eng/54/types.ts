@@ -95,17 +95,27 @@ export const CAN_DO_SUGGESTIONS: string[] = [
   "study",
 ];
 
-/** 핀 입력값 → 교과서식 영어 문장 미리보기 */
+/** 첫 글자가 모음이면 an, 아니면 a (한글 등은 a) */
+function article(word: string): string {
+  const c = word.trim().charAt(0).toLowerCase();
+  return "aeiou".includes(c) ? "an" : "a";
+}
+
+/** 핀 입력값 → 교과서식 영어 문장 미리보기.
+ *  '기타(etc)'는 정해진 영어 명사가 없으므로 학생이 적은 이름을 그대로 명사로 쓴다. */
 export function pinSentence(
   placeType: string,
+  placeName: string,
   canDo: string,
   emotion: string,
   category: PinCategory = "visited"
 ): string {
   const p = PLACE_TYPE_BY_ID[placeType];
   const e = EMOTION_BY_ID[emotion];
+  // 기타면 학생이 적은 이름(영어 권장), 그 외엔 장소 유형의 영어 명사. 둘 다 없으면 "place".
+  const noun = (placeType === "etc" ? placeName.trim() : p?.en) || "place";
   const parts: string[] = [];
-  if (p) parts.push(`There is a ${p.en} in our town.`);
+  parts.push(`There is ${article(noun)} ${noun} in our town.`);
   if (canDo.trim()) parts.push(`You can ${canDo.trim()} there.`);
   if (category === "wish") parts.push(`I want to go there!`);
   if (e) parts.push(`I feel ${e.en}! ${e.emoji}`);

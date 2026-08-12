@@ -87,7 +87,7 @@ export function PinModal({
   if (!open) return null;
 
   const canSave = placeName.trim().length > 0 && canDo.trim().length > 0 && !!emotion && !busy;
-  const sentence = pinSentence(placeType, canDo, emotion, category);
+  const sentence = pinSentence(placeType, placeName, canDo, emotion, category);
   const isWish = category === "wish";
 
   return (
@@ -161,9 +161,14 @@ export function PinModal({
         <input
           value={placeName}
           onChange={(e) => setPlaceName(e.target.value.slice(0, 60))}
-          placeholder="장소 이름 (예: 늘푸른 공원)"
+          placeholder={placeType === "etc" ? "영어로 적어요 (예: library)" : "장소 이름 (예: 늘푸른 공원)"}
           className="m3-field w-full"
         />
+        {placeType === "etc" && (
+          <p className="mt-1 text-xs text-[var(--md-sys-color-primary)]">
+            💡 ‘기타’는 위에 적은 말이 영어 문장에 들어가요 — 영어로 적어 보세요!
+          </p>
+        )}
 
         {/* 2. 할 수 있는 일 */}
         <p className="mt-5 mb-2 text-sm font-bold text-[var(--md-sys-color-on-surface)]">

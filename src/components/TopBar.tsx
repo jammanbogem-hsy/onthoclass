@@ -8,7 +8,14 @@ import { AvatarPicker } from "@/components/AvatarPicker";
 import { NoticeTicker } from "@/components/NoticeTicker";
 import { TypedText } from "@/components/TypedText";
 import { setUserAvatar } from "@/lib/users";
-import { FONTS, getFont, setFont, type FontKey } from "@/lib/fontTheme";
+import {
+  FONTS,
+  FONT_CSS,
+  ensureFontCss,
+  getFont,
+  setFont,
+  type FontKey,
+} from "@/lib/fontTheme";
 
 const FONT_PREVIEW: Record<FontKey, string> = {
   default: "var(--md-sys-font-plain)",
@@ -17,6 +24,9 @@ const FONT_PREVIEW: Record<FontKey, string> = {
   a2z: "A2z, sans-serif",
   maruburi: "MaruBuri, serif",
   cafe24air: "Cafe24SurroundAir, sans-serif",
+  eliceneolli: "'Elice DX Neolli', sans-serif",
+  elicebaeum: "'Elice Digital Baeum', sans-serif",
+  elicecoding: "'Elice Digital Coding', monospace",
 };
 
 export function TopBar() {
@@ -30,6 +40,13 @@ export function TopBar() {
   useEffect(() => {
     setFontState(getFont());
   }, []);
+
+  // 글꼴 메뉴를 연 순간에만 원격 폰트 CSS 를 받아 미리보기를 실제 글꼴로 보여준다
+  // (평소에는 내려받지 않아 첫 로딩 비용 0).
+  useEffect(() => {
+    if (!open) return;
+    for (const k of Object.keys(FONT_CSS) as FontKey[]) ensureFontCss(k);
+  }, [open]);
 
   function pickFont(k: FontKey) {
     setFont(k);

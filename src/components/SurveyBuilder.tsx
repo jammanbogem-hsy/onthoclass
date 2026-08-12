@@ -2,6 +2,7 @@
 
 import { Icon } from "@/components/Icon";
 import { Button, IconButton } from "@/components/ui";
+import { UndoableInput } from "@/components/UndoableInput";
 import type { SurveyItem, SurveyItemType } from "@/lib/lessons";
 
 function newId() {
@@ -127,9 +128,9 @@ export function SurveyBuilder({
             </div>
           </div>
 
-          <input
+          <UndoableInput
             value={it.prompt}
-            onChange={(e) => patch(i, { prompt: e.target.value })}
+            onValueChange={(v) => patch(i, { prompt: v })}
             placeholder="문항 내용 (예: 나는 영어로 자기소개를 할 수 있다)"
             className="m3-field"
           />
@@ -151,12 +152,12 @@ export function SurveyBuilder({
                   <option value={7}>7점</option>
                 </select>
               </label>
-              <input
+              <UndoableInput
                 value={it.scaleLabels?.low ?? ""}
-                onChange={(e) =>
+                onValueChange={(v) =>
                   patch(i, {
                     scaleLabels: {
-                      low: e.target.value,
+                      low: v,
                       high: it.scaleLabels?.high ?? "",
                     },
                   })
@@ -164,13 +165,13 @@ export function SurveyBuilder({
                 placeholder="낮음 라벨 (예: 전혀 아니다)"
                 className="m3-field !w-40"
               />
-              <input
+              <UndoableInput
                 value={it.scaleLabels?.high ?? ""}
-                onChange={(e) =>
+                onValueChange={(v) =>
                   patch(i, {
                     scaleLabels: {
                       low: it.scaleLabels?.low ?? "",
-                      high: e.target.value,
+                      high: v,
                     },
                   })
                 }
@@ -185,12 +186,12 @@ export function SurveyBuilder({
               {(it.options ?? []).map((opt, oi) => (
                 <div key={oi} className="flex items-center gap-1.5">
                   <span className="text-xs text-black/35">{oi + 1}.</span>
-                  <input
+                  <UndoableInput
                     value={opt}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       patch(i, {
                         options: (it.options ?? []).map((o, k) =>
-                          k === oi ? e.target.value : o
+                          k === oi ? v : o
                         ),
                       })
                     }

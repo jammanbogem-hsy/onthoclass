@@ -172,6 +172,49 @@ export async function completeTeacherOnboarding(
   }
 }
 
+export type ClaimableStudent = { id: string; name: string; photoURL: string };
+
+/** 학급 코드로 그 반의 학생 명단 조회(이름으로 이어가기 선택용). */
+export async function listClaimableStudents(code: string): Promise<{
+  classId: string;
+  className: string;
+  students: ClaimableStudent[];
+}> {
+  const fn = httpsCallable<
+    { code: string },
+    { classId: string; className: string; students: ClaimableStudent[] }
+  >(getFunctionsClient(), "listClaimableStudents");
+  const res = await fn({ code: code.trim() });
+  return res.data;
+}
+
+/** 이름으로 이어가기 — 기존 학생 프로필(fromUid)의 데이터를 현재 계정으로 인계. */
+export async function claimStudentProfile(
+  code: string,
+  fromUid: string
+): Promise<{ classId: string }> {
+  const fn = httpsCallable<
+    { code: string; fromUid: string },
+    { ok: true; classId: string }
+  >(getFunctionsClient(), "claimStudentProfile");
+  const res = await fn({ code: code.trim(), fromUid });
+  return { classId: res.data.classId };
+}
+
+/** 교사용: 한 학급의 두 학생 프로필 합치기(fromUid 데이터를 toUid 로 병합 후 중복 제거). */
+export async function mergeStudentProfiles(
+  classId: string,
+  fromUid: string,
+  toUid: string
+): Promise<{ moved: Record<string, number>; errors: string[] }> {
+  const fn = httpsCallable<
+    { classId: string; fromUid: string; toUid: string },
+    { ok: true; moved: Record<string, number>; errors: string[] }
+  >(getFunctionsClient(), "mergeStudentProfiles");
+  const res = await fn({ classId, fromUid, toUid });
+  return { moved: res.data.moved, errors: res.data.errors };
+}
+
 /** 학생 회원가입 — 이름 + 학급 코드. 서버(Cloud Function)에서 코드 매칭+멤버 등록. */
 export async function completeStudentOnboarding(
   _user: User,

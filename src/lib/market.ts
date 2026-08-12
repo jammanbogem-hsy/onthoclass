@@ -160,6 +160,20 @@ export async function buyMarketItem(
   }
 }
 
+/** 구매 환불(구매 취소 + 만보 반환) — 교사만. 서버 함수가 원자 처리. */
+export async function refundPurchase(cid: string, pid: string): Promise<void> {
+  try {
+    const fn = httpsCallable<{ cid: string; pid: string }, { ok: true; balance: number }>(
+      getFunctionsClient(),
+      "refundPurchase"
+    );
+    await fn({ cid, pid });
+  } catch (err) {
+    const msg = (err as { message?: string })?.message;
+    throw new Error(msg || "환불에 실패했습니다.");
+  }
+}
+
 // ---------- 구매 내역 ----------
 export type Purchase = {
   id: string;
@@ -169,6 +183,8 @@ export type Purchase = {
   buyerUid: string;
   buyerName: string;
   at: number | null;
+  /** 펀딩(공동구매)로 획득한 구매 — 개인 만보 차감이 아닌 공동 모금으로 결제됨 */
+  funded: boolean;
 };
 
 function mapPurchase(id: string, v: Record<string, unknown>): Purchase {
@@ -181,6 +197,7 @@ function mapPurchase(id: string, v: Record<string, unknown>): Purchase {
     buyerUid: (v.buyerUid as string) ?? "",
     buyerName: (v.buyerName as string) ?? "",
     at: ts?.toMillis ? ts.toMillis() : null,
+    funded: (v.funded as boolean) ?? false,
   };
 }
 

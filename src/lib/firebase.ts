@@ -37,6 +37,9 @@ function app(): FirebaseApp {
 }
 
 export function getAuthClient(): Auth {
+  // getAuth 는 기본으로 IndexedDB 우선 지속성(브라우저 재시작 후에도 로그인 유지) +
+  // 팝업 리졸버(signInWithPopup)를 모두 등록한다. initializeAuth 로 커스터마이즈하면
+  // popupRedirectResolver 를 직접 넘기지 않는 한 Google 팝업 로그인이 깨지므로 getAuth 사용.
   if (!_auth) _auth = getAuth(app());
   return _auth;
 }

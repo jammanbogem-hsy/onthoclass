@@ -23,6 +23,8 @@ import {
   type ClassGroup,
 } from "@/lib/classes";
 import { studentOpenCount } from "@/lib/lessons";
+import { countApprovedPraises } from "@/lib/praise";
+import { listAllPositions, watchTradingPrices, type TradingPrices } from "@/lib/trading";
 import { watchXp, watchQuests, xpLevel, type Quest } from "@/lib/xp";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
@@ -50,6 +52,14 @@ export default function DashboardPage() {
   const dialog = useDialog();
   const [classes, setClasses] = useState<ClassRoom[] | null>(null);
   const [groups, setGroups] = useState<ClassGroup[]>([]);
+  // 학급별 승인 칭찬 수(교사 한눈에 보기) — 서버 집계로 1회 조회. cid→count.
+  const [praiseCounts, setPraiseCounts] = useState<Record<string, number>>({});
+  // 학급별 만보 트레이딩 포지션(교사 한눈에 보기) — 학급 목록이 바뀔 때 1회씩 조회. cid→포지션 목록.
+  const [tradingPositions, setTradingPositions] = useState<
+    Record<string, Array<{ uid: string; holdings: Record<string, { qty: number; avgCost: number }>; realized: number }>>
+  >({});
+  // 시세는 전역 문서 1개 — 대시보드 마운트 동안 구독 유지, 학급별 평가액 계산에 재사용.
+  const [tradingPrices, setTradingPrices] = useState<TradingPrices | null>(null);
   const [openId, setOpenId] = useState<string | null>(null); // Finder식: 열린 폴더
   const [moveFor, setMoveFor] = useState<ClassRoom | null>(null);
   const [colorFor, setColorFor] = useState<ClassRoom | null>(null);
@@ -180,6 +190,79 @@ export default function DashboardPage() {
     if (user) refresh();
   }, [user, refresh]);
 
+  // 학급별 칭찬 수 조회(교사) — 학급 목록이 바뀌면 서버 집계로 1회씩. 권한 없는 반은 건너뜀.
+  useEffect(() => {
+    if (!isTeacher || !classes || classes.length === 0) return;
+    let alive = true;
+    Promise.all(
+      classes.map(
+        async (c) =>
+          [c.id, await countApprovedPraises(c.id).catch(() => -1)] as const
+      )
+    ).then((pairs) => {
+      if (!alive) return;
+      const m: Record<string, number> = {};
+      for (const [id, n] of pairs) if (n >= 0) m[id] = n;
+      setPraiseCounts(m);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [isTeacher, classes]);
+
+  // 학급별 트레이딩 포지션(교사 한눈에 보기) — 학급 목록이 바뀌면 1회씩. 실시간 시세는 별도 구독.
+  useEffect(() => {
+    if (!isTeacher || !classes || classes.length === 0) return;
+    let alive = true;
+    Promise.all(
+      classes.map(
+        async (c) => [c.id, await listAllPositions(c.id).catch(() => [])] as const
+      )
+    ).then((pairs) => {
+      if (!alive) return;
+      const m: Record<string, (typeof pairs)[number][1]> = {};
+      for (const [id, list] of pairs) m[id] = list;
+      setTradingPositions(m);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [isTeacher, classes]);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    return watchTradingPrices(setTradingPrices);
+  }, [isTeacher]);
+
+  // 학급별 트레이딩 요약(참여 인원·총 평가액·전체 손익) — 포지션·시세가 바뀌면 재계산.
+  const tradingSummaries = (() => {
+    const stocks = tradingPrices?.stocks ?? {};
+    const out: Record<string, { participants: number; totalValue: number; totalPnl: number }> = {};
+    for (const [cid, list] of Object.entries(tradingPositions)) {
+      let participants = 0;
+      let totalValue = 0;
+      let totalPnl = 0;
+      for (const p of list) {
+        let value = 0;
+        let cost = 0;
+        let held = false;
+        for (const [symbol, h] of Object.entries(p.holdings)) {
+          if (!h || h.qty <= 0) continue;
+          held = true;
+          const mb = stocks[symbol]?.mbPrice ?? h.avgCost;
+          value += mb * h.qty;
+          cost += h.avgCost * h.qty;
+        }
+        if (!held && p.realized === 0) continue;
+        participants++;
+        totalValue += value;
+        totalPnl += p.realized + (value - cost);
+      }
+      if (participants > 0) out[cid] = { participants, totalValue, totalPnl };
+    }
+    return out;
+  })();
+
   if (loading || !user || profileLoading || !profile?.role) {
     return (
       <main className="flex flex-1 items-center justify-center">
@@ -243,6 +326,38 @@ export default function DashboardPage() {
             SUBJECT_GRADIENTS[c.colorIndex % SUBJECT_GRADIENTS.length]
           }`}
         />
+        {isTeacher && praiseCounts[c.id] !== undefined && (
+          <button
+            type="button"
+            title="이 학급의 승인된 칭찬 수 · 눌러서 칭찬왕 보기"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              router.push(`/class-dashboard/?id=${c.id}`);
+            }}
+            className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2.5 py-1 text-xs font-bold text-[var(--md-sys-color-primary)] shadow-sm transition hover:bg-[var(--md-sys-color-surface-container-high)]"
+          >
+            <Icon name="favorite" size={13} fill />
+            칭찬 {praiseCounts[c.id]}
+          </button>
+        )}
+        {isTeacher && tradingSummaries[c.id] && (
+          <button
+            type="button"
+            title="이 학급의 만보 트레이딩 참여 현황 · 눌러서 자세히 보기"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              router.push(`/class-admin/?id=${c.id}&openTrading=1`);
+            }}
+            className={`absolute left-3 inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2.5 py-1 text-xs font-bold text-[var(--md-sys-color-primary)] shadow-sm transition hover:bg-[var(--md-sys-color-surface-container-high)] ${
+              isTeacher && praiseCounts[c.id] !== undefined ? "top-11" : "top-3"
+            }`}
+          >
+            <Icon name="candlestick_chart" size={13} />
+            트레이딩 {tradingSummaries[c.id].participants}명
+          </button>
+        )}
         {isTeacher && (
           <div className="absolute right-3 top-3 flex gap-1">
             <button
@@ -451,6 +566,21 @@ export default function DashboardPage() {
                               className="text-[var(--md-sys-color-on-surface)] opacity-70"
                             />
                           </div>
+                          {(() => {
+                            const sum = g.classIds.reduce(
+                              (s, id) => s + (praiseCounts[id] ?? 0),
+                              0
+                            );
+                            return sum > 0 ? (
+                              <span
+                                title="이 폴더 학급들의 승인된 칭찬 합계"
+                                className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2.5 py-1 text-xs font-bold text-[var(--md-sys-color-primary)] shadow-sm"
+                              >
+                                <Icon name="favorite" size={13} fill />
+                                칭찬 {sum}
+                              </span>
+                            ) : null;
+                          })()}
                           <div className="absolute right-3 top-3 flex gap-1">
                             <button
                               type="button"

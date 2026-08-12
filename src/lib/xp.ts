@@ -428,17 +428,23 @@ export async function requestClassXp(
     0,
     Math.min(XP_REQ_CAP, Math.floor(input.points ?? Math.ceil(score / 3)))
   );
-  await setDoc(doc(xpReqCol(cid), xpReqId(input.activity, uid)), {
-    uid,
-    activity: input.activity,
-    label: input.label ?? input.activity,
-    score,
-    points,
-    reason: input.reason ?? "",
-    studentName: input.studentName ?? "",
-    status: "pending",
-    createdAt: serverTimestamp(),
-  });
+  // merge: true — 재요청 시에도 '누적 지급액(grantedPoints)'은 보존한다.
+  // 이미 지급된 만큼은 다시 지급되지 않도록(이중 지급 차단) decideXpRequest 가 델타만 지급.
+  await setDoc(
+    doc(xpReqCol(cid), xpReqId(input.activity, uid)),
+    {
+      uid,
+      activity: input.activity,
+      label: input.label ?? input.activity,
+      score,
+      points,
+      reason: input.reason ?? "",
+      studentName: input.studentName ?? "",
+      status: "pending",
+      createdAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }
 
 function toXpRequest(id: string, v: Record<string, unknown>): XpRequest {
@@ -514,20 +520,24 @@ export async function decideXpRequest(
     const s = await tx.get(reqRef);
     if (!s.exists()) return;
     const d = s.data();
-    if (d.status !== "pending") return; // 이미 처리됨 → 멱등(중복지급 방지)
-    const points = Math.max(
+    // 요청액(서버 재클램프)에서 '이미 지급한 누계(grantedPoints)'를 뺀 차액만 지급한다.
+    // → 같은 요청을 다시 승인하거나(status 리셋 등) 어떤 경로로 재처리돼도 누계가
+    //   요청액을 넘지 않아 '30이 10번' 같은 이중/과지급이 원천 차단된다(불변식).
+    const requested = Math.max(
       0,
       Math.min(XP_REQ_CAP, Math.floor((d.points as number) || 0))
     );
+    const already = Math.max(0, Math.floor((d.grantedPoints as number) || 0));
+    const delta = Math.max(0, requested - already);
     const label = (d.label as string) || (d.activity as string) || "활동";
-    if (points > 0) {
+    if (delta > 0) {
       tx.set(
         xpRef,
-        { uid: req.uid, xp: increment(points), updatedAt: serverTimestamp() },
+        { uid: req.uid, xp: increment(delta), updatedAt: serverTimestamp() },
         { merge: true }
       );
       tx.set(logRef, {
-        amount: points,
+        amount: delta,
         reason: `활동 보상: ${label}`,
         by,
         at: serverTimestamp(),
@@ -536,20 +546,20 @@ export async function decideXpRequest(
         mRef,
         {
           uid: req.uid,
-          balance: increment(points),
-          earned: increment(points),
+          balance: increment(delta),
+          earned: increment(delta),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
       tx.set(mLogRef, {
         type: "earn",
-        amount: points,
+        amount: delta,
         reason: `활동 보상: ${label}`,
         by,
         at: serverTimestamp(),
       });
     }
-    tx.update(reqRef, { status: "granted" });
+    tx.update(reqRef, { status: "granted", grantedPoints: already + delta });
   });
 }

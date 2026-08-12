@@ -32,23 +32,36 @@ function doUpload(
 }
 
 /**
- * 이미지 파일들을 기존 첨부에 이어 업로드(최대 MAX_ATTACHMENTS). 파일 선택·
- * 클립보드 붙여넣기 등 어디서든 재사용. 이미지가 아니거나 한도 초과분은 건너뛴다.
+ * 이미지 파일들을 업로드해 "새로 추가된 첨부만" 반환(최대 room 개). 이미지가
+ * 아니거나 한도 초과분은 건너뛴다. 호출부가 최신 배열에 머지(arrayUnion 등)하도록
+ * 델타만 돌려준다 — stale 한 전체배열 덮어쓰기를 피한다.
+ */
+export async function uploadImages(
+  target: UploadTarget,
+  files: File[],
+  room: number
+): Promise<Attachment[]> {
+  const added: Attachment[] = [];
+  for (const f of files) {
+    if (added.length >= room) break;
+    if (!f.type.startsWith("image/")) continue;
+    added.push(
+      await doUpload(target, { type: "image", data: f, name: f.name || "사진" })
+    );
+  }
+  return added;
+}
+
+/**
+ * (구) 전체배열 반환 버전 — 단일 사용자 로컬 state 용 호환 유지.
  */
 export async function uploadImageFiles(
   target: UploadTarget,
   files: File[],
   existing: Attachment[]
 ): Promise<Attachment[]> {
-  const next = [...existing];
-  for (const f of files) {
-    if (next.length >= MAX_ATTACHMENTS) break;
-    if (!f.type.startsWith("image/")) continue;
-    next.push(
-      await doUpload(target, { type: "image", data: f, name: f.name || "사진" })
-    );
-  }
-  return next;
+  const room = Math.max(0, MAX_ATTACHMENTS - existing.length);
+  return [...existing, ...(await uploadImages(target, files, room))];
 }
 
 /**
@@ -59,13 +72,23 @@ export function AttachmentField({
   target,
   value,
   onChange,
+  onAdd,
+  onRemove,
+  onRecordingChange,
   disabled,
   compact,
   imageLayout,
 }: {
   target: UploadTarget;
   value: Attachment[];
-  onChange: (next: Attachment[]) => void;
+  /** 전체배열 치환(단일 소유 로컬 state 용). onAdd/onRemove 가 있으면 그쪽 우선. */
+  onChange?: (next: Attachment[]) => void;
+  /** 델타 추가(공유 doc 용 — arrayUnion 등 원자 머지). */
+  onAdd?: (added: Attachment[]) => void;
+  /** 델타 삭제(공유 doc 용 — arrayRemove). */
+  onRemove?: (att: Attachment) => void;
+  /** 녹음 시작/종료 알림(부모가 해당 카드를 shield 하도록). */
+  onRecordingChange?: (recording: boolean) => void;
   disabled?: boolean;
   compact?: boolean;
   imageLayout?: "thumb" | "full";
@@ -81,12 +104,44 @@ export function AttachmentField({
   const startedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 비동기 콜백(rec.onstop, 업로드 완료)이 항상 "최신" 첨부/핸들러를 보도록 ref 미러.
+  // → 캡처된 stale value 로 전체배열을 덮어써 녹음/사진이 사라지던 버그 차단.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const handlersRef = useRef({ onChange, onAdd, onRemove });
+  handlersRef.current = { onChange, onAdd, onRemove };
+  const recChangeRef = useRef(onRecordingChange);
+  recChangeRef.current = onRecordingChange;
+
+  const commitAdd = (added: Attachment[]) => {
+    if (added.length === 0) return;
+    const h = handlersRef.current;
+    if (h.onAdd) h.onAdd(added);
+    else h.onChange?.([...valueRef.current, ...added]);
+  };
+  const commitRemove = (att: Attachment) => {
+    const h = handlersRef.current;
+    if (h.onRemove) h.onRemove(att);
+    else h.onChange?.(valueRef.current.filter((a) => a.id !== att.id));
+  };
+
   const full = value.length >= MAX_ATTACHMENTS;
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      recRef.current?.stream.getTracks().forEach((t) => t.stop());
+      const rec = recRef.current;
+      // 녹음 중 언마운트(페이지/보드 전환, 연결모드 등): 가능하면 저장(onstop)하고
+      // 부모 shield 를 반드시 해제(stuck 방지). onstop 미발화로 보호가 남는 문제 차단.
+      if (rec && rec.state !== "inactive") {
+        try {
+          rec.stop();
+        } catch {
+          /* noop */
+        }
+      }
+      rec?.stream.getTracks().forEach((t) => t.stop());
+      recChangeRef.current?.(false);
     };
   }, []);
 
@@ -95,7 +150,8 @@ export function AttachmentField({
     setErr("");
     setBusy(true);
     try {
-      onChange(await uploadImageFiles(target, Array.from(files), value));
+      const room = Math.max(0, MAX_ATTACHMENTS - valueRef.current.length);
+      commitAdd(await uploadImages(target, Array.from(files), room));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "사진 업로드에 실패했습니다.");
     } finally {
@@ -139,17 +195,19 @@ export function AttachmentField({
             })}`,
             durationMs,
           });
-          onChange([...value, att]);
+          commitAdd([att]);
         } catch (e) {
           setErr(e instanceof Error ? e.message : "음성 업로드에 실패했습니다.");
         } finally {
           setBusy(false);
+          onRecordingChange?.(false);
         }
       };
       recRef.current = rec;
       startedRef.current = Date.now();
       rec.start();
       setRecording(true);
+      onRecordingChange?.(true); // 부모가 이 카드를 shield(원격 덮어쓰기 차단)
       setElapsed(0);
       timerRef.current = setInterval(() => {
         const s = Math.floor((Date.now() - startedRef.current) / 1000);
@@ -184,7 +242,7 @@ export function AttachmentField({
   }
 
   async function remove(att: Attachment) {
-    onChange(value.filter((a) => a.id !== att.id));
+    commitRemove(att);
     await deleteAttachment(att);
   }
 

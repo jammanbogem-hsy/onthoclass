@@ -5,7 +5,10 @@ export type FontKey =
   | "paperozi"
   | "a2z"
   | "maruburi"
-  | "cafe24air";
+  | "cafe24air"
+  | "eliceneolli"
+  | "elicebaeum"
+  | "elicecoding";
 
 export const FONTS: { key: FontKey; label: string; sample: string }[] = [
   { key: "default", label: "기본", sample: "가나다 ABC" },
@@ -14,7 +17,20 @@ export const FONTS: { key: FontKey; label: string; sample: string }[] = [
   { key: "a2z", label: "에이투지", sample: "가나다 ABC" },
   { key: "maruburi", label: "마루 부리", sample: "가나다 ABC" },
   { key: "cafe24air", label: "카페24 에어", sample: "가나다 ABC" },
+  { key: "eliceneolli", label: "엘리스 DX 네올리", sample: "가나다 ABC" },
+  { key: "elicebaeum", label: "엘리스 디지털배움", sample: "가나다 ABC" },
+  { key: "elicecoding", label: "엘리스 디지털코딩", sample: "가나다 ABC" },
 ];
+
+/* 원격 폰트 CSS — 선택했을 때만 <link> 로 주입한다.
+   엘리스 폰트 CSS 는 한글 subset(unicode-range) 정의가 많아 200~300KB 라,
+   globals.css 에 넣거나 무조건 <head> 에 걸면 안 쓰는 사용자까지 비용을 낸다.
+   (반대로 subset 덕분에 실제 woff2 는 화면에 쓰인 글자 범위만 내려받는다.) */
+export const FONT_CSS: Partial<Record<FontKey, string>> = {
+  eliceneolli: "https://font.elice.io/css?family=Elice+DX+Neolli",
+  elicebaeum: "https://font.elice.io/css?family=Elice+Digital+Baeum",
+  elicecoding: "https://font.elice.io/css?family=Elice+Digital+Coding",
+};
 
 const KEY = "jamfont:v1";
 
@@ -34,13 +50,30 @@ export function setFont(key: FontKey): void {
   applyFont(key);
 }
 
+/** 원격 폰트 CSS 를 1회만 <head> 에 주입 (중복 방지) */
+export function ensureFontCss(key: FontKey): void {
+  if (typeof document === "undefined") return;
+  const href = FONT_CSS[key];
+  if (!href) return;
+  if (document.querySelector(`link[data-font-css="${key}"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  link.setAttribute("data-font-css", key);
+  document.head.appendChild(link);
+}
+
 /** <html> 에 data-font 적용(기본은 속성 제거). */
 export function applyFont(key: FontKey): void {
   if (typeof document === "undefined") return;
+  ensureFontCss(key);
   const el = document.documentElement;
   if (key === "default") el.removeAttribute("data-font");
   else el.setAttribute("data-font", key);
 }
 
-/** FOUC 방지: 하이드레이션 전에 <head> 인라인으로 실행할 스크립트 문자열. */
-export const FONT_INIT_SCRIPT = `(function(){try{var v=localStorage.getItem('${KEY}');if(v&&v!=='default'){document.documentElement.setAttribute('data-font',v);}}catch(e){}})();`;
+/** FOUC 방지: 하이드레이션 전에 <head> 인라인으로 실행할 스크립트 문자열.
+ *  원격 CSS 가 필요한 폰트는 여기서 <link> 까지 미리 걸어 둔다. */
+export const FONT_INIT_SCRIPT = `(function(){try{var C=${JSON.stringify(
+  FONT_CSS
+)};var v=localStorage.getItem('${KEY}');if(v&&v!=='default'){document.documentElement.setAttribute('data-font',v);if(C[v]){var l=document.createElement('link');l.rel='stylesheet';l.href=C[v];l.setAttribute('data-font-css',v);document.head.appendChild(l);}}}catch(e){}})();`;

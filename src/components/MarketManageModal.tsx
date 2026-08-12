@@ -10,12 +10,19 @@ import {
   copyMarketItemsToClasses,
   createMarketItem,
   deleteMarketItem,
+  refundPurchase,
   updateMarketItem,
   watchMarketItems,
   watchPurchases,
   type MarketItem,
   type Purchase,
 } from "@/lib/market";
+import {
+  cancelFunding,
+  watchFundings,
+  type Funding,
+  type FundingStatus,
+} from "@/lib/funding";
 import {
   listMembers,
   listMyClasses,
@@ -37,10 +44,48 @@ export function MarketManageModal({
   user: User;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"items" | "purchases">("items");
+  const [tab, setTab] = useState<"items" | "purchases" | "fundings">("items");
   const [items, setItems] = useState<MarketItem[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [fundings, setFundings] = useState<Funding[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [refunding, setRefunding] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState<string | null>(null);
+
+  async function handleRefund(p: Purchase) {
+    const who = resolveStudentName(members, p.buyerUid, p.buyerName);
+    if (
+      !confirm(
+        `${who} 님의 "${p.title}" 구매를 환불할까요?\n구매가 취소되고 ${p.price.toLocaleString()} 만보가 학생에게 돌아갑니다.`
+      )
+    )
+      return;
+    setRefunding(p.id);
+    try {
+      await refundPurchase(cid, p.id);
+    } catch (e) {
+      alert((e as Error)?.message || "환불에 실패했습니다.");
+    } finally {
+      setRefunding(null);
+    }
+  }
+
+  async function handleCancelFunding(f: Funding) {
+    if (
+      !confirm(
+        `"${f.title}" 펀딩을 취소·환불할까요?\n모인 ${f.raised.toLocaleString()} 만보가 참여한 학생 모두에게 돌아갑니다.`
+      )
+    )
+      return;
+    setCanceling(f.id);
+    try {
+      await cancelFunding(cid, f.id);
+    } catch (e) {
+      alert((e as Error)?.message || "펀딩 취소에 실패했습니다.");
+    } finally {
+      setCanceling(null);
+    }
+  }
 
   useEffect(() => {
     listMembers(cid).then(setMembers).catch(() => {});
@@ -49,9 +94,11 @@ export function MarketManageModal({
   useEffect(() => {
     const off1 = watchMarketItems(cid, setItems);
     const off2 = watchPurchases(cid, setPurchases);
+    const off3 = watchFundings(cid, setFundings);
     return () => {
       off1();
       off2();
+      off3();
     };
   }, [cid]);
 
@@ -85,6 +132,7 @@ export function MarketManageModal({
             [
               ["items", `상품 관리 ${items.length}`],
               ["purchases", `구매 내역 ${purchases.length}`],
+              ["fundings", `펀딩 ${fundings.length}`],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -119,7 +167,8 @@ export function MarketManageModal({
               </>
             )}
           </div>
-        ) : purchases.length === 0 ? (
+        ) : tab === "purchases" ? (
+          purchases.length === 0 ? (
           <p className="px-6 py-12 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
             아직 구매 내역이 없어요.
           </p>
@@ -148,12 +197,160 @@ export function MarketManageModal({
                 <span className="shrink-0 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2.5 py-1 text-xs font-bold text-[var(--md-sys-color-on-tertiary-container)]">
                   {p.price.toLocaleString()} 만보
                 </span>
+                <button
+                  onClick={() => handleRefund(p)}
+                  disabled={refunding === p.id}
+                  className="shrink-0 rounded-full border border-[var(--md-sys-color-error)] px-3 py-1 text-xs font-bold text-[var(--md-sys-color-error)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-error)_8%,transparent)] disabled:opacity-40"
+                  title="구매 취소 + 만보 반환"
+                >
+                  {refunding === p.id ? "환불 중…" : "환불"}
+                </button>
               </li>
             ))}
           </ul>
+          )
+        ) : (
+          <FundingAdminList
+            fundings={fundings}
+            members={members}
+            canceling={canceling}
+            onCancel={handleCancelFunding}
+          />
         )}
       </div>
     </div>
+  );
+}
+
+// ---------- 펀딩 관리(교사) — 전체 목록 + 취소·환불 ----------
+const FUNDING_BADGE: Record<
+  FundingStatus,
+  { label: string; cls: string }
+> = {
+  open: {
+    label: "모금중",
+    cls: "bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]",
+  },
+  reached: {
+    label: "목표달성",
+    cls: "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]",
+  },
+  completed: {
+    label: "완료",
+    cls: "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]",
+  },
+  cancelled: {
+    label: "취소",
+    cls: "bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)]",
+  },
+};
+
+function FundingAdminList({
+  fundings,
+  members,
+  canceling,
+  onCancel,
+}: {
+  fundings: Funding[];
+  members: Member[];
+  canceling: string | null;
+  onCancel: (f: Funding) => void;
+}) {
+  if (fundings.length === 0) {
+    return (
+      <p className="px-6 py-12 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
+        아직 개설된 펀딩이 없어요.
+      </p>
+    );
+  }
+  return (
+    <ul className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-5">
+      {fundings.map((f) => {
+        const badge = FUNDING_BADGE[f.status];
+        const pct =
+          f.goal > 0 ? Math.min(100, Math.round((f.raised / f.goal) * 100)) : 0;
+        const canCancel = f.status === "open" || f.status === "reached";
+        return (
+          <li
+            key={f.id}
+            className="flex flex-col gap-2.5 rounded-2xl bg-[var(--md-sys-color-surface-container)] p-4"
+          >
+            <div className="flex items-center gap-3">
+              {f.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={f.imageUrl}
+                  alt=""
+                  className="h-11 w-11 shrink-0 rounded-xl object-cover ring-1 ring-[var(--md-sys-color-outline-variant)]"
+                />
+              ) : (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)]">
+                  <Icon name="savings" size={20} />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-1.5 font-bold leading-tight">
+                  <span className="truncate">{f.title}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-extrabold ${badge.cls}`}
+                  >
+                    {badge.label}
+                  </span>
+                </p>
+                <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                  <span className="font-semibold">
+                    {resolveStudentName(members, f.creatorUid, f.creatorName)}
+                  </span>{" "}
+                  개설
+                </p>
+              </div>
+              <span className="shrink-0 text-sm font-extrabold text-[var(--md-sys-color-primary)]">
+                {f.raised.toLocaleString()}
+                <span className="font-bold text-[var(--md-sys-color-on-surface-variant)]">
+                  /{f.goal.toLocaleString()}
+                </span>
+              </span>
+            </div>
+
+            {/* 진행 바 */}
+            <div className="h-2 w-full overflow-hidden rounded-full bg-black/10">
+              <div
+                className="h-full rounded-full bg-[var(--md-sys-color-primary)]"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+
+            {/* 참여자 명단(이름 + 금액) */}
+            {f.contribs.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {f.contribs.map((c) => (
+                  <span
+                    key={c.uid}
+                    className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2.5 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface)]"
+                  >
+                    {resolveStudentName(members, c.uid, c.name)}
+                    <span className="font-extrabold">
+                      {c.amount.toLocaleString()}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {canCancel && (
+              <button
+                onClick={() => onCancel(f)}
+                disabled={canceling === f.id}
+                className="self-start rounded-full border border-[var(--md-sys-color-error)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-error)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-error)_8%,transparent)] disabled:opacity-40"
+                title="펀딩 취소 + 참여자 전원 만보 반환"
+              >
+                {canceling === f.id ? "취소 중…" : "취소·환불"}
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

@@ -13,6 +13,7 @@ import { watchQuests, watchXp, xpLevel, type Quest } from "@/lib/xp";
 import { BADGE_CATALOG, watchAllBadges, type BadgeMap } from "@/lib/badges";
 import { watchPraises, watchThermometer, type Praise } from "@/lib/praise";
 import { resolveStudentName } from "@/lib/names";
+import { TradingAdminModal } from "@/components/TradingAdminModal";
 import {
   listLessons,
   listQuestions,
@@ -64,6 +65,60 @@ function StatCard({
   );
 }
 
+/** 칭찬 순위 카드(보낸/받은) — 상위 학생을 메달과 함께. 누르면 개별 상세를 연다. */
+function PraiseRankCard({
+  title,
+  emoji,
+  rows,
+  metric,
+  onPick,
+}: {
+  title: string;
+  emoji: string;
+  rows: { m: Member; praiseSent: number; praiseRecv: number }[];
+  metric: "sent" | "recv";
+  onPick: (uid: string) => void;
+}) {
+  return (
+    <GlassCard className="p-4">
+      <p className="mb-2.5 flex items-center gap-1.5 text-sm font-bold">
+        <span aria-hidden>{emoji}</span> {title}
+      </p>
+      {rows.length === 0 ? (
+        <p className="py-4 text-center text-xs text-black/40">아직 없어요.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {rows.map((r, i) => (
+            <li key={r.m.uid}>
+              <button
+                onClick={() => onPick(r.m.uid)}
+                className="flex w-full items-center gap-2.5 rounded-xl bg-[var(--md-sys-color-surface-container)] px-2.5 py-2 text-left transition hover:bg-[var(--md-sys-color-surface-container-high)]"
+              >
+                <span className="w-6 shrink-0 text-center">
+                  {i < 3 ? (
+                    <span className="text-base">{["🥇", "🥈", "🥉"][i]}</span>
+                  ) : (
+                    <span className="text-xs font-bold text-black/40">
+                      {i + 1}
+                    </span>
+                  )}
+                </span>
+                <Avatar m={r.m} size={32} />
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {r.m.displayName}
+                </span>
+                <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-bold text-[var(--md-sys-color-on-primary-container)]">
+                  {metric === "sent" ? r.praiseSent : r.praiseRecv}회
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </GlassCard>
+  );
+}
+
 function ClassDashboardInner() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -82,6 +137,7 @@ function ClassDashboardInner() {
   const [actLoading, setActLoading] = useState(true);
   const [selUid, setSelUid] = useState<string | null>(null);
   const [praiseTab, setPraiseTab] = useState<"recv" | "sent">("recv");
+  const [showTrading, setShowTrading] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -204,6 +260,24 @@ function ClassDashboardInner() {
         )
       : 0;
 
+  // 칭찬왕 — 칭찬을 많이 보낸/받은 학생 상위 5명(교사가 직접 칭찬·피드백하도록)
+  const topSenders = useMemo(
+    () =>
+      [...rows]
+        .filter((r) => r.praiseSent > 0)
+        .sort((a, b) => b.praiseSent - a.praiseSent)
+        .slice(0, 5),
+    [rows]
+  );
+  const topReceivers = useMemo(
+    () =>
+      [...rows]
+        .filter((r) => r.praiseRecv > 0)
+        .sort((a, b) => b.praiseRecv - a.praiseRecv)
+        .slice(0, 5),
+    [rows]
+  );
+
   if (loading || !user || !cid) {
     return (
       <main className="flex flex-1 items-center justify-center">
@@ -241,14 +315,23 @@ function ClassDashboardInner() {
           학급
         </button>
 
-        <h1 className="mb-5 flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
-          <Icon
-            name="insights"
-            size={26}
-            className="text-[var(--md-sys-color-primary)]"
-          />
-          학급 대시보드
-        </h1>
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
+            <Icon
+              name="insights"
+              size={26}
+              className="text-[var(--md-sys-color-primary)]"
+            />
+            학급 대시보드
+          </h1>
+          <button
+            onClick={() => setShowTrading(true)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-secondary-container)] px-4 py-2 text-sm font-bold text-[var(--md-sys-color-on-secondary-container)] transition hover:brightness-[0.97]"
+          >
+            <Icon name="candlestick_chart" size={18} />
+            트레이딩 관리
+          </button>
+        </div>
 
         {/* 학급 종합 */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -271,6 +354,41 @@ function ClassDashboardInner() {
         </div>
 
         <ClassThermometer degree={degree} />
+
+        {/* 칭찬왕 — 많이 주고받은 학생을 교사가 알아보고 직접 칭찬·피드백.
+            표시할 학생이 실제로 있을 때만(탈퇴/다른 반 발신 등으로 둘 다 비는 경우 숨김). */}
+        {(topSenders.length > 0 || topReceivers.length > 0) && (
+          <section className="mt-4">
+            <h2 className="mb-3 flex flex-wrap items-center gap-2 text-lg font-bold">
+              <Icon
+                name="favorite"
+                size={20}
+                fill
+                className="text-[var(--md-sys-color-primary)]"
+              />
+              칭찬왕
+              <span className="text-sm font-normal text-black/40">
+                많이 주고받은 친구를 한 번 칭찬해 주세요
+              </span>
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PraiseRankCard
+                title="칭찬을 많이 보낸 친구"
+                emoji="💌"
+                rows={topSenders}
+                metric="sent"
+                onPick={setSelUid}
+              />
+              <PraiseRankCard
+                title="칭찬을 많이 받은 친구"
+                emoji="💛"
+                rows={topReceivers}
+                metric="recv"
+                onPick={setSelUid}
+              />
+            </div>
+          </section>
+        )}
 
         {/* 학생 그리드 */}
         <h2 className="mb-3 mt-2 flex items-center gap-2 text-lg font-bold">
@@ -514,6 +632,14 @@ function ClassDashboardInner() {
             </div>
           </div>
         </div>
+      )}
+
+      {showTrading && cid && (
+        <TradingAdminModal
+          cid={cid}
+          members={members}
+          onClose={() => setShowTrading(false)}
+        />
       )}
     </>
   );

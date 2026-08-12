@@ -61,6 +61,7 @@ import {
   type Praise,
 } from "@/lib/praise";
 import { PraiseManageModal } from "@/components/PraiseManageModal";
+import { MergeProfilesModal } from "@/components/MergeProfilesModal";
 import { PresentationManageModal } from "@/components/PresentationManageModal";
 import {
   approvePresentationRequest,
@@ -69,6 +70,7 @@ import {
   type PresentationRequest,
 } from "@/lib/presentations";
 import { MarketManageModal } from "@/components/MarketManageModal";
+import { TradingAdminModal } from "@/components/TradingAdminModal";
 import { GameStartModal } from "@/components/GameStartModal";
 import { GameConsole } from "@/components/GameConsole";
 import { GameHistoryModal } from "@/components/GameHistoryModal";
@@ -141,6 +143,7 @@ function ClassAdminInner() {
 
   const [role, setRole] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [xpMap, setXpMap] = useState<Record<string, number>>({});
   const [quests, setQuests] = useState<Quest[]>([]);
@@ -157,8 +160,13 @@ function ClassAdminInner() {
     | "game-console"
     | "game-history"
     | "feedback-inbox"
+    | "trading"
   >(null);
   const [showAllQuests, setShowAllQuests] = useState(false);
+  // 대시보드의 "트레이딩 N명" 알약에서 바로 넘어온 경우 관리 모달을 자동으로 연다.
+  useEffect(() => {
+    if (params.get("openTrading") === "1") setModal("trading");
+  }, [params]);
   const [lock, setLock] = useState<ActivityLock | null>(null);
   const [present, setPresent] = useState<PresentState | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -339,6 +347,13 @@ function ClassAdminInner() {
               러닝마켓
             </button>
             <button
+              onClick={() => setModal("trading")}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+            >
+              <Icon name="candlestick_chart" size={16} />
+              트레이딩 관리
+            </button>
+            <button
               onClick={() =>
                 setModal(activeGame ? "game-console" : "game")
               }
@@ -432,6 +447,16 @@ function ClassAdminInner() {
           >
             선택 해제
           </button>
+          {students.length >= 2 && (
+            <button
+              onClick={() => setMergeOpen(true)}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1 text-xs hover:bg-black/5"
+              title="같은 학생의 두 프로필(중복)을 하나로 합치기"
+            >
+              <Icon name="merge" size={13} />
+              프로필 합치기
+            </button>
+          )}
           {groups.length > 0 && (
             <span className="ml-1 flex flex-wrap items-center gap-1">
               <span className="text-xs text-black/40">모둠:</span>
@@ -628,6 +653,16 @@ function ClassAdminInner() {
           onClose={() => setModal(null)}
         />
       )}
+      {mergeOpen && (
+        <MergeProfilesModal
+          cid={cid}
+          students={students}
+          onClose={() => setMergeOpen(false)}
+          onMerged={() =>
+            listMembers(cid).then(setMembers).catch(() => {})
+          }
+        />
+      )}
       {modal === "presentation" && (
         <PresentationManageModal
           requests={presReqs}
@@ -641,6 +676,13 @@ function ClassAdminInner() {
         <MarketManageModal
           cid={cid}
           user={user}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "trading" && (
+        <TradingAdminModal
+          cid={cid}
+          members={members}
           onClose={() => setModal(null)}
         />
       )}

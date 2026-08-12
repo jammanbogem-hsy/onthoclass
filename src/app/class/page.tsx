@@ -270,6 +270,16 @@ function ClassDetail() {
             </button>
             {isTeacher && (
               <button
+                onClick={() => router.push(`/classapp/?cid=${room.id}`)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105"
+                title="교안 슬라이드 + 학생 추첨·집중 잠금·링크 푸시로 수업 진행"
+              >
+                <Icon name="present_to_all" size={16} />
+                수업 진행
+              </button>
+            )}
+            {isTeacher && (
+              <button
                 onClick={() => setXpReqOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
                 title="활동에서 온 경험치 요청 승인"

@@ -7,9 +7,12 @@ import { GlassCard } from "@/components/Glass";
 import { SchoolPicker } from "@/components/SchoolPicker";
 import {
   AVATARS,
+  claimStudentProfile,
   completeStudentOnboarding,
   completeTeacherOnboarding,
+  listClaimableStudents,
   setUserAvatar,
+  type ClaimableStudent,
 } from "@/lib/users";
 
 const inputCls = "m3-field";
@@ -25,6 +28,11 @@ export default function OnboardingPage() {
   const [avatar, setAvatar] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // 이름으로 이어가기(claim) 상태
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [roster, setRoster] = useState<ClaimableStudent[] | null>(null);
+  const [className, setClassName] = useState("");
+  const [claimBusy, setClaimBusy] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -75,6 +83,47 @@ export default function OnboardingPage() {
     }
   }
 
+  // 학급 명단 불러오기(이어가기 선택 화면 열기)
+  async function openClaim() {
+    setErr("");
+    if (!code.trim()) {
+      setErr("먼저 학급 코드를 입력해 주세요.");
+      return;
+    }
+    setClaimBusy(true);
+    try {
+      const r = await listClaimableStudents(code);
+      setRoster(r.students);
+      setClassName(r.className);
+      setClaimOpen(true);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : "학급을 찾을 수 없어요. 코드를 확인해 주세요."
+      );
+    } finally {
+      setClaimBusy(false);
+    }
+  }
+
+  // 내 이름 선택 → 기존 데이터 이어받기
+  async function claim(s: ClaimableStudent) {
+    if (claimBusy) return;
+    setErr("");
+    setClaimBusy(true);
+    try {
+      await claimStudentProfile(code, s.id);
+      if (avatar)
+        await setUserAvatar(user!.uid, avatar, user!.photoURL ?? "").catch(
+          () => {}
+        );
+      await refreshProfile();
+      router.replace("/dashboard");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "이어가기에 실패했어요.");
+      setClaimBusy(false);
+    }
+  }
+
   const isStudent = tab === "student";
 
   return (
@@ -108,6 +157,70 @@ export default function OnboardingPage() {
           ))}
         </div>
 
+        {/* 이름으로 이어가기 — 학급 명단에서 내 이름 선택 */}
+        {isStudent && claimOpen && roster ? (
+          <div className="mt-5 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold">
+                {className ? `${className} · ` : ""}내 이름을 찾아 눌러요
+              </p>
+              <button
+                onClick={() => {
+                  setClaimOpen(false);
+                  setErr("");
+                }}
+                className="text-xs text-black/45 hover:underline"
+              >
+                ← 처음이에요
+              </button>
+            </div>
+            {roster.length === 0 ? (
+              <p className="rounded-xl bg-black/5 px-3 py-4 text-center text-sm text-black/50">
+                이 학급에 아직 등록된 친구가 없어요. “처음이에요”로 새로
+                시작하세요.
+              </p>
+            ) : (
+              <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto">
+                {roster.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={claimBusy}
+                    onClick={() => claim(s)}
+                    className="flex items-center gap-2 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-white/70 p-2 text-left transition hover:border-[var(--md-sys-color-primary)] hover:bg-white disabled:opacity-50 dark:bg-white/10"
+                  >
+                    {s.photoURL ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={s.photoURL}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--md-sys-color-primary-container)] text-sm font-bold text-[var(--md-sys-color-on-primary-container)]">
+                        {(s.name || "?").slice(0, 1)}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                      {s.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {claimBusy && (
+              <p className="text-center text-xs text-[var(--md-sys-color-primary)]">
+                데이터를 이어받는 중…
+              </p>
+            )}
+            {err && (
+              <p className="text-xs text-[var(--md-sys-color-error)]">{err}</p>
+            )}
+            <p className="text-center text-xs text-black/40">
+              내 이름을 누르면 예전에 했던 활동·점수가 그대로 이어집니다.
+            </p>
+          </div>
+        ) : (
         <div className="mt-5 flex flex-col gap-3">
           {/* 프로필 사진 선택 */}
           <div>
@@ -179,7 +292,23 @@ export default function OnboardingPage() {
               ? "선생님이 공유한 한글 학급 코드를 입력하세요."
               : "교사 가입에는 시스템 코드가 필요합니다."}
           </p>
+
+          {/* 예전에 했던 학생: 이름으로 이어가기 */}
+          {isStudent && (
+            <div className="mt-1 border-t border-[var(--md-sys-color-outline-variant)] pt-3 text-center">
+              <p className="text-xs text-black/45">예전에 했던 친구인가요?</p>
+              <button
+                type="button"
+                onClick={openClaim}
+                disabled={claimBusy}
+                className="mt-1 text-sm font-bold text-[var(--md-sys-color-primary)] hover:underline disabled:opacity-50"
+              >
+                {claimBusy ? "명단 불러오는 중…" : "내 이름으로 이어가기 →"}
+              </button>
+            </div>
+          )}
         </div>
+        )}
       </GlassCard>
     </main>
   );

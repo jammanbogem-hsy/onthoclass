@@ -13,7 +13,11 @@ import { defineSecret } from "firebase-functions/params";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import {
+  FieldValue,
+  getFirestore,
+  type DocumentReference,
+} from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
 
 initializeApp();
@@ -24,6 +28,9 @@ const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 // 교사 가입 코드(서버 비밀, Secret Manager). 미설정 시 교사 승격을 거부한다.
 // (하드코딩 폴백 제거 — 깃에 박힌 코드/공유 코드로 인한 권한 상승을 차단)
 const TEACHER_CODE = defineSecret("TEACHER_CODE");
+// 만보 트레이딩 — 토스증권 Open API 자격증명(시세 조회 전용). Secret Manager.
+const TOSS_CLIENT_ID = defineSecret("TOSS_CLIENT_ID");
+const TOSS_CLIENT_SECRET = defineSecret("TOSS_CLIENT_SECRET");
 
 /* ---------- 무차별 대입 방어: 실패 횟수 기반 레이트리밋 ---------- *
  * rateLimits/{key} 에 { fails, windowStart } 를 admin 권한으로 기록한다.
@@ -1731,6 +1738,472 @@ export const joinClassByCode = onCall(
 );
 
 /* ===================================================================== *
+ *  이름으로 이어가기 — 학생 프로필 계정 재연결(claim + re-key)
+ *  로그아웃/새 기기로 새 계정을 만들어도, 학급 명단에서 '내 이름'을 고르면
+ *  기존 프로필의 모든 데이터(uid 키)를 현재 계정(toUid)으로 admin 이전한다.
+ *  - listClaimableStudents: 코드로 학급 학생 명단 조회(선택 화면용)
+ *  - claimStudentProfile: fromUid→toUid 전 데이터 이전(멱등, 감사 로그)
+ * ===================================================================== */
+
+// 학급 코드 → classId (joinClassByCode 와 동일 규칙)
+async function resolveClassByCode(code: string): Promise<string | null> {
+  const fdb = getFirestore();
+  const trimmed = (code ?? "").trim();
+  if (!trimmed || trimmed.includes("/") || trimmed.length > 40) return null;
+  const codeSnap = await fdb.doc(`classCodes/${trimmed}`).get();
+  if (codeSnap.exists) {
+    const mappedId = (codeSnap.data()?.classId as string) ?? "";
+    if (mappedId && (await fdb.doc(`classes/${mappedId}`).get()).exists)
+      return mappedId;
+  }
+  const snap = await fdb
+    .collection("classes")
+    .where("code", "==", trimmed)
+    .limit(1)
+    .get();
+  return snap.empty ? null : snap.docs[0].id;
+}
+
+export const listClaimableStudents = onCall(
+  async (
+    req
+  ): Promise<{
+    classId: string;
+    className: string;
+    students: { id: string; name: string; photoURL: string }[];
+  }> => {
+    if (!req.auth)
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { code } = (req.data ?? {}) as { code?: string };
+    const cid = await resolveClassByCode(code ?? "");
+    if (!cid)
+      throw new HttpsError("not-found", "해당 코드의 학급을 찾을 수 없습니다.");
+    const fdb = getFirestore();
+    const [cls, members] = await Promise.all([
+      fdb.doc(`classes/${cid}`).get(),
+      fdb.collection(`classes/${cid}/members`).get(),
+    ]);
+    const students = members.docs
+      .map((d) => ({ id: d.id, v: d.data() as Record<string, unknown> }))
+      .filter((m) => ((m.v.role as string) ?? "student") === "student")
+      .map((m) => ({
+        id: m.id,
+        name: String(m.v.displayName ?? "이름없음"),
+        photoURL: String(m.v.photoURL ?? ""),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return {
+      classId: cid,
+      className: String(cls.data()?.name ?? ""),
+      students,
+    };
+  }
+);
+
+// 서브컬렉션 한 개를 from→to 로 복사 후 원본 삭제(배치). 반환=옮긴 문서 수.
+async function moveSubcollection(
+  fromRef: DocumentReference,
+  toRef: DocumentReference,
+  sub: string
+): Promise<number> {
+  const fdb = getFirestore();
+  const items = await fromRef.collection(sub).get();
+  for (let i = 0; i < items.docs.length; i += 200) {
+    const b = fdb.batch();
+    items.docs.slice(i, i + 200).forEach((it) => {
+      b.set(toRef.collection(sub).doc(it.id), it.data(), { merge: true });
+      b.delete(it.ref);
+    });
+    await b.commit();
+  }
+  return items.size;
+}
+
+// 경로 classes/{cid}/... → cid (재키잉을 학생 소속 학급으로 스코프)
+function classIdOfPath(p: string): string {
+  const parts = p.split("/");
+  return parts[0] === "classes" ? (parts[1] ?? "") : "";
+}
+
+// 문서ID=uid 형태 문서(+서브컬렉션)를 from→to 로 이동. overrides 로 일부 필드 강제(uid/role 등).
+async function moveUidDoc(
+  pathOf: (uid: string) => string,
+  fromUid: string,
+  toUid: string,
+  subs: string[],
+  overrides: Record<string, unknown> = {}
+): Promise<number> {
+  const fdb = getFirestore();
+  const fromRef = fdb.doc(pathOf(fromUid));
+  const snap = await fromRef.get();
+  if (!snap.exists) return 0;
+  const toRef = fdb.doc(pathOf(toUid));
+  let n = 1;
+  for (const s of subs) n += await moveSubcollection(fromRef, toRef, s);
+  await toRef.set(
+    { ...(snap.data() as Record<string, unknown>), ...overrides },
+    { merge: true }
+  );
+  await fromRef.delete();
+  return n;
+}
+
+// 집계 스칼라(xp/manbo)는 덮어쓰기 금지 — 트랜잭션으로 두 문서 값을 "합산"(멱등: from 삭제까지 원자)
+async function mergeSumDoc(
+  pathOf: (uid: string) => string,
+  fromUid: string,
+  toUid: string,
+  sumFields: string[],
+  subs: string[]
+): Promise<number> {
+  const fdb = getFirestore();
+  const fromRef = fdb.doc(pathOf(fromUid));
+  if (!(await fromRef.get()).exists) return 0;
+  const toRef = fdb.doc(pathOf(toUid));
+  for (const s of subs) await moveSubcollection(fromRef, toRef, s); // log 는 doc-id 보존 복사
+  await fdb.runTransaction(async (tx) => {
+    const [fs, ts] = await Promise.all([tx.get(fromRef), tx.get(toRef)]);
+    if (!fs.exists) return;
+    const fd = (fs.data() ?? {}) as Record<string, number>;
+    const td = (ts.exists ? ts.data() ?? {} : {}) as Record<string, number>;
+    const merged: Record<string, unknown> = { ...td, ...fd };
+    for (const f of sumFields)
+      merged[f] = Number(td[f] ?? 0) + Number(fd[f] ?? 0);
+    if ("uid" in merged) merged.uid = toUid; // manbo 의 uid 필드 정규화(stale 방지)
+    merged.updatedAt = FieldValue.serverTimestamp();
+    tx.set(toRef, merged, { merge: true });
+    tx.delete(fromRef);
+  });
+  return 1;
+}
+
+// collectionGroup 의 특정 필드(uid/authorUid/fromUid/byUid)를 fromUid→toUid 로 치환(제자리).
+// allowed 가 있으면 그 학급(cid) 문서만.
+async function rekeyFieldCG(
+  cg: string,
+  field: string,
+  fromUid: string,
+  toUid: string,
+  allowed?: Set<string>
+): Promise<number> {
+  const fdb = getFirestore();
+  const snap = await fdb.collectionGroup(cg).where(field, "==", fromUid).get();
+  const docs = allowed
+    ? snap.docs.filter((d) => allowed.has(classIdOfPath(d.ref.path)))
+    : snap.docs;
+  let n = 0;
+  for (let i = 0; i < docs.length; i += 400) {
+    const b = fdb.batch();
+    docs.slice(i, i + 400).forEach((d) => {
+      b.update(d.ref, { [field]: toUid });
+      n++;
+    });
+    await b.commit();
+  }
+  return n;
+}
+
+// 문서ID=uid 이면서 uid 필드도 가진 컬렉션(submissions)을 collectionGroup 으로 찾아
+// 형제 문서(toUid)로 이동(+서브컬렉션). pathIncludes 로 경로 한정(게임 제출 제외 등).
+async function moveByUidFieldCG(
+  cg: string,
+  fromUid: string,
+  toUid: string,
+  subs: string[],
+  opts: {
+    pathIncludes?: string;
+    allowed?: Set<string>;
+    skipIfExists?: boolean;
+  } = {}
+): Promise<number> {
+  const fdb = getFirestore();
+  const snap = await fdb.collectionGroup(cg).where("uid", "==", fromUid).get();
+  let n = 0;
+  for (const d of snap.docs) {
+    if (d.id === toUid) continue;
+    if (opts.pathIncludes && !d.ref.path.includes(opts.pathIncludes)) continue;
+    if (opts.allowed && !opts.allowed.has(classIdOfPath(d.ref.path))) continue;
+    const toRef = d.ref.parent.doc(toUid);
+    // 합치기(merge): keeper 가 이미 같은 문서를 가지면 keeper 우선 — 덮어쓰지 않고 중복만 제거
+    if (opts.skipIfExists && (await toRef.get()).exists) {
+      await d.ref.delete();
+      continue;
+    }
+    for (const s of subs) await moveSubcollection(d.ref, toRef, s);
+    await toRef.set({ ...d.data(), uid: toUid }, { merge: true });
+    await d.ref.delete();
+    n++;
+  }
+  return n;
+}
+
+export const claimStudentProfile = onCall(
+  { timeoutSeconds: 540 },
+  async (
+    req
+  ): Promise<{
+    ok: true;
+    classId: string;
+    moved: Record<string, number>;
+    errors: string[];
+  }> => {
+    if (!req.auth)
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const toUid = req.auth.uid;
+    const { code, fromUid } = (req.data ?? {}) as {
+      code?: string;
+      fromUid?: string;
+    };
+    if (!fromUid)
+      throw new HttpsError("invalid-argument", "이어갈 프로필이 필요합니다.");
+    if (fromUid === toUid)
+      throw new HttpsError("invalid-argument", "이미 본인 계정입니다.");
+
+    const fdb = getFirestore();
+    const cid = await resolveClassByCode(code ?? "");
+    if (!cid)
+      throw new HttpsError("not-found", "해당 코드의 학급을 찾을 수 없습니다.");
+
+    // 대상 프로필이 그 학급의 '학생'인지 확인(교사 프로필 인계 차단 = 권한상승 방지)
+    const fromMember = await fdb.doc(`classes/${cid}/members/${fromUid}`).get();
+    if (
+      !fromMember.exists ||
+      ((fromMember.data()?.role as string) ?? "student") !== "student"
+    )
+      throw new HttpsError("not-found", "이어갈 학생 프로필을 찾을 수 없습니다.");
+
+    // 무차별 시도 방어(uid 당)
+    const rl = await makeRateLimiter(
+      `claim_${toUid}`,
+      10 * 60 * 1000,
+      20
+    );
+    if (rl.blocked)
+      throw new HttpsError(
+        "resource-exhausted",
+        "시도 횟수가 많습니다. 잠시 후 다시 시도해 주세요."
+      );
+
+    const fromUser = await fdb.doc(`users/${fromUid}`).get();
+
+    // 이전 대상 학급은 fromUid 가 "학생"인 학급만(권위적으로 member 문서에서 도출).
+    //  - 교사인 학급은 제외 → 교사 권한이 toUid 로 새지 않게(권한상승 차단)
+    //  - users.classIds 캐시에 의존하지 않음 → 누락 학급 데이터 고아 방지
+    const memberDocs = await fdb
+      .collectionGroup("members")
+      .where("uid", "==", fromUid)
+      .get();
+    const studentClassIds = new Set<string>([cid]); // cid 는 위에서 student 확인됨
+    for (const d of memberDocs.docs) {
+      const c = classIdOfPath(d.ref.path);
+      if (c && ((d.data().role as string) ?? "student") === "student")
+        studentClassIds.add(c);
+    }
+    const allowed = studentClassIds; // 필드 재키잉도 이 학급들로 스코프
+
+    const moved: Record<string, number> = {};
+    const errors: string[] = [];
+    // best-effort: 한 단계가 실패해도(인덱스/일시오류) 전체 이전을 멈추지 않는다.
+    //  중요 데이터(members/xp/manbo/submissions)는 먼저 실행되어 우선 보호되고,
+    //  실패 단계는 errors 에 남아 재실행(멱등) 시 마저 처리된다.
+    const safe = async (k: string, fn: () => Promise<number>) => {
+      try {
+        const n = await fn();
+        if (n) moved[k] = (moved[k] ?? 0) + n;
+      } catch (e) {
+        errors.push(`${k}: ${String((e as Error)?.message ?? e)}`);
+      }
+    };
+
+    // 1) 문서ID=uid 형태(학급별): members(정규화)/xp·manbo(합산)/badges/signals/praiseInbox/threads
+    for (const c of studentClassIds) {
+      await safe("members", () => moveUidDoc((u) => `classes/${c}/members/${u}`, fromUid, toUid, [], { uid: toUid, role: "student" }));
+      await safe("xp", () => mergeSumDoc((u) => `classes/${c}/xp/${u}`, fromUid, toUid, ["xp"], ["log"]));
+      await safe("manbo", () => mergeSumDoc((u) => `classes/${c}/manbo/${u}`, fromUid, toUid, ["balance", "earned", "spent"], ["log"]));
+      await safe("badges", () => moveUidDoc((u) => `classes/${c}/badges/${u}`, fromUid, toUid, []));
+      await safe("signals", () => moveUidDoc((u) => `classes/${c}/signals/${u}`, fromUid, toUid, []));
+      await safe("praiseInbox", () => moveUidDoc((u) => `classes/${c}/praiseInbox/${u}`, fromUid, toUid, ["items"]));
+      await safe("threads", () => moveUidDoc((u) => `classes/${c}/threads/${u}`, fromUid, toUid, ["messages"]));
+      // 차시별 1:1 메시지 스레드
+      const lessons = await fdb.collection(`classes/${c}/lessons`).get();
+      for (const ls of lessons.docs) {
+        await safe("lessonThreads", () =>
+          moveUidDoc(
+            (u) => `classes/${c}/lessons/${ls.id}/threads/${u}`,
+            fromUid,
+            toUid,
+            ["messages"]
+          )
+        );
+      }
+    }
+
+    // 2) 차시 제출물(문서ID=uid + uid 필드) → 형제 toUid 로 이동. 게임 제출은 제외(/lessons/ 한정).
+    await safe("submissions", () =>
+      moveByUidFieldCG("submissions", fromUid, toUid, ["comments"], {
+        pathIncludes: "/lessons/",
+        allowed,
+      })
+    );
+
+    // 3) 필드 치환(제자리, 학생 학급 한정) — 캔버스/피드백/요청/칭찬/메시지/댓글 작성자
+    await safe("canvasNodes", () => rekeyFieldCG("nodes", "authorUid", fromUid, toUid, allowed));
+    await safe("canvasEdges", () => rekeyFieldCG("edges", "authorUid", fromUid, toUid, allowed));
+    await safe("cardFeedback", () => rekeyFieldCG("feedback", "uid", fromUid, toUid, allowed)); // 캔버스 카드 피드백
+    await safe("reportFeedback", () => rekeyFieldCG("feedback", "byUid", fromUid, toUid, allowed)); // 학생 오류신고/의견
+    await safe("xpRequests", () => rekeyFieldCG("xpRequests", "uid", fromUid, toUid, allowed));
+    await safe("presentationRequests", () => rekeyFieldCG("presentationRequests", "fromUid", fromUid, toUid, allowed));
+    await safe("praisesSent", () => rekeyFieldCG("praises", "fromUid", fromUid, toUid, allowed));
+    await safe("praisesRecv", () => rekeyFieldCG("praises", "toUid", fromUid, toUid, allowed));
+    await safe("messageAuthors", () => rekeyFieldCG("messages", "authorUid", fromUid, toUid, allowed));
+    await safe("commentAuthors", () => rekeyFieldCG("comments", "authorUid", fromUid, toUid, allowed));
+    // (게임 진행상태 turn/ranks 는 일회성 활동이라 이전하지 않음 — 옛 결과는 옛 계정에 남음)
+
+    // 4) users 문서: 새 계정에 기존 프로필 정체성 병합, 옛 계정에서 학급 분리
+    const fu = fromUser.data() ?? {};
+    const movedClasses = Array.from(studentClassIds);
+    await fdb.doc(`users/${toUid}`).set(
+      {
+        role: "student",
+        name: fu.name ?? fromMember.data()?.displayName ?? "",
+        ...(fu.avatar ? { avatar: fu.avatar } : {}),
+        ...(fu.school ? { school: fu.school } : {}),
+        classIds: FieldValue.arrayUnion(...movedClasses),
+      },
+      { merge: true }
+    );
+    if (fromUser.exists) {
+      await fdb
+        .doc(`users/${fromUid}`)
+        .set(
+          { classIds: FieldValue.arrayRemove(...movedClasses) },
+          { merge: true }
+        );
+    }
+
+    // 5) 감사 로그(교사 추적/복구용)
+    await fdb.collection(`classes/${cid}/profileClaims`).add({
+      fromUid,
+      toUid,
+      name: fromMember.data()?.displayName ?? "",
+      moved,
+      errors,
+      at: FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, classId: cid, moved, errors };
+  }
+);
+
+// 교사용: 한 학급 안의 두 학생 프로필을 합친다(중복 정리). fromUid(합쳐서 삭제) → toUid(남길 keeper).
+//  claimStudentProfile 과 같은 re-key 헬퍼를 쓰되, ① 한 학급(classId)으로만 스코프 ②keeper 정체성 유지
+//  ③중복 멤버 삭제 ④충돌 시 keeper 우선. 학급 소유 교사만 호출 가능.
+export const mergeStudentProfiles = onCall(
+  { timeoutSeconds: 540 },
+  async (
+    req
+  ): Promise<{ ok: true; moved: Record<string, number>; errors: string[] }> => {
+    if (!req.auth)
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { classId, fromUid, toUid } = (req.data ?? {}) as {
+      classId?: string;
+      fromUid?: string;
+      toUid?: string;
+    };
+    if (!classId || !fromUid || !toUid)
+      throw new HttpsError("invalid-argument", "classId·fromUid·toUid 가 필요합니다.");
+    if (fromUid === toUid)
+      throw new HttpsError("invalid-argument", "같은 프로필은 합칠 수 없습니다.");
+
+    const fdb = getFirestore();
+    // 호출자가 그 학급의 교사인지
+    const caller = await fdb.doc(`classes/${classId}/members/${req.auth.uid}`).get();
+    if (!caller.exists || (caller.data()?.role as string) !== "teacher")
+      throw new HttpsError("permission-denied", "학급 교사만 합칠 수 있습니다.");
+    // 둘 다 그 학급의 학생인지(교사 프로필 병합 금지)
+    const [fromM, toM] = await Promise.all([
+      fdb.doc(`classes/${classId}/members/${fromUid}`).get(),
+      fdb.doc(`classes/${classId}/members/${toUid}`).get(),
+    ]);
+    if (!fromM.exists || ((fromM.data()?.role as string) ?? "student") !== "student")
+      throw new HttpsError("not-found", "합칠(중복) 학생 프로필이 없습니다.");
+    if (!toM.exists || ((toM.data()?.role as string) ?? "student") !== "student")
+      throw new HttpsError("not-found", "남길 학생 프로필이 없습니다.");
+
+    const c = classId;
+    const allowed = new Set([c]); // 이 학급으로만 스코프(타 학급 데이터 불변)
+    const moved: Record<string, number> = {};
+    const errors: string[] = [];
+    const safe = async (k: string, fn: () => Promise<number>) => {
+      try {
+        const n = await fn();
+        if (n) moved[k] = (moved[k] ?? 0) + n;
+      } catch (e) {
+        errors.push(`${k}: ${String((e as Error)?.message ?? e)}`);
+      }
+    };
+
+    // 1) 중복(fromUid) 멤버 삭제 — keeper 멤버는 그대로 유지(정체성 보존)
+    await safe("memberRemoved", async () => {
+      await fdb.doc(`classes/${c}/members/${fromUid}`).delete();
+      return 1;
+    });
+    // xp/manbo 합산(두 프로필이 각각 쌓은 점수 합치기)
+    await safe("xp", () => mergeSumDoc((u) => `classes/${c}/xp/${u}`, fromUid, toUid, ["xp"], ["log"]));
+    await safe("manbo", () => mergeSumDoc((u) => `classes/${c}/manbo/${u}`, fromUid, toUid, ["balance", "earned", "spent"], ["log"]));
+    await safe("badges", () => moveUidDoc((u) => `classes/${c}/badges/${u}`, fromUid, toUid, []));
+    await safe("signals", () => moveUidDoc((u) => `classes/${c}/signals/${u}`, fromUid, toUid, []));
+    await safe("praiseInbox", () => moveUidDoc((u) => `classes/${c}/praiseInbox/${u}`, fromUid, toUid, ["items"]));
+    await safe("threads", () => moveUidDoc((u) => `classes/${c}/threads/${u}`, fromUid, toUid, ["messages"]));
+    const lessons = await fdb.collection(`classes/${c}/lessons`).get();
+    for (const ls of lessons.docs) {
+      await safe("lessonThreads", () =>
+        moveUidDoc((u) => `classes/${c}/lessons/${ls.id}/threads/${u}`, fromUid, toUid, ["messages"])
+      );
+    }
+    // 2) 차시 제출물 — keeper 우선(둘 다 제출했으면 keeper 것 유지). 게임 제외(/lessons/).
+    await safe("submissions", () =>
+      moveByUidFieldCG("submissions", fromUid, toUid, ["comments"], {
+        pathIncludes: "/lessons/",
+        allowed,
+        skipIfExists: true,
+      })
+    );
+    // 3) 필드 치환(이 학급 한정)
+    await safe("canvasNodes", () => rekeyFieldCG("nodes", "authorUid", fromUid, toUid, allowed));
+    await safe("canvasEdges", () => rekeyFieldCG("edges", "authorUid", fromUid, toUid, allowed));
+    await safe("cardFeedback", () => rekeyFieldCG("feedback", "uid", fromUid, toUid, allowed));
+    await safe("reportFeedback", () => rekeyFieldCG("feedback", "byUid", fromUid, toUid, allowed));
+    await safe("xpRequests", () => rekeyFieldCG("xpRequests", "uid", fromUid, toUid, allowed));
+    await safe("presentationRequests", () => rekeyFieldCG("presentationRequests", "fromUid", fromUid, toUid, allowed));
+    await safe("praisesSent", () => rekeyFieldCG("praises", "fromUid", fromUid, toUid, allowed));
+    await safe("praisesRecv", () => rekeyFieldCG("praises", "toUid", fromUid, toUid, allowed));
+    await safe("messageAuthors", () => rekeyFieldCG("messages", "authorUid", fromUid, toUid, allowed));
+    await safe("commentAuthors", () => rekeyFieldCG("comments", "authorUid", fromUid, toUid, allowed));
+
+    // 4) 중복 계정의 users.classIds 에서 이 학급 제거(다른 학급은 그대로)
+    await fdb
+      .doc(`users/${fromUid}`)
+      .set({ classIds: FieldValue.arrayRemove(c) }, { merge: true })
+      .catch(() => {});
+
+    // 5) 감사 로그
+    await fdb.collection(`classes/${c}/profileClaims`).add({
+      kind: "merge",
+      byTeacher: req.auth.uid,
+      fromUid,
+      toUid,
+      name: toM.data()?.displayName ?? "",
+      moved,
+      errors,
+      at: FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, moved, errors };
+  }
+);
+
+/* ===================================================================== *
  *  만보 상점 구매 (서버측 트랜잭션) — 잔액 차감·구매 기록을 원자적으로 처리.
  *  클라이언트가 만보를 직접 차감하지 못하게 규칙으로 잠그고(manbo write=teacher),
  *  이 함수만 admin 권한으로 지갑/로그/구매 문서를 일괄 기록한다.
@@ -1820,6 +2293,448 @@ export const buyMarketItem = onCall(
     });
 
     return { ok: true, balance: newBalance };
+  }
+);
+
+/* ---------- 러닝마켓 환불(구매 취소 + 만보 반환) ----------
+ * 교사만 호출 가능. 구매 문서를 지우고 구매가(price)를 학생 지갑에 되돌린다.
+ * 구매와 동일하게 트랜잭션으로 원자 처리(잔액 += price, spent -= price, 로그 기록).
+ * 구매 문서가 이미 없으면(중복 환불) 실패 처리 → 이중 환불 방지. */
+export const refundPurchase = onCall(
+  async (req): Promise<{ ok: true; balance: number }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid, pid } = (req.data ?? {}) as { cid?: string; pid?: string };
+    if (!cid || !pid) {
+      throw new HttpsError("invalid-argument", "cid 와 pid 가 필요합니다.");
+    }
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    // 권한: 호출자가 해당 학급의 교사여야 함
+    const memberSnap = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+    if (!memberSnap.exists || memberSnap.data()?.role !== "teacher") {
+      throw new HttpsError(
+        "permission-denied",
+        "환불은 담당 교사만 할 수 있습니다."
+      );
+    }
+
+    const purchaseRef = fdb.doc(`classes/${cid}/purchases/${pid}`);
+
+    const newBalance = await fdb.runTransaction(async (tx) => {
+      const pSnap = await tx.get(purchaseRef);
+      if (!pSnap.exists) {
+        throw new HttpsError(
+          "failed-precondition",
+          "이미 환불되었거나 찾을 수 없는 구매입니다."
+        );
+      }
+      const p = pSnap.data() as {
+        price?: number;
+        buyerUid?: string;
+        title?: string;
+      };
+      const price = typeof p.price === "number" ? p.price : 0;
+      const buyerUid = p.buyerUid;
+      if (!buyerUid) {
+        throw new HttpsError("failed-precondition", "구매자 정보가 없습니다.");
+      }
+
+      const walletRef = fdb.doc(`classes/${cid}/manbo/${buyerUid}`);
+      const walletSnap = await tx.get(walletRef);
+      const balance = (walletSnap.data()?.balance as number) ?? 0;
+      const spent = (walletSnap.data()?.spent as number) ?? 0;
+      const logRef = walletRef.collection("log").doc();
+
+      tx.set(
+        walletRef,
+        {
+          uid: buyerUid,
+          balance: FieldValue.increment(price),
+          spent: Math.max(0, spent - price),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      tx.set(logRef, {
+        type: "earn",
+        amount: price,
+        reason: `환불: ${p.title ?? ""}`,
+        by: uid,
+        at: FieldValue.serverTimestamp(),
+      });
+      tx.delete(purchaseRef);
+      return balance + price;
+    });
+
+    return { ok: true, balance: newBalance };
+  }
+);
+
+/* ===================================================================== *
+ *  러닝 크라우드펀딩 — 여럿이 만보를 모아 상품을 공동구매한다.
+ *  · 참여(기여)는 즉시 지갑에서 만보를 차감(에스크로)하고, 취소 시 전원 환불.
+ *  · 목표(goal=상품가) 달성 시 개설자만 '최종 구매하기'로 확정한다.
+ *  모든 만보 이동은 이 함수들의 서버 트랜잭션으로만 처리(규칙 write=false).
+ *  상점 구매/환불과 동일하게 balance = earned - spent 불변식을 유지한다.
+ *    참여  : balance -= take;  spent += take   (spend 로그)
+ *    취소  : balance += amount; spent = max(0, spent - amount) (earn 로그)
+ *    확정  : 지갑 이동 없음(참여 시 이미 빠져나감). 구매 문서만 생성.
+ * ===================================================================== */
+
+/* ---------- 1) 펀딩 개설 ---------- */
+export const createFunding = onCall(
+  async (req): Promise<{ ok: true; fid: string }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid, itemId } = (req.data ?? {}) as {
+      cid?: string;
+      itemId?: string;
+    };
+    if (!cid || !itemId) {
+      throw new HttpsError("invalid-argument", "cid 와 itemId 가 필요합니다.");
+    }
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    // 권한: 호출자가 해당 학급의 멤버인지 확인
+    const memberSnap = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+    if (!memberSnap.exists) {
+      throw new HttpsError(
+        "permission-denied",
+        "해당 학급의 멤버만 펀딩을 열 수 있습니다."
+      );
+    }
+    const token = req.auth.token as { name?: string };
+    const creatorName =
+      (memberSnap.data()?.displayName as string) || token.name || "학생";
+
+    // 대상 상품 스냅샷 — 판매 중이고 가격이 있어야 한다.
+    const itemSnap = await fdb.doc(`classes/${cid}/market/${itemId}`).get();
+    if (!itemSnap.exists || itemSnap.data()?.active === false) {
+      throw new HttpsError("failed-precondition", "판매 중이 아닌 상품입니다.");
+    }
+    const item = itemSnap.data() as {
+      title?: string;
+      price?: number;
+      imageUrl?: string;
+    };
+    const goal = typeof item.price === "number" ? item.price : 0;
+    if (goal <= 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        "무료 상품은 펀딩이 필요 없어요."
+      );
+    }
+
+    const fundingRef = fdb.collection(`classes/${cid}/fundings`).doc();
+    await fundingRef.set({
+      itemId,
+      title: item.title ?? "",
+      imageUrl: item.imageUrl ?? "",
+      goal,
+      raised: 0,
+      creatorUid: uid,
+      creatorName,
+      status: "open",
+      contribs: {},
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, fid: fundingRef.id };
+  }
+);
+
+/* ---------- 2) 펀딩 참여(기여) ---------- */
+export const contributeFunding = onCall(
+  async (req): Promise<{ ok: true; raised: number; status: string }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid, fid, amount } = (req.data ?? {}) as {
+      cid?: string;
+      fid?: string;
+      amount?: number;
+    };
+    if (!cid || !fid) {
+      throw new HttpsError("invalid-argument", "cid 와 fid 가 필요합니다.");
+    }
+    const amt = Math.floor(typeof amount === "number" ? amount : 0);
+    if (amt <= 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "참여 금액은 1 이상이어야 해요."
+      );
+    }
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    const memberSnap = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+    if (!memberSnap.exists) {
+      throw new HttpsError(
+        "permission-denied",
+        "해당 학급의 멤버만 참여할 수 있습니다."
+      );
+    }
+    const token = req.auth.token as { name?: string };
+    const contributorName =
+      (memberSnap.data()?.displayName as string) || token.name || "학생";
+
+    const fundingRef = fdb.doc(`classes/${cid}/fundings/${fid}`);
+    const walletRef = fdb.doc(`classes/${cid}/manbo/${uid}`);
+    const logRef = walletRef.collection("log").doc();
+
+    const result = await fdb.runTransaction(async (tx) => {
+      const fSnap = await tx.get(fundingRef);
+      if (!fSnap.exists) {
+        throw new HttpsError("not-found", "펀딩을 찾을 수 없습니다.");
+      }
+      const f = fSnap.data() as {
+        goal?: number;
+        raised?: number;
+        status?: string;
+        title?: string;
+      };
+      if (f.status !== "open") {
+        throw new HttpsError(
+          "failed-precondition",
+          "모금 중인 펀딩이 아니에요."
+        );
+      }
+      const goal = typeof f.goal === "number" ? f.goal : 0;
+      const raised = typeof f.raised === "number" ? f.raised : 0;
+      const remaining = goal - raised;
+      const take = Math.min(amt, remaining);
+      if (take <= 0) {
+        throw new HttpsError("failed-precondition", "이미 목표를 채웠어요.");
+      }
+
+      const walletSnap = await tx.get(walletRef);
+      const balance = (walletSnap.data()?.balance as number) ?? 0;
+      if (balance < take) {
+        throw new HttpsError(
+          "failed-precondition",
+          `만보가 부족합니다. (필요 ${take}, 보유 ${balance})`
+        );
+      }
+
+      const newRaised = raised + take;
+      const newStatus = newRaised >= goal ? "reached" : "open";
+
+      // 지갑: 즉시 차감(에스크로) — 상점 구매와 동일 의미(refundable spend)
+      tx.set(
+        walletRef,
+        {
+          uid,
+          balance: FieldValue.increment(-take),
+          spent: FieldValue.increment(take),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      tx.set(logRef, {
+        type: "spend",
+        amount: take,
+        reason: `펀딩 참여: ${f.title ?? ""}`,
+        by: uid,
+        at: FieldValue.serverTimestamp(),
+      });
+      // 펀딩: 모금액 증가 + 기여자 누적(중첩 map 은 merge 로 부분 갱신)
+      tx.set(
+        fundingRef,
+        {
+          raised: FieldValue.increment(take),
+          status: newStatus,
+          contribs: {
+            [uid]: {
+              amount: FieldValue.increment(take),
+              name: contributorName,
+            },
+          },
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return { raised: newRaised, status: newStatus };
+    });
+
+    return { ok: true, raised: result.raised, status: result.status };
+  }
+);
+
+/* ---------- 3) 펀딩 확정(최종 구매) — 개설자만 ---------- */
+export const completeFunding = onCall(
+  async (req): Promise<{ ok: true }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid, fid } = (req.data ?? {}) as { cid?: string; fid?: string };
+    if (!cid || !fid) {
+      throw new HttpsError("invalid-argument", "cid 와 fid 가 필요합니다.");
+    }
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    const fundingRef = fdb.doc(`classes/${cid}/fundings/${fid}`);
+    const purchaseRef = fdb.collection(`classes/${cid}/purchases`).doc();
+
+    await fdb.runTransaction(async (tx) => {
+      const fSnap = await tx.get(fundingRef);
+      if (!fSnap.exists) {
+        throw new HttpsError("not-found", "펀딩을 찾을 수 없습니다.");
+      }
+      const f = fSnap.data() as {
+        itemId?: string;
+        title?: string;
+        goal?: number;
+        creatorUid?: string;
+        creatorName?: string;
+        status?: string;
+      };
+      if (f.creatorUid !== uid) {
+        throw new HttpsError(
+          "permission-denied",
+          "펀딩 개설자만 구매를 확정할 수 있어요."
+        );
+      }
+      if (f.status !== "reached") {
+        throw new HttpsError(
+          "failed-precondition",
+          "아직 목표를 달성하지 않았어요."
+        );
+      }
+
+      // 구매 문서(개설자 앞) — funded:true 로 공동구매임을 표시(개인 차감 아님)
+      tx.set(purchaseRef, {
+        itemId: f.itemId ?? "",
+        title: f.title ?? "",
+        price: typeof f.goal === "number" ? f.goal : 0,
+        buyerUid: f.creatorUid,
+        buyerName: f.creatorName ?? "학생",
+        at: FieldValue.serverTimestamp(),
+        funded: true,
+        fundingId: fid,
+      });
+      // 펀딩: 완료 처리(지갑 이동 없음)
+      tx.set(
+        fundingRef,
+        {
+          status: "completed",
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    return { ok: true };
+  }
+);
+
+/* ---------- 4) 펀딩 취소(전원 환불) — 개설자 또는 교사 ---------- */
+export const cancelFunding = onCall(
+  async (req): Promise<{ ok: true }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid, fid } = (req.data ?? {}) as { cid?: string; fid?: string };
+    if (!cid || !fid) {
+      throw new HttpsError("invalid-argument", "cid 와 fid 가 필요합니다.");
+    }
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    // 권한: 개설자 또는 해당 학급 교사
+    const memberSnap = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+    const callerIsTeacher =
+      memberSnap.exists && memberSnap.data()?.role === "teacher";
+
+    const fundingRef = fdb.doc(`classes/${cid}/fundings/${fid}`);
+
+    await fdb.runTransaction(async (tx) => {
+      const fSnap = await tx.get(fundingRef);
+      if (!fSnap.exists) {
+        throw new HttpsError("not-found", "펀딩을 찾을 수 없습니다.");
+      }
+      const f = fSnap.data() as {
+        creatorUid?: string;
+        status?: string;
+        title?: string;
+        contribs?: Record<string, { name?: string; amount?: number }>;
+      };
+      if (f.creatorUid !== uid && !callerIsTeacher) {
+        throw new HttpsError(
+          "permission-denied",
+          "펀딩 개설자나 선생님만 취소할 수 있어요."
+        );
+      }
+      if (f.status !== "open" && f.status !== "reached") {
+        throw new HttpsError(
+          "failed-precondition",
+          "이미 완료되었거나 취소된 펀딩이에요."
+        );
+      }
+
+      const contribs = f.contribs ?? {};
+      // 트랜잭션 규칙: 모든 읽기를 쓰기보다 먼저. 기여자 지갑을 전부 읽어 모은 뒤
+      // 그 다음 환불 쓰기를 진행한다.
+      const refunds: Array<{
+        uid: string;
+        amount: number;
+        walletRef: ReturnType<typeof fdb.doc>;
+        spent: number;
+      }> = [];
+      for (const cu of Object.keys(contribs)) {
+        const amount = Math.floor(contribs[cu]?.amount ?? 0);
+        if (amount <= 0) continue;
+        const walletRef = fdb.doc(`classes/${cid}/manbo/${cu}`);
+        const wSnap = await tx.get(walletRef);
+        refunds.push({
+          uid: cu,
+          amount,
+          walletRef,
+          spent: (wSnap.data()?.spent as number) ?? 0,
+        });
+      }
+
+      // 이제 쓰기 — 전원 환불(balance += amount, spent = max(0, spent-amount))
+      for (const r of refunds) {
+        tx.set(
+          r.walletRef,
+          {
+            uid: r.uid,
+            balance: FieldValue.increment(r.amount),
+            spent: Math.max(0, r.spent - r.amount),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        const logRef = r.walletRef.collection("log").doc();
+        tx.set(logRef, {
+          type: "earn",
+          amount: r.amount,
+          reason: `펀딩 취소 환불: ${f.title ?? ""}`,
+          by: uid,
+          at: FieldValue.serverTimestamp(),
+        });
+      }
+
+      tx.set(
+        fundingRef,
+        {
+          status: "cancelled",
+          cancelledAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    return { ok: true };
   }
 );
 
@@ -2007,5 +2922,848 @@ export const suggestCrossPraiseNames = onCall(
       a.localeCompare(b, "ko")
     );
     return { names: ranked.slice(0, 6) };
+  }
+);
+
+/* ===================================================================== *
+ *  만보 트레이딩 — 학생 모의 주식투자 (토스증권 Open API 시세, 실거래 없음)
+ *  · 시세/캔들은 refreshTradingPrices 가 전역 스로틀로 토스 API 를 묶어 갱신하고,
+ *    tradingPrices/current · tradingCandles/{symbol} 캐시에만 쓴다(클라 읽기 전용).
+ *  · 매수/매도는 executeTrade 가 트랜잭션으로 원자 처리 — 개장시간·캐시시세·잔액을
+ *    서버가 재검증하고, tradeId 로 멱등을 보장한다. 지갑 원장은 상점 구매와 동일 의미
+ *    (매수=spend, 매도=earn)로 balance = earned - spent 불변식을 유지한다.
+ *  · 소스 오브 트루스: src/lib/trading.ts (컬렉션/타입/환산 규칙). 서버는 그 계약을 재현.
+ *  주의: 토스 access token 은 client 당 1개만 유효(재발급 시 기존 즉시 무효) →
+ *        tradingMeta/token 에 캐시·공유하고, 발급은 refresh 스로틀 클레임으로 단일화한다.
+ * ===================================================================== */
+
+// 종목 유니버스(10종목 고정) — trading.ts 의 TRADING_STOCKS 와 동일 심볼 집합(서버 중복 정의).
+const TRADING_SYMBOLS = [
+  "005930",
+  "011200",
+  "035420",
+  "005380",
+  "042660",
+  "010950",
+  "277810",
+  "373220",
+  "012450",
+  "000250",
+] as const;
+const TRADING_SYMBOL_SET = new Set<string>(TRADING_SYMBOLS);
+// 학생 노출용 별칭 — trading.ts TRADING_STOCKS 의 alias 와 동일(지갑 로그 등 표기용).
+const TRADING_ALIAS: Record<string, string> = {
+  "005930": "만보전자",
+  "011200": "만보해운",
+  "035420": "잠이버",
+  "005380": "만보차",
+  "042660": "만보오션",
+  "010950": "J-Oil",
+  "277810": "JMB로보틱스",
+  "373220": "만보에너지솔루션",
+  "012450": "만보에어로스페이스",
+  "000250": "만보당제약",
+};
+
+const TOSS_BASE = "https://openapi.tossinvest.com";
+const TRADING_MB_DIVISOR = 2000; // 기본 배율 — mbPrice = floor(실제가격 / divisor)
+// 종목별 배율 오버라이드 — trading.ts TRADING_STOCKS[].mbDivisor 와 동일(서버 중복 정의).
+// 저가주(만보해운)는 2000 그대로면 하루 등락이 반올림에 묻혀 시세가 안 움직이는 것처럼 보여 낮췄다.
+const TRADING_MB_DIVISOR_OVERRIDE: Record<string, number> = {
+  "011200": 500, // 만보해운(HMM)
+  "012450": 3000, // 만보에어로스페이스(한화에어로스페이스) — 고가주라 배율을 높임
+  "000250": 1500, // 만보당제약(삼천당제약)
+};
+function mbDivisorFor(symbol: string): number {
+  return TRADING_MB_DIVISOR_OVERRIDE[symbol] ?? TRADING_MB_DIVISOR;
+}
+const TRADING_KST_OFFSET_MS = 9 * 60 * 60 * 1000; // KST 고정(+09:00, DST 없음)
+const PRICES_THROTTLE_MS = 60 * 1000; // 시세 60초
+const CANDLES_THROTTLE_MS = 60 * 60 * 1000; // 캔들 1시간
+const PRICE_STALE_MS = 30 * 60 * 1000; // 거래 시 시세 최대 허용 지연 30분
+const TOKEN_REFRESH_LEAD_MS = 30 * 60 * 1000; // 만료 30분 전부터 재발급
+
+// 거래 수수료 — trading.ts TRADE_FEE_RATE/tradeFee 와 동일 규칙(서버 중복 정의).
+// 잦은 매매가 손해라는 걸 체감하도록 아주 작은 비용을 매긴다(매수: 청구액에 가산, 매도: 지급액에서 차감).
+const TRADE_FEE_RATE = 0.005;
+const TRADE_FEE_MIN = 1;
+function tradeFee(subtotal: number): number {
+  if (subtotal <= 0) return 0;
+  return Math.max(TRADE_FEE_MIN, Math.round(subtotal * TRADE_FEE_RATE));
+}
+
+type ServerCandle = { t: number; o: number; h: number; l: number; c: number; v: number };
+
+/** KST 기준 일자 키(00:00 경계) — prevClose "오늘 캔들 제외" 판단용. */
+function kstDayKey(ms: number): number {
+  return Math.floor((ms + TRADING_KST_OFFSET_MS) / 86400000);
+}
+
+/** "HH:mm" → 분. trading.ts hmToMin 과 동일. */
+function tradingHmToMin(hm: string): number {
+  const [h, m] = String(hm).split(":").map((n) => parseInt(n, 10));
+  return (h || 0) * 60 + (m || 0);
+}
+
+type ServerTradingConfig = {
+  enabled: boolean;
+  weekly: Array<{ day: number; start: string; end: string }>;
+  sessions: Array<{ start: number; end: number }>;
+  /** 교사 즉시 오버라이드 — "open"=즉시 개장, "closed"=킬스위치, null=시간표대로 */
+  override: "open" | "closed" | null;
+};
+
+// 실제 KRX 장 운영시간 — 평일 09:00~15:30(KST). trading.ts KRX_OPEN_MIN/KRX_CLOSE_MIN 과 동일.
+const KRX_OPEN_MIN = 9 * 60;
+const KRX_CLOSE_MIN = 15 * 60 + 30;
+
+/** 지금이 실제 KRX 정규장 시간인가 — trading.ts isRealMarketOpen 과 동일 로직. */
+function isRealMarketOpenServer(now: number): boolean {
+  const kst = new Date(now + TRADING_KST_OFFSET_MS);
+  const day = kst.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const min = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return min >= KRX_OPEN_MIN && min < KRX_CLOSE_MIN;
+}
+
+/**
+ * 개장 여부 — trading.ts isTradingOpen 과 동일 로직(KST 고정). 서버 재검증용.
+ * 실제 KRX 장 시간(평일 09:00~15:30) 밖이면 교사 오버라이드(open)도 커스텀 시간표도 못 이긴다.
+ */
+function isTradingOpenServer(cfg: ServerTradingConfig | null, now: number): boolean {
+  const c: ServerTradingConfig = cfg ?? { enabled: false, weekly: [], sessions: [], override: null };
+  if (c.override === "closed") return false;
+  if (!isRealMarketOpenServer(now)) return false;
+  if (c.override === "open") return true;
+  if (!c.enabled) return true;
+  if ((c.sessions ?? []).some((s) => now >= s.start && now <= s.end)) return true;
+  const kst = new Date(now + TRADING_KST_OFFSET_MS);
+  const day = kst.getUTCDay();
+  const min = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return (c.weekly ?? []).some(
+    (w) => w.day === day && min >= tradingHmToMin(w.start) && min < tradingHmToMin(w.end)
+  );
+}
+
+/**
+ * 토스 access token 확보 — tradingMeta/token 캐시 우선.
+ * 유효(만료 30분 전 이전)하면 캐시 반환, 아니면 재발급 후 캐시에 저장.
+ * client 당 토큰 1개 규칙 → 발급 폭주 방지는 refresh 스로틀 클레임(단일 caller)이 담당한다.
+ */
+async function getTossToken(
+  clientId: string,
+  clientSecret: string,
+  forceRefresh: boolean
+): Promise<string> {
+  const fdb = getFirestore();
+  const tokenRef = fdb.doc("tradingMeta/token");
+  if (!forceRefresh) {
+    const snap = await tokenRef.get();
+    const d = snap.data() as { token?: string; expiresAt?: number } | undefined;
+    if (d?.token && typeof d.expiresAt === "number" && d.expiresAt - Date.now() > TOKEN_REFRESH_LEAD_MS) {
+      return d.token;
+    }
+  }
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
+  const res = await fetch(`${TOSS_BASE}/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    console.error("[trading] 토큰 발급 실패", res.status, t.slice(0, 500));
+    throw new HttpsError("internal", `토스 토큰 발급 오류 (${res.status}): ${t.slice(0, 200)}`);
+  }
+  const j = (await res.json()) as { access_token?: string; expires_in?: number };
+  if (!j.access_token) {
+    throw new HttpsError("internal", "토스 토큰 응답이 올바르지 않습니다.");
+  }
+  const expiresIn = typeof j.expires_in === "number" ? j.expires_in : 86399;
+  await tokenRef.set(
+    { token: j.access_token, expiresAt: Date.now() + expiresIn * 1000, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+  return j.access_token;
+}
+
+/**
+ * 토스 GET 호출(Bearer). 401 이면 토큰 1회 강제 재발급 후 재시도.
+ * 응답 gzip 은 Node 18+ fetch 가 자동 해제한다.
+ */
+async function tossGet(
+  path: string,
+  clientId: string,
+  clientSecret: string
+): Promise<unknown> {
+  let token = await getTossToken(clientId, clientSecret, false);
+  let res = await fetch(`${TOSS_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) {
+    token = await getTossToken(clientId, clientSecret, true);
+    res = await fetch(`${TOSS_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+  if (!res.ok) {
+    const t = await res.text();
+    console.error("[trading] 시세 조회 실패", path, res.status, t.slice(0, 500));
+    throw new HttpsError("internal", `토스 시세 조회 오류 (${res.status}): ${t.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+/** 캔들 응답 파싱 → ServerCandle[](최신순, 문자열 필드 parseFloat). */
+function parseCandles(payload: unknown): ServerCandle[] {
+  const result = (payload as { result?: { candles?: unknown[] } })?.result;
+  const rows = Array.isArray(result?.candles) ? result!.candles! : [];
+  const out: ServerCandle[] = [];
+  for (const r of rows) {
+    const c = r as Record<string, string>;
+    const t = Date.parse(c.timestamp ?? "");
+    if (!Number.isFinite(t)) continue;
+    out.push({
+      t,
+      o: parseFloat(c.openPrice ?? "0") || 0,
+      h: parseFloat(c.highPrice ?? "0") || 0,
+      l: parseFloat(c.lowPrice ?? "0") || 0,
+      c: parseFloat(c.closePrice ?? "0") || 0,
+      v: parseFloat(c.volume ?? "0") || 0,
+    });
+  }
+  return out.slice(0, 260);
+}
+
+// 야후 파이낸스 심볼 매핑 — 토스가 IP 허용 목록으로 서버 호출을 차단할 때의 폴백 시세.
+// (토스 Open API 는 개별 IP 만 등록 가능해 egress IP 가 유동적인 Cloud Functions 에서 차단됨)
+const TRADING_YAHOO: Record<string, string> = {
+  "005930": "005930.KS",
+  "011200": "011200.KS",
+  "035420": "035420.KS",
+  "005380": "005380.KS",
+  "042660": "042660.KS",
+  "010950": "010950.KS",
+  "277810": "277810.KQ", // 코스닥
+  "373220": "373220.KS",
+  "012450": "012450.KS",
+  "000250": "000250.KQ", // 코스닥
+};
+
+/** 야후 차트 API — 현재가(15~20분 지연)+전일종가+일봉 최대 1년치를 한 번에. */
+async function fetchYahooChart(
+  ySym: string
+): Promise<{ lastPrice: number; prevClose: number; candles: ServerCandle[] }> {
+  const res = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=1d&range=1y`,
+    { headers: { "User-Agent": "Mozilla/5.0 (jamclass-trading)" } }
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`야후 시세 조회 실패 ${ySym} (${res.status}): ${t.slice(0, 200)}`);
+  }
+  const j = (await res.json()) as {
+    chart?: {
+      result?: Array<{
+        meta?: {
+          regularMarketPrice?: number;
+          regularMarketPreviousClose?: number;
+          chartPreviousClose?: number;
+        };
+        timestamp?: number[];
+        indicators?: {
+          quote?: Array<{
+            open?: Array<number | null>;
+            high?: Array<number | null>;
+            low?: Array<number | null>;
+            close?: Array<number | null>;
+            volume?: Array<number | null>;
+          }>;
+        };
+      }>;
+    };
+  };
+  const r = j.chart?.result?.[0];
+  const meta = r?.meta;
+  const ts = r?.timestamp ?? [];
+  const q = r?.indicators?.quote?.[0] ?? {};
+  const candles: ServerCandle[] = [];
+  for (let i = ts.length - 1; i >= 0 && candles.length < 260; i--) {
+    const c = q.close?.[i];
+    if (c == null || !Number.isFinite(c)) continue;
+    candles.push({
+      t: ts[i] * 1000,
+      o: q.open?.[i] ?? c,
+      h: q.high?.[i] ?? c,
+      l: q.low?.[i] ?? c,
+      c,
+      v: q.volume?.[i] ?? 0,
+    });
+  }
+  const lastPrice = Number(meta?.regularMarketPrice) || candles[0]?.c || 0;
+  // 전일 종가 — 캔들 기준(최신 캔들이 오늘이면 그 전 캔들). 야후 chartPreviousClose 는
+  // "조회 범위 직전"(여기선 한 달 전) 종가라 등락률 계산에 쓰면 안 된다.
+  let prevClose = lastPrice;
+  if (candles.length > 0) {
+    const latestIsToday = kstDayKey(candles[0].t) === kstDayKey(Date.now());
+    prevClose = latestIsToday && candles.length >= 2 ? candles[1].c : candles[0].c;
+  }
+  const metaPrev = Number(meta?.regularMarketPreviousClose);
+  if (Number.isFinite(metaPrev) && metaPrev > 0) prevClose = metaPrev;
+  // 휴장 중엔 lastPrice ≈ 직전 종가라 등락률이 0 이 된다(부동소수 오차 존재)
+  // → 마지막 거래일의 등락을 보여준다.
+  if (
+    candles.length >= 2 &&
+    Math.abs(lastPrice - prevClose) / (prevClose || 1) < 0.0001
+  ) {
+    prevClose = candles[1].c;
+  }
+  return { lastPrice, prevClose, candles };
+}
+
+// 시장 지수 7종 — 트레이딩 상단 요약용. 학생 표시명(잠스피 등)은 클라이언트가 매핑.
+// 지수는 학생이 거래하지 않으므로 지연 무관 → 항상 야후에서 조회(토스 IP 차단과 무관).
+const MARKET_YAHOO: Record<string, string> = {
+  kospi: "^KS11",
+  kosdaq: "^KQ11",
+  nasdaq: "^IXIC",
+  dow: "^DJI",
+  nikkei: "^N225",
+  usdkrw: "KRW=X",
+  vix: "^VIX",
+};
+
+/** 시장 지수 갱신 — 실패해도 종목 시세 갱신을 막지 않는다(로그만). */
+async function refreshMarketIndicesSafe(fdb: FirebaseFirestore.Firestore): Promise<void> {
+  try {
+    const indices: Record<
+      string,
+      { value: number; changePct: number; spark: number[] }
+    > = {};
+    // 지수 5종도 병렬로 — 순차 호출은 종목 시세 갱신 앞에 그대로 지연을 쌓는다.
+    const entries = await Promise.all(
+      Object.entries(MARKET_YAHOO).map(async ([key, ySym]) => {
+        const y = await fetchYahooChart(ySym);
+        return { key, y };
+      })
+    );
+    for (const { key, y } of entries) {
+      // 스파크라인: 오래된→최신 순 종가 최근 30개
+      const spark = [...y.candles].reverse().map((c) => c.c).slice(-30);
+      indices[key] = {
+        value: y.lastPrice,
+        changePct:
+          y.prevClose > 0 ? ((y.lastPrice - y.prevClose) / y.prevClose) * 100 : 0,
+        spark,
+      };
+    }
+    await fdb.doc("tradingPrices/market").set({
+      updatedAt: FieldValue.serverTimestamp(),
+      indices,
+    });
+  } catch (e) {
+    console.error("[trading] 시장 지수 갱신 실패(무시)", e);
+  }
+}
+
+/**
+ * 시세 새로고침 — 로그인 사용자 누구나 호출(학급 무관).
+ * 전역 스로틀(tradingMeta/refresh)을 트랜잭션으로 원자 클레임 → 동시 호출이 몰려도
+ * 한 명만 실제 외부 API 를 때린다(토큰 발급도 자연히 단일화). 갱신할 게 없으면 즉시 반환.
+ * 시세 출처는 토스(실시간) 우선, 토스가 IP 차단 등으로 실패하면 야후(지연) 폴백.
+ */
+export const refreshTradingPrices = onCall(
+  { secrets: [TOSS_CLIENT_ID, TOSS_CLIENT_SECRET], memory: "256MiB" },
+  async (req): Promise<{ ok: true; refreshed: boolean }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const fdb = getFirestore();
+    const refreshRef = fdb.doc("tradingMeta/refresh");
+    const now = Date.now();
+
+    // 스로틀 클레임(원자) — 갱신 대상을 이 호출이 선점한다.
+    const claim = await fdb.runTransaction(async (tx) => {
+      const snap = await tx.get(refreshRef);
+      const d = (snap.data() as { pricesAt?: number; candlesAt?: number } | undefined) ?? {};
+      const prevPricesAt = typeof d.pricesAt === "number" ? d.pricesAt : 0;
+      const prevCandlesAt = typeof d.candlesAt === "number" ? d.candlesAt : 0;
+      const doPrices = now - prevPricesAt >= PRICES_THROTTLE_MS;
+      const doCandles = now - prevCandlesAt >= CANDLES_THROTTLE_MS;
+      if (doPrices || doCandles) {
+        const upd: Record<string, number> = {};
+        if (doPrices) upd.pricesAt = now;
+        if (doCandles) upd.candlesAt = now;
+        tx.set(refreshRef, upd, { merge: true });
+      }
+      return { doPrices, doCandles, prevPricesAt, prevCandlesAt };
+    });
+
+    if (!claim.doPrices && !claim.doCandles) {
+      return { ok: true, refreshed: false };
+    }
+
+    // 시장 지수(잠스피 등)는 종목 시세와 같은 60초 주기로, 출처는 항상 야후.
+    if (claim.doPrices) {
+      await refreshMarketIndicesSafe(fdb);
+    }
+
+    const clientId = TOSS_CLIENT_ID.value();
+    const clientSecret = TOSS_CLIENT_SECRET.value();
+    if (!clientId || !clientSecret) {
+      // 자격증명 미설정 — 선점한 클레임을 되돌려 다음 호출이 재시도할 수 있게 한다.
+      await refreshRef.set(
+        { pricesAt: claim.prevPricesAt, candlesAt: claim.prevCandlesAt },
+        { merge: true }
+      );
+      throw new HttpsError("failed-precondition", "시세 서비스가 아직 설정되지 않았습니다.");
+    }
+
+    try {
+      // 캔들 먼저(prevClose 계산에 필요). 갱신 대상이면 메모리에 보관해 재사용.
+      const candlesBySymbol: Record<string, ServerCandle[]> = {};
+      if (claim.doCandles) {
+        for (const symbol of TRADING_SYMBOLS) {
+          const payload = await tossGet(
+            `/api/v1/candles?symbol=${symbol}&interval=1d&count=200`,
+            clientId,
+            clientSecret
+          );
+          const candles = parseCandles(payload);
+          candlesBySymbol[symbol] = candles;
+          await fdb.doc(`tradingCandles/${symbol}`).set({
+            updatedAt: FieldValue.serverTimestamp(),
+            candles,
+          });
+        }
+      }
+
+      if (claim.doPrices) {
+        const payload = await tossGet(
+          `/api/v1/prices?symbols=${TRADING_SYMBOLS.join(",")}`,
+          clientId,
+          clientSecret
+        );
+        const rows = (payload as { result?: unknown[] })?.result;
+        const priceBySymbol: Record<string, number> = {};
+        if (Array.isArray(rows)) {
+          for (const r of rows) {
+            const row = r as { symbol?: string; lastPrice?: string };
+            if (row.symbol && TRADING_SYMBOL_SET.has(row.symbol)) {
+              priceBySymbol[row.symbol] = parseFloat(row.lastPrice ?? "0") || 0;
+            }
+          }
+        }
+
+        const stocks: Record<
+          string,
+          { lastPrice: number; mbPrice: number; prevClose: number; changePct: number }
+        > = {};
+        for (const symbol of TRADING_SYMBOLS) {
+          const lastPrice = priceBySymbol[symbol] ?? 0;
+          // 캔들: 이번에 갱신했으면 메모리, 아니면 캐시 문서에서 읽어 prevClose 계산.
+          let candles = candlesBySymbol[symbol];
+          if (!candles) {
+            const cSnap = await fdb.doc(`tradingCandles/${symbol}`).get();
+            candles = (cSnap.data()?.candles as ServerCandle[]) ?? [];
+          }
+          let prevClose = lastPrice;
+          if (candles.length > 0) {
+            const latestIsToday = kstDayKey(candles[0].t) === kstDayKey(now);
+            prevClose =
+              latestIsToday && candles.length >= 2 ? candles[1].c : candles[0].c;
+          }
+          const changePct =
+            prevClose > 0 ? ((lastPrice - prevClose) / prevClose) * 100 : 0;
+          stocks[symbol] = {
+            lastPrice,
+            mbPrice: Math.floor(lastPrice / mbDivisorFor(symbol)),
+            prevClose,
+            changePct,
+          };
+        }
+
+        await fdb.doc("tradingPrices/current").set({
+          updatedAt: FieldValue.serverTimestamp(),
+          source: "toss",
+          stocks,
+        });
+      }
+
+      return { ok: true, refreshed: true };
+    } catch (tossErr) {
+      // 토스 실패(대표: 허용 IP 차단 403 — 개별 IP만 등록 가능해 서버 egress 가 막힘)
+      // → 야후 폴백(15~20분 지연)으로 같은 캐시 문서를 채운다.
+      console.error("[trading] 토스 시세 실패 — 야후 폴백 시도", tossErr);
+      try {
+        // 종목별 야후 호출을 병렬로 — 순차로 하면 종목 수만큼 지연이 그대로 누적된다
+        // (10종목 × 수백ms 이상 = 체감 지연). Promise.all 로 동시에 쏘고 한 번에 모은다.
+        const yahooResults = await Promise.all(
+          TRADING_SYMBOLS.map(async (symbol) => {
+            const y = await fetchYahooChart(TRADING_YAHOO[symbol]);
+            return { symbol, y };
+          })
+        );
+        const stocks: Record<
+          string,
+          { lastPrice: number; mbPrice: number; prevClose: number; changePct: number }
+        > = {};
+        if (claim.doCandles) {
+          await Promise.all(
+            yahooResults.map(({ symbol, y }) =>
+              fdb.doc(`tradingCandles/${symbol}`).set({
+                updatedAt: FieldValue.serverTimestamp(),
+                candles: y.candles,
+              })
+            )
+          );
+        }
+        for (const { symbol, y } of yahooResults) {
+          const changePct =
+            y.prevClose > 0 ? ((y.lastPrice - y.prevClose) / y.prevClose) * 100 : 0;
+          stocks[symbol] = {
+            lastPrice: y.lastPrice,
+            mbPrice: Math.floor(y.lastPrice / mbDivisorFor(symbol)),
+            prevClose: y.prevClose,
+            changePct,
+          };
+        }
+        if (claim.doPrices) {
+          await fdb.doc("tradingPrices/current").set({
+            updatedAt: FieldValue.serverTimestamp(),
+            source: "yahoo-delayed",
+            stocks,
+          });
+        }
+        return { ok: true, refreshed: true };
+      } catch (err) {
+        // 둘 다 실패 — 클레임 롤백 → 스로틀 창에 갇히지 않고 곧바로 재시도 가능하게.
+        await refreshRef.set(
+          { pricesAt: claim.prevPricesAt, candlesAt: claim.prevCandlesAt },
+          { merge: true }
+        );
+        console.error("[trading] 시세 갱신 실패(야후 폴백 포함)", err);
+        if (err instanceof HttpsError) throw err;
+        throw new HttpsError("internal", "시세를 갱신하지 못했습니다.");
+      }
+    }
+  }
+);
+
+/**
+ * 우리 반 수익률 랭킹 — 학생용.
+ *
+ * 학생은 규칙상 남의 positions 문서를 읽을 수 없어 예전에는 클라이언트가 trades 를
+ * 시간순 재생해 보유/평단을 복원했다. 그러나 trades 는 "체결 당시" 스냅샷이라
+ * 종목의 만보 환산 배율(mbDivisor)이 바뀌면 옛 스케일로 굳어버려 현재 시세와 단위가
+ * 어긋난다(예: 만보해운 배율 2000→500 변경 후 평단 10만보 vs 현재가 43만보 → 허위 +330%).
+ * 그래서 정본인 positions 를 서버에서 직접 읽어 집계한다 — 교사용 '트레이딩 관리'
+ * (TradingAdminModal BoardTab)와 완전히 같은 수식이라 두 화면이 항상 일치한다.
+ *
+ * 노출 범위: 이름·총손익·수익률만. 보유 종목/수량/잔액은 반환하지 않는다.
+ */
+export const getTradingRanking = onCall(
+  { memory: "256MiB" },
+  async (
+    req
+  ): Promise<{
+    ok: true;
+    rows: Array<{ uid: string; name: string; totalPnl: number; returnPct: number }>;
+  }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid } = (req.data ?? {}) as { cid?: string };
+    if (!cid || typeof cid !== "string") {
+      throw new HttpsError("invalid-argument", "cid 가 필요합니다.");
+    }
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    // 권한: 학급 멤버만(교사도 members 문서를 가진다).
+    const memberSnap = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+    if (!memberSnap.exists) {
+      throw new HttpsError("permission-denied", "해당 학급의 멤버만 볼 수 있습니다.");
+    }
+
+    const [posSnap, priceSnap, memberList] = await Promise.all([
+      fdb.collection(`classes/${cid}/positions`).get(),
+      fdb.doc("tradingPrices/current").get(),
+      fdb.collection(`classes/${cid}/members`).get(),
+    ]);
+    const stocks =
+      (priceSnap.data()?.stocks as Record<string, { mbPrice?: number }>) ?? {};
+    const nameOf = new Map<string, string>();
+    for (const m of memberList.docs) {
+      nameOf.set(m.id, (m.data()?.displayName as string) || "친구");
+    }
+
+    const rows = posSnap.docs
+      .map((d) => {
+        const holdings =
+          (d.data()?.holdings as Record<string, { qty: number; avgCost: number }>) ?? {};
+        const realized = (d.data()?.realized as number) ?? 0;
+        let value = 0;
+        let cost = 0;
+        let held = 0;
+        for (const [symbol, h] of Object.entries(holdings)) {
+          if (!h || h.qty <= 0) continue;
+          held++;
+          value += (stocks[symbol]?.mbPrice ?? h.avgCost) * h.qty;
+          cost += h.avgCost * h.qty;
+        }
+        const unrealized = value - cost;
+        return {
+          uid: d.id,
+          name: nameOf.get(d.id) ?? "친구",
+          totalPnl: realized + unrealized,
+          // 교사용 '트레이딩 관리'와 동일: 지금 보유한 주식의 평가수익률.
+          returnPct: cost > 0 ? (unrealized / cost) * 100 : 0,
+          held,
+          realized,
+        };
+      })
+      .filter((r) => r.held > 0 || r.realized !== 0)
+      .sort((a, b) => b.returnPct - a.returnPct)
+      .map(({ uid: u, name, totalPnl, returnPct }) => ({
+        uid: u,
+        name,
+        totalPnl,
+        returnPct,
+      }));
+
+    return { ok: true, rows };
+  }
+);
+
+/**
+ * 매수/매도 실행 — 트랜잭션 원자 처리, tradeId 멱등.
+ * 검증: 로그인·학급 멤버·심볼 유니버스·수량 1~10000·개장시간·캐시 시세(30분 이내).
+ * 지갑(classes/{cid}/manbo/{uid}) 과 포지션(classes/{cid}/positions/{uid}) 을 함께 갱신하고
+ * 체결을 classes/{cid}/trades/{tradeId} 에 스냅샷 기록한다.
+ */
+export const executeTrade = onCall(
+  { memory: "256MiB" },
+  async (
+    req
+  ): Promise<{
+    ok: true;
+    balance: number;
+    position: {
+      holdings: Record<string, { qty: number; avgCost: number }>;
+      realized: number;
+      updatedAt: number | null;
+    };
+  }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { cid, symbol, side, qty, tradeId } = (req.data ?? {}) as {
+      cid?: string;
+      symbol?: string;
+      side?: string;
+      qty?: number;
+      tradeId?: string;
+    };
+    if (!cid || typeof cid !== "string") {
+      throw new HttpsError("invalid-argument", "cid 가 필요합니다.");
+    }
+    if (!symbol || !TRADING_SYMBOL_SET.has(symbol)) {
+      throw new HttpsError("invalid-argument", "거래할 수 없는 종목입니다.");
+    }
+    if (side !== "buy" && side !== "sell") {
+      throw new HttpsError("invalid-argument", "거래 유형이 올바르지 않습니다.");
+    }
+    if (!Number.isInteger(qty) || (qty as number) < 1 || (qty as number) > 10000) {
+      throw new HttpsError("invalid-argument", "수량은 1~10000 사이의 정수여야 합니다.");
+    }
+    if (!tradeId || typeof tradeId !== "string") {
+      throw new HttpsError("invalid-argument", "tradeId 가 필요합니다.");
+    }
+    const quantity = qty as number;
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    // 권한: 학급 멤버
+    const memberSnap = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+    if (!memberSnap.exists) {
+      throw new HttpsError("permission-denied", "해당 학급의 멤버만 거래할 수 있습니다.");
+    }
+    const token = req.auth.token as { name?: string };
+    const traderName =
+      (memberSnap.data()?.displayName as string) || token.name || "학생";
+
+    // 개장 검증(서버 재검증)
+    const now = Date.now();
+    const cfgSnap = await fdb.doc(`classes/${cid}/trading/config`).get();
+    const rawOverride = cfgSnap.data()?.override;
+    const cfg = cfgSnap.exists
+      ? ({
+          enabled: (cfgSnap.data()?.enabled as boolean) ?? false,
+          weekly: (cfgSnap.data()?.weekly as ServerTradingConfig["weekly"]) ?? [],
+          sessions: (cfgSnap.data()?.sessions as ServerTradingConfig["sessions"]) ?? [],
+          override:
+            rawOverride === "open" || rawOverride === "closed" ? rawOverride : null,
+        } as ServerTradingConfig)
+      : null;
+    if (!isTradingOpenServer(cfg, now)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "지금은 거래 시간이 아니에요. 개장 시간에 다시 시도해 주세요."
+      );
+    }
+
+    // 캐시 시세 — 존재 + 30분 이내
+    const pricesSnap = await fdb.doc("tradingPrices/current").get();
+    if (!pricesSnap.exists) {
+      throw new HttpsError("failed-precondition", "시세를 먼저 새로고침 해주세요.");
+    }
+    const pdata = pricesSnap.data() as {
+      updatedAt?: { toMillis?: () => number };
+      stocks?: Record<string, { mbPrice?: number }>;
+    };
+    const priceUpdatedAt = pdata.updatedAt?.toMillis ? pdata.updatedAt.toMillis() : 0;
+    if (!priceUpdatedAt || now - priceUpdatedAt > PRICE_STALE_MS) {
+      throw new HttpsError("failed-precondition", "시세를 먼저 새로고침 해주세요.");
+    }
+    const mbPrice = Math.floor((pdata.stocks?.[symbol]?.mbPrice as number) ?? 0);
+    if (mbPrice < 1) {
+      throw new HttpsError("failed-precondition", "지금은 이 종목을 거래할 수 없어요.");
+    }
+
+    const tradeRef = fdb.doc(`classes/${cid}/trades/${tradeId}`);
+    const walletRef = fdb.doc(`classes/${cid}/manbo/${uid}`);
+    const posRef = fdb.doc(`classes/${cid}/positions/${uid}`);
+    const subtotal = mbPrice * quantity;
+    const fee = tradeFee(subtotal);
+
+    const result = await fdb.runTransaction(async (tx) => {
+      // 모든 읽기를 쓰기보다 먼저.
+      const tradeSnap = await tx.get(tradeRef);
+      const walletSnap = await tx.get(walletRef);
+      const posSnap = await tx.get(posRef);
+
+      const balance = (walletSnap.data()?.balance as number) ?? 0;
+      const holdings =
+        (posSnap.data()?.holdings as Record<string, { qty: number; avgCost: number }>) ?? {};
+      const realized = (posSnap.data()?.realized as number) ?? 0;
+
+      // 멱등: 이미 체결된 tradeId → 현재 상태만 반환(중복 처리 방지).
+      if (tradeSnap.exists) {
+        return {
+          balance,
+          position: {
+            holdings,
+            realized,
+            updatedAt: posSnap.data()?.updatedAt?.toMillis?.() ?? null,
+          },
+        };
+      }
+
+      const newHoldings: Record<string, { qty: number; avgCost: number }> = { ...holdings };
+      let newBalance: number;
+      let newRealized = realized;
+
+      let total: number; // 실제 청구/지급액(만보) — 체결 스냅샷·클라 표시용
+
+      if (side === "buy") {
+        const chargeTotal = subtotal + fee;
+        total = chargeTotal;
+        if (balance < chargeTotal) {
+          throw new HttpsError(
+            "failed-precondition",
+            `만보가 부족합니다. (필요 ${chargeTotal}, 보유 ${balance})`
+          );
+        }
+        const cur = holdings[symbol] ?? { qty: 0, avgCost: 0 };
+        const nextQty = cur.qty + quantity;
+        // 가중평균 평단(만보) — 수수료를 원가에 포함해 "실제 낸 돈" 기준으로 손익을 계산한다.
+        const nextAvg = (cur.avgCost * cur.qty + chargeTotal) / nextQty;
+        newHoldings[symbol] = { qty: nextQty, avgCost: nextAvg };
+        newBalance = balance - chargeTotal;
+
+        tx.set(
+          walletRef,
+          {
+            uid,
+            balance: FieldValue.increment(-chargeTotal),
+            spent: FieldValue.increment(chargeTotal),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        tx.set(walletRef.collection("log").doc(), {
+          type: "spend",
+          amount: chargeTotal,
+          reason: `트레이딩 매수: ${TRADING_ALIAS[symbol] ?? symbol} ${quantity}주 (수수료 ${fee}만보 포함)`,
+          by: uid,
+          at: FieldValue.serverTimestamp(),
+        });
+      } else {
+        const cur = holdings[symbol];
+        if (!cur || cur.qty < quantity) {
+          throw new HttpsError("failed-precondition", "보유 수량이 부족합니다.");
+        }
+        const proceeds = Math.max(0, subtotal - fee);
+        total = proceeds;
+        newRealized = realized + (proceeds - cur.avgCost * quantity);
+        const nextQty = cur.qty - quantity;
+        if (nextQty === 0) {
+          delete newHoldings[symbol];
+        } else {
+          newHoldings[symbol] = { qty: nextQty, avgCost: cur.avgCost };
+        }
+        newBalance = balance + proceeds;
+
+        tx.set(
+          walletRef,
+          {
+            uid,
+            balance: FieldValue.increment(proceeds),
+            earned: FieldValue.increment(proceeds),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        tx.set(walletRef.collection("log").doc(), {
+          type: "earn",
+          amount: proceeds,
+          reason: `트레이딩 매도: ${TRADING_ALIAS[symbol] ?? symbol} ${quantity}주 (수수료 ${fee}만보 차감)`,
+          by: uid,
+          at: FieldValue.serverTimestamp(),
+        });
+      }
+
+      // 포지션: merge 없이 문서 전체 교체 — merge:true 는 맵을 깊은 병합하므로
+      // 전량 매도로 제거된 심볼이 문서에 유령으로 남아 재매도(만보 복제)가 가능해진다.
+      tx.set(posRef, {
+        holdings: newHoldings,
+        realized: newRealized,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      // 체결 스냅샷
+      tx.set(tradeRef, {
+        uid,
+        name: traderName,
+        symbol,
+        side,
+        qty: quantity,
+        mbPrice,
+        total,
+        fee,
+        at: FieldValue.serverTimestamp(),
+      });
+
+      return {
+        balance: newBalance,
+        position: { holdings: newHoldings, realized: newRealized, updatedAt: now },
+      };
+    });
+
+    return { ok: true, balance: result.balance, position: result.position };
   }
 );

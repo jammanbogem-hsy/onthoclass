@@ -135,6 +135,8 @@ type Ctx = {
   toggleFav: (kind: FavKind, id: string) => void;
   copyToClass: (projectId: string) => void;
   dropTarget: string | null;
+  /** 지금 드래그 중인 항목 (카드 보기 순서변경 오버레이 표시용) */
+  dragItem: DragItem | null;
   reload: () => Promise<void>;
   dragProps: (item: DragItem) => Record<string, unknown>;
   dropZone: (key: string, t: DropTarget) => Record<string, unknown>;
@@ -1072,9 +1074,12 @@ function DetailPane({
 function ProjectCard({
   project,
   ctx,
+  prevId,
 }: {
   project: Project;
   ctx: Ctx;
+  /** 정렬상 바로 앞 최상위 폴더 id (카드 좌측 "앞에 끼우기" 대상) — 없으면 null=맨 앞 */
+  prevId: string | null;
 }) {
   const { classId, isTeacher } = ctx;
   const dialog = useDialog();
@@ -1084,6 +1089,23 @@ function ProjectCard({
     .sort(sortPinned);
   const hi = ctx.dropTarget === `folder:${project.id}`;
   const c = colorOf(project.color);
+
+  // 폴더 카드를 드래그하는 동안에만(자기 자신 제외) 순서변경 드롭존을 띄운다.
+  const drag = ctx.dragItem;
+  const reorderActive =
+    isTeacher && drag?.kind === "project" && drag.id !== project.id;
+  const beforeKey = `order:root:${prevId ?? "head"}`;
+  const afterKey = `order:root:${project.id}`;
+  const beforeHi = ctx.dropTarget === beforeKey;
+  const afterHi = ctx.dropTarget === afterKey;
+  // 합치기(폴더 안에 넣기)는 가운데 영역 + 폴더 드래그일 때만 안내칩 노출
+  const mergeHi = hi && drag?.kind === "project";
+  // 드래그 중인 카드 바로 뒤면 "앞에 끼우기"는 제자리라 숨김
+  const showBefore = reorderActive && prevId !== drag?.id;
+
+  const barOn =
+    "bg-[var(--md-sys-color-primary)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--md-sys-color-primary)_22%,transparent)]";
+
   return (
     <div
       {...ctx.dragProps({ kind: "project", id: project.id })}
@@ -1091,7 +1113,7 @@ function ProjectCard({
         type: "folder",
         projectId: project.id,
       })}
-      className={`flex flex-col rounded-2xl border bg-[var(--md-sys-color-surface-container-low)] transition sm:aspect-square ${
+      className={`relative flex flex-col rounded-2xl border bg-[var(--md-sys-color-surface-container-low)] transition sm:aspect-square ${
         hi
           ? "border-[var(--md-sys-color-primary)] ring-2 ring-[var(--md-sys-color-primary)]"
           : "border-[var(--md-sys-color-outline-variant)]"
@@ -1221,6 +1243,52 @@ function ProjectCard({
           차시 추가
         </button>
       )}
+
+      {/* 폴더 드래그 중 — 좌/우 가장자리=순서 끼우기, 가운데=합치기 */}
+      {reorderActive && (
+        <>
+          {showBefore && (
+            <div
+              {...ctx.dropZone(beforeKey, {
+                type: "order",
+                parentProjectId: null,
+                afterId: prevId,
+              })}
+              className="absolute inset-y-0 left-0 z-20 w-[34%]"
+              title="여기 앞으로 순서 옮기기"
+            >
+              <div
+                className={`pointer-events-none absolute inset-y-3 left-0 w-1.5 rounded-full transition ${
+                  beforeHi ? barOn : "bg-transparent"
+                }`}
+              />
+            </div>
+          )}
+          <div
+            {...ctx.dropZone(afterKey, {
+              type: "order",
+              parentProjectId: null,
+              afterId: project.id,
+            })}
+            className="absolute inset-y-0 right-0 z-20 w-[34%]"
+            title="여기 뒤로 순서 옮기기"
+          >
+            <div
+              className={`pointer-events-none absolute inset-y-3 right-0 w-1.5 rounded-full transition ${
+                afterHi ? barOn : "bg-transparent"
+              }`}
+            />
+          </div>
+          {mergeHi && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-on-primary)] shadow-[var(--md-sys-elevation-2)]">
+                <Icon name="drive_file_move" size={15} />
+                “{project.name}” 안에 넣기
+              </span>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1246,6 +1314,13 @@ export function ClassBuilder({
   const dragRef = useRef<DragItem | null>(null);
   const ensuringRef = useRef(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // 드래그 중인 항목(렌더 반영용 — 순서변경 오버레이 표시). dragRef는 applyDrop의 최신값 보장용.
+  const [dragItem, setDragItem] = useState<DragItem | null>(null);
+  const clearDrag = useCallback(() => {
+    dragRef.current = null;
+    setDragItem(null);
+    setDropTarget(null);
+  }, []);
 
   // 교사 접속 차시 실시간 구독 + staleness 자동 정리(크래시 대비).
   // 현재 시각은 30초마다 콜백에서 갱신(렌더 중 Date.now 호출 회피).
@@ -1363,9 +1438,12 @@ export function ClassBuilder({
 
       if (target.type === "order" && drag.kind === "project") {
         const parentId = target.parentProjectId;
-        if (drag.id === parentId || isDescendant(parentId ?? "", drag.id)) {
-          dragRef.current = null;
-          setDropTarget(null);
+        if (
+          drag.id === parentId ||
+          target.afterId === drag.id || // 자기 바로 뒤 = 제자리
+          isDescendant(parentId ?? "", drag.id)
+        ) {
+          clearDrag();
           return;
         }
         const siblings = projects
@@ -1415,11 +1493,10 @@ export function ClassBuilder({
             });
         }
       }
-      dragRef.current = null;
-      setDropTarget(null);
+      clearDrag();
       await reload();
     },
-    [classId, lessons, projects, reload, isDescendant]
+    [classId, lessons, projects, reload, isDescendant, clearDrag]
   );
 
   const dragProps = useCallback(
@@ -1429,17 +1506,15 @@ export function ClassBuilder({
             draggable: true,
             onDragStart: (e: React.DragEvent) => {
               dragRef.current = item;
+              setDragItem(item);
               e.dataTransfer.effectAllowed = "move";
               e.dataTransfer.setData("text/plain", item.id);
               e.stopPropagation();
             },
-            onDragEnd: () => {
-              dragRef.current = null;
-              setDropTarget(null);
-            },
+            onDragEnd: clearDrag,
           }
         : {},
-    [isTeacher]
+    [isTeacher, clearDrag]
   );
 
   const dropZone = useCallback(
@@ -1536,6 +1611,7 @@ export function ClassBuilder({
     toggleFav,
     copyToClass,
     dropTarget,
+    dragItem,
     reload,
     dragProps,
     dropZone,
@@ -1614,18 +1690,31 @@ export function ClassBuilder({
             </p>
           </GlassCard>
         ) : (
-          rootProjects.map((p) => (
-            <ProjectCard key={p.id} project={p} ctx={ctx} />
+          rootProjects.map((p, i) => (
+            <ProjectCard
+              key={p.id}
+              project={p}
+              ctx={ctx}
+              prevId={rootProjects[i - 1]?.id ?? null}
+            />
           ))
         )}
       </div>
 
       {isTeacher && (
-        <p className="flex items-center gap-2 px-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-          <Icon name="info" size={16} />
-          전체 폴더 구조·드래그 정리·학생 산출물 열람은 우측 상단
-          &quot;클래스 HDD&quot;에서.
-        </p>
+        <div className="flex flex-col gap-1 px-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+          <p className="flex items-center gap-2">
+            <Icon name="drag_pan" size={16} />
+            폴더 카드를 끌어 <b className="font-semibold">좌·우 가장자리</b>에
+            놓으면 순서 변경, <b className="font-semibold">가운데</b>에 놓으면
+            폴더 합치기.
+          </p>
+          <p className="flex items-center gap-2">
+            <Icon name="info" size={16} />
+            전체 폴더 구조·드래그 정리·학생 산출물 열람은 우측 상단
+            &quot;클래스 HDD&quot;에서.
+          </p>
+        </div>
       )}
 
       {/* 클래스 HDD — 폴더 탐색기 모달 */}

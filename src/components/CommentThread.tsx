@@ -12,6 +12,7 @@ import {
 } from "@/lib/lessons";
 import type { Member } from "@/lib/classes";
 import { resolveStudentName } from "@/lib/names";
+import { useNameMask } from "@/components/NameMask";
 
 /** 산출물 피드백 댓글 스레드 (교사 ↔ 해당 학생) */
 export function CommentThread({
@@ -30,6 +31,8 @@ export function CommentThread({
   roster?: Member[];
 }) {
   const { user } = useAuth();
+  // 발표용 이름 가리기 — 학생 작성자만(교사=발표자 본인은 그대로)
+  const { mask } = useNameMask();
   const [items, setItems] = useState<SubComment[] | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -69,12 +72,15 @@ export function CommentThread({
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-bold">
-                {resolveStudentName(
-                  roster,
-                  c.authorUid,
-                  c.authorName,
-                  c.authorRole === "teacher" ? "교사" : "학생"
-                )}
+                {(() => {
+                  const n = resolveStudentName(
+                    roster,
+                    c.authorUid,
+                    c.authorName,
+                    c.authorRole === "teacher" ? "교사" : "학생"
+                  );
+                  return c.authorRole === "teacher" ? n : mask(n);
+                })()}
                 <span className="ml-1 text-sm font-normal text-black/40">
                   {c.authorRole === "teacher" ? "교사" : "학생"}
                 </span>

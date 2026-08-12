@@ -279,13 +279,22 @@ function LevelInner() {
               경험치로 쌓인 사용 화폐
             </p>
           </div>
-          <button
-            onClick={() => setMarketOpen(true)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl bg-[var(--md-sys-color-primary)] px-5 py-3 text-sm font-bold text-[var(--md-sys-color-on-primary)] shadow-sm transition hover:brightness-105"
-          >
-            <Icon name="storefront" size={18} />
-            러닝마켓
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              onClick={() => setMarketOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-[var(--md-sys-color-primary)] px-5 py-3 text-sm font-bold text-[var(--md-sys-color-on-primary)] shadow-sm transition hover:brightness-105"
+            >
+              <Icon name="storefront" size={18} />
+              러닝마켓
+            </button>
+            <button
+              onClick={() => router.push(`/trade?id=${cid}`)}
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-[var(--md-sys-color-tertiary-container)] px-5 py-3 text-sm font-bold text-[var(--md-sys-color-on-tertiary-container)] shadow-sm transition hover:brightness-105"
+            >
+              <Icon name="candlestick_chart" size={18} />
+              만보 트레이딩
+            </button>
+          </div>
         </GlassCard>
 
         {/* 내 미션 */}

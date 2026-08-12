@@ -322,7 +322,7 @@ function PreviewPinTab() {
           setDraft(null);
           setPresetName("");
           setTried(true);
-          setCelebrate(pinSentence(d.placeType, d.canDo, d.emotion, d.category));
+          setCelebrate(pinSentence(d.placeType, d.placeName, d.canDo, d.emotion, d.category));
         }}
         onClose={() => {
           setDraft(null);
@@ -682,7 +682,7 @@ function PinInfoCard({
         </button>
       </div>
       <p className="mt-2 rounded-xl bg-[var(--md-sys-color-surface-container-high)] px-3 py-2 text-[13px] font-medium leading-relaxed text-[var(--md-sys-color-on-surface)]">
-        {pinSentence(pin.placeType, pin.canDo, pin.emotion, pin.category)}
+        {pinSentence(pin.placeType, pin.placeName, pin.canDo, pin.emotion, pin.category)}
       </p>
       {pin.memory && (
         <p className="mt-1.5 rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2 text-[13px] leading-relaxed text-[var(--md-sys-color-on-tertiary-container)]">
@@ -818,7 +818,7 @@ function PinTab({
         );
       } else if (draft) {
         await createPin(uid, player, { ...d, ...draft }, photoURL);
-        setCelebrate(pinSentence(d.placeType, d.canDo, d.emotion, d.category));
+        setCelebrate(pinSentence(d.placeType, d.placeName, d.canDo, d.emotion, d.category));
       }
       setDraft(null);
       setEditing(null);
@@ -1254,7 +1254,7 @@ function ScoreTab({ uid }: { uid: string }) {
                   {p.placeName}
                 </b>
                 <br />
-                {pinSentence(p.placeType, p.canDo, p.emotion, p.category)}
+                {pinSentence(p.placeType, p.placeName, p.canDo, p.emotion, p.category)}
               </li>
             ))}
           </ul>

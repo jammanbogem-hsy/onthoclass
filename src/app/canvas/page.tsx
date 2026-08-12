@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -20,7 +21,7 @@ import { CanvasIntro } from "@/components/CanvasIntro";
 import {
   AttachmentField,
   AttachmentList,
-  uploadImageFiles,
+  uploadImages,
 } from "@/components/AttachmentField";
 import type { Attachment } from "@/lib/lessons";
 import { getMyRole, watchMembers, type Role } from "@/lib/classes";
@@ -28,20 +29,36 @@ import { listGroups, type Group } from "@/lib/groups";
 import {
   actorOf,
   addComment,
+  addNodeAttachments,
+  CANVAS_SCHEMA,
+  createEdge,
+  createNode,
+  deleteEdgeDoc,
   deleteFeedback,
+  deleteNodeAndRefs,
+  deleteNodesOnPage,
   ensureCanvas,
+  migrateCanvasToV2,
+  patchEdge,
+  patchNode,
   REACTIONS,
-  saveCanvas,
+  removeNodeAttachment,
+  saveCanvasMeta,
+  setBoardLayoutMode,
   toggleReaction,
-  watchCanvas,
+  watchCanvasMeta,
+  watchEdges,
   watchFeedback,
-  type CanvasDoc,
+  watchNodes,
+  type CanvasMeta,
   type CanvasPage,
   type CardEdge,
   type CardNode,
   type Feedback,
+  type NodeChange,
   type ReactionType,
 } from "@/lib/canvas";
+import { deleteAttachment } from "@/lib/upload";
 import {
   listQuestions,
   setQuestionSubmissionFor,
@@ -203,6 +220,50 @@ function gradientFrom(colors: string[]): string {
 }
 
 export type TeamColor = { solid: string; gradient: string | null };
+
+// 카드별 피드백 집계 항목 — 반응(reactions) 신원 안정화(구조적 공유)에 사용
+type FbEntry = {
+  comments: number;
+  reactions: Record<string, { count: number; mine: boolean }>;
+};
+// 두 집계 항목이 값(댓글수/반응 카운트/내반응 여부)까지 동일한지
+function sameFbEntry(a: FbEntry, b: FbEntry): boolean {
+  if (a.comments !== b.comments) return false;
+  const ak = Object.keys(a.reactions);
+  const bk = Object.keys(b.reactions);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) {
+    const ra = a.reactions[k];
+    const rb = b.reactions[k];
+    if (!rb || ra.count !== rb.count || ra.mine !== rb.mine) return false;
+  }
+  return true;
+}
+
+// 규칙형(grid) 반응형 메이슨리 상수 — 균일 열너비/간격/상단 여백(월드 좌표)
+const GRID_COL_W = 240;
+const GRID_GAP = 20;
+const GRID_TOP_PAD = 24;
+// 뷰포트 컬링(가상화) 여백(월드 단위) — 화면 밖 이 거리까지는 미리 렌더해 팬 시 늦은 팝인 방지
+const CULL_MARGIN = 600;
+
+// CardView 에 내려가는 안정 콜백 묶음(카드 id 를 인자로 받아 신원을 고정)
+type CardHandlers = {
+  onCardDown: (e: React.PointerEvent, id: string) => void;
+  onChangeText: (id: string, t: string) => void;
+  onAddAttachments: (id: string, atts: Attachment[]) => void;
+  onRemoveAttachment: (id: string, att: Attachment) => void;
+  onChangeColor: (id: string, color: string | null) => void;
+  onResize: (id: string, h: number) => void;
+  onDelete: (id: string) => void;
+  onToggleReaction: (id: string, type: ReactionType) => void;
+  onOpenComments: (id: string, rect: DOMRect) => void;
+  onToggleCheck: (id: string) => void;
+  onSendToMap: (id: string) => void;
+  onFocusText: (id: string) => void;
+  onBlurText: (id: string) => void;
+  onRecordingChange: (id: string, rec: boolean) => void;
+};
 const PAGE_PATTERNS: { id: string; label: string }[] = [
   { id: "none", label: "없음" },
   { id: "dots", label: "점" },
@@ -267,6 +328,13 @@ function newId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+// 작성자별 결정적 생성 오프셋 — 20명이 동시에 카드를 만들 때 같은 좌표 충돌을 줄인다.
+function authorJitter(uid: string): { dx: number; dy: number } {
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
+  return { dx: (h % 7) * 26 - 78, dy: ((h >> 3) % 7) * 26 - 78 };
+}
+
 // 두 사각형이 (여백 gap 포함) 겹치는지
 function rectsOverlap(
   a: { x: number; y: number; w: number; h: number },
@@ -321,7 +389,10 @@ function CanvasInner() {
   const isLessonBoard = !!lid;
 
   const [role, setRole] = useState<Role | null>(null);
-  const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
+  // [v2] 부모 메타 + 카드별 문서(Map). 변경된 카드만 갱신해 렉/클로버를 없앤다.
+  const [meta, setMeta] = useState<CanvasMeta | null>(null);
+  const [subNodes, setSubNodes] = useState<Map<string, CardNode>>(new Map());
+  const [subEdges, setSubEdges] = useState<CardEdge[]>([]);
   // 색 혼합 축하: 서로 다른 색 카드가 새로 연결되면 그 지점에서 폭발 연출
   const [burst, setBurst] = useState<{
     id: number;
@@ -348,6 +419,8 @@ function CanvasInner() {
 
   const [activePage, setActivePage] = useState<string>("p1");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 드래그 중인 카드 — 그 카드만 최상위 레이어로(움직이는 카드가 가려지지 않게)
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   // 페이지 버튼 꾹 누르면 뜨는 말풍선 메뉴(교사)
   const [pageMenu, setPageMenu] = useState<{
     id: string;
@@ -365,13 +438,58 @@ function CanvasInner() {
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
 
+  // ---------- 뷰포트 컬링(가상화) ----------
+  // view(팬/줌)·스테이지 크기로 "보이는 월드 사각형(+여백)"을 구해 화면 밖 카드/엣지는
+  // 렌더에서 제외한다. rAF 스로틀로 팬 매 프레임 재계산을 프레임당 1회로 합친다.
+  const [cullRect, setCullRect] = useState<{
+    l: number;
+    t: number;
+    r: number;
+    b: number;
+  } | null>(null);
+  const cullRafRef = useRef<number | null>(null);
+  const computeCullRect = useCallback(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const sw = el.clientWidth;
+    const sh = el.clientHeight;
+    if (!sw || !sh) return;
+    const v = viewRef.current;
+    const l = (0 - v.tx) / v.scale - CULL_MARGIN;
+    const t = (0 - v.ty) / v.scale - CULL_MARGIN;
+    const r = (sw - v.tx) / v.scale + CULL_MARGIN;
+    const b = (sh - v.ty) / v.scale + CULL_MARGIN;
+    setCullRect((prev) =>
+      prev && prev.l === l && prev.t === t && prev.r === r && prev.b === b
+        ? prev
+        : { l, t, r, b }
+    );
+  }, []);
+  const scheduleCull = useCallback(() => {
+    if (cullRafRef.current != null) return;
+    cullRafRef.current = requestAnimationFrame(() => {
+      cullRafRef.current = null;
+      computeCullRect();
+    });
+  }, [computeCullRect]);
+  // 팬/줌 등 view 변경(+마운트) 시 가시영역 갱신(rAF 스로틀)
+  useEffect(() => {
+    scheduleCull();
+  }, [view, scheduleCull]);
+  useEffect(
+    () => () => {
+      if (cullRafRef.current != null) cancelAnimationFrame(cullRafRef.current);
+    },
+    []
+  );
+
   // 드래그 / 연결 모드
   const dragRef = useRef<{
     nid: string;
-    sx: number;
-    sy: number;
     ox: number;
     oy: number;
+    lastX: number;
+    lastY: number;
   } | null>(null);
   const [connectMode, setConnectMode] = useState(false);
   const [pendingFrom, setPendingFrom] = useState<string | null>(null);
@@ -387,9 +505,24 @@ function CanvasInner() {
     }
   }, [loading, role]);
 
-  // 변경 사항 디바운스 저장
-  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const localDirtyRef = useRef(false);
+  // 렌더 소스로 쓰는 "유효 카드" Map — 핸들러가 클로저 캡처 없이 최신값을 조회.
+  const nodesRef = useRef<Map<string, CardNode>>(new Map());
+  // 내가 지금 만지는(드래그/편집/녹음) 카드는 원격 스냅샷 적용을 막는다(shield).
+  //  state 'active' = 진행 중, 'ack' = 끝났고 내 쓰기의 서버확정(snapshot) 대기.
+  //  until = 비정상 종료 대비 안전망 TTL.
+  const shieldRef = useRef<
+    Map<string, { state: "active" | "ack"; until: number }>
+  >(new Map());
+  // 드래그 좌표 스로틀 기록(카드별 마지막 전송 시각/타이머)
+  const dragSendRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    last: number;
+  }>({ timer: null, last: 0 });
+  // 텍스트 입력 디바운스(카드별)
+  const textTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map()
+  );
+  const migratedOnceRef = useRef<string | null>(null);
 
   // ---------- 모둠별 보드 파생값 ----------
   // 차시 보드 활동(질문)에서 boardMode 를 읽어 모둠별 분리 여부 결정
@@ -411,6 +544,51 @@ function CanvasInner() {
       : isGroupBoard
         ? !!myGroup && groupParam === myGroup.id
         : !!role;
+
+  // ---------- 유효 카드/연결 (서브컬렉션 우선, 마이그레이션 전엔 레거시 배열) ----------
+  const migrated = !!meta && meta.schema >= CANVAS_SCHEMA;
+  // 서브컬렉션 시드가 (충분히) 들어왔으면 schema 승격 전이라도 그걸 사용(부분 이전 방지).
+  const useSub =
+    migrated ||
+    (!!meta && subNodes.size > 0 && subNodes.size >= meta.legacyNodes.length);
+  const effNodesMap = useMemo(() => {
+    if (useSub) return subNodes;
+    const m = new Map<string, CardNode>();
+    (meta?.legacyNodes ?? []).forEach((n) => m.set(n.id, n));
+    return m;
+  }, [useSub, subNodes, meta]);
+  nodesRef.current = effNodesMap;
+  const effEdges = useMemo(
+    () => (useSub ? subEdges : meta?.legacyEdges ?? []),
+    [useSub, subEdges, meta]
+  );
+  // 읽기 호환용 canvas 객체(메타 전용) — name/pages/groupColorMode 만 노출.
+  // 카드/연결은 effNodesMap/effEdges 로 분리해 드래그 시 canvas 신원이 바뀌지 않게 한다.
+  const canvas = useMemo(
+    () =>
+      meta
+        ? {
+            id: meta.id,
+            name: meta.name,
+            pages: meta.pages,
+            groupColorMode: meta.groupColorMode,
+            updatedAt: meta.updatedAt,
+          }
+        : null,
+    [meta]
+  );
+
+  // ---------- 배치 모드(자유형/규칙형) ----------
+  const layoutMode: "free" | "grid" = meta?.layoutMode ?? "free";
+  const isGrid = layoutMode === "grid";
+  const isGridRef = useRef(isGrid);
+  isGridRef.current = isGrid;
+  // 규칙형 메이슨리: 카드별 계산 위치(월드좌표) + 측정 높이(모든 뷰어가 자기 렌더 높이 기록)
+  const [gridPos, setGridPos] = useState<Map<string, { x: number; y: number }>>(
+    new Map()
+  );
+  const measuredHeightsRef = useRef<Map<string, number>>(new Map());
+  const gridRafRef = useRef<number | null>(null);
 
   const setGroupParam = useCallback(
     (gid: string) => {
@@ -446,39 +624,123 @@ function CanvasInner() {
     if (myGroup && groupParam !== myGroup.id) setGroupParam(myGroup.id);
   }, [isGroupBoard, isTeacher, myGroup, groupParam, setGroupParam]);
 
-  // 보드 doc 구독 (effectiveBoardId 단위) — 모둠 미선택이면 대기
+  // 카드 스냅샷 변경 적용 — shield(내가 만지는 카드)는 원격 덮어쓰기를 막는다.
+  const applyNodeChanges = useCallback((changes: NodeChange[]) => {
+    setSubNodes((prev) => {
+      let next: Map<string, CardNode> | null = null;
+      const ensure = () => (next ??= new Map(prev));
+      const now = Date.now();
+      for (const ch of changes) {
+        const id = ch.node.id;
+        if (ch.type === "removed") {
+          shieldRef.current.delete(id); // 삭제는 항상 이김
+          if (prev.has(id)) ensure().delete(id);
+          continue;
+        }
+        const sh = shieldRef.current.get(id);
+        if (sh && sh.until > now) {
+          // 'active' = 진행 중 → 원격/내 echo 모두 무시(로컬이 최신).
+          // 'ack' = 내 마지막 쓰기의 서버확정 대기 → 미확정(pending)은 보류,
+          //         서버확정 스냅샷이 오면 해제하고 그 값(서버 진실)으로 반영.
+          if (sh.state === "active") continue;
+          if (ch.hasPendingWrites) continue;
+          shieldRef.current.delete(id);
+        } else if (sh) {
+          shieldRef.current.delete(id); // TTL 만료
+        }
+        ensure().set(id, ch.node);
+      }
+      return next ?? prev;
+    });
+  }, []);
+
+  // 보드 구독 (effectiveBoardId 단위) — 메타 + 카드별 노드/엣지. 모둠 미선택이면 대기.
   useEffect(() => {
     if (!user || !cid || groupBoardPending) {
-      setCanvas(null);
+      setMeta(null);
+      setSubNodes(new Map());
+      setSubEdges([]);
       setFeedback([]);
       return;
     }
+    const boardLid = lid ?? undefined;
     ensureCanvas(
       cid,
       effectiveBoardId,
       isLessonBoard ? "차시 보드" : "기본 캔버스",
-      lid ?? undefined
+      boardLid
     ).catch(() => {});
-    const offCanvas = watchCanvas(
-      cid,
-      effectiveBoardId,
-      (d) => {
-        if (localDirtyRef.current) return;
-        setCanvas(d);
-      },
-      lid ?? undefined
-    );
+    // 보드 전환 시 이전 보드 카드 잔상/보호 비움
+    setSubNodes(new Map());
+    setSubEdges([]);
+    shieldRef.current.clear();
+    measuredHeightsRef.current.clear(); // 규칙형 측정 높이/배치 초기화
+    setGridPos(new Map());
+
+    const offMeta = watchCanvasMeta(cid, effectiveBoardId, setMeta, boardLid);
+    const offNodes = watchNodes(cid, effectiveBoardId, applyNodeChanges, boardLid);
+    const offEdges = watchEdges(cid, effectiveBoardId, setSubEdges, boardLid);
     const offFeedback = watchFeedback(
       cid,
       effectiveBoardId,
       setFeedback,
-      lid ?? undefined
+      boardLid
     );
     return () => {
-      offCanvas();
+      offMeta();
+      offNodes();
+      offEdges();
       offFeedback();
     };
-  }, [user, cid, lid, effectiveBoardId, isLessonBoard, groupBoardPending]);
+  }, [
+    user,
+    cid,
+    lid,
+    effectiveBoardId,
+    isLessonBoard,
+    groupBoardPending,
+    applyNodeChanges,
+  ]);
+
+  // 1회 마이그레이션 (레거시 단일 doc 배열 → 카드별 문서). 편집자면 시드,
+  // schema 승격/배열 비움은 교사만. 학생 먼저 열어도 시드되어 렌더가 전환된다.
+  useEffect(() => {
+    if (!cid || !meta || !canEdit) return;
+    if (meta.schema >= CANVAS_SCHEMA) return;
+    const key = `${cid}/${effectiveBoardId}`;
+    if (migratedOnceRef.current === key) return;
+    migratedOnceRef.current = key;
+    migrateCanvasToV2(
+      cid,
+      effectiveBoardId,
+      meta,
+      isTeacher,
+      lid ?? undefined
+    ).catch(() => {
+      migratedOnceRef.current = null; // 실패 시 재시도 허용
+    });
+  }, [cid, meta, canEdit, isTeacher, effectiveBoardId, lid]);
+
+  // 언마운트/보드 전환 시 진행 중 드래그의 마지막 좌표를 강제 flush (pointerup 누락 대비)
+  useEffect(() => {
+    return () => {
+      const d = dragRef.current;
+      const send = dragSendRef.current;
+      if (send.timer) {
+        clearTimeout(send.timer);
+        send.timer = null;
+      }
+      if (d && cid)
+        patchNode(
+          cid,
+          effectiveBoardId,
+          d.nid,
+          { x: d.lastX, y: d.lastY },
+          lid ?? undefined
+        ).catch(() => {});
+      dragRef.current = null;
+    };
+  }, [cid, effectiveBoardId, lid]);
 
   // 연결 축하 버스트 표시 (2초 후 자동 사라짐)
   const showBurst = useCallback((x: number, y: number, color: string) => {
@@ -491,30 +753,29 @@ function CanvasInner() {
     );
   }, []);
 
-  // 보드 전환 시: 새 보드의 기존 연결을 "새 연결"로 오인하지 않도록 추적 초기화
+  // 보드 전환/마이그레이션 시: 기존 연결을 "새 연결"로 오인하지 않도록 추적 초기화
   useEffect(() => {
     seenEdgesRef.current = null;
-  }, [effectiveBoardId, lid]);
+  }, [effectiveBoardId, lid, useSub]);
 
-  // 새로 추가된 "서로 다른 색" 연결을 감지해 혼합색 폭발 연출 (로컬·원격 모두)
+  // 새로 추가된 연결을 감지해 혼합색 폭발 연출. 좌표는 발화 시점 nodesRef 에서 조회
+  //  → 드래그(좌표 변경)로 재실행되지 않게 deps 는 edges 만.
   useEffect(() => {
-    const edges = canvas?.edges ?? [];
-    const nodes = canvas?.nodes ?? [];
+    const edges = effEdges;
     if (seenEdgesRef.current === null) {
       // 첫 스냅샷의 기존 연결은 무시
       seenEdgesRef.current = new Set(edges.map((e) => e.id));
       return;
     }
     const seen = seenEdgesRef.current;
-    const byId = new Map(nodes.map((nd) => [nd.id, nd]));
+    const byId = nodesRef.current;
     let hit: { x: number; y: number; color: string } | null = null;
     for (const e of edges) {
       if (seen.has(e.id)) continue;
       seen.add(e.id);
       const a = byId.get(e.from);
       const b = byId.get(e.to);
-      if (!a || !b) continue;
-      // 모든 연결에 "생각이 연결됐어요" 연출. 색은 두 카드 색의 혼합(없으면 기본).
+      if (!a || !b) continue; // 상대 노드 미도착 → 조용히 보류
       const cs = [a.color, b.color].filter((c): c is string => !!c);
       const color = cs.length ? blendColors(cs) : "#6d7cff";
       hit = {
@@ -525,10 +786,8 @@ function CanvasInner() {
     }
     if (!hit) return;
     const h = hit;
-    // 렌더 중 setState 회피용으로 다음 틱에 표시(취소 cleanup 없음 → 리사이즈
-    // 재렌더로 버스트가 사라지지 않게). 중복은 seen 집합으로 방지.
     setTimeout(() => showBurst(h.x, h.y, h.color), 0);
-  }, [canvas?.edges, canvas?.nodes, showBurst]);
+  }, [effEdges, showBurst]);
 
   // 모둠 → 색상, uid → 모둠 색/이름
   const groupInfo = useMemo(() => {
@@ -542,26 +801,22 @@ function CanvasInner() {
   const groupColorMode = !!canvas?.groupColorMode;
 
   function toggleGroupColor() {
-    if (!cid || !canvas) return;
-    const next = !canvas.groupColorMode;
-    setCanvas((c) => (c ? { ...c, groupColorMode: next } : c));
-    localDirtyRef.current = true;
-    saveCanvas(cid, effectiveBoardId, { groupColorMode: next }, lid ?? undefined)
-      .finally(() => {
-        localDirtyRef.current = false;
-      })
-      .catch(() => {});
+    if (!cid || !meta) return;
+    const next = !meta.groupColorMode;
+    setMeta((m) => (m ? { ...m, groupColorMode: next } : m));
+    saveCanvasMeta(
+      cid,
+      effectiveBoardId,
+      { groupColorMode: next },
+      lid ?? undefined
+    ).catch(() => {});
   }
 
-  // 카드별 피드백 집계
+  // 카드별 피드백 집계 — 값이 동일한 카드 항목은 이전 객체 신원을 재사용(구조적 공유)해
+  // 한 카드의 반응/댓글 변경이 다른 카드 리렌더를 유발하지 않게 한다(reactions prop 신원 안정화).
+  const prevFbRef = useRef<Map<string, FbEntry>>(new Map());
   const feedbackByCard = useMemo(() => {
-    const m = new Map<
-      string,
-      {
-        comments: number;
-        reactions: Record<string, { count: number; mine: boolean }>;
-      }
-    >();
+    const m = new Map<string, FbEntry>();
     const ensure = (cardId: string) => {
       if (!m.has(cardId))
         m.set(cardId, { comments: 0, reactions: {} });
@@ -577,41 +832,204 @@ function CanvasInner() {
         e.reactions[f.type] = r;
       }
     }
+    // 구조적 공유: 값이 변하지 않은 카드는 이전 항목(=이전 reactions 신원) 유지
+    const prev = prevFbRef.current;
+    for (const [id, entry] of m) {
+      const old = prev.get(id);
+      if (old && sameFbEntry(old, entry)) m.set(id, old);
+    }
+    prevFbRef.current = m;
     return m;
   }, [feedback, user]);
 
-  // 변경 → 디바운스 저장
-  const scheduleSave = useCallback(
-    (patch: Partial<Pick<CanvasDoc, "nodes" | "edges" | "name" | "pages">>) => {
+  // ---------- shield: 내가 만지는(드래그/편집/녹음) 카드를 원격 덮어쓰기에서 보호 ----------
+  // active TTL 은 넉넉히(90s) — 녹음 상한 60초/느린 타이핑을 커버. 드래그·타이핑은
+  // 매 입력마다 갱신되고, 녹음은 시작~종료(onstop) 동안 유지된다. ack 는 서버확정 대기용 짧게.
+  const shieldActive = useCallback((id: string) => {
+    shieldRef.current.set(id, { state: "active", until: Date.now() + 90000 });
+  }, []);
+  const shieldAck = useCallback((id: string) => {
+    // 진행 종료 → 내 마지막 쓰기의 서버확정 스냅샷이 올 때까지만 보호
+    shieldRef.current.set(id, { state: "ack", until: Date.now() + 10000 });
+  }, []);
+
+  // ---------- 메타(페이지/이름/모둠색) 부분 저장 ----------
+  const saveMeta = useCallback(
+    (patch: Partial<Pick<CanvasMeta, "name" | "pages" | "groupColorMode">>) => {
       if (!cid) return;
-      localDirtyRef.current = true;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(async () => {
-        try {
-          await saveCanvas(cid, effectiveBoardId, patch, lid ?? undefined);
-        } finally {
-          localDirtyRef.current = false;
-        }
-      }, 500);
+      setMeta((m) => (m ? { ...m, ...patch } : m));
+      saveCanvasMeta(cid, effectiveBoardId, patch, lid ?? undefined).catch(
+        () => {}
+      );
     },
     [cid, effectiveBoardId, lid]
   );
 
-  const update = useCallback(
-    (mut: (c: CanvasDoc) => CanvasDoc) => {
-      setCanvas((cur) => {
-        if (!cur) return cur;
-        const next = mut(cur);
-        scheduleSave({
-          nodes: next.nodes,
-          edges: next.edges,
-          name: next.name,
-          pages: next.pages,
-        });
-        return next;
-      });
+  // ---------- 카드: 로컬 즉시 반영 + 카드별 문서 기록(granular) ----------
+  const setLocalNode = useCallback((node: CardNode) => {
+    setSubNodes((prev) => new Map(prev).set(node.id, node));
+  }, []);
+  const patchLocalNode = useCallback((id: string, patch: Partial<CardNode>) => {
+    setSubNodes((prev) => {
+      const cur = prev.get(id);
+      if (!cur) return prev;
+      return new Map(prev).set(id, { ...cur, ...patch });
+    });
+  }, []);
+  const removeLocalNode = useCallback((id: string) => {
+    setSubNodes((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+  const isMissing = (e: unknown) =>
+    (e as { code?: string })?.code === "not-found" ||
+    String((e as { message?: string })?.message ?? e).includes("No document");
+  // 쓰기 실패 처리: 문서 없음→로컬 제거(부활 방지), 그 외(권한거부 등)→shield 해제해
+  //   서버 진실로 재동기(무음 desync 방지)
+  const onWriteError = useCallback(
+    (id: string, e: unknown) => {
+      if (isMissing(e)) removeLocalNode(id);
+      else shieldRef.current.delete(id);
     },
-    [scheduleSave]
+    [removeLocalNode]
+  );
+
+  // 카드 생성
+  const addNode = useCallback(
+    (node: CardNode) => {
+      if (!cid) return;
+      setLocalNode(node);
+      createNode(cid, effectiveBoardId, node, lid ?? undefined).catch(() => {});
+    },
+    [cid, effectiveBoardId, lid, setLocalNode]
+  );
+  // 카드 부분 수정(즉시) — 삭제된 카드면 로컬 제거(부활 방지)
+  const commitNode = useCallback(
+    (id: string, patch: Partial<CardNode>) => {
+      if (!cid) return;
+      patchLocalNode(id, patch);
+      patchNode(cid, effectiveBoardId, id, patch, lid ?? undefined).catch((e) =>
+        onWriteError(id, e)
+      );
+    },
+    [cid, effectiveBoardId, lid, patchLocalNode, onWriteError]
+  );
+  // 텍스트 입력: 로컬 즉시 + 카드별 디바운스 기록. 입력 중엔 shield 갱신(보호 유지).
+  const commitNodeText = useCallback(
+    (id: string, text: string) => {
+      patchLocalNode(id, { text });
+      shieldActive(id);
+      if (!cid) return;
+      const timers = textTimersRef.current;
+      const prev = timers.get(id);
+      if (prev) clearTimeout(prev);
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          patchNode(cid, effectiveBoardId, id, { text }, lid ?? undefined).catch(
+            (e) => onWriteError(id, e)
+          );
+        }, 400)
+      );
+    },
+    [cid, effectiveBoardId, lid, patchLocalNode, shieldActive, onWriteError]
+  );
+  // 첨부 추가(원자 arrayUnion). 카드 부재 시 방금 올린 파일 정리(고아 방지).
+  const addAttachments = useCallback(
+    (id: string, atts: Attachment[]) => {
+      if (!cid || atts.length === 0) return;
+      setSubNodes((prev) => {
+        const cur = prev.get(id);
+        if (!cur) return prev;
+        return new Map(prev).set(id, {
+          ...cur,
+          attachments: [...(cur.attachments ?? []), ...atts],
+        });
+      });
+      addNodeAttachments(cid, effectiveBoardId, id, atts, lid ?? undefined).catch(
+        (e) => {
+          if (isMissing(e)) {
+            atts.forEach((a) => deleteAttachment(a).catch(() => {}));
+            removeLocalNode(id);
+          }
+        }
+      );
+    },
+    [cid, effectiveBoardId, lid, removeLocalNode]
+  );
+  // 첨부 삭제(원자 arrayRemove)
+  const removeAttachment = useCallback(
+    (id: string, att: Attachment) => {
+      if (!cid) return;
+      setSubNodes((prev) => {
+        const cur = prev.get(id);
+        if (!cur) return prev;
+        return new Map(prev).set(id, {
+          ...cur,
+          attachments: (cur.attachments ?? []).filter((a) => a.id !== att.id),
+        });
+      });
+      removeNodeAttachment(
+        cid,
+        effectiveBoardId,
+        id,
+        att,
+        lid ?? undefined
+      ).catch(() => {});
+    },
+    [cid, effectiveBoardId, lid]
+  );
+  // 카드 삭제(+참조 엣지/피드백 정리) — shield/타이머도 정리해 뒤늦은 쓰기 차단
+  const removeNode = useCallback(
+    (id: string) => {
+      if (!cid) return;
+      shieldRef.current.delete(id);
+      const t = textTimersRef.current.get(id);
+      if (t) {
+        clearTimeout(t);
+        textTimersRef.current.delete(id);
+      }
+      removeLocalNode(id);
+      setSubEdges((prev) => prev.filter((e) => e.from !== id && e.to !== id));
+      deleteNodeAndRefs(cid, effectiveBoardId, id, lid ?? undefined).catch(
+        () => {}
+      );
+    },
+    [cid, effectiveBoardId, lid, removeLocalNode]
+  );
+
+  // ---------- 연결(엣지): 로컬 즉시 + 카드별 문서 ----------
+  const addEdge = useCallback(
+    (edge: CardEdge) => {
+      if (!cid) return;
+      setSubEdges((prev) => [...prev, edge]);
+      createEdge(cid, effectiveBoardId, edge, lid ?? undefined).catch(() => {});
+    },
+    [cid, effectiveBoardId, lid]
+  );
+  const commitEdge = useCallback(
+    (id: string, patch: Partial<CardEdge>) => {
+      if (!cid) return;
+      setSubEdges((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
+      );
+      patchEdge(cid, effectiveBoardId, id, patch, lid ?? undefined).catch(
+        () => {}
+      );
+    },
+    [cid, effectiveBoardId, lid]
+  );
+  const removeEdge = useCallback(
+    (id: string) => {
+      if (!cid) return;
+      setSubEdges((prev) => prev.filter((e) => e.id !== id));
+      deleteEdgeDoc(cid, effectiveBoardId, id, lid ?? undefined).catch(() => {});
+    },
+    [cid, effectiveBoardId, lid]
   );
 
   // 활성 페이지: canvas 로드 시 첫 페이지로 보정
@@ -621,21 +1039,180 @@ function CanvasInner() {
     }
   }, [canvas, activePage]);
 
-  const pageOf = (pg?: string) => pg ?? canvas?.pages[0]?.id ?? "p1";
-  const pageNodes = (canvas?.nodes ?? []).filter(
-    (n) => pageOf(n.page) === activePage
+  const firstPageId = meta?.pages[0]?.id ?? "p1";
+  const pageOf = useCallback(
+    (pg?: string) => pg ?? firstPageId,
+    [firstPageId]
   );
-  const pageEdges = (canvas?.edges ?? []).filter((e) => {
-    const a = (canvas?.nodes ?? []).find((n) => n.id === e.from);
-    const b = (canvas?.nodes ?? []).find((n) => n.id === e.to);
-    return (
-      a && b && pageOf(a.page) === activePage && pageOf(b.page) === activePage
+  const pageNodes = useMemo(
+    () =>
+      Array.from(effNodesMap.values()).filter(
+        (n) => pageOf(n.page) === activePage
+      ),
+    [effNodesMap, activePage, pageOf]
+  );
+  const pageEdges = useMemo(() => {
+    const ids = new Set(pageNodes.map((n) => n.id));
+    return effEdges.filter((e) => ids.has(e.from) && ids.has(e.to));
+  }, [effEdges, pageNodes]);
+
+  // 팀 색 계산 입력은 "색/연결"뿐 — 좌표(드래그)로는 재계산하지 않도록 시그니처로 묶음.
+  const pageNodesRef = useRef(pageNodes);
+  pageNodesRef.current = pageNodes;
+  const pageEdgesRef = useRef(pageEdges);
+  pageEdgesRef.current = pageEdges;
+  // pageNodes/pageEdges 신원이 바뀔 때만 재계산(팬/줌·피드백 등 무관 렌더에선 캐시 유지).
+  const colorSig = useMemo(
+    () => pageNodes.map((n) => `${n.id}:${n.color || ""}`).join("|"),
+    [pageNodes]
+  );
+  const edgeSig = useMemo(
+    () => pageEdges.map((e) => `${e.from}>${e.to}`).join("|"),
+    [pageEdges]
+  );
+
+  // ---------- 가시 집합(뷰포트 컬링) ----------
+  // 보이는 영역(+CULL_MARGIN) 밖 카드는 렌더 제외. 단 드래그 원본/편집·녹음 보호(shield)
+  // 카드는 항상 유지(작업 유실·MediaRecorder 언마운트 방지). 규칙형은 메이슨리 측정을 위해
+  // 아직 미배치·미측정 카드도 유지(측정 후엔 폴백 높이로 배치 정확도 보존).
+  const visibleNodes = useMemo(() => {
+    if (!cullRect) return pageNodes;
+    const now = Date.now();
+    const { l, t, r, b } = cullRect;
+    const measured = measuredHeightsRef.current;
+    const shields = shieldRef.current;
+    return pageNodes.filter((n) => {
+      if (n.id === draggingId) return true; // 드래그 원본
+      const s = shields.get(n.id);
+      if (s && s.until > now) return true; // 편집/녹음/포커스 보호 중
+      if (isGrid) {
+        const gp = gridPos.get(n.id);
+        if (!gp) return true; // 아직 배치 전 → 렌더(측정 필요)
+        const mh = measured.get(n.id);
+        if (mh === undefined) return true; // 미측정 → 렌더(메이슨리 정확도)
+        return !(gp.x > r || gp.x + GRID_COL_W < l || gp.y > b || gp.y + mh < t);
+      }
+      const h = measured.get(n.id) ?? n.h ?? 160;
+      return !(n.x > r || n.x + n.w < l || n.y > b || n.y + h < t);
+    });
+  }, [pageNodes, cullRect, isGrid, gridPos, draggingId]);
+
+  // 가시 엣지(자유형 전용) — 양 끝 카드 경계의 합집합이 뷰포트와 겹치면 표시(가로지르는 긴 선 포함).
+  const visibleEdges = useMemo(() => {
+    if (isGrid) return [] as CardEdge[];
+    if (!cullRect) return pageEdges;
+    const { l, t, r, b } = cullRect;
+    const measured = measuredHeightsRef.current;
+    return pageEdges.filter((e) => {
+      const a = effNodesMap.get(e.from);
+      const c = effNodesMap.get(e.to);
+      if (!a || !c) return false;
+      const ah = measured.get(a.id) ?? a.h ?? 160;
+      const ch = measured.get(c.id) ?? c.h ?? 160;
+      const minX = Math.min(a.x, c.x);
+      const minY = Math.min(a.y, c.y);
+      const maxX = Math.max(a.x + a.w, c.x + c.w);
+      const maxY = Math.max(a.y + ah, c.y + ch);
+      return !(minX > r || maxX < l || minY > b || maxY < t);
+    });
+  }, [isGrid, pageEdges, cullRect, effNodesMap]);
+
+  // ---------- 규칙형(grid) 반응형 메이슨리 레이아웃 (클라이언트 계산, x/y 미저장) ----------
+  // createdAt 오름차순으로 카드를 "가장 짧은 열"에 채워 넣는다. 위치는 월드좌표(gridPos).
+  const recomputeGridLayout = useCallback(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const scale = viewRef.current.scale || 1;
+    const stageW = el.clientWidth;
+    // 스테이지 가시 월드폭 기준 열 개수
+    const C = Math.max(
+      1,
+      Math.floor((stageW / scale - GRID_GAP) / (GRID_COL_W + GRID_GAP))
     );
-  });
+    const blockWidth = C * GRID_COL_W + (C - 1) * GRID_GAP;
+    const blockStartX = -blockWidth / 2; // 월드 x=0 을 중심으로 블록 가로 중앙정렬
+    const colH: number[] = new Array(C).fill(0);
+    // 생성 순서(createdAt) — 아직 확정 전(로컬)이면 맨 뒤로, 동률은 id 로 안정 정렬
+    const ordered = [...pageNodesRef.current].sort((a, b) => {
+      const ca = a.createdAt ?? Number.MAX_SAFE_INTEGER;
+      const cb = b.createdAt ?? Number.MAX_SAFE_INTEGER;
+      if (ca !== cb) return ca - cb;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    const pos = new Map<string, { x: number; y: number }>();
+    for (const n of ordered) {
+      let col = 0;
+      for (let i = 1; i < C; i++) if (colH[i] < colH[col]) col = i;
+      pos.set(n.id, {
+        x: blockStartX + col * (GRID_COL_W + GRID_GAP),
+        y: GRID_TOP_PAD + colH[col],
+      });
+      const h = measuredHeightsRef.current.get(n.id) ?? n.h ?? 160;
+      colH[col] += h + GRID_GAP;
+    }
+    setGridPos(pos);
+  }, []);
+  // rAF 디바운스 — 높이 보고 폭주(이미지 로드 등)를 프레임당 1회로 합침. 자유형이면 무시.
+  const scheduleRelayout = useCallback(() => {
+    if (!isGridRef.current) return;
+    if (gridRafRef.current != null) return;
+    gridRafRef.current = requestAnimationFrame(() => {
+      gridRafRef.current = null;
+      recomputeGridLayout();
+    });
+  }, [recomputeGridLayout]);
+  // 카드가 보고한 렌더 높이 기록(작성자 무관) → 변할 때만 재배치 예약
+  const recordMeasuredHeight = useCallback(
+    (id: string, h: number) => {
+      const prev = measuredHeightsRef.current.get(id);
+      if (prev !== undefined && Math.abs(prev - h) <= 1) return;
+      measuredHeightsRef.current.set(id, h);
+      scheduleRelayout();
+    },
+    [scheduleRelayout]
+  );
+
+  // 규칙형 진입 시: 줌 100%로, 격자 상단이 보이도록 뷰 이동(가로 중앙). 연결 모드 해제.
+  // (초깃값 false → 최초로 grid 로 전환/로드될 때도 뷰 리셋이 반드시 1회 실행되게)
+  const prevGridRef = useRef(false);
+  useEffect(() => {
+    const was = prevGridRef.current;
+    prevGridRef.current = isGrid;
+    if (isGrid && !was) {
+      setConnectMode(false);
+      setPendingFrom(null);
+      const el = stageRef.current;
+      const w = el ? el.clientWidth : 0;
+      setView({ scale: 1, tx: Math.round(w / 2), ty: 0 });
+      scheduleRelayout();
+    }
+  }, [isGrid, scheduleRelayout]);
+
+  // 카드 추가/삭제·페이지 전환 시 재배치(텍스트 편집만으론 안 흔들리게 id 목록 시그니처 사용).
+  // 높이 변화는 각 카드 ResizeObserver → recordMeasuredHeight 가 별도로 처리.
+  const gridNodeSig = isGrid ? pageNodes.map((n) => n.id).join(",") : "";
+  useEffect(() => {
+    if (!isGrid) return;
+    scheduleRelayout();
+  }, [isGrid, gridNodeSig, activePage, scheduleRelayout]);
+
+  // 스테이지 크기 변화(반응형) → 열 개수 재계산 + 가시영역 갱신. 자유형이면 scheduleRelayout 이 무시.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      scheduleRelayout();
+      scheduleCull();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [scheduleRelayout, scheduleCull]);
 
   // 연결된 카드 = 하나의 팀. 팀 구성원의 색을 혼합한 "팀 색"을 모두에게 적용.
   // (혼자면 본인 색 그대로, 색 없는 카드가 팀에 끼면 팀 색을 함께 입음)
   const teamColorByNode = useMemo(() => {
+    const pageNodes = pageNodesRef.current;
+    const pageEdges = pageEdgesRef.current;
     const adj = new Map<string, string[]>();
     for (const e of pageEdges) {
       (adj.get(e.from) ?? adj.set(e.from, []).get(e.from)!).push(e.to);
@@ -676,22 +1253,22 @@ function CanvasInner() {
       for (const id of comp) result.set(id, team);
     }
     return result;
-  }, [pageNodes, pageEdges]);
+  }, [colorSig, edgeSig]);
 
   function addPage() {
+    if (!meta) return;
     const id = "p" + Math.random().toString(36).slice(2, 7);
-    update((c) => ({
-      ...c,
+    saveMeta({
       pages: [
-        ...c.pages,
+        ...meta.pages,
         {
           id,
-          name: `${c.pages.length + 1}페이지`,
-          color: PAGE_COLORS[c.pages.length % PAGE_COLORS.length],
+          name: `${meta.pages.length + 1}페이지`,
+          color: PAGE_COLORS[meta.pages.length % PAGE_COLORS.length],
           pattern: "none",
         },
       ],
-    }));
+    });
     setActivePage(id);
   }
 
@@ -707,6 +1284,21 @@ function CanvasInner() {
     };
   }
 
+  // 카드(월드 좌표 사각형)를 화면 정중앙에 오도록 뷰 이동(줌 100% 초기화).
+  function centerViewOn(x: number, y: number, w: number, h: number) {
+    const el = stageRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const scale = 1;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    setView({
+      scale,
+      tx: r.width / 2 - cx * scale,
+      ty: r.height / 2 - cy * scale,
+    });
+  }
+
   // ---------- 배경 팬 / 휠 줌 ----------
   function onBgPointerDown(e: React.PointerEvent) {
     if (!isTeacher) {
@@ -717,16 +1309,75 @@ function CanvasInner() {
     panRef.current = { x: e.clientX, y: e.clientY };
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
   }
+  // 드래그 좌표를 카드별 문서에 기록(스로틀). 마지막 좌표는 dragRef.lastX/Y 에 보관.
+  function sendDragThrottled(id: string) {
+    const send = dragSendRef.current;
+    const now = Date.now();
+    const write = () => {
+      const d = dragRef.current;
+      if (!d || !cid) return;
+      send.last = Date.now();
+      patchNode(
+        cid,
+        effectiveBoardId,
+        id,
+        { x: d.lastX, y: d.lastY },
+        lid ?? undefined
+      ).catch((e) => onWriteError(id, e));
+    };
+    if (now - send.last >= 100) {
+      write();
+    } else if (!send.timer) {
+      // trailing 보장 — 마지막 이동도 한 번 더 나가게
+      send.timer = setTimeout(() => {
+        send.timer = null;
+        write();
+      }, 100);
+    }
+  }
+  // 드래그 종료(모든 경로 공통): 겹침 회피 스냅 + 마지막 좌표 flush + shield ack
+  function endDrag() {
+    const d = dragRef.current;
+    if (!d) return;
+    const send = dragSendRef.current;
+    if (send.timer) {
+      clearTimeout(send.timer);
+      send.timer = null;
+    }
+    // 패들렛식 겹침 금지: 떨어뜨린 자리가 다른 카드와 겹치면 가장 가까운 빈 자리로 스냅
+    let fx = d.lastX;
+    let fy = d.lastY;
+    const node = nodesRef.current.get(d.nid);
+    if (node) {
+      const others = pageNodesRef.current.filter((n) => n.id !== d.nid);
+      const spot = findFreeSpot(others, node.w, node.h || 120, d.lastX, d.lastY);
+      fx = spot.x;
+      fy = spot.y;
+      if (fx !== d.lastX || fy !== d.lastY) patchLocalNode(d.nid, { x: fx, y: fy });
+    }
+    if (cid)
+      patchNode(
+        cid,
+        effectiveBoardId,
+        d.nid,
+        { x: fx, y: fy },
+        lid ?? undefined
+      ).catch((e) => onWriteError(d.nid, e));
+    shieldAck(d.nid);
+    dragRef.current = null;
+    setDraggingId(null);
+  }
   function onBgPointerMove(e: React.PointerEvent) {
     if (dragRef.current) {
       const w = toWorld(e.clientX, e.clientY);
       const id = dragRef.current.nid;
       const nx = w.x - dragRef.current.ox;
       const ny = w.y - dragRef.current.oy;
-      update((c) => ({
-        ...c,
-        nodes: c.nodes.map((n) => (n.id === id ? { ...n, x: nx, y: ny } : n)),
-      }));
+      dragRef.current.lastX = nx;
+      dragRef.current.lastY = ny;
+      shieldActive(id); // 보호 시간 갱신(장시간 드래그도 만료되지 않게)
+      patchLocalNode(id, { x: nx, y: ny }); // 로컬 즉시 반영
+      sendDragThrottled(id); // 서버 기록(스로틀)
       return;
     }
     if (panRef.current) {
@@ -738,7 +1389,7 @@ function CanvasInner() {
   }
   function onBgPointerUp() {
     panRef.current = null;
-    dragRef.current = null;
+    endDrag();
   }
   function onWheel(e: React.WheelEvent) {
     e.preventDefault();
@@ -760,6 +1411,8 @@ function CanvasInner() {
   // 학생은 본인이 만든 카드만 이동/연결 가능(교사는 전체). 협업 보드 무결성 보호.
   function canManipulate(n: CardNode) {
     if (!canEdit) return false;
+    // 규칙형: 자유 드래그·연결 비활성(카드 위치는 자동 배치). 내용 편집은 별도 게이트라 유지.
+    if (isGrid) return false;
     if (isTeacher) return true;
     return !n.authorUid || n.authorUid === user?.uid;
   }
@@ -774,14 +1427,16 @@ function CanvasInner() {
           id: newId(),
           from: pendingFrom,
           to: n.id,
+          page: activePage,
+          authorUid: user?.uid,
         };
-        update((c) => ({ ...c, edges: [...c.edges, newEdge] }));
+        addEdge(newEdge);
         setPendingFrom(null);
         // 한 번 연결하면 연결 모드 자동 종료 (학생 혼란 방지)
         setConnectMode(false);
         // 연결 효과 즉시 발동(본인). 감지 effect 중복 방지 위해 seen 에 미리 등록.
         seenEdgesRef.current?.add(newEdge.id);
-        const a = canvas?.nodes.find((x) => x.id === pendingFrom);
+        const a = nodesRef.current.get(pendingFrom);
         if (a) {
           const cs = [a.color, n.color].filter((c): c is string => !!c);
           showBurst(
@@ -796,27 +1451,51 @@ function CanvasInner() {
     const w = toWorld(e.clientX, e.clientY);
     dragRef.current = {
       nid: n.id,
-      sx: w.x,
-      sy: w.y,
       ox: w.x - n.x,
       oy: w.y - n.y,
+      lastX: n.x,
+      lastY: n.y,
     };
+    shieldActive(n.id); // 드래그 중 원격 덮어쓰기 차단(되돌아감 방지)
+    setDraggingId(n.id); // 드래그 중인 카드를 최상위로
     // 스테이지에 캡처 → 카드 밖으로 나가도 pointermove가 계속 도달
     stageRef.current?.setPointerCapture?.(e.pointerId);
   }
 
   function addTextCard() {
-    if (!canvas) return;
+    if (!meta) return;
+    const W = 220;
+    const H = 120;
+    // 규칙형: 자리찾기·센터링 없이 추가 → 자동 배치가 가장 짧은 열로 흐르게 함.
+    if (isGrid) {
+      addNode({
+        id: newId(),
+        kind: "text",
+        x: 0,
+        y: 0,
+        w: W,
+        h: H,
+        text: "",
+        color: null,
+        authorUid: user?.uid,
+        authorName: user?.displayName ?? "",
+        page: activePage,
+      });
+      return;
+    }
     const el = stageRef.current!;
     const r = el.getBoundingClientRect();
     const center = toWorld(r.left + r.width / 2, r.top + r.height / 2);
-    const W = 220;
-    const H = 120;
-    const others = (canvas.nodes ?? []).filter(
-      (n) => pageOf(n.page) === activePage
+    const others = pageNodes;
+    const j = authorJitter(user?.uid ?? "");
+    const spot = findFreeSpot(
+      others,
+      W,
+      H,
+      center.x - W / 2 + j.dx,
+      center.y - H / 2 + j.dy
     );
-    const spot = findFreeSpot(others, W, H, center.x - W / 2, center.y - H / 2);
-    const node: CardNode = {
+    addNode({
       id: newId(),
       kind: "text",
       x: spot.x,
@@ -828,8 +1507,8 @@ function CanvasInner() {
       authorUid: user?.uid,
       authorName: user?.displayName ?? "",
       page: activePage,
-    };
-    update((c) => ({ ...c, nodes: [...c.nodes, node] }));
+    });
+    centerViewOn(spot.x, spot.y, W, H); // 새 카드를 화면 중앙으로(처음 세팅)
   }
 
   async function addLinkCard() {
@@ -844,17 +1523,39 @@ function CanvasInner() {
       placeholder: "(선택) 비우면 URL 표시",
       okLabel: "추가",
     });
-    if (!canvas) return;
+    if (!meta) return;
+    const W = 320;
+    const H = 104;
+    // 규칙형: 자리찾기·센터링 없이 추가 → 자동 배치.
+    if (isGrid) {
+      addNode({
+        id: newId(),
+        kind: "link",
+        x: 0,
+        y: 0,
+        w: W,
+        h: H,
+        text: title?.trim() || url,
+        url,
+        authorUid: user?.uid,
+        authorName: user?.displayName ?? "",
+        page: activePage,
+      });
+      return;
+    }
     const el = stageRef.current!;
     const r = el.getBoundingClientRect();
     const center = toWorld(r.left + r.width / 2, r.top + r.height / 2);
-    const W = 320;
-    const H = 104;
-    const others = (canvas.nodes ?? []).filter(
-      (n) => pageOf(n.page) === activePage
+    const others = pageNodes;
+    const j = authorJitter(user?.uid ?? "");
+    const spot = findFreeSpot(
+      others,
+      W,
+      H,
+      center.x - W / 2 + j.dx,
+      center.y - H / 2 + j.dy
     );
-    const spot = findFreeSpot(others, W, H, center.x - W / 2, center.y - H / 2);
-    const node: CardNode = {
+    addNode({
       id: newId(),
       kind: "link",
       x: spot.x,
@@ -866,8 +1567,8 @@ function CanvasInner() {
       authorUid: user?.uid,
       authorName: user?.displayName ?? "",
       page: activePage,
-    };
-    update((c) => ({ ...c, nodes: [...c.nodes, node] }));
+    });
+    centerViewOn(spot.x, spot.y, W, H); // 새 카드를 화면 중앙으로(처음 세팅)
   }
 
   // 보드의 텍스트 카드를 이 보드(활동) 자신의 지식맵 입력으로 전송.
@@ -921,25 +1622,18 @@ function CanvasInner() {
       }))
     )
       return;
-    update((c) => ({
-      ...c,
-      nodes: c.nodes.filter((n) => n.id !== nid),
-      edges: c.edges.filter((e) => e.from !== nid && e.to !== nid),
-    }));
+    removeNode(nid);
   }
 
   async function relabelEdge(eid: string) {
-    const cur = canvas?.edges.find((x) => x.id === eid);
+    const cur = effEdges.find((x) => x.id === eid);
     const label = await dialog.prompt({
       title: "연결 라벨",
       defaultValue: cur?.label ?? "",
       placeholder: "(선택)",
     });
     if (label === null) return;
-    update((c) => ({
-      ...c,
-      edges: c.edges.map((e) => (e.id === eid ? { ...e, label } : e)),
-    }));
+    commitEdge(eid, { label });
   }
 
   async function deleteEdge(eid: string) {
@@ -951,15 +1645,104 @@ function CanvasInner() {
       }))
     )
       return;
-    update((c) => ({ ...c, edges: c.edges.filter((e) => e.id !== eid) }));
+    removeEdge(eid);
   }
 
-  // 카드 좌표(화살표 끝점 계산용)
-  const nodeMap = useMemo(() => {
-    const m = new Map<string, CardNode>();
-    for (const n of canvas?.nodes ?? []) m.set(n.id, n);
-    return m;
-  }, [canvas]);
+  // 카드 좌표(화살표 끝점 계산용) — 유효 카드 Map 을 그대로 사용
+  const nodeMap = effNodesMap;
+
+  // ---------- CardView 안정 콜백 (변경된 카드만 리렌더되도록 신원 고정) ----------
+  // 자주 바뀌는 값/플레인 함수는 ref 로 최신만 읽어 콜백 신원을 고정한다.
+  const actorRef = useRef(actor);
+  actorRef.current = actor;
+  const feedbackByCardRef = useRef(feedbackByCard);
+  feedbackByCardRef.current = feedbackByCard;
+  const onCardDownRef = useRef(onCardPointerDown);
+  onCardDownRef.current = onCardPointerDown;
+  const sendToMapRef = useRef(sendCardsToMap);
+  sendToMapRef.current = sendCardsToMap;
+  const deleteCardRef = useRef(deleteCard);
+  deleteCardRef.current = deleteCard;
+  const uploadTarget = useMemo(
+    () => (user ? { cid: cid as string, uid: user.uid } : null),
+    [user, cid]
+  );
+
+  const cardHandlers: CardHandlers = useMemo(
+    () => ({
+      onCardDown: (e: React.PointerEvent, id: string) => {
+        const node = nodesRef.current.get(id);
+        if (node) onCardDownRef.current(e, node);
+      },
+      onChangeText: (id: string, t: string) => commitNodeText(id, t),
+      onAddAttachments: (id: string, atts: Attachment[]) =>
+        addAttachments(id, atts),
+      onRemoveAttachment: (id: string, att: Attachment) =>
+        removeAttachment(id, att),
+      onChangeColor: (id: string, color: string | null) =>
+        commitNode(id, { color }),
+      onResize: (id: string, h: number) => {
+        // 규칙형 배치용 측정 높이는 작성자와 무관하게 모든 뷰어가 기록(자기 렌더 높이).
+        recordMeasuredHeight(id, h);
+        const node = nodesRef.current.get(id);
+        // 높이 Firestore 기록은 작성자만 — 원격 ResizeObserver 핑퐁/무한 쓰기 차단
+        if (!node || node.authorUid !== user?.uid) return;
+        if (Math.abs(h - node.h) > 2) commitNode(id, { h });
+      },
+      onDelete: (id: string) => deleteCardRef.current(id),
+      onToggleReaction: (id: string, type: ReactionType) => {
+        if (!cid) return;
+        const mine =
+          feedbackByCardRef.current.get(id)?.reactions[type]?.mine ?? false;
+        toggleReaction(
+          cid,
+          effectiveBoardId,
+          id,
+          actorRef.current,
+          type,
+          !mine,
+          lid ?? undefined
+        ).catch((e) =>
+          dialog.confirm({
+            title: "반응 실패",
+            body: String(e?.message ?? e),
+            okLabel: "확인",
+          })
+        );
+      },
+      onOpenComments: (id: string, rect: DOMRect) =>
+        setCommentPop({ cardId: id, x: rect.right, y: rect.bottom }),
+      onToggleCheck: (id: string) =>
+        setSelected((s) => {
+          const next = new Set(s);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        }),
+      onSendToMap: (id: string) => {
+        const node = nodesRef.current.get(id);
+        if (node) sendToMapRef.current([node]);
+      },
+      onFocusText: (id: string) => shieldActive(id),
+      onBlurText: (id: string) => shieldAck(id),
+      onRecordingChange: (id: string, rec: boolean) =>
+        rec ? shieldActive(id) : shieldAck(id),
+    }),
+    [
+      cid,
+      effectiveBoardId,
+      lid,
+      user,
+      dialog,
+      commitNodeText,
+      addAttachments,
+      removeAttachment,
+      commitNode,
+      shieldActive,
+      shieldAck,
+      recordMeasuredHeight,
+    ]
+  );
 
   if (loading || !user || !cid) {
     return (
@@ -1020,25 +1803,79 @@ function CanvasInner() {
                 <Icon name="link" size={14} />
                 링크 카드
               </button>
-              <button
-                onClick={() => {
-                  setConnectMode((v) => !v);
-                  setPendingFrom(null);
-                }}
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                  connectMode
-                    ? "bg-[var(--md-sys-color-primary)] text-white"
-                    : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-primary)]"
-                }`}
-              >
-                <Icon name="trending_flat" size={14} />
-                {connectMode
-                  ? pendingFrom
-                    ? "대상 카드 선택…"
-                    : "연결: 시작 카드 클릭"
-                  : "연결"}
-              </button>
+              {/* 연결(엣지)은 자유형 전용 */}
+              {!isGrid && (
+                <button
+                  onClick={() => {
+                    setConnectMode((v) => !v);
+                    setPendingFrom(null);
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    connectMode
+                      ? "bg-[var(--md-sys-color-primary)] text-white"
+                      : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-primary)]"
+                  }`}
+                >
+                  <Icon name="trending_flat" size={14} />
+                  {connectMode
+                    ? pendingFrom
+                      ? "대상 카드 선택…"
+                      : "연결: 시작 카드 클릭"
+                    : "연결"}
+                </button>
+              )}
             </>
+          )}
+          {/* 배치 모드 토글(교사 전용) — 자유형 / 규칙형 */}
+          {isTeacher && (
+            <div
+              className="inline-flex items-center gap-0.5 rounded-full border border-[var(--md-sys-color-outline)] p-0.5"
+              role="group"
+              aria-label="보드 배치 모드"
+            >
+              {(
+                [
+                  {
+                    m: "free",
+                    label: "자유형",
+                    icon: "open_with",
+                    tip: "자유롭게 배치·연결하는 무한 캔버스",
+                  },
+                  {
+                    m: "grid",
+                    label: "규칙형",
+                    icon: "grid_view",
+                    tip: "격자로 자동 정렬(패들렛식) — 드래그·연결 없음",
+                  },
+                ] as const
+              ).map(({ m, label, icon, tip }) => {
+                const active = layoutMode === m;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      if (!cid || layoutMode === m) return;
+                      setMeta((prev) => (prev ? { ...prev, layoutMode: m } : prev));
+                      setBoardLayoutMode(
+                        cid,
+                        effectiveBoardId,
+                        m,
+                        lid ?? undefined
+                      ).catch(() => {});
+                    }}
+                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      active
+                        ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                        : "text-[var(--md-sys-color-on-surface-variant)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+                    }`}
+                    title={tip}
+                  >
+                    <Icon name={icon} size={14} />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           )}
           {isTeacher && groups.length > 0 && (
             <button
@@ -1054,7 +1891,7 @@ function CanvasInner() {
               모둠별 색 구분
             </button>
           )}
-          {isTeacher && isLessonBoard && (
+          {isTeacher && isLessonBoard && !isGrid && (
             <>
               <span className="ml-1 h-4 w-px bg-[var(--md-sys-color-outline-variant)]" />
               <button
@@ -1257,20 +2094,18 @@ function CanvasInner() {
             bottom={pageMenu.bottom}
             canDelete={canvas.pages.length > 1}
             onColor={(color) =>
-              update((cv) => ({
-                ...cv,
-                pages: cv.pages.map((x) =>
+              saveMeta({
+                pages: canvas.pages.map((x) =>
                   x.id === pageMenu.id ? { ...x, color } : x
                 ),
-              }))
+              })
             }
             onPattern={(pattern) =>
-              update((cv) => ({
-                ...cv,
-                pages: cv.pages.map((x) =>
+              saveMeta({
+                pages: canvas.pages.map((x) =>
                   x.id === pageMenu.id ? { ...x, pattern } : x
                 ),
-              }))
+              })
             }
             onDelete={async () => {
               if (
@@ -1282,21 +2117,17 @@ function CanvasInner() {
               )
                 return;
               const pid = pageMenu.id;
-              update((c) => {
-                const removed = new Set(
-                  c.nodes
-                    .filter((n) => pageOf(n.page) === pid)
-                    .map((n) => n.id)
-                );
-                return {
-                  ...c,
-                  pages: c.pages.filter((p) => p.id !== pid),
-                  nodes: c.nodes.filter((n) => pageOf(n.page) !== pid),
-                  edges: c.edges.filter(
-                    (e) => !removed.has(e.from) && !removed.has(e.to)
-                  ),
-                };
-              });
+              const isFirst = canvas.pages[0]?.id === pid;
+              // 페이지 메타 먼저 제거 + 그 페이지의 카드/연결을 서버에서 일괄 삭제
+              saveMeta({ pages: canvas.pages.filter((p) => p.id !== pid) });
+              if (cid)
+                deleteNodesOnPage(
+                  cid,
+                  effectiveBoardId,
+                  pid,
+                  isFirst,
+                  lid ?? undefined
+                ).catch(() => {});
               if (activePage === pid)
                 setActivePage(
                   canvas.pages.find((p) => p.id !== pid)?.id ?? "p1"
@@ -1311,12 +2142,11 @@ function CanvasInner() {
                 okLabel: "변경",
               });
               if (name === null || !name.trim()) return;
-              update((c) => ({
-                ...c,
-                pages: c.pages.map((x) =>
+              saveMeta({
+                pages: canvas.pages.map((x) =>
                   x.id === pageMenu.id ? { ...x, name: name.trim() } : x
                 ),
-              }));
+              });
             }}
             onClose={() => setPageMenu(null)}
           />
@@ -1329,6 +2159,8 @@ function CanvasInner() {
           onPointerMove={onBgPointerMove}
           onPointerUp={onBgPointerUp}
           onPointerLeave={onBgPointerUp}
+          onPointerCancel={onBgPointerUp}
+          onLostPointerCapture={onBgPointerUp}
           onWheel={onWheel}
           className="relative flex-1 select-none overflow-hidden bg-[radial-gradient(circle,rgba(0,0,0,0.06)_1px,transparent_1px)] bg-[length:24px_24px]"
           style={{
@@ -1341,7 +2173,8 @@ function CanvasInner() {
               transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`,
             }}
           >
-            {/* SVG 화살표 레이어 */}
+            {/* SVG 화살표 레이어 — 규칙형에서는 렌더하지 않음(연결/엣지는 자유형 전용) */}
+            {!isGrid && (
             <svg
               className="pointer-events-none absolute left-0 top-0 overflow-visible"
               style={{ width: 4000, height: 4000 }}
@@ -1359,7 +2192,7 @@ function CanvasInner() {
                   <path d="M0,0 L10,5 L0,10 z" fill="context-stroke" />
                 </marker>
               </defs>
-              {pageEdges.map((e) => {
+              {visibleEdges.map((e) => {
                 const a = nodeMap.get(e.from);
                 const b = nodeMap.get(e.to);
                 if (!a || !b) return null;
@@ -1414,19 +2247,17 @@ function CanvasInner() {
                 );
               })}
             </svg>
+            )}
 
-            {/* 카드 레이어 */}
-            {pageNodes.map((n) => (
+            {/* 카드 레이어 — 콜백/데이터 prop 신원 고정 → 변경된 카드만 리렌더. 가시 카드만(컬링) */}
+            {visibleNodes.map((n) => (
               <CardView
                 key={n.id}
                 n={n}
-                team={
-                  teamColorByNode.get(n.id) ??
-                  (n.color ? { solid: n.color, gradient: null } : null)
-                }
-                isTeacher={
-                  isTeacher || (canEdit && n.authorUid === user?.uid)
-                }
+                gridMode={isGrid}
+                gridPos={isGrid ? gridPos.get(n.id) ?? null : null}
+                team={isGrid ? null : teamColorByNode.get(n.id) ?? null}
+                isTeacher={isTeacher || (canEdit && n.authorUid === user?.uid)}
                 isFrom={pendingFrom === n.id}
                 connectMode={connectMode}
                 authorName={
@@ -1434,98 +2265,26 @@ function CanvasInner() {
                   n.authorName ||
                   ""
                 }
-                authorPhoto={
-                  (n.authorUid && authorMap[n.authorUid]?.photo) || ""
-                }
+                authorPhoto={(n.authorUid && authorMap[n.authorUid]?.photo) || ""}
                 groupColor={
-                  groupColorMode
-                    ? groupInfo[n.authorUid ?? ""]?.color
-                    : undefined
+                  groupColorMode ? groupInfo[n.authorUid ?? ""]?.color : undefined
                 }
                 groupName={
-                  groupColorMode
-                    ? groupInfo[n.authorUid ?? ""]?.name
-                    : undefined
+                  groupColorMode ? groupInfo[n.authorUid ?? ""]?.name : undefined
                 }
                 commentCount={feedbackByCard.get(n.id)?.comments ?? 0}
-                reactions={feedbackByCard.get(n.id)?.reactions ?? {}}
-                onToggleReaction={(type) => {
-                  const mine =
-                    feedbackByCard.get(n.id)?.reactions[type]?.mine ?? false;
-                  toggleReaction(
-                    cid,
-                    effectiveBoardId,
-                    n.id,
-                    actor,
-                    type,
-                    !mine,
-                    lid ?? undefined
-                  ).catch((e) =>
-                    dialog.confirm({
-                      title: "반응 실패",
-                      body: String(e?.message ?? e),
-                      okLabel: "확인",
-                    })
-                  );
-                }}
-                onOpenComments={(rect) =>
-                  setCommentPop({
-                    cardId: n.id,
-                    x: rect.right,
-                    y: rect.bottom,
-                  })
-                }
-                canSendMap={isTeacher && isLessonBoard}
+                reactions={feedbackByCard.get(n.id)?.reactions}
+                canSendMap={isTeacher && isLessonBoard && !isGrid}
                 checked={selected.has(n.id)}
-                onToggleCheck={() =>
-                  setSelected((s) => {
-                    const next = new Set(s);
-                    if (next.has(n.id)) next.delete(n.id);
-                    else next.add(n.id);
-                    return next;
-                  })
+                uploadTarget={uploadTarget}
+                zIndex={
+                  n.id === draggingId
+                    ? 1000
+                    : n.authorUid === user?.uid
+                      ? 30
+                      : 10
                 }
-                onSendToMap={
-                  isTeacher && isLessonBoard && n.kind === "text"
-                    ? () => sendCardsToMap([n])
-                    : undefined
-                }
-                onPointerDown={(e) => onCardPointerDown(e, n)}
-                onChangeText={(t) =>
-                  update((c) => ({
-                    ...c,
-                    nodes: c.nodes.map((x) =>
-                      x.id === n.id ? { ...x, text: t } : x
-                    ),
-                  }))
-                }
-                onChangeAttachments={(next) =>
-                  update((c) => ({
-                    ...c,
-                    nodes: c.nodes.map((x) =>
-                      x.id === n.id ? { ...x, attachments: next } : x
-                    ),
-                  }))
-                }
-                onChangeColor={(color) =>
-                  update((c) => ({
-                    ...c,
-                    nodes: c.nodes.map((x) =>
-                      x.id === n.id ? { ...x, color } : x
-                    ),
-                  }))
-                }
-                uploadTarget={user ? { cid, uid: user.uid } : null}
-                onResize={(h) => {
-                  if (Math.abs(h - n.h) > 2)
-                    update((c) => ({
-                      ...c,
-                      nodes: c.nodes.map((x) =>
-                        x.id === n.id ? { ...x, h } : x
-                      ),
-                    }));
-                }}
-                onDelete={() => deleteCard(n.id)}
+                handlers={cardHandlers}
               />
             ))}
             {burst && (
@@ -1560,8 +2319,9 @@ function CanvasInner() {
         </div>
 
         <p className="border-t border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] px-4 py-2 text-xs text-black/45">
-          휠=줌 · 배경 드래그=이동 · 카드 드래그=재배치 · 연결 모드에서 카드 두
-          개 차례로 클릭=화살표 · 화살표 클릭=라벨 · 화살표 더블클릭=삭제
+          {isGrid
+            ? "규칙형: 카드가 만든 순서대로 격자에 자동 정렬됩니다 · 배경 드래그=이동(세로 스크롤) · 내 카드만 편집·삭제 가능"
+            : "휠=줌 · 배경 드래그=이동 · 카드 드래그=재배치 · 연결 모드에서 카드 두 개 차례로 클릭=화살표 · 화살표 클릭=라벨 · 화살표 더블클릭=삭제"}
         </p>
       </div>
 
@@ -1753,9 +2513,11 @@ function CommentsPopover({
   );
 }
 
-function CardView({
+const CardView = memo(function CardView({
   n,
-  team,
+  gridMode,
+  gridPos,
+  team: teamProp,
   isTeacher,
   isFrom,
   connectMode,
@@ -1764,22 +2526,16 @@ function CardView({
   groupColor,
   groupName,
   commentCount,
-  reactions,
-  onToggleReaction,
-  onOpenComments,
+  reactions: reactionsProp,
   canSendMap,
   checked,
-  onToggleCheck,
-  onPointerDown,
-  onChangeText,
-  onChangeAttachments,
-  onChangeColor,
   uploadTarget,
-  onResize,
-  onDelete,
-  onSendToMap,
+  zIndex,
+  handlers,
 }: {
   n: CardNode;
+  gridMode: boolean;
+  gridPos: { x: number; y: number } | null;
   team: TeamColor | null;
   isTeacher: boolean;
   isFrom: boolean;
@@ -1789,29 +2545,26 @@ function CardView({
   groupColor?: string;
   groupName?: string;
   commentCount: number;
-  reactions: Record<string, { count: number; mine: boolean }>;
-  onToggleReaction: (type: ReactionType) => void;
-  onOpenComments: (rect: DOMRect) => void;
+  reactions?: Record<string, { count: number; mine: boolean }>;
   canSendMap: boolean;
   checked: boolean;
-  onToggleCheck: () => void;
-  onPointerDown: (e: React.PointerEvent) => void;
-  onChangeText: (t: string) => void;
-  onChangeAttachments: (next: Attachment[]) => void;
-  onChangeColor: (color: string | null) => void;
   uploadTarget: { cid: string; uid: string } | null;
-  onResize?: (h: number) => void;
-  onDelete: () => void;
-  onSendToMap?: () => void;
+  zIndex: number;
+  handlers: CardHandlers;
 }) {
+  // 색 없는 단독 카드의 team 폴백은 내부에서 — prop 신원을 안정화(메모 유지)
+  const team = teamProp ?? (n.color ? { solid: n.color, gradient: null } : null);
+  const reactions = reactionsProp ?? {};
   const HANDLE = 28;
   const MIN_H = n.kind === "link" ? 84 : 96;
   const selectable = canSendMap && n.kind === "text";
+  const showSendToMap = canSendMap && n.kind === "text";
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  const onResizeRef = useRef(onResize);
-  onResizeRef.current = onResize;
+  // 높이 동기화 콜백은 최신 핸들러/ id 를 ref 로 — RO effect 는 mount 시 1회만 설치
+  const onResizeRef = useRef<(h: number) => void>(() => {});
+  onResizeRef.current = (h: number) => handlers.onResize(n.id, h);
   const [colorOpen, setColorOpen] = useState(false);
   const [colorRect, setColorRect] = useState<DOMRect | null>(null);
 
@@ -1828,7 +2581,7 @@ function CardView({
     const el = rootRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      onResizeRef.current?.(Math.round(el.offsetHeight));
+      onResizeRef.current(Math.round(el.offsetHeight));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -1839,10 +2592,12 @@ function CardView({
     <div
       ref={rootRef}
       style={{
-        left: n.x,
-        top: n.y,
-        width: n.w,
+        // 규칙형: 계산된 격자 위치 + 균일 열너비(표시만, Firestore 미저장). 높이는 내용 자동.
+        left: gridMode && gridPos ? gridPos.x : n.x,
+        top: gridMode && gridPos ? gridPos.y : n.y,
+        width: gridMode ? GRID_COL_W : n.w,
         minHeight: MIN_H,
+        zIndex,
         ...(groupColor && !highlighted
           ? {
               borderColor: groupColor,
@@ -1877,7 +2632,7 @@ function CardView({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onToggleCheck();
+            handlers.onToggleCheck(n.id);
           }}
           onPointerDown={(e) => e.stopPropagation()}
           className={`absolute right-1.5 top-[34px] z-10 flex h-5 w-5 items-center justify-center rounded-md border ${
@@ -1894,7 +2649,7 @@ function CardView({
       {/* 드래그 핸들 — macOS 타이틀바 스타일 (교사) */}
       {isTeacher && (
         <div
-          onPointerDown={onPointerDown}
+          onPointerDown={(e) => handlers.onCardDown(e, n.id)}
           style={{
             height: HANDLE,
             ...(team
@@ -1910,7 +2665,7 @@ function CardView({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onDelete();
+              handlers.onDelete(n.id);
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#ff5f57] ring-1 ring-black/10"
@@ -1943,19 +2698,19 @@ function CardView({
               rect={colorRect}
               current={n.color ?? null}
               onPick={(c) => {
-                onChangeColor(c);
+                handlers.onChangeColor(n.id, c);
                 setColorOpen(false);
               }}
-              onCustom={(c) => onChangeColor(c)}
+              onCustom={(c) => handlers.onChangeColor(n.id, c)}
               onClose={() => setColorOpen(false)}
             />
           )}
 
-          {n.kind === "text" && onSendToMap && (
+          {showSendToMap && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onSendToMap();
+                handlers.onSendToMap(n.id);
               }}
               onPointerDown={(e) => e.stopPropagation()}
               className="ml-auto rounded px-1.5 py-0.5 text-xs font-semibold text-[var(--md-sys-color-primary)] hover:bg-black/5"
@@ -1991,22 +2746,24 @@ function CardView({
           <textarea
             ref={taRef}
             value={n.text}
-            onChange={(e) => onChangeText(e.target.value)}
+            onChange={(e) => handlers.onChangeText(n.id, e.target.value)}
+            onFocus={() => handlers.onFocusText(n.id)}
+            onBlur={() => handlers.onBlurText(n.id)}
             onPaste={async (e) => {
-              // 클립보드의 이미지(스크린샷·복사한 사진)를 바로 카드 첨부로
+              // 클립보드의 이미지(스크린샷·복사한 사진)를 바로 카드 첨부로(원자 추가)
               const imgs = Array.from(e.clipboardData?.files ?? []).filter((f) =>
                 f.type.startsWith("image/")
               );
               if (imgs.length === 0 || !uploadTarget) return;
               e.preventDefault();
               try {
-                onChangeAttachments(
-                  await uploadImageFiles(
-                    { kind: "canvas", ...uploadTarget },
-                    imgs,
-                    n.attachments ?? []
-                  )
+                const room = Math.max(0, 6 - (n.attachments?.length ?? 0));
+                const added = await uploadImages(
+                  { kind: "canvas", ...uploadTarget },
+                  imgs,
+                  room
                 );
+                handlers.onAddAttachments(n.id, added);
               } catch {
                 /* 업로드 실패 무시 */
               }
@@ -2032,7 +2789,11 @@ function CardView({
               <AttachmentField
                 target={{ kind: "canvas", ...uploadTarget }}
                 value={n.attachments ?? []}
-                onChange={onChangeAttachments}
+                onAdd={(atts) => handlers.onAddAttachments(n.id, atts)}
+                onRemove={(att) => handlers.onRemoveAttachment(n.id, att)}
+                onRecordingChange={(rec) =>
+                  handlers.onRecordingChange(n.id, rec)
+                }
                 compact
                 imageLayout="full"
               />
@@ -2051,7 +2812,7 @@ function CardView({
         {/* 연결 모드: 카드 전체를 클릭 타깃으로 덮음 */}
         {connectMode && (
           <div
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => handlers.onCardDown(e, n.id)}
             className="absolute inset-0 cursor-crosshair bg-[var(--md-sys-color-primary)]/5"
             title="연결할 카드 클릭"
           />
@@ -2090,7 +2851,7 @@ function CardView({
               key={r.type}
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleReaction(r.type);
+                handlers.onToggleReaction(n.id, r.type);
               }}
               className={`flex items-center gap-0.5 rounded-full px-2 py-1 text-xs font-semibold transition ${
                 mine ? "" : "text-black/45 hover:bg-black/5"
@@ -2113,7 +2874,7 @@ function CardView({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onOpenComments(e.currentTarget.getBoundingClientRect());
+            handlers.onOpenComments(n.id, e.currentTarget.getBoundingClientRect());
           }}
           className="ml-auto flex items-center gap-0.5 rounded-full px-2 py-1 text-xs font-semibold text-black/45 transition hover:bg-black/5"
           title="댓글"
@@ -2124,7 +2885,7 @@ function CardView({
       </div>
     </div>
   );
-}
+});
 
 function normUrlSafe(u: string) {
   const s = (u || "").trim();

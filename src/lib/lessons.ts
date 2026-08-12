@@ -112,6 +112,7 @@ export type Question = {
   allowResubmit: boolean; // 제출 후 학생 수정 허용 여부 (교사 설정)
   published?: boolean; // 학생 공개 여부. false=예약(학생에게 숨김), 미설정/true=공개
   revealAnswer?: boolean; // 문항(quiz): 제출 후 학생에게 정답 공개(공개 시 잠금)
+  ungraded?: boolean; // 문항(quiz)을 설문·투표로 — 정답 없이 응답 분포만 모음
   boardMode?: "shared" | "group"; // 보드(canvas): 공용 1개 / 모둠별 따로
   surveyItems?: SurveyItem[]; // 설문(survey) 문항 목록
   surveyVerifiedHash?: string; // 설문 검증(분석 수합) 시점의 응답 해시 — 있으면 분석 생성됨, 불일치면 stale
@@ -245,6 +246,7 @@ export async function copyLessonToClass(
       order: q.order,
       allowResubmit: q.allowResubmit,
       revealAnswer: q.revealAnswer ?? false,
+      ungraded: q.ungraded ?? false,
       boardMode: q.boardMode ?? "shared",
       surveyItems: cleanSurveyItems(q.surveyItems),
       clonedFrom: q.id,
@@ -507,6 +509,7 @@ export async function createQuestion(
     order?: number;
     allowResubmit?: boolean;
     revealAnswer?: boolean;
+    ungraded?: boolean;
     boardMode?: "shared" | "group";
     surveyItems?: SurveyItem[];
     gameResult?: GameResultPayload;
@@ -526,6 +529,7 @@ export async function createQuestion(
     order: data.order ?? Date.now(),
     allowResubmit: data.allowResubmit ?? true,
     revealAnswer: data.revealAnswer ?? false,
+    ungraded: data.ungraded ?? false,
     boardMode: data.boardMode ?? "shared",
     surveyItems: cleanSurveyItems(data.surveyItems),
     ...(data.gameResult ? { gameResult: data.gameResult } : {}),
@@ -569,6 +573,7 @@ export async function cloneQuestionsToPhase(
       order,
       allowResubmit: q.allowResubmit,
       revealAnswer: q.revealAnswer ?? false,
+      ungraded: q.ungraded ?? false,
       boardMode: q.boardMode ?? "shared",
       surveyItems: cleanSurveyItems(q.surveyItems), // 변수키(id) 보존 → 전/후 페어링
       clonedFrom: q.id,
@@ -609,6 +614,7 @@ export async function updateQuestion(
     allowResubmit?: boolean;
     published?: boolean;
     revealAnswer?: boolean;
+    ungraded?: boolean;
     boardMode?: "shared" | "group";
     surveyItems?: SurveyItem[];
     surveyVerifiedHash?: string;
@@ -1077,6 +1083,7 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
     allowResubmit: v.allowResubmit !== false, // 미설정/기존 문서는 허용(true)
     published: v.published !== false, // 미설정/기존 문서는 공개(true), false 만 예약
     revealAnswer: v.revealAnswer === true,
+    ungraded: v.ungraded === true,
     boardMode: v.boardMode === "group" ? "group" : "shared",
     surveyItems: Array.isArray(v.surveyItems)
       ? (v.surveyItems as unknown[]).map((x) => {

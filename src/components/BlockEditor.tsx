@@ -236,7 +236,7 @@ export function BlockView({ value }: { value: string }) {
           return (
             <a
               key={b.id}
-              href={b.url || "#"}
+              href={b.url ? toHref(b.url) : "#"}
               target="_blank"
               rel="noreferrer"
               className="inline-flex w-fit items-center gap-2 rounded-lg border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)] px-3 py-2 text-sm text-[var(--md-sys-color-primary)] hover:underline"
@@ -339,19 +339,50 @@ export default function BlockEditor({
   } | null>(null);
   const refs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const focusNext = useRef<string | null>(null);
+  // 실행취소(Ctrl+Z)/다시실행(Ctrl+Shift+Z·Ctrl+Y) 기록 — React 제어형 입력은
+  // 브라우저 기본 실행취소가 깨지므로 블록 스냅샷 스택을 직접 관리한다.
+  const undoStack = useRef<Block[][]>([]);
+  const redoStack = useRef<Block[][]>([]);
+  const lastPush = useRef(0);
 
   useEffect(() => {
     setBlocks(parse(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // coalesce=true(타이핑)는 약 0.5초 단위로 한 스텝으로 묶고, 구조 변경은 항상 한 스텝.
   const emit = useCallback(
-    (next: Block[]) => {
+    (next: Block[], coalesce = false) => {
+      const now = Date.now();
+      if (!coalesce || now - lastPush.current > 500) {
+        undoStack.current.push(blocks);
+        if (undoStack.current.length > 300) undoStack.current.shift();
+        lastPush.current = now;
+      }
+      redoStack.current = [];
       setBlocks(next);
       onChange?.(JSON.stringify(next));
     },
-    [onChange]
+    [blocks, onChange]
   );
+
+  const undo = useCallback(() => {
+    const prev = undoStack.current.pop();
+    if (prev === undefined) return;
+    redoStack.current.push(blocks);
+    lastPush.current = 0; // 다음 타이핑은 새 스텝부터
+    setBlocks(prev);
+    onChange?.(JSON.stringify(prev));
+  }, [blocks, onChange]);
+
+  const redo = useCallback(() => {
+    const nxt = redoStack.current.pop();
+    if (nxt === undefined) return;
+    undoStack.current.push(blocks);
+    lastPush.current = 0;
+    setBlocks(nxt);
+    onChange?.(JSON.stringify(nxt));
+  }, [blocks, onChange]);
 
   useEffect(() => {
     const id = focusNext.current;
@@ -366,7 +397,10 @@ export default function BlockEditor({
   if (readOnly) return <BlockView value={value} />;
 
   const update = (id: string, patch: Partial<Block>) =>
-    emit(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    emit(
+      blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+      true // 타이핑은 묶어서 한 번에 되돌리기
+    );
 
   // 텍스트형 블록에 URL만 입력하면 클릭 가능한 링크 블록으로 자동 변환
   function autoLink(b: Block, raw: string): boolean {
@@ -436,7 +470,20 @@ export default function BlockEditor({
   );
 
   return (
-    <div className="rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] p-3">
+    <div
+      className="rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] p-3"
+      onKeyDown={(e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const k = e.key.toLowerCase();
+        if (k === "z" && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        } else if ((k === "z" && e.shiftKey) || k === "y") {
+          e.preventDefault();
+          redo();
+        }
+      }}
+    >
       {blocks.map((b, idx) => (
         <div
           key={b.id}
@@ -478,15 +525,10 @@ export default function BlockEditor({
                   </button>
                 </div>
                 <input
-                  value={b.text}
-                  onChange={(e) => update(b.id, { text: e.target.value })}
-                  placeholder="표시할 이름"
-                  className="rounded-md bg-[var(--md-sys-color-surface)] px-2 py-1.5 text-sm outline-none"
-                />
-                <input
                   value={b.url ?? ""}
                   onChange={(e) => update(b.id, { url: e.target.value })}
-                  placeholder="https://..."
+                  placeholder="https://... (링크 주소를 붙여넣어요)"
+                  inputMode="url"
                   className="rounded-md bg-[var(--md-sys-color-surface)] px-2 py-1.5 text-sm outline-none"
                 />
               </div>

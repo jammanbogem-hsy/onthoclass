@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/Avatar";
+import { FitText } from "@/components/FitText";
 import { MiniBoard } from "@/components/MiniBoard";
 import { GameResults } from "@/components/GameResults";
 import { listMembers, type Member } from "@/lib/classes";
@@ -841,15 +842,14 @@ function SelectPanel({
                   <Icon name="check" size={14} />
                 </span>
               )}
-              <span
+              <FitText
+                text={c.word}
                 className={`font-omu break-keep leading-tight ${wordFontClass(c.word)} ${
                   on
                     ? "text-[var(--md-sys-color-on-primary-container)]"
                     : "text-[var(--md-sys-color-on-surface)]"
                 }`}
-              >
-                {c.word}
-              </span>
+              />
               {c.meaning && (
                 <span
                   className={`line-clamp-2 text-[11px] leading-snug ${
@@ -1387,11 +1387,10 @@ function DraggableWord({
       aria-label={`드래그 가능: ${word}`}
       className="flex aspect-square cursor-grab items-center justify-center overflow-hidden rounded-xl border-2 border-[var(--md-sys-color-outline-variant)] bg-white p-1.5 text-center transition hover:border-[var(--md-sys-color-primary)] active:cursor-grabbing"
     >
-      <span
+      <FitText
+        text={word}
         className={`font-omu break-keep leading-tight ${cellFont(word)} text-[var(--md-sys-color-on-surface)]`}
-      >
-        {word}
-      </span>
+      />
     </button>
   );
 }
@@ -1443,11 +1442,10 @@ function BoardCell({
       }`}
     >
       {word ? (
-        <span
+        <FitText
+          text={word}
           className={`font-omu break-keep leading-tight ${cellFont(word)} text-[var(--md-sys-color-on-surface)]`}
-        >
-          {word}
-        </span>
+        />
       ) : (
         <span className="text-2xl text-[var(--md-sys-color-on-surface-variant)] opacity-30">
           +
@@ -1514,9 +1512,10 @@ function BuildWaitPanel({
               key={i}
               className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-[var(--md-sys-color-outline-variant)] bg-white p-1 text-center"
             >
-              <span className="font-omu break-keep text-xs leading-tight text-[var(--md-sys-color-on-surface)]">
-                {w}
-              </span>
+              <FitText
+                text={w}
+                className="font-omu break-keep text-xs leading-tight text-[var(--md-sys-color-on-surface)]"
+              />
             </div>
           ) : (
             <div
@@ -1762,15 +1761,14 @@ function PlayPanel({
             >
               {w ? (
                 <>
-                  <span
+                  <FitText
+                    text={w}
                     className={`font-omu break-keep leading-tight ${cellFont(w)} ${
                       isMarked
                         ? "text-[var(--md-sys-color-on-primary-container)]"
                         : "text-[var(--md-sys-color-on-surface)]"
                     }`}
-                  >
-                    {w}
-                  </span>
+                  />
                   {isMarked && (
                     <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--md-sys-color-primary)] text-white">
                       <Icon name="check" size={14} />
@@ -2196,11 +2194,10 @@ function MyTurnOverlay({
                         </span>
                       </span>
                     ) : (
-                      <span
+                      <FitText
+                        text={w}
                         className={`font-omu break-keep leading-tight ${wordFontClass(w)}`}
-                      >
-                        {w}
-                      </span>
+                      />
                     )}
                     {isCalled && !isFree && (
                       <span className="absolute right-1 top-1 inline-flex items-center rounded-full bg-[var(--md-sys-color-outline)] px-1.5 py-0.5 text-[8px] font-bold text-white">

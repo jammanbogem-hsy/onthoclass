@@ -9,6 +9,7 @@
 import {
   collection,
   doc,
+  getCountFromServer,
   getDoc,
   increment,
   onSnapshot,
@@ -54,6 +55,15 @@ const thermoRef = (cid: string) =>
   doc(getDbClient(), "classes", cid, "control", "thermometer");
 const crossRef = (cid: string) =>
   doc(getDbClient(), "classes", cid, "control", "crossPraise");
+
+/** 한 학급의 승인된 칭찬 총 개수 — 서버 집계(count)로 문서를 받지 않고 센다(대시보드 학급별 표시용).
+ *  교사 권한이 없는 반(규칙 거부)에선 throw 하므로 호출부에서 catch 한다. */
+export async function countApprovedPraises(cid: string): Promise<number> {
+  const snap = await getCountFromServer(
+    query(praiseCol(cid), where("status", "==", "approved"))
+  );
+  return snap.data().count;
+}
 
 /** 학생이 친구를 칭찬(이유 포함) — 승인 전(pending) 상태로 저장 */
 export async function sendPraise(
