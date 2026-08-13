@@ -57,6 +57,7 @@ import {
   mergeOntologies,
 } from "@/lib/ontology";
 import { blocksToPlainText } from "@/components/RichEditor";
+import { useNameMask } from "@/components/NameMask";
 
 type Entry = {
   lid: string;
@@ -255,6 +256,7 @@ function useMultiLeaves(cid: string, lessonIds: string[]) {
 
 function ClassMap() {
   const { user, loading } = useAuth();
+  const { mask } = useNameMask();
   const router = useRouter();
   const params = useSearchParams();
   const cid = params.get("class");
@@ -778,7 +780,7 @@ function ClassMap() {
                 <option value="">전체 학생</option>
                 {students.map(([uid, nm]) => (
                   <option key={uid} value={uid}>
-                    {nm}
+                    {mask(nm)}
                   </option>
                 ))}
               </select>

@@ -22,6 +22,7 @@ import { Icon } from "@/components/Icon";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDialog } from "@/components/Dialog";
 import { createShare } from "@/lib/shares";
+import { useNameMask } from "@/components/NameMask";
 import type { Ontology, OntologyNode } from "@/lib/lessons";
 
 /**
@@ -93,6 +94,7 @@ export function GraphView({
    *  상세에서 다른 학생 이름 목록을 숨긴다(개념·인원수만 노출 — 또래 PII 보호). */
   viewerUid?: string;
 }) {
+  const { mask } = useNameMask();
   const nodes = useMemo(() => data.nodes ?? [], [data]);
   const edges = useMemo(
     () =>
@@ -455,9 +457,14 @@ export function GraphView({
     [edges, selected]
   );
 
+  // 이름 가리기(발표용)를 여기서 한 번 적용하면 상세 패널·다운로드 뷰가 모두 따라온다.
+  // 이름을 못 찾으면 uid 를 그대로 두어야 하므로(가릴 이름이 없음) 분기한다.
   const nameOf = useCallback(
-    (sid: string) => studentNames?.[sid] ?? sid,
-    [studentNames]
+    (sid: string) => {
+      const n = studentNames?.[sid];
+      return n ? mask(n) : sid;
+    },
+    [studentNames, mask]
   );
 
   if (!nodes.length) {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { Ontology, OntologyNode } from "@/lib/lessons";
+import { useNameMask } from "@/components/NameMask";
 
 /** 학생 응답에서 추출된 감정어(type==='emotion')를 감정별로 모아보기 */
 export function EmotionPanel({
@@ -10,6 +11,7 @@ export function EmotionPanel({
   data: Ontology;
   names?: Record<string, string>;
 }) {
+  const { mask } = useNameMask();
   const emo = data.nodes.filter((n) => n.type === "emotion");
   if (emo.length === 0) {
     return (
@@ -58,7 +60,7 @@ export function EmotionPanel({
                   key={n.id}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${g.cls}`}
                   title={(n.sources ?? [])
-                    .map((s) => names?.[s] ?? s)
+                    .map((s) => (names?.[s] ? mask(names[s]) : s))
                     .join(", ")}
                 >
                   {n.label}
