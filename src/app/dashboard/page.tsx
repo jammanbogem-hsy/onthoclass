@@ -29,6 +29,7 @@ import { watchXp, watchQuests, xpLevel, type Quest } from "@/lib/xp";
 import { MissionCelebrate } from "@/components/MissionCelebrate";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { useDialog } from "@/components/Dialog";
+import { NameMaskToggle } from "@/components/NameMask";
 
 // 학급·폴더 라벨 색 — 다양한 파스텔 톤(초등 친화). colorIndex 로 선택.
 const SUBJECT_GRADIENTS = [
@@ -451,6 +452,8 @@ export default function DashboardPage() {
                 <Icon name="create_new_folder" size={18} />
                 폴더 만들기
               </GlassButton>
+              {/* 전역 이름 가리기 — 여기서 켜면 내 모든 학급·차시 화면에 적용 */}
+              <NameMaskToggle />
             </>
           ) : (
             <GlassButton onClick={() => setModal("join")}>

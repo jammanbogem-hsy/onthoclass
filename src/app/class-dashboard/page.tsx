@@ -14,6 +14,7 @@ import { BADGE_CATALOG, watchAllBadges, type BadgeMap } from "@/lib/badges";
 import { watchPraises, watchThermometer, type Praise } from "@/lib/praise";
 import { resolveStudentName } from "@/lib/names";
 import { TradingAdminModal } from "@/components/TradingAdminModal";
+import { useNameMask } from "@/components/NameMask";
 import {
   listLessons,
   listQuestions,
@@ -79,6 +80,7 @@ function PraiseRankCard({
   metric: "sent" | "recv";
   onPick: (uid: string) => void;
 }) {
+  const { mask } = useNameMask();
   return (
     <GlassCard className="p-4">
       <p className="mb-2.5 flex items-center gap-1.5 text-sm font-bold">
@@ -105,7 +107,7 @@ function PraiseRankCard({
                 </span>
                 <Avatar m={r.m} size={32} />
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                  {r.m.displayName}
+                  {mask(r.m.displayName)}
                 </span>
                 <span className="shrink-0 rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-bold text-[var(--md-sys-color-on-primary-container)]">
                   {metric === "sent" ? r.praiseSent : r.praiseRecv}회
@@ -121,6 +123,7 @@ function PraiseRankCard({
 
 function ClassDashboardInner() {
   const { user, loading } = useAuth();
+  const { mask } = useNameMask();
   const router = useRouter();
   const params = useSearchParams();
   const cid = params.get("id") || params.get("class");
@@ -421,7 +424,7 @@ function ClassDashboardInner() {
                   </span>
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">{r.m.displayName}</p>
+                  <p className="truncate text-sm font-bold">{mask(r.m.displayName)}</p>
                   <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                     Lv.{r.level} · {r.xp.toLocaleString()} XP
                   </p>
@@ -458,7 +461,7 @@ function ClassDashboardInner() {
             <div className="flex items-center gap-3 border-b border-[var(--md-sys-color-outline-variant)] px-5 py-4">
               <Avatar m={sel.m} size={44} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-lg font-bold">{sel.m.displayName}</p>
+                <p className="truncate text-lg font-bold">{mask(sel.m.displayName)}</p>
                 <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   Lv.{sel.level} · {sel.xp.toLocaleString()} XP
                 </p>

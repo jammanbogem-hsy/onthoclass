@@ -34,6 +34,7 @@ import {
 } from "@/lib/praise";
 import { listLessons, type Lesson } from "@/lib/lessons";
 import { Leaderboard } from "@/components/Leaderboard";
+import { useNameMask } from "@/components/NameMask";
 import { getXpMap, watchXpRequests, type XpRequest } from "@/lib/xp";
 import {
   getClass,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/classes";
 
 function ClassDetail() {
+  const { mask } = useNameMask();
   const { user, loading } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -425,7 +427,7 @@ function ClassDetail() {
                     </span>
                   )}
                   <span className="flex-1 truncate text-sm font-medium">
-                    {m.displayName}
+                    {mask(m.displayName)}
                     {m.uid === user.uid && (
                       <span className="ml-1 text-[var(--md-sys-color-on-surface-variant)]">
                         (나)

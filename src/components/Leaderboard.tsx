@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Icon } from "@/components/Icon";
 import { xpLevel } from "@/lib/xp";
+import { useNameMask } from "@/components/NameMask";
 
 type Entry = { uid: string; displayName: string; photoURL?: string };
 
@@ -20,6 +21,7 @@ export function Leaderboard({
   meUid?: string;
   max?: number;
 }) {
+  const { mask } = useNameMask();
   const ranked = useMemo(() => {
     const list = students
       .map((s) => ({ ...s, xp: xpMap[s.uid] ?? 0 }))
@@ -61,7 +63,7 @@ export function Leaderboard({
             {/* 이름 */}
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-                {s.displayName}
+                {mask(s.displayName)}
                 {me && (
                   <span className="rounded-full bg-[var(--md-sys-color-primary)] px-1.5 py-0.5 text-xs font-bold text-white">
                     나

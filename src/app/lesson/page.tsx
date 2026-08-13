@@ -23,11 +23,8 @@ import { SentimentBar } from "@/components/GraphView";
 import { ExpandableGraph } from "@/components/ExpandableGraph";
 import { EmotionPanel } from "@/components/EmotionPanel";
 import { CommentThread } from "@/components/CommentThread";
-import {
-  NameMaskProvider,
-  NameMaskToggle,
-  useNameMask,
-} from "@/components/NameMask";
+import { NameMaskToggle, useNameMask } from "@/components/NameMask";
+import { EffectWizardDrawer } from "@/components/EffectWizard";
 import { MessagesFab } from "@/components/MessagesFab";
 import { useDialog } from "@/components/Dialog";
 import {
@@ -266,14 +263,14 @@ function LessonDetail() {
         </GlassCard>
 
         {isTeacher ? (
-          <NameMaskProvider>
-            <TeacherPanel
-              cid={cid}
-              lid={lid}
-              phase={phase}
-              lesson={lesson}
-            />
-          </NameMaskProvider>
+          /* Provider 는 루트 레이아웃에 있다 — 여기서 다시 감싸면 별도 상태가
+             생겨 메인에서 켠 토글과 어긋난다. */
+          <TeacherPanel
+            cid={cid}
+            lid={lid}
+            phase={phase}
+            lesson={lesson}
+          />
         ) : (
           <StudentPanel cid={cid} lid={lid} phase={phase} />
         )}
@@ -287,6 +284,10 @@ function LessonDetail() {
         viewerRole={isTeacher ? "teacher" : "student"}
         students={members.filter((m) => m.role === "student")}
       />
+      {/* 수업 중에 차시를 떠나지 않고 효과·잠금·발표·공지를 쓰는 사이드바 */}
+      {isTeacher && user && (
+        <EffectWizardDrawer cid={cid} teacherUid={user.uid} />
+      )}
     </>
   );
 }
