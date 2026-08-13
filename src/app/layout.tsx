@@ -5,6 +5,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { DialogProvider } from "@/components/Dialog";
 import { ClassLive } from "@/components/ClassLive";
 import { FONT_INIT_SCRIPT } from "@/lib/fontTheme";
+import { THEME_INIT_SCRIPT } from "@/lib/colorTheme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,9 +45,12 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap"
         />
         <style>{`:root{--font-pretendard:'Pretendard'}`}</style>
-        {/* 폰트 선택 FOUC 방지 — 하이드레이션 전에 data-font 적용 */}
+        {/* 폰트·색상 선택 FOUC 방지 — 하이드레이션 전에 data-font / data-theme 적용 */}
         <script
           dangerouslySetInnerHTML={{ __html: FONT_INIT_SCRIPT }}
+        />
+        <script
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
         />
       </head>
       <body className="min-h-full flex flex-col">

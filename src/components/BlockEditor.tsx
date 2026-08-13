@@ -4,6 +4,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -280,7 +281,7 @@ export function BlockView({ value }: { value: string }) {
               className="flex gap-2 rounded-xl bg-[var(--md-sys-color-secondary-container)] p-3 text-sm text-[var(--md-sys-color-on-secondary-container)]"
             >
               <Icon name="lightbulb" size={18} />
-              <span>{linkify(b.text)}</span>
+              <span className="whitespace-pre-wrap">{linkify(b.text)}</span>
             </div>
           );
         if (b.type === "bullet")
@@ -289,7 +290,7 @@ export function BlockView({ value }: { value: string }) {
               <span className="text-[var(--md-sys-color-on-surface-variant)]">
                 •
               </span>
-              <span>{linkify(b.text)}</span>
+              <span className="whitespace-pre-wrap">{linkify(b.text)}</span>
             </div>
           );
         if (b.type === "numbered") {
@@ -299,7 +300,7 @@ export function BlockView({ value }: { value: string }) {
               <span className="text-[var(--md-sys-color-on-surface-variant)]">
                 {n}.
               </span>
-              <span>{linkify(b.text)}</span>
+              <span className="whitespace-pre-wrap">{linkify(b.text)}</span>
             </div>
           );
         }
@@ -307,11 +308,11 @@ export function BlockView({ value }: { value: string }) {
           <div
             key={b.id}
             style={textStyle(b.type)}
-            className={
+            className={`whitespace-pre-wrap ${
               b.type === "quote"
                 ? "border-l-[3px] border-[var(--md-sys-color-primary)] pl-3 text-[var(--md-sys-color-on-surface-variant)]"
                 : ""
-            }
+            }`}
           >
             {b.text ? linkify(b.text) : " "}
           </div>
@@ -394,6 +395,16 @@ export default function BlockEditor({
     }
   });
 
+  // 여러 줄 텍스트가 잘리지 않도록 매 렌더마다 textarea 높이를 내용에 맞춘다.
+  // (rows=1 + overflow-hidden 이라, 저장된 여러 줄을 다시 열면 한 줄로 잘렸다)
+  useLayoutEffect(() => {
+    for (const el of Object.values(refs.current)) {
+      if (!el) continue;
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    }
+  }, [blocks]);
+
   if (readOnly) return <BlockView value={value} />;
 
   const update = (id: string, patch: Partial<Block>) =>
@@ -412,9 +423,9 @@ export default function BlockEditor({
     return false;
   }
 
-  function addAfter(id: string) {
+  function addAfter(id: string, type: BlockType = "p") {
     const i = blocks.findIndex((b) => b.id === id);
-    const nb: Block = { id: newId(), type: "p", text: "" };
+    const nb: Block = { id: newId(), type, text: "" };
     const next = [...blocks];
     next.splice(i + 1, 0, nb);
     focusNext.current = nb.id;
@@ -601,9 +612,24 @@ export default function BlockEditor({
                       setSlash(null);
                       return;
                     }
-                    if (e.key === "Enter" && !e.shiftKey && !slash) {
-                      e.preventDefault();
-                      addAfter(b.id);
+                    // Enter = 줄바꿈(같은 블록 안). 한 응답이 여러 박스로 쪼개져
+                    // 드래그 선택·복사가 안 되던 문제 때문에 기본 동작을 뒤집었다.
+                    //  - 목록형(글머리/번호): Enter = 다음 항목(목록의 본래 동작)
+                    //    단, 빈 항목에서 Enter 는 문단으로 빠져나오기
+                    //  - 그 외 텍스트 블록: Enter = 줄바꿈(브라우저 기본 동작)
+                    //  - 새 블록은 Shift+Enter / '+ 블록 추가' / '/' 명령
+                    if (e.key === "Enter" && !slash) {
+                      const isList =
+                        b.type === "bullet" || b.type === "numbered";
+                      if (e.shiftKey) {
+                        e.preventDefault();
+                        addAfter(b.id);
+                      } else if (isList) {
+                        e.preventDefault();
+                        if (b.text.trim() === "") update(b.id, { type: "p" });
+                        else addAfter(b.id, b.type);
+                      }
+                      // 그 외에는 preventDefault 하지 않음 → textarea 기본 줄바꿈
                     }
                     if (e.key === "Backspace" && b.text === "") {
                       // 빈 리스트/인용/제목은 먼저 일반 문단으로 되돌림

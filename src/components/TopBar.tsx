@@ -16,6 +16,7 @@ import {
   setFont,
   type FontKey,
 } from "@/lib/fontTheme";
+import { THEMES, getTheme, setTheme, type ThemeKey } from "@/lib/colorTheme";
 
 const FONT_PREVIEW: Record<FontKey, string> = {
   default: "var(--md-sys-font-plain)",
@@ -34,11 +35,13 @@ export function TopBar() {
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [font, setFontState] = useState<FontKey>("default");
+  const [theme, setThemeState] = useState<ThemeKey>("default");
   const ref = useRef<HTMLDivElement>(null);
   const avatarSrc = profile?.avatar || user?.photoURL || "";
 
   useEffect(() => {
     setFontState(getFont());
+    setThemeState(getTheme());
   }, []);
 
   // 글꼴 메뉴를 연 순간에만 원격 폰트 CSS 를 받아 미리보기를 실제 글꼴로 보여준다
@@ -51,6 +54,11 @@ export function TopBar() {
   function pickFont(k: FontKey) {
     setFont(k);
     setFontState(k);
+  }
+
+  function pickTheme(k: ThemeKey) {
+    setTheme(k);
+    setThemeState(k);
   }
 
   useEffect(() => {
@@ -140,6 +148,34 @@ export function TopBar() {
                 >
                   {roleLabel}
                 </span>
+              </div>
+              {/* 색상 테마 — 기기별 저장, 전체 UI 색상 변경 */}
+              <div className="mt-3 rounded-xl bg-[var(--md-sys-color-surface-container)] p-2">
+                <p className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                  <Icon name="palette" size={14} />
+                  색상
+                </p>
+                <div className="grid grid-cols-6 gap-1.5 px-1">
+                  {THEMES.map((t) => (
+                    <button
+                      key={t.key}
+                      onClick={() => pickTheme(t.key)}
+                      title={t.label}
+                      aria-label={`${t.label} 색상 테마`}
+                      aria-pressed={theme === t.key}
+                      className={`flex aspect-square items-center justify-center rounded-full transition ${
+                        theme === t.key
+                          ? "ring-2 ring-[var(--md-sys-color-on-surface)] ring-offset-2 ring-offset-[var(--md-sys-color-surface-container)]"
+                          : "hover:scale-110"
+                      }`}
+                      style={{ backgroundColor: t.swatch }}
+                    >
+                      {theme === t.key && (
+                        <Icon name="check" size={14} className="text-white" />
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
               {/* 글꼴 선택 — 기기별 저장, 전체 UI 폰트 변경 */}
               <div className="mt-3 rounded-xl bg-[var(--md-sys-color-surface-container)] p-2">

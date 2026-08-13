@@ -344,3 +344,92 @@
   -webkit-font-smoothing: antialiased;
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
 }
+
+/* ===========================================================
+   색상 테마 — <html data-theme="..."> 로 전체 UI 색상 전환.
+   PRIMARY 톤 팔레트(p-*)와 브랜드 컨테이너만 교체하면, 시맨틱 역할
+   (primary / primary-container / on-* / inverse-primary)이 전부 이걸
+   참조하므로 버튼·칩·활성상태·강조배경이 자동으로 따라 바뀐다.
+   표면/중립(n-*, nv-*)은 건드리지 않는다 — 본문 대비 안전선 유지.
+   p-40 은 흰 글자 기준 대비 4.5:1 이상이 되도록 골랐다.
+   =========================================================== */
+
+/* 바다 (Blue) */
+html[data-theme="ocean"] {
+  --md-sys-color-p-10:  #001C3B;
+  --md-sys-color-p-20:  #003060;
+  --md-sys-color-p-30:  #004787;
+  --md-sys-color-p-40:  #0B60AE;
+  --md-sys-color-p-50:  #3C7BC9;
+  --md-sys-color-p-60:  #5C96E5;
+  --md-sys-color-p-70:  #7CB1FF;
+  --md-sys-color-p-80:  #A8CCFF;
+  --md-sys-color-p-90:  #D4E4FF;
+  --md-sys-color-p-95:  #EBF1FF;
+  --md-sys-color-p-99:  #FAFCFF;
+  --md-brand-mint:      #DCE9FF;
+}
+
+/* 라벤더 (Purple) */
+html[data-theme="lavender"] {
+  --md-sys-color-p-10:  #21005D;
+  --md-sys-color-p-20:  #381E72;
+  --md-sys-color-p-30:  #4F378B;
+  --md-sys-color-p-40:  #6750A4;
+  --md-sys-color-p-50:  #7F67BE;
+  --md-sys-color-p-60:  #9A82DB;
+  --md-sys-color-p-70:  #B69DF8;
+  --md-sys-color-p-80:  #D0BCFF;
+  --md-sys-color-p-90:  #EADDFF;
+  --md-sys-color-p-95:  #F6EDFF;
+  --md-sys-color-p-99:  #FFFBFF;
+  --md-brand-mint:      #EADDFF;
+}
+
+/* 산호 (Coral) */
+html[data-theme="coral"] {
+  --md-sys-color-p-10:  #3B0900;
+  --md-sys-color-p-20:  #5F1600;
+  --md-sys-color-p-30:  #872300;
+  --md-sys-color-p-40:  #AE3300;
+  --md-sys-color-p-50:  #D24A17;
+  --md-sys-color-p-60:  #EF6636;
+  --md-sys-color-p-70:  #FF8A62;
+  --md-sys-color-p-80:  #FFB59B;
+  --md-sys-color-p-90:  #FFDBCF;
+  --md-sys-color-p-95:  #FFEDE7;
+  --md-sys-color-p-99:  #FFFBFF;
+  --md-brand-mint:      #FFE3D8;
+}
+
+/* 벚꽃 (Pink) */
+html[data-theme="blossom"] {
+  --md-sys-color-p-10:  #3E001E;
+  --md-sys-color-p-20:  #5E1134;
+  --md-sys-color-p-30:  #7E294B;
+  --md-sys-color-p-40:  #9E3F63;
+  --md-sys-color-p-50:  #BD567B;
+  --md-sys-color-p-60:  #DC6F95;
+  --md-sys-color-p-70:  #FA8AB0;
+  --md-sys-color-p-80:  #FFB0C8;
+  --md-sys-color-p-90:  #FFD9E3;
+  --md-sys-color-p-95:  #FFECF0;
+  --md-sys-color-p-99:  #FFFBFF;
+  --md-brand-mint:      #FFE1EA;
+}
+
+/* 먹빛 (Slate) */
+html[data-theme="slate"] {
+  --md-sys-color-p-10:  #191C20;
+  --md-sys-color-p-20:  #2D3135;
+  --md-sys-color-p-30:  #43474C;
+  --md-sys-color-p-40:  #5A5E63;
+  --md-sys-color-p-50:  #737780;
+  --md-sys-color-p-60:  #8D9198;
+  --md-sys-color-p-70:  #A8ACB3;
+  --md-sys-color-p-80:  #C4C7CE;
+  --md-sys-color-p-90:  #E0E3EA;
+  --md-sys-color-p-95:  #EFF1F7;
+  --md-sys-color-p-99:  #FCFCFF;
+  --md-brand-mint:      #E3E6ED;
+}
