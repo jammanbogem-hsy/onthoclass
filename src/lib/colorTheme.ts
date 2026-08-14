@@ -1,9 +1,12 @@
-// UI 색상 테마 — <html data-theme="..."> 로 전체 색상 전환. 기기(브라우저)별 저장.
+// UI 색상 테마 — <html data-theme="..."> 로 전체 색상 전환.
+// 계정(users/{uid}.prefs.theme)에 저장돼 다른 탭·기기까지 동기화된다(@/lib/prefs).
 //
 // 동작 원리: M3 시맨틱 역할(primary / primary-container / on-* …)이 전부
 // PRIMARY 톤 팔레트(--md-sys-color-p-*)에서 파생되므로, 테마는 그 팔레트만
 // 갈아끼운다. 버튼·칩·활성 상태·강조 배경이 한 번에 따라온다.
 // (표면/중립색은 그대로 둔다 — 대비 안전선 유지)
+import { savePrefIfSignedIn } from "@/lib/prefs";
+
 export type ThemeKey =
   | "default"
   | "ocean"
@@ -30,6 +33,13 @@ export function getTheme(): ThemeKey {
 }
 
 export function setTheme(key: ThemeKey): void {
+  setThemeLocal(key);
+  // 계정에도 저장 — 다른 탭·기기가 구독해서 따라온다(로그인 시에만).
+  void savePrefIfSignedIn({ theme: key });
+}
+
+/** 로컬 캐시만 갱신 — 계정에서 내려온 값을 반영할 때 쓴다(되쓰기 루프 방지). */
+export function setThemeLocal(key: ThemeKey): void {
   if (typeof document === "undefined") return;
   try {
     localStorage.setItem(KEY, key);
@@ -37,6 +47,10 @@ export function setTheme(key: ThemeKey): void {
     /* noop */
   }
   applyTheme(key);
+}
+
+export function isThemeKey(v: unknown): v is ThemeKey {
+  return typeof v === "string" && THEMES.some((t) => t.key === v);
 }
 
 /** <html> 에 data-theme 적용(기본은 속성 제거). */

@@ -4,6 +4,7 @@
 import {
   doc,
   getDoc,
+  onSnapshot,
   serverTimestamp,
   setDoc,
   writeBatch,
@@ -237,4 +238,42 @@ export async function completeStudentOnboarding(
       throw new Error("학급 코드를 찾을 수 없습니다.");
     throw new Error("학급 참여에 실패했습니다. 잠시 후 다시 시도해 주세요.");
   }
+}
+
+/* ───────── 화면 설정(테마·글꼴·이름가리기) — 계정에 저장해 기기 간 동기화 ───────── */
+
+/** users/{uid}.prefs — 값이 없으면 각 화면의 기본값을 쓴다. */
+export type UserPrefs = {
+  theme?: string;
+  font?: string;
+  nameMask?: boolean;
+};
+
+function readPrefs(v: Record<string, unknown> | undefined): UserPrefs {
+  const p = (v?.prefs ?? {}) as Record<string, unknown>;
+  return {
+    theme: typeof p.theme === "string" ? p.theme : undefined,
+    font: typeof p.font === "string" ? p.font : undefined,
+    nameMask: typeof p.nameMask === "boolean" ? p.nameMask : undefined,
+  };
+}
+
+/** 변경된 항목만 병합 저장. 로그인 상태에서만 호출한다. */
+export async function setUserPrefs(
+  uid: string,
+  patch: UserPrefs
+): Promise<void> {
+  await setDoc(doc(getDbClient(), "users", uid), { prefs: patch }, { merge: true });
+}
+
+/** 내 설정 실시간 구독 — 다른 탭·다른 기기의 변경이 즉시 반영된다. */
+export function watchUserPrefs(
+  uid: string,
+  cb: (p: UserPrefs) => void
+): () => void {
+  return onSnapshot(
+    doc(getDbClient(), "users", uid),
+    (snap) => cb(readPrefs(snap.data())),
+    () => {}
+  );
 }

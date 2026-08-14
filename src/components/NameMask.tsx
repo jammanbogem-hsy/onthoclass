@@ -6,8 +6,8 @@
  * 표시 전용이다. CSV 내보내기·LLM 분석 요청·경험치 지급 등 데이터에는 언제나
  * 원본 이름이 쓰인다(가려진 화면으로 내보낸 파일이 못 쓰게 되는 일이 없도록).
  *
- * 상태는 sessionStorage 에 남긴다 — 차시를 옮겨 다녀도 발표 중에는 계속 가려지고,
- * 브라우저를 닫으면 원래대로 돌아온다.
+ * 상태는 계정(users/{uid}.prefs.nameMask)에 저장돼 다른 탭·다른 기기까지 따라온다
+ * (동기화는 PrefsSync 담당). localStorage 는 로그인 전 첫 페인트용 캐시일 뿐이다.
  */
 
 import {
@@ -20,6 +20,7 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "@/components/Icon";
+import { savePrefIfSignedIn } from "@/lib/prefs";
 
 const KEY = "lc:nameMask";
 
@@ -40,6 +41,8 @@ export function maskName(name: string): string {
 type NameMaskCtx = {
   masked: boolean;
   setMasked: (v: boolean) => void;
+  /** 원격(계정) 변경 반영용 — 사용자 조작이 아니므로 다시 저장하지 않는다. */
+  setMaskedFromRemote: (v: boolean) => void;
   /** 이름 하나 가리기(꺼져 있으면 원본 그대로). */
   mask: (name?: string | null) => string;
   /** uid → 이름 맵 통째로 가리기(지식맵·감정 패널 라벨용). */
@@ -49,6 +52,7 @@ type NameMaskCtx = {
 const OFF: NameMaskCtx = {
   masked: false,
   setMasked: () => {},
+  setMaskedFromRemote: () => {},
   mask: (n) => n ?? "",
   maskMap: (m) => m,
 };
@@ -64,23 +68,35 @@ export function NameMaskProvider({ children }: { children: ReactNode }) {
   const [masked, setMaskedState] = useState(false);
 
   // 서버·클라이언트 첫 렌더를 맞추기 위해 마운트 후에 복원한다.
+  // 계정 설정이 도착하면 PrefsSync 가 setMaskedFromRemote 로 덮어쓴다.
   useEffect(() => {
     try {
-      setMaskedState(sessionStorage.getItem(KEY) === "1");
+      setMaskedState(localStorage.getItem(KEY) === "1");
     } catch {}
   }, []);
 
-  const setMasked = useCallback((v: boolean) => {
+  // 로컬 캐시만 갱신(원격 저장은 PrefsSync 가 구독해서 처리)
+  const setMaskedFromRemote = useCallback((v: boolean) => {
     setMaskedState(v);
     try {
-      sessionStorage.setItem(KEY, v ? "1" : "0");
+      localStorage.setItem(KEY, v ? "1" : "0");
     } catch {}
   }, []);
+
+  const setMasked = useCallback(
+    (v: boolean) => {
+      setMaskedFromRemote(v);
+      // 계정에 반영 — 로그인 상태일 때만 동작한다.
+      void savePrefIfSignedIn({ nameMask: v });
+    },
+    [setMaskedFromRemote]
+  );
 
   const value = useMemo<NameMaskCtx>(
     () => ({
       masked,
       setMasked,
+      setMaskedFromRemote,
       mask: (n) => (masked ? maskName(n ?? "") : (n ?? "")),
       maskMap: (m) =>
         masked
@@ -89,7 +105,7 @@ export function NameMaskProvider({ children }: { children: ReactNode }) {
             )
           : m,
     }),
-    [masked, setMasked]
+    [masked, setMasked, setMaskedFromRemote]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

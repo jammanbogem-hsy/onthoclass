@@ -7,6 +7,7 @@ import { ClassLive } from "@/components/ClassLive";
 import { FONT_INIT_SCRIPT } from "@/lib/fontTheme";
 import { THEME_INIT_SCRIPT } from "@/lib/colorTheme";
 import { NameMaskProvider } from "@/components/NameMask";
+import { PrefsSync } from "@/components/PrefsSync";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -60,6 +61,7 @@ export default function RootLayout({
             {/* 이름 가리기는 앱 전체가 한 상태를 공유한다 — 메인에서 한 번 켜면
                 모든 학급·차시 화면에 그대로 적용된다(탭 단위 sessionStorage). */}
             <NameMaskProvider>
+              <PrefsSync />
               {children}
               <ClassLive />
             </NameMaskProvider>

@@ -1,4 +1,7 @@
-// UI 폰트 선택 — <html data-font="..."> 로 전체 폰트 전환. 기기(브라우저)별 저장.
+// UI 폰트 선택 — <html data-font="..."> 로 전체 폰트 전환.
+// 계정(users/{uid}.prefs.font)에 저장돼 다른 탭·기기까지 동기화된다(@/lib/prefs).
+import { savePrefIfSignedIn } from "@/lib/prefs";
+
 export type FontKey =
   | "default"
   | "susukkang"
@@ -41,6 +44,13 @@ export function getFont(): FontKey {
 }
 
 export function setFont(key: FontKey): void {
+  setFontLocal(key);
+  // 계정에도 저장 — 다른 탭·기기가 구독해서 따라온다(로그인 시에만).
+  void savePrefIfSignedIn({ font: key });
+}
+
+/** 로컬 캐시만 갱신 — 계정에서 내려온 값을 반영할 때 쓴다(되쓰기 루프 방지). */
+export function setFontLocal(key: FontKey): void {
   if (typeof document === "undefined") return;
   try {
     localStorage.setItem(KEY, key);
@@ -48,6 +58,10 @@ export function setFont(key: FontKey): void {
     /* noop */
   }
   applyFont(key);
+}
+
+export function isFontKey(v: unknown): v is FontKey {
+  return typeof v === "string" && FONTS.some((f) => f.key === v);
 }
 
 /** 원격 폰트 CSS 를 1회만 <head> 에 주입 (중복 방지) */
