@@ -5,15 +5,16 @@ rules_version = '2';
 // 보드 카드 첨부:        classes/{cid}/canvas/{uid}/{file}
 // 피드백/오류 사진:       classes/{cid}/feedback/{uid}/{fid}/{file}
 //
-// - 읽기: 로그인 사용자 (교사가 학생 제출을 검토하고, 멤버가 협업 보드를 보려면
-//         비소유자 읽기가 필요해 멤버십을 경로로 좁히지 못한다)
+// - 읽기: 제출·피드백은 본인 또는 교사 계정만. 보드 첨부만 로그인 사용자 전체.
 // - 쓰기: 본인(uid 경로) 폴더에만, 8MB 이하, 안전한 image/audio 형식만(svg 등 제외)
 // - 삭제: 본인만
 //
-// NOTE: 학급 멤버십으로 읽기/쓰기를 더 좁히려면 Storage 규칙이 Firestore 멤버 문서를
-//   봐야 하는데, 이 프로젝트에서 storage→firestore 교차참조(firestore.exists)가
-//   동작하지 않아(정당한 멤버도 권한 거부) 사용하지 않는다. 더 엄격히 가두려면
-//   가입/개설 시 Auth 커스텀 클레임에 학급 목록을 넣고 token 으로 검사하는 방식이 필요.
+// NOTE: Storage 규칙은 Firestore 를 읽을 수 없어 "이 학급의 멤버인가"를 직접
+//   확인하지 못한다. 그래서 교사 판정은 ID 토큰의 커스텀 클레임(role)으로 한다
+//   (claimTeacherRole 이 부여, 누락분은 syncTeacherClaim 이 보정).
+//   제출·피드백은 Firestore 쪽 권한(교사 || 본인)과 이걸로 일치시킬 수 있다.
+//   보드 첨부는 같은 학급 학생끼리 서로 봐야 하는데 멤버십을 알 수 없어
+//   로그인 전체로 남긴다 — 좁히려면 클레임에 학급 목록을 넣어야 한다.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -24,6 +25,14 @@ service firebase.storage {
         '(image/(png|jpe?g|gif|webp|heic|heif)|audio/(webm|mp4|mpeg|ogg|wav|m4a|aac|x-m4a))(;.*)?'
       );
     }
+    // 교사 계정 여부 — Firestore 를 못 읽으므로 커스텀 클레임으로만 판정한다.
+    function isTeacherAccount() {
+      return request.auth != null && request.auth.token.role == 'teacher';
+    }
+    function ownerOrTeacher(uid) {
+      return request.auth != null
+        && (request.auth.uid == uid || isTeacherAccount());
+    }
     function safeImage() {
       return request.resource.contentType.matches(
         'image/(png|jpe?g|gif|webp|heic|heif)(;.*)?'
@@ -32,7 +41,8 @@ service firebase.storage {
 
     // 제출 첨부(사진/음성)
     match /classes/{cid}/lessons/{lid}/questions/{qid}/submissions/{uid}/{file} {
-      allow read: if request.auth != null;
+      // Firestore 의 제출물 권한(교사 || 본인)과 동일 범위로 맞춘다.
+      allow read: if ownerOrTeacher(uid);
       allow write: if request.auth != null
         && request.auth.uid == uid
         && request.resource.size < 8 * 1024 * 1024
@@ -40,7 +50,8 @@ service firebase.storage {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
-    // 보드(캔버스) 카드 첨부
+    // 보드(캔버스) 카드 첨부 — 같은 학급 학생끼리 서로의 카드를 봐야 하는데
+    // Storage 에서는 멤버십을 알 수 없어 로그인 전체로 둔다(경로 추측 난이도에 의존).
     match /classes/{cid}/canvas/{uid}/{file} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
@@ -52,7 +63,8 @@ service firebase.storage {
 
     // 피드백/오류 신고 사진
     match /classes/{cid}/feedback/{uid}/{fid}/{file} {
-      allow read: if request.auth != null;
+      // 오류 신고는 교사 검토용 + 작성 본인만(Firestore feedback 권한과 동일).
+      allow read: if ownerOrTeacher(uid);
       allow write: if request.auth != null
         && request.auth.uid == uid
         && request.resource.size < 8 * 1024 * 1024

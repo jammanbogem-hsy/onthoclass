@@ -328,15 +328,17 @@ service cloud.firestore {
         // 학급 내 멤버 목록은 같은 학급 멤버면 읽기 허용
         allow read: if (signedIn() && resource.data.uid == uid())
           || isMember(classId);
-        // 본인 가입(개설 teacher / 코드참여 student): 자기 문서만.
-        // role=teacher 는 교사 계정(users.role=='teacher')만 허용 → 학생의 권한
-        // 상승 차단. (학급+멤버를 한 배치로 만들 때 클래스 get 이 아직 안 보이는
-        // 문제를 피하려고 classOwner 대신 isTeacherAccount 로 검사)
+        // 학급 개설(teacher 본인 등록)만 클라이언트에서 허용한다.
+        //   학생 가입은 joinClassByCode Cloud Function(admin)이 참여코드를 검증한
+        //   뒤에만 만든다 → classId 만 알면 아무나 student 로 자가 등록하고 학급
+        //   데이터를 열람하던 경로 차단(내보낸 학생의 재입장 포함).
+        // (학급+멤버를 한 배치로 만들 때 클래스 get 이 아직 안 보이는 문제를
+        //  피하려고 classOwner 대신 isTeacherAccount 로 검사)
         allow create: if signedIn()
           && memberId == uid()
           && request.resource.data.uid == uid()
-          && (request.resource.data.role == 'student'
-            || (request.resource.data.role == 'teacher' && isTeacherAccount()));
+          && request.resource.data.role == 'teacher'
+          && isTeacherAccount();
         // 본인 탈퇴 또는 교사의 멤버 관리
         allow delete: if (signedIn() && memberId == uid())
           || isTeacher(classId);

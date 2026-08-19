@@ -10,7 +10,19 @@ import {
 import { getStorageClient } from "@/lib/firebase";
 import type { Attachment } from "@/lib/lessons";
 
+// 파일명은 경로 추측을 어렵게 하는 마지막 방어선이다(특히 보드 첨부는 규칙이
+// '로그인 전체'라 경로 난이도에 기댄다). Math.random 은 예측 가능하고 엔트로피도
+// 낮아, 암호학적 난수 128비트를 쓴다. 미지원 환경에서만 기존 방식으로 폴백.
 function randId() {
+  const g = globalThis.crypto;
+  if (g?.getRandomValues) {
+    const b = new Uint8Array(16);
+    g.getRandomValues(b);
+    return (
+      "at_" +
+      Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")
+    );
+  }
   return "at_" + Math.random().toString(36).slice(2, 10);
 }
 

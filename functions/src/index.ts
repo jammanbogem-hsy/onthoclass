@@ -1565,6 +1565,35 @@ export const claimTeacherRole = onCall(
 );
 
 /**
+ * 교사 커스텀 클레임 재동기화.
+ *
+ * Storage 규칙은 Firestore 를 못 읽으므로 "이 사람이 교사인가"를 ID 토큰의
+ * 커스텀 클레임(role)으로만 판정할 수 있다. 그런데 claimTeacherRole 의 클레임
+ * 설정은 실패해도 통과시키는 best-effort 라, 클레임이 빠진 교사가 존재할 수 있다.
+ * 그 상태로 Storage 를 조이면 학생 제출 첨부를 못 보게 되므로, 클라이언트가
+ * 불일치를 감지하면 이 함수로 복구한다.
+ *
+ * 권한 상승 위험 없음: 새로 부여하는 게 아니라 users/{uid}.role 이라는 기존
+ * 사실을 토큰에 반영할 뿐이다(teacher 가 아니면 아무것도 하지 않는다).
+ */
+export const syncTeacherClaim = onCall(
+  async (req): Promise<{ synced: boolean }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const snap = await getFirestore().doc(`users/${req.auth.uid}`).get();
+    if ((snap.data()?.role as string) !== "teacher") {
+      return { synced: false };
+    }
+    if (req.auth.token.role === "teacher") {
+      return { synced: false }; // 이미 있음
+    }
+    await getAuth().setCustomUserClaims(req.auth.uid, { role: "teacher" });
+    return { synced: true };
+  }
+);
+
+/**
  * 학급 게임 정리(스케줄, 매일 02:00 KST):
  * status="done" + updatedAt 30일 이상 지난 게임의 submissions 서브컬렉션과
  * 게임 문서를 삭제 — 장기 누적 저장 방지.

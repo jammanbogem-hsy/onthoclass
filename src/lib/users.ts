@@ -277,3 +277,27 @@ export function watchUserPrefs(
     () => {}
   );
 }
+
+/**
+ * 교사 커스텀 클레임 보정.
+ *
+ * Storage 규칙은 Firestore 를 읽을 수 없어 교사 판정을 ID 토큰의 클레임에만
+ * 의존한다. 클레임이 빠진 교사(claimTeacherRole 의 클레임 설정이 실패했거나,
+ * 클레임 도입 전에 가입한 계정)는 학생 제출 첨부를 못 보게 되므로 로그인 시
+ * 한 번 확인해 보정한다. 교사가 아니면 아무 일도 하지 않는다.
+ */
+export async function ensureTeacherClaim(user: User): Promise<void> {
+  try {
+    const token = await user.getIdTokenResult();
+    if (token.claims.role === "teacher") return; // 이미 정상
+    const fn = httpsCallable<unknown, { synced: boolean }>(
+      getFunctionsClient(),
+      "syncTeacherClaim"
+    );
+    const res = await fn({});
+    // 클레임이 새로 붙었으면 토큰을 강제 갱신해야 이번 세션부터 적용된다.
+    if (res.data?.synced) await user.getIdToken(true);
+  } catch {
+    /* 네트워크 실패 등 — 다음 로그인에 다시 시도된다 */
+  }
+}

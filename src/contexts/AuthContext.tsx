@@ -25,6 +25,7 @@ import {
 } from "@/lib/firebase";
 import {
   ensureUserDoc,
+  ensureTeacherClaim,
   getUserProfile,
   type UserProfile,
 } from "@/lib/users";
@@ -82,7 +83,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileLoading(true);
     try {
       await ensureUserDoc(u);
-      setProfile(await getUserProfile(u.uid));
+      const p = await getUserProfile(u.uid);
+      setProfile(p);
+      // Storage 규칙이 교사 판정에 쓰는 커스텀 클레임을 보정(누락된 계정 복구)
+      if (p?.role === "teacher") void ensureTeacherClaim(u);
     } catch {
       setProfile(null);
     } finally {
