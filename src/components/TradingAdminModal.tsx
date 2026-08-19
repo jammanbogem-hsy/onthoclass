@@ -759,7 +759,7 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
         </div>
         <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-3 text-center">
           <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-            보유 만보 합계
+            현금 합계
           </p>
           <p className="mt-0.5 text-base font-extrabold">
             {Math.round(summary.totalBalance).toLocaleString()}
@@ -844,18 +844,29 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
                     </p>
                   )}
                 </div>
+                {/* 숫자마다 라벨을 붙인다 — 맨 위 큰 숫자(주식 평가액)가 지갑 잔액으로
+                    오해되던 문제. 퍼센트도 '보유 종목만의 수익률'이라 따로 밝힌다. */}
                 <div className="shrink-0 text-right">
                   <p className="text-sm font-black tabular-nums">
+                    <span className="mr-1 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                      주식
+                    </span>
                     {Math.round(r.value).toLocaleString()}
                     <span className="ml-0.5 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
                       만보
                     </span>
                   </p>
                   <p className={`text-xs font-bold tabular-nums ${pnlCls(r.totalPnl)}`}>
+                    <span className="mr-1 font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                      총손익
+                    </span>
                     {signed(r.totalPnl)}
                     {r.cost > 0 && (
-                      <span className="ml-1 font-semibold">
-                        ({r.returnPct > 0 ? "+" : ""}
+                      <span
+                        className="ml-1 font-semibold"
+                        title="지금 보유 중인 종목만의 수익률(이미 판 거래는 제외)"
+                      >
+                        (보유 {r.returnPct > 0 ? "+" : ""}
                         {r.returnPct.toFixed(1)}%)
                       </span>
                     )}
@@ -864,7 +875,7 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
                     실현 {signed(r.realized)} · 평가 {signed(r.unrealized)}
                   </p>
                   <p className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
-                    보유 만보 {Math.round(r.balance).toLocaleString()}
+                    현금 {Math.round(r.balance).toLocaleString()} 만보
                   </p>
                 </div>
               </li>

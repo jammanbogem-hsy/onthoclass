@@ -644,10 +644,14 @@ function FolderNode({
   project,
   depth,
   ctx,
+  navigate = false,
 }: {
   project: Project;
   depth: number;
   ctx: Ctx;
+  /** 폴더 카드 안에서 쓸 때 true — 차시 클릭이 상세 패널 대신 차시 페이지 이동.
+   *  (탐색기에서는 false 라 기존처럼 오른쪽 상세 패널이 열린다) */
+  navigate?: boolean;
 }) {
   const { classId, isTeacher } = ctx;
   const subs = (ctx.projChildren[project.id] ?? []).slice().sort(sortPinned);
@@ -786,7 +790,12 @@ function FolderNode({
           )}
           {subs.map((s) => (
             <div key={s.id}>
-              <FolderNode project={s} depth={depth + 1} ctx={ctx} />
+              <FolderNode
+                project={s}
+                depth={depth + 1}
+                ctx={ctx}
+                navigate={navigate}
+              />
               {isTeacher && (
                 <OrderLine
                   ctx={ctx}
@@ -797,7 +806,13 @@ function FolderNode({
             </div>
           ))}
           {lessons.map((l) => (
-            <LessonNode key={l.id} l={l} depth={depth + 1} ctx={ctx} />
+            <LessonNode
+              key={l.id}
+              l={l}
+              depth={depth + 1}
+              ctx={ctx}
+              navigate={navigate}
+            />
           ))}
           {subs.length + lessons.length === 0 && (
             <p
@@ -1197,21 +1212,26 @@ function ProjectCard({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {subs.length > 0 && (
-          <button
-            onClick={() => ctx.openHdd(project.id)}
-            className="mb-1 flex w-full items-center gap-1.5 rounded-lg bg-[var(--md-sys-color-surface-container)] px-3 py-2 text-xs text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-high)]"
-          >
-            <Icon name="folder" size={15} />
-            하위 폴더 {subs.length}개 — 탐색기에서 열기
-          </button>
-        )}
+        {/* 하위 폴더도 카드 안에서 바로 펼쳐 본다 — 예전에는 개수만 알리고
+            탐색기로 보내서, 폴더를 폴더에 넣으면 내용이 사라진 것처럼 보였다.
+            FolderNode 는 재귀라 depth 가 깊어져도 그대로 동작한다. */}
         {lessons.length === 0 && subs.length === 0 ? (
           <p className="flex h-full items-center justify-center px-2 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
-            {isTeacher ? "여기로 차시를 끌어다 놓으세요" : "차시가 없습니다"}
+            {isTeacher
+              ? "여기로 차시·폴더를 끌어다 놓으세요"
+              : "차시가 없습니다"}
           </p>
         ) : (
           <div className="flex flex-col gap-0.5">
+            {subs.map((sp) => (
+              <FolderNode
+                key={sp.id}
+                project={sp}
+                depth={0}
+                ctx={ctx}
+                navigate
+              />
+            ))}
             {lessons.map((l) => (
               <LessonNode key={l.id} l={l} depth={0} ctx={ctx} navigate />
             ))}
