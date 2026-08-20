@@ -129,7 +129,11 @@ export async function ensureCanvas(
       pages: [{ id: "p1", name: "1페이지" }],
       nodes: [],
       edges: [],
-      layoutMode: "free", // 기본 배치: 자유형(무한 캔버스)
+      // 기본 배치: 규칙형(격자 자동 정렬). 20명이 동시에 카드를 만들면 자유형은
+      // 네트워크 왕복(200~500ms) 동안 서로의 새 카드를 몰라 겹쳐 쌓인다 → 기본은 겹침이
+      // 원천적으로 불가능한 격자. 교사가 툴바에서 자유형으로 전환 가능.
+      // (기존 보드는 필드가 없으므로 mapMeta 폴백에 따라 자유형을 유지한다)
+      layoutMode: "grid",
       schema: CANVAS_SCHEMA, // 새 보드는 바로 v2
       updatedAt: serverTimestamp(),
     });
@@ -262,6 +266,33 @@ export async function patchNode(
     ...clean(patch as Record<string, unknown>),
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * 여러 카드 좌표를 한 번에 기록 — 교사 "카드 정리(자동 정렬)" 용.
+ * 카드 수만큼 왕복하면 40장 = 40회 쓰기라 경합/지연이 크므로 배치로 묶는다.
+ * update 라 이미 삭제된 카드가 섞이면 그 배치가 통째로 실패한다(부활 방지 정책 유지).
+ */
+export async function patchNodePositions(
+  cid: string,
+  docId: string,
+  positions: { id: string; x: number; y: number }[],
+  lid?: string
+): Promise<void> {
+  if (positions.length === 0) return;
+  const db = getDbClient();
+  const col = nodesCol(cid, docId, lid);
+  const CHUNK = 400; // Firestore 배치 상한 500 보다 여유 있게
+  for (let i = 0; i < positions.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    for (const p of positions.slice(i, i + CHUNK))
+      batch.update(doc(col, p.id), {
+        x: p.x,
+        y: p.y,
+        updatedAt: serverTimestamp(),
+      });
+    await batch.commit();
+  }
 }
 
 // 첨부 원자 추가(arrayUnion) — 동시 추가도 둘 다 보존, 전체배열 덮어쓰기 금지

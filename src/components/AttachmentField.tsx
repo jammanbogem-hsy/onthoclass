@@ -355,9 +355,13 @@ export function AttachmentList({
               <img
                 src={a.url}
                 alt={a.name}
+                // 크롬북 메모리 보호 — 20명 보드는 사진 수십 장이 한 페이지에 모인다.
+                // 화면에 들어올 때만 받고(lazy), 디코딩은 메인스레드 밖에서(async).
+                loading="lazy"
+                decoding="async"
                 className={
                   full
-                    ? "max-h-80 w-full rounded-xl object-cover ring-1 ring-[var(--md-sys-color-outline-variant)]"
+                    ? "max-h-56 w-full rounded-xl object-cover ring-1 ring-[var(--md-sys-color-outline-variant)]"
                     : `${thumb} rounded-xl object-cover ring-1 ring-[var(--md-sys-color-outline-variant)]`
                 }
               />
@@ -433,6 +437,7 @@ function Lightbox({ att, onClose }: { att: Attachment; onClose: () => void }) {
       <img
         src={att.url}
         alt={att.name}
+        decoding="async"
         onClick={(e) => e.stopPropagation()}
         className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl animate-float-in"
       />

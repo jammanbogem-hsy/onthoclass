@@ -41,6 +41,7 @@ import {
   migrateCanvasToV2,
   patchEdge,
   patchNode,
+  patchNodePositions,
   REACTIONS,
   removeNodeAttachment,
   saveCanvasMeta,
@@ -247,6 +248,22 @@ const GRID_TOP_PAD = 24;
 // 뷰포트 컬링(가상화) 여백(월드 단위) — 화면 밖 이 거리까지는 미리 렌더해 팬 시 늦은 팝인 방지
 const CULL_MARGIN = 600;
 
+// 자유형 신규 카드 분산 슬롯 — findFreeSpot 은 "로컬에 도착한" 카드만 보므로 네트워크
+// 왕복(200~500ms) 동안 남의 새 카드를 모른다. 20명이 같은 화면을 보며 동시에 만들면
+// 전원이 같은 좌표를 노려 더미가 쌓인다 → 멤버 순번으로 사전에 겹치지 않게 벌려 둔다.
+const SPAWN_STEP = 300; // 카드 최대 폭(링크 320) 이상이 되도록 간격
+const SPAWN_COLS = 6; // 6열 × 4행 = 24슬롯(한 학급 규모)
+const SPAWN_ROWS = 4;
+
+// 교사 "카드 정리" 격자 — 자유형 좌표를 그대로 유지하되 겹침만 해소
+const TIDY_COL_W = 320;
+const TIDY_GAP = 24;
+
+// 드래그 좌표 서버 기록 간격(ms). Firestore 는 단일 문서 지속 쓰기 권장치가 초당 1회라
+// 100ms(초당 10회)는 경합·지연을 부른다. 학생은 본인 카드만 끌 수 있고 드롭 시 자동
+// 스냅되므로 중간 좌표의 가치는 낮다 → 넉넉히 늦춘다.
+const DRAG_SEND_MS = 300;
+
 // CardView 에 내려가는 안정 콜백 묶음(카드 id 를 인자로 받아 신원을 고정)
 type CardHandlers = {
   onCardDown: (e: React.PointerEvent, id: string) => void;
@@ -328,11 +345,22 @@ function newId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// 작성자별 결정적 생성 오프셋 — 20명이 동시에 카드를 만들 때 같은 좌표 충돌을 줄인다.
-function authorJitter(uid: string): { dx: number; dy: number } {
+// 두 포인터의 거리·중점 — 핀치 줌 계산(순수)
+function pinchGeom(pts: { x: number; y: number }[]) {
+  const a = pts[0];
+  const b = pts[1];
+  return {
+    dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+    cx: (a.x + b.x) / 2,
+    cy: (a.y + b.y) / 2,
+  };
+}
+
+// uid → 결정적 32bit 해시(멤버 목록이 아직 안 왔을 때의 분산 폴백)
+function hashUid(uid: string): number {
   let h = 0;
   for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
-  return { dx: (h % 7) * 26 - 78, dy: ((h >> 3) % 7) * 26 - 78 };
+  return h;
 }
 
 // 두 사각형이 (여백 gap 포함) 겹치는지
@@ -437,6 +465,14 @@ function CanvasInner() {
   viewRef.current = view;
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  // 멀티터치 추적(터치 크롬북) — 1개=팬/드래그, 2개=핀치 줌
+  const ptrsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    dist: number;
+    scale: number;
+    cx: number;
+    cy: number;
+  } | null>(null);
 
   // ---------- 뷰포트 컬링(가상화) ----------
   // view(팬/줌)·스테이지 크기로 "보이는 월드 사각형(+여백)"을 구해 화면 밖 카드/엣지는
@@ -788,6 +824,21 @@ function CanvasInner() {
     const h = hit;
     setTimeout(() => showBurst(h.x, h.y, h.color), 0);
   }, [effEdges, showBurst]);
+
+  // 자유형 신규 카드의 결정적 분산 오프셋 — "멤버 순번"으로 슬롯을 나눠 가진다.
+  // 순번은 전원이 동일하게 계산하므로(uid 정렬) 서로 통신하지 않고도 겹치지 않는다.
+  // 멤버 목록이 아직 안 왔으면 uid 해시로 폴백(그래도 결정적).
+  const spawnOffset = useMemo(() => {
+    const uids = Object.keys(authorMap).sort();
+    let idx = user ? uids.indexOf(user.uid) : -1;
+    if (idx < 0) idx = hashUid(user?.uid ?? "") % (SPAWN_COLS * SPAWN_ROWS);
+    const col = idx % SPAWN_COLS;
+    const row = Math.floor(idx / SPAWN_COLS) % SPAWN_ROWS;
+    return {
+      dx: (col - (SPAWN_COLS - 1) / 2) * SPAWN_STEP,
+      dy: (row - (SPAWN_ROWS - 1) / 2) * SPAWN_STEP,
+    };
+  }, [authorMap, user]);
 
   // 모둠 → 색상, uid → 모둠 색/이름
   const groupInfo = useMemo(() => {
@@ -1208,6 +1259,58 @@ function CanvasInner() {
     return () => ro.disconnect();
   }, [scheduleRelayout, scheduleCull]);
 
+  // ---------- 자유형: 원격 카드 도착 시 자동 회피 ----------
+  // 사전 분산(spawnOffset)·생성 시 findFreeSpot 을 뚫고 겹침이 남는 경우(같은 지점을
+  // 동시에 노림, 교사가 끌어다 겹침)를 사후에 푼다.
+  //  - 규칙: "나중에 만들어진 카드"가 비켜난다(createdAt, 동률이면 id) → 판정이 전원 동일.
+  //  - 이동은 그 카드의 **작성자 클라이언트만** 수행 → 두 클라이언트가 서로 밀어내는 핑퐁 없음.
+  //  - 편집/녹음/드래그 중(shield)·서버 확정 전(createdAt null) 카드는 건드리지 않는다.
+  //  - 한 번에 한 장만 옮기고 다음 스냅샷에서 이어서 처리(쓰기 폭주 방지).
+  const avoidTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (isGrid || !canEdit || !user) return;
+    if (avoidTimerRef.current) clearTimeout(avoidTimerRef.current);
+    avoidTimerRef.current = setTimeout(() => {
+      avoidTimerRef.current = null;
+      const nodes = pageNodesRef.current;
+      const now = Date.now();
+      const heightOf = (n: CardNode) =>
+        measuredHeightsRef.current.get(n.id) ?? n.h ?? 120;
+      for (const n of nodes) {
+        if (n.authorUid !== user.uid) continue; // 내 카드만 내가 옮긴다
+        if (n.createdAt == null) continue; // 서버 확정 전(순서 판정 불가)
+        if (dragRef.current?.nid === n.id) continue;
+        const sh = shieldRef.current.get(n.id);
+        if (sh && sh.until > now) continue; // 편집/녹음 중
+        const h = heightOf(n);
+        const mine = { x: n.x, y: n.y, w: n.w, h };
+        const collides = nodes.some((o) => {
+          if (o.id === n.id || o.createdAt == null) return false;
+          // 내가 더 나중(동률이면 id 가 큰 쪽)일 때만 내가 양보
+          const iYield =
+            n.createdAt! > o.createdAt ||
+            (n.createdAt === o.createdAt && n.id > o.id);
+          if (!iYield) return false;
+          return rectsOverlap(mine, { x: o.x, y: o.y, w: o.w, h: heightOf(o) });
+        });
+        if (!collides) continue;
+        const others = nodes
+          .filter((o) => o.id !== n.id)
+          .map((o) => ({ x: o.x, y: o.y, w: o.w, h: heightOf(o) }));
+        const spot = findFreeSpot(others, n.w, h, n.x, n.y);
+        if (spot.x !== n.x || spot.y !== n.y)
+          commitNode(n.id, { x: spot.x, y: spot.y });
+        break;
+      }
+    }, 700); // 스냅샷이 몰려 들어오는 동안은 기다렸다 한 번에 판정
+    return () => {
+      if (avoidTimerRef.current) {
+        clearTimeout(avoidTimerRef.current);
+        avoidTimerRef.current = null;
+      }
+    };
+  }, [pageNodes, isGrid, canEdit, user, commitNode]);
+
   // 연결된 카드 = 하나의 팀. 팀 구성원의 색을 혼합한 "팀 색"을 모두에게 적용.
   // (혼자면 본인 색 그대로, 색 없는 카드가 팀에 끼면 팀 색을 함께 입음)
   const teamColorByNode = useMemo(() => {
@@ -1299,16 +1402,52 @@ function CanvasInner() {
     });
   }
 
-  // ---------- 배경 팬 / 휠 줌 ----------
-  function onBgPointerDown(e: React.PointerEvent) {
-    if (!isTeacher) {
-      panRef.current = { x: e.clientX, y: e.clientY };
-      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-      return;
-    }
-    panRef.current = { x: e.clientX, y: e.clientY };
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-  }
+  // 화면 좌표 (clientX,clientY) 아래의 월드 점을 고정한 채 배율만 바꾼다(휠·핀치 공용).
+  const zoomAt = useCallback(
+    (clientX: number, clientY: number, nextScale: number) => {
+      const el = stageRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const v = viewRef.current;
+      const sx = clientX - r.left;
+      const sy = clientY - r.top;
+      const wx = (sx - v.tx) / v.scale;
+      const wy = (sy - v.ty) / v.scale;
+      const scale = Math.max(0.25, Math.min(3, nextScale));
+      setView({ scale, tx: sx - wx * scale, ty: sy - wy * scale });
+    },
+    []
+  );
+
+  // ---------- 휠 줌 (네이티브 non-passive) ----------
+  // React 는 wheel 을 루트 컨테이너에 passive 로 등록하므로 JSX onWheel 안의
+  // preventDefault() 가 무시된다(콘솔 경고 + 브라우저 확대/페이지 스크롤이 함께 걸림).
+  // → 스테이지 엘리먼트에 직접 { passive:false } 로 붙인다.
+  const onWheelNative = useCallback(
+    (e: WheelEvent) => {
+      e.preventDefault();
+      const v = viewRef.current;
+      // 트랙패드 핀치는 ctrlKey 가 실린 wheel 로 온다 → 더 잘게 반응
+      const step = e.ctrlKey ? 1.06 : 1.12;
+      zoomAt(
+        e.clientX,
+        e.clientY,
+        v.scale * (e.deltaY < 0 ? step : 1 / step)
+      );
+    },
+    [zoomAt]
+  );
+  // 스테이지 ref = 콜백 ref — 로딩 분기 때문에 마운트 시점이 밀려도 확실히 붙고 떨어진다.
+  const setStageEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      const prev = stageRef.current;
+      if (prev) prev.removeEventListener("wheel", onWheelNative);
+      stageRef.current = el;
+      if (el) el.addEventListener("wheel", onWheelNative, { passive: false });
+    },
+    [onWheelNative]
+  );
+
   // 드래그 좌표를 카드별 문서에 기록(스로틀). 마지막 좌표는 dragRef.lastX/Y 에 보관.
   function sendDragThrottled(id: string) {
     const send = dragSendRef.current;
@@ -1325,14 +1464,14 @@ function CanvasInner() {
         lid ?? undefined
       ).catch((e) => onWriteError(id, e));
     };
-    if (now - send.last >= 100) {
+    if (now - send.last >= DRAG_SEND_MS) {
       write();
     } else if (!send.timer) {
       // trailing 보장 — 마지막 이동도 한 번 더 나가게
       send.timer = setTimeout(() => {
         send.timer = null;
         write();
-      }, 100);
+      }, DRAG_SEND_MS);
     }
   }
   // 드래그 종료(모든 경로 공통): 겹침 회피 스냅 + 마지막 좌표 flush + shield ack
@@ -1367,7 +1506,45 @@ function CanvasInner() {
     dragRef.current = null;
     setDraggingId(null);
   }
+  // ---------- 배경 팬 / 핀치 줌 ----------
+  // 터치 크롬북 대응: 활성 포인터를 추적해 1개=팬/드래그, 2개=핀치 줌으로 분기한다.
+  // (스테이지에 touch-action:none 을 줘야 브라우저가 스크롤로 가로채 pointercancel 을
+  //  던지지 않는다 — 그게 없으면 터치 드래그가 중간에 끊긴다.)
+  function onBgPointerDown(e: React.PointerEvent) {
+    ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    if (ptrsRef.current.size === 2) {
+      // 두 번째 손가락 → 핀치 시작. 진행 중이던 팬/카드 드래그는 여기서 확정 종료.
+      panRef.current = null;
+      endDrag();
+      const g0 = pinchGeom(Array.from(ptrsRef.current.values()));
+      pinchRef.current = {
+        dist: g0.dist,
+        scale: viewRef.current.scale,
+        cx: g0.cx,
+        cy: g0.cy,
+      };
+      return;
+    }
+    if (ptrsRef.current.size > 2) return; // 3개 이상은 무시(오터치)
+    panRef.current = { x: e.clientX, y: e.clientY };
+  }
   function onBgPointerMove(e: React.PointerEvent) {
+    if (ptrsRef.current.has(e.pointerId))
+      ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // 핀치 줌이 팬/드래그보다 우선
+    if (pinchRef.current && ptrsRef.current.size >= 2) {
+      const g = pinchGeom(Array.from(ptrsRef.current.values()));
+      const p = pinchRef.current;
+      // 배율은 시작 거리 대비 절대값, 중심 이동분은 팬으로 더한다(두 손가락 밀기 = 이동).
+      zoomAt(g.cx, g.cy, (p.scale * g.dist) / p.dist);
+      const dx = g.cx - p.cx;
+      const dy = g.cy - p.cy;
+      if (dx || dy) setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+      p.cx = g.cx;
+      p.cy = g.cy;
+      return;
+    }
     if (dragRef.current) {
       const w = toWorld(e.clientX, e.clientY);
       const id = dragRef.current.nid;
@@ -1387,24 +1564,18 @@ function CanvasInner() {
       setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
     }
   }
-  function onBgPointerUp() {
+  function onBgPointerUp(e?: React.PointerEvent) {
+    if (e) ptrsRef.current.delete(e.pointerId);
+    else ptrsRef.current.clear();
+    if (ptrsRef.current.size < 2) pinchRef.current = null;
+    if (ptrsRef.current.size > 0) {
+      // 핀치 → 한 손 팬으로 전환. 남은 손가락 위치를 기준점으로 다시 잡는다(점프 방지).
+      const rest = Array.from(ptrsRef.current.values())[0];
+      panRef.current = { x: rest.x, y: rest.y };
+      return;
+    }
     panRef.current = null;
     endDrag();
-  }
-  function onWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    const w = toWorld(e.clientX, e.clientY);
-    setView((v) => {
-      const scale = Math.max(
-        0.25,
-        Math.min(3, v.scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12))
-      );
-      const el = stageRef.current!;
-      const r = el.getBoundingClientRect();
-      const sx = e.clientX - r.left;
-      const sy = e.clientY - r.top;
-      return { scale, tx: sx - w.x * scale, ty: sy - w.y * scale };
-    });
   }
 
   // ---------- 카드 인터랙션 ----------
@@ -1456,10 +1627,76 @@ function CanvasInner() {
       lastX: n.x,
       lastY: n.y,
     };
+    // 카드 위에서 시작한 포인터도 추적해야 두 번째 손가락이 닿을 때 핀치로 전환된다
+    // (onCardPointerDown 은 stopPropagation 이라 onBgPointerDown 이 실행되지 않는다)
+    ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     shieldActive(n.id); // 드래그 중 원격 덮어쓰기 차단(되돌아감 방지)
     setDraggingId(n.id); // 드래그 중인 카드를 최상위로
     // 스테이지에 캡처 → 카드 밖으로 나가도 pointermove가 계속 도달
     stageRef.current?.setPointerCapture?.(e.pointerId);
+  }
+
+  // 교사 전용(자유형): 현재 페이지 카드를 만든 순서대로 격자에 재배치해 겹침을 한 번에 해소.
+  // 규칙형과 달리 좌표를 실제로 저장하므로, 정리 후에도 학생이 자유롭게 다시 옮길 수 있다.
+  async function tidyCards() {
+    if (!cid || !isTeacher || isGrid) return;
+    const nodes = [...pageNodesRef.current];
+    if (nodes.length === 0) return;
+    const ok = await dialog.confirm({
+      title: "카드 정리",
+      body: `이 페이지의 카드 ${nodes.length}장을 만든 순서대로 격자에 다시 배치합니다. 되돌릴 수 없어요.`,
+      okLabel: "정리",
+    });
+    if (!ok) return;
+    const el = stageRef.current;
+    const stageW = el?.clientWidth || 1200;
+    const C = Math.max(
+      1,
+      // 정리 직후 뷰를 scale=1 로 되돌리므로 열 개수도 scale=1 기준으로 센다
+      Math.floor((stageW - TIDY_GAP) / (TIDY_COL_W + TIDY_GAP))
+    );
+    const startX = -(C * TIDY_COL_W + (C - 1) * TIDY_GAP) / 2; // 월드 x=0 중심 정렬
+    const colH: number[] = new Array(C).fill(0);
+    nodes.sort((a, b) => {
+      const ca = a.createdAt ?? Number.MAX_SAFE_INTEGER;
+      const cb = b.createdAt ?? Number.MAX_SAFE_INTEGER;
+      if (ca !== cb) return ca - cb;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    const positions: { id: string; x: number; y: number }[] = [];
+    for (const n of nodes) {
+      let col = 0;
+      for (let i = 1; i < C; i++) if (colH[i] < colH[col]) col = i;
+      positions.push({
+        id: n.id,
+        x: Math.round(startX + col * (TIDY_COL_W + TIDY_GAP)),
+        y: Math.round(colH[col]),
+      });
+      colH[col] +=
+        (measuredHeightsRef.current.get(n.id) ?? n.h ?? 160) + TIDY_GAP;
+    }
+    // 로컬 즉시 반영 + 내 쓰기의 서버확정까지 원격 에코로 되돌아가지 않게 보호
+    positions.forEach((p) => {
+      patchLocalNode(p.id, { x: p.x, y: p.y });
+      shieldAck(p.id);
+    });
+    try {
+      await patchNodePositions(
+        cid,
+        effectiveBoardId,
+        positions,
+        lid ?? undefined
+      );
+    } catch (e) {
+      positions.forEach((p) => shieldRef.current.delete(p.id)); // 서버 진실로 재동기
+      await dialog.confirm({
+        title: "정리 실패",
+        body: String((e as Error)?.message ?? e),
+        okLabel: "확인",
+      });
+      return;
+    }
+    setView({ scale: 1, tx: Math.round(stageW / 2), ty: TIDY_GAP });
   }
 
   function addTextCard() {
@@ -1487,13 +1724,12 @@ function CanvasInner() {
     const r = el.getBoundingClientRect();
     const center = toWorld(r.left + r.width / 2, r.top + r.height / 2);
     const others = pageNodes;
-    const j = authorJitter(user?.uid ?? "");
     const spot = findFreeSpot(
       others,
       W,
       H,
-      center.x - W / 2 + j.dx,
-      center.y - H / 2 + j.dy
+      center.x - W / 2 + spawnOffset.dx,
+      center.y - H / 2 + spawnOffset.dy
     );
     addNode({
       id: newId(),
@@ -1547,13 +1783,12 @@ function CanvasInner() {
     const r = el.getBoundingClientRect();
     const center = toWorld(r.left + r.width / 2, r.top + r.height / 2);
     const others = pageNodes;
-    const j = authorJitter(user?.uid ?? "");
     const spot = findFreeSpot(
       others,
       W,
       H,
-      center.x - W / 2 + j.dx,
-      center.y - H / 2 + j.dy
+      center.x - W / 2 + spawnOffset.dx,
+      center.y - H / 2 + spawnOffset.dy
     );
     addNode({
       id: newId(),
@@ -1877,6 +2112,17 @@ function CanvasInner() {
               })}
             </div>
           )}
+          {/* 카드 정리 — 자유형에서 겹친 카드를 격자로 한 번에 재배치(교사) */}
+          {isTeacher && !isGrid && (
+            <button
+              onClick={tidyCards}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              title="겹친 카드를 만든 순서대로 격자에 다시 배치합니다(좌표 저장 — 이후 다시 옮길 수 있음)"
+            >
+              <Icon name="dashboard" size={14} />
+              카드 정리
+            </button>
+          )}
           {isTeacher && groups.length > 0 && (
             <button
               onClick={toggleGroupColor}
@@ -2154,16 +2400,18 @@ function CanvasInner() {
 
         {/* 캔버스 스테이지 */}
         <div
-          ref={stageRef}
+          ref={setStageEl}
           onPointerDown={onBgPointerDown}
           onPointerMove={onBgPointerMove}
           onPointerUp={onBgPointerUp}
           onPointerLeave={onBgPointerUp}
           onPointerCancel={onBgPointerUp}
           onLostPointerCapture={onBgPointerUp}
-          onWheel={onWheel}
           className="relative flex-1 select-none overflow-hidden bg-[radial-gradient(circle,rgba(0,0,0,0.06)_1px,transparent_1px)] bg-[length:24px_24px]"
           style={{
+            // 터치 크롬북: 브라우저가 스크롤/줌으로 가로채면 pointercancel 이 날아와
+            // 카드 드래그가 끊긴다. 팬·핀치는 위 포인터 핸들러가 직접 처리한다.
+            touchAction: "none",
             cursor: connectMode ? "crosshair" : panRef.current ? "grabbing" : "grab",
           }}
         >
@@ -2171,6 +2419,9 @@ function CanvasInner() {
             className="absolute left-0 top-0 origin-top-left"
             style={{
               transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`,
+              // 합성 레이어로 승격 — 없으면 팬 매 프레임마다 화면 안 카드 전부를
+              // (그림자·ring·color-mix 배경까지) CPU 래스터링한다(크롬북 체감 렉 1순위).
+              willChange: "transform",
             }}
           >
             {/* SVG 화살표 레이어 — 규칙형에서는 렌더하지 않음(연결/엣지는 자유형 전용) */}
@@ -2598,6 +2849,9 @@ const CardView = memo(function CardView({
         width: gridMode ? GRID_COL_W : n.w,
         minHeight: MIN_H,
         zIndex,
+        // 카드 내부 변경(타이핑·이미지 로드)이 보드 전체 레이아웃/페인트로 번지지 않게 격리.
+        // 카드 밖으로 나가는 팝오버(색상 선택·사진 확대)는 전부 portal 이라 안전하다.
+        contain: "layout paint",
         ...(groupColor && !highlighted
           ? {
               borderColor: groupColor,

@@ -295,13 +295,28 @@ function EffectWizardBody({
                 </>
               )}
             </div>
-            <div className="max-h-48 min-h-0 flex-1 overflow-y-auto px-3 pb-3 md:max-h-none">
+            {/* md:/lg: 는 컨테이너가 아니라 화면 전체 너비를 본다. 사이드바(420px)
+                안에서도 데스크톱 규칙이 걸려 목록이 끝없이 늘어나고 컨트롤이 아래로
+                밀려나므로, narrow 에서는 높이를 직접 묶는다. */}
+            <div
+              className={
+                narrow
+                  ? "max-h-[38vh] min-h-0 flex-none overflow-y-auto px-3 pb-3"
+                  : "max-h-48 min-h-0 flex-1 overflow-y-auto px-3 pb-3 md:max-h-none"
+              }
+            >
               {students.length === 0 ? (
                 <p className="px-2 py-6 text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   학생이 없습니다.
                 </p>
               ) : (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                <div
+                  className={
+                    narrow
+                      ? "grid grid-cols-3 gap-2"
+                      : "grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5"
+                  }
+                >
                   {students.map((s) => {
                     const isPresent = kind === "present";
                     const presenting = isPresent && presenterUid === s.uid;
@@ -361,7 +376,11 @@ function EffectWizardBody({
           </div>
 
           {/* 우측: 컨트롤 */}
-          <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
+          <div
+            className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${
+              narrow ? "gap-5 p-4" : "gap-6 p-5"
+            }`}
+          >
             {/* 효과 보내기 */}
             <section className="flex flex-col gap-3">
               <h3 className="flex items-center gap-1.5 text-sm font-bold">
@@ -432,7 +451,11 @@ function EffectWizardBody({
               )}
               {kind === "badge" ? (
                 <>
-                  <div className="grid grid-cols-4 gap-2 rounded-2xl bg-[var(--md-sys-color-surface-container-low)] p-3">
+                  <div
+                    className={`grid gap-2 rounded-2xl bg-[var(--md-sys-color-surface-container-low)] p-3 ${
+                      narrow ? "grid-cols-5" : "grid-cols-4"
+                    }`}
+                  >
                     {BADGE_CATALOG.map((b) => (
                       <BadgeChip
                         key={b.id}

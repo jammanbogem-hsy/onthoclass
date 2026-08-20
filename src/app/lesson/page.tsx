@@ -14,6 +14,7 @@ import { GlassCard, GlassButton } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
 import { RichEditor, blocksToPlainText } from "@/components/RichEditor";
 import { BlockView } from "@/components/BlockEditor";
+import { CopyTextButton } from "@/components/CopyTextButton";
 import { useUndoableInput } from "@/components/useUndoableInput";
 import { UndoableInput } from "@/components/UndoableInput";
 import { Icon } from "@/components/Icon";
@@ -2735,6 +2736,20 @@ function QuestionRow({
                       상단 “분석”에서 재분석하세요
                     </span>
                   )}
+                  {/* 전체 응답을 '이름: 내용' 한 덩어리로 — 마스킹 중이어도
+                      복사본에는 원본 이름을 넣는다(내보내기 데이터 원칙). */}
+                  {answered.length > 0 && (
+                    <CopyTextButton
+                      label="전체 복사"
+                      title="모든 학생의 응답을 이름과 함께 복사"
+                      text={answered
+                        .map(
+                          (a) =>
+                            `[${a.studentName}]\n${blocksToPlainText(a.content)}`
+                        )
+                        .join("\n\n")}
+                    />
+                  )}
                   {answered.length > 0 && (
                     <button
                       onClick={exportCsv}
@@ -2766,11 +2781,19 @@ function QuestionRow({
                         >
                           <Icon name="chevron_left" size={18} />
                         </button>
-                        <span className="text-xs font-semibold text-black/55 dark:text-white/55">
-                          {mask(s.studentName)}{" "}
-                          <span className="font-normal text-black/35">
-                            ({i + 1}/{answered.length})
+                        <span className="flex min-w-0 items-center gap-1 text-xs font-semibold text-black/55 dark:text-white/55">
+                          <span className="truncate">
+                            {mask(s.studentName)}{" "}
+                            <span className="font-normal text-black/35">
+                              ({i + 1}/{answered.length})
+                            </span>
                           </span>
+                          {/* 블록이 여러 개로 쪼개진 응답은 드래그 선택이 안 돼
+                              손으로 복사하기 어렵다 — 평문으로 한 번에 복사. */}
+                          <CopyTextButton
+                            text={blocksToPlainText(s.content)}
+                            title={`${s.studentName} 학생의 응답을 복사`}
+                          />
                         </span>
                         <button
                           onClick={() =>
