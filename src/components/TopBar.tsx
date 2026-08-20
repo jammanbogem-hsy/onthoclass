@@ -149,7 +149,10 @@ export function TopBar() {
           </button>
 
           {open && (
-            <div className="glass-strong absolute right-0 top-12 w-60 animate-float-in p-4">
+            /* 색상환·글꼴 9종이 들어가면서 메뉴가 화면보다 길어져 아래(프로필
+               사진 변경·로그아웃)가 잘렸다. 화면 높이에 맞춰 자르고 안에서
+               스크롤한다(스크롤이 뒤 페이지로 새지 않게 overscroll-contain). */
+            <div className="glass-strong absolute right-0 top-12 max-h-[calc(100vh-7rem)] w-60 animate-float-in overflow-y-auto overscroll-contain p-4">
               <p className="text-base font-medium">
                 {profile?.name ?? user?.displayName ?? "사용자"}
               </p>
