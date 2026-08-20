@@ -230,22 +230,34 @@ function ItemMenu({
   onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number }>({
-    top: 0,
-    left: 0,
-  });
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    maxH: number;
+  }>({ top: 0, left: 0, maxH: 400 });
   const btnRef = useRef<HTMLButtonElement>(null);
   const W = 240;
+  const GAP = 6;
+  const EDGE = 8;
   function toggle(e: React.MouseEvent) {
     e.stopPropagation();
     const r = btnRef.current?.getBoundingClientRect();
     if (r) {
       const left = Math.max(
-        8,
-        Math.min(r.right - W, window.innerWidth - W - 8)
+        EDGE,
+        Math.min(r.right - W, window.innerWidth - W - EDGE)
       );
-      const top = Math.min(r.bottom + 6, window.innerHeight - 360);
-      setPos({ top: Math.max(8, top), left });
+      // 메뉴 높이를 상수로 가정하면(옛 코드 360px) 아이콘·색상환이 화면 밖으로
+      // 잘려 아래 항목을 못 눌렀다. 실제 남는 공간을 재서 위/아래를 고르고,
+      // 고른 쪽 높이에 맞춰 maxHeight 를 준다(모자라면 메뉴 안에서 스크롤).
+      const below = window.innerHeight - r.bottom - GAP - EDGE;
+      const above = r.top - GAP - EDGE;
+      const useAbove = below < 260 && above > below;
+      const maxH = Math.max(200, Math.min(useAbove ? above : below, 520));
+      const top = useAbove
+        ? Math.max(EDGE, r.top - GAP - maxH)
+        : Math.min(r.bottom + GAP, window.innerHeight - EDGE - maxH);
+      setPos({ top: Math.max(EDGE, top), left, maxH });
     }
     setOpen((o) => !o);
   }
@@ -270,8 +282,14 @@ function ItemMenu({
             }}
           />
           <div
-            style={{ position: "fixed", top: pos.top, left: pos.left, width: W }}
-            className="z-[60] max-h-[80vh] overflow-y-auto rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-high)] p-3 shadow-[var(--md-sys-elevation-3)]"
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              width: W,
+              maxHeight: pos.maxH,
+            }}
+            className="z-[60] overflow-y-auto overscroll-contain rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-high)] p-3 shadow-[var(--md-sys-elevation-3)]"
             onClick={(e) => e.stopPropagation()}
           >
             {onToggleFav && (

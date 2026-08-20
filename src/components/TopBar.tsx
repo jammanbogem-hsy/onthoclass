@@ -16,7 +16,15 @@ import {
   setFont,
   type FontKey,
 } from "@/lib/fontTheme";
-import { THEMES, getTheme, setTheme, type ThemeKey } from "@/lib/colorTheme";
+import {
+  THEMES,
+  getTheme,
+  hueSwatch,
+  isHueTheme,
+  parseHue,
+  setTheme,
+  type ThemeKey,
+} from "@/lib/colorTheme";
 
 const FONT_PREVIEW: Record<FontKey, string> = {
   default: "var(--md-sys-font-plain)",
@@ -36,6 +44,8 @@ export function TopBar() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [font, setFontState] = useState<FontKey>("default");
   const [theme, setThemeState] = useState<ThemeKey>("default");
+  const [wheelOpen, setWheelOpen] = useState(false);
+  const curHue = isHueTheme(theme) ? parseHue(theme) : null;
   const ref = useRef<HTMLDivElement>(null);
   const avatarSrc = profile?.avatar || user?.photoURL || "";
 
@@ -59,6 +69,17 @@ export function TopBar() {
   function pickTheme(k: ThemeKey) {
     setTheme(k);
     setThemeState(k);
+  }
+
+  // 색상환 클릭 → 중심 기준 각도를 hue 로 (12시가 0도)
+  function pickFromWheel(e: React.MouseEvent<HTMLDivElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    let deg =
+      (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI + 90;
+    if (deg < 0) deg += 360;
+    pickTheme(`hue:${Math.round(deg) % 360}` as ThemeKey);
   }
 
   useEffect(() => {
@@ -176,6 +197,73 @@ export function TopBar() {
                     </button>
                   ))}
                 </div>
+                {/* 직접 고르기 — 색상환에서 각도(hue)를 골라 360색.
+                    밝기는 hue 마다 자동 보정돼 흰 글자 대비가 항상 확보된다. */}
+                <button
+                  type="button"
+                  onClick={() => setWheelOpen((v) => !v)}
+                  aria-expanded={wheelOpen}
+                  className="mt-2 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="colorize" size={14} />
+                    직접 고르기
+                    {curHue !== null && (
+                      <span className="tabular-nums text-[var(--md-sys-color-primary)]">
+                        {curHue}°
+                      </span>
+                    )}
+                  </span>
+                  <Icon
+                    name={wheelOpen ? "expand_less" : "expand_more"}
+                    size={16}
+                  />
+                </button>
+                {wheelOpen && (
+                  <div className="mt-1 flex flex-col items-center gap-2 pb-1">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      title="원에서 색을 선택"
+                      aria-label="색상환에서 색 선택"
+                      onClick={pickFromWheel}
+                      onKeyDown={(e) => {
+                        // 키보드로도 조절 가능하게(좌우 5도씩)
+                        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight")
+                          return;
+                        e.preventDefault();
+                        const base = curHue ?? 0;
+                        const next =
+                          (base + (e.key === "ArrowRight" ? 5 : -5) + 360) % 360;
+                        pickTheme(`hue:${next}` as ThemeKey);
+                      }}
+                      className="relative h-28 w-28 cursor-crosshair rounded-full shadow-inner"
+                      style={{
+                        background:
+                          "conic-gradient(from 0deg, hsl(0 70% 55%), hsl(60 70% 55%), hsl(120 70% 55%), hsl(180 70% 55%), hsl(240 70% 55%), hsl(300 70% 55%), hsl(360 70% 55%))",
+                      }}
+                    >
+                      <div className="absolute inset-4 flex items-center justify-center rounded-full bg-[var(--md-sys-color-surface-container)] text-[11px] font-bold text-[var(--md-sys-color-on-surface-variant)]">
+                        {curHue !== null ? `${curHue}°` : "고르기"}
+                      </div>
+                      {curHue !== null &&
+                        (() => {
+                          const rad = ((curHue - 90) * Math.PI) / 180;
+                          const R = 48;
+                          return (
+                            <span
+                              className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+                              style={{
+                                left: 56 + R * Math.cos(rad),
+                                top: 56 + R * Math.sin(rad),
+                                background: hueSwatch(curHue),
+                              }}
+                            />
+                          );
+                        })()}
+                    </div>
+                  </div>
+                )}
               </div>
               {/* 글꼴 선택 — 기기별 저장, 전체 UI 폰트 변경 */}
               <div className="mt-3 rounded-xl bg-[var(--md-sys-color-surface-container)] p-2">
