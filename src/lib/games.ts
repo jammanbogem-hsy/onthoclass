@@ -16,8 +16,12 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getDbClient } from "@/lib/firebase";
+import type { QuizRunConfig } from "@/lib/quizrun";
 
-export type GameKind = "bingo-concept";
+/** 게임 종류. 빙고와 퀴즈런은 데이터가 전혀 겹치지 않는다 —
+ *  공유하는 것은 이 문서의 껍데기(생성·활성포인터·상태·결과)뿐이고,
+ *  각자의 알맹이는 config(빙고) / quiz(퀴즈런) 로 나뉜다. */
+export type GameKind = "bingo-concept" | "quiz-run";
 export type GameStatus =
   | "draft" // 교사가 설정 중(미공개)
   | "submit" // 학생 단어 제출
@@ -65,7 +69,10 @@ export type Game = {
   id: string;
   kind: GameKind;
   status: GameStatus;
+  /** 빙고 설정. kind="quiz-run" 이면 쓰이지 않는다(기본값이 채워진 채 방치). */
   config: GameConfig;
+  /** 퀴즈런 설정. kind="quiz-run" 일 때만 존재. */
+  quiz?: QuizRunConfig;
   link: GameLink;
   /** 선정 단계 풀 + 가중치(submittedBy/selectedBy). 교사가 최종 확정하면 status→build */
   candidates: GameCandidate[];
@@ -154,6 +161,43 @@ export async function createGame(
     gameId: gid,
     at: serverTimestamp(),
   });
+  return gid;
+}
+
+/**
+ * 퀴즈런 게임 생성. 빙고의 createGame 과 문서 껍데기는 같고 알맹이만 다르다.
+ * status 는 "draft"(로비)로 시작 — 교사가 시작을 누르면 "play" 로 간다.
+ * 빙고의 submit/select/build 단계는 퀴즈런에 없다(교사가 미리 문제를 만들어 두므로).
+ */
+export async function createQuizRunGame(
+  cid: string,
+  by: string,
+  link: GameLink,
+  quiz: QuizRunConfig
+): Promise<string> {
+  const gid = randId();
+  await setDoc(gameRef(cid, gid), {
+    kind: "quiz-run" as GameKind,
+    status: "draft" as GameStatus,
+    // 빙고 필드는 파서 기본값을 위해 자리만 채운다(퀴즈런에서는 읽지 않는다)
+    config: {
+      boardSize: 5,
+      wordsPerStudent: 5,
+      bingoTarget: 1,
+      order: "random",
+      allowMeaning: true,
+      endWinners: 0,
+    },
+    quiz,
+    link,
+    candidates: [],
+    turn: { round: 0, history: [], currentUid: null, calledWords: [] },
+    ranks: [],
+    by,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await setDoc(activeRef(cid), { gameId: gid, at: serverTimestamp() });
   return gid;
 }
 
@@ -1045,6 +1089,8 @@ function mapGame(id: string, v: Record<string, unknown>): Game {
       calledWords: Array.isArray(turn.calledWords) ? turn.calledWords : [],
     },
     ranks: Array.isArray(v.ranks) ? (v.ranks as Game["ranks"]) : [],
+    // 퀴즈런 설정은 그대로 통과시킨다(빙고 기본값 채우기 로직을 타지 않도록)
+    ...(v.quiz ? { quiz: v.quiz as QuizRunConfig } : {}),
     by: (v.by as string) ?? "",
     createdAt: ts("createdAt"),
     updatedAt: ts("updatedAt"),
