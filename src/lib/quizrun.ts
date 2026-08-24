@@ -12,6 +12,7 @@
 import {
   collection,
   doc,
+  getDocs,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -246,4 +247,96 @@ export function watchRuns(
   return onSnapshot(runCol(cid, gid), (snap) => {
     cb(snap.docs.map((d) => d.data() as QuizRun));
   });
+}
+
+/* ───────────────── 지난 문제 세트 재활용 ───────────────── */
+
+/** 지난 퀴즈런의 문제 세트 요약 — 새 게임을 만들 때 골라서 불러온다.
+ *  같은 단원을 여러 반에서 하면 매번 다시 입력하게 되므로 필요하다. */
+export type PastQuizSet = {
+  gameId: string;
+  /** 연결됐던 프로젝트·차시 이름 (없으면 "이름 없음") */
+  label: string;
+  items: QuizItem[];
+  createdAt: number | null;
+};
+
+/**
+ * 이 학급의 지난 퀴즈런 문제 세트를 최신순으로 가져온다.
+ *
+ * 정렬은 클라이언트에서 한다 — 별도 색인을 만들지 않기 위해서다(게임 문서는
+ * 학급당 수십 개 규모라 전부 읽어도 부담이 없다). 문항이 없는 게임은 거른다.
+ */
+export async function listPastQuizSets(cid: string): Promise<PastQuizSet[]> {
+  const snap = await getDocs(
+    collection(getDbClient(), "classes", cid, "games")
+  );
+  const out: PastQuizSet[] = [];
+  for (const d of snap.docs) {
+    const v = d.data() as Record<string, unknown>;
+    if (v.kind !== "quiz-run") continue;
+    const quiz = v.quiz as QuizRunConfig | undefined;
+    const items = Array.isArray(quiz?.items) ? quiz.items : [];
+    if (items.length === 0) continue;
+    const link = v.link as { name?: string } | undefined;
+    const ts = v.createdAt as { toMillis?: () => number } | undefined;
+    out.push({
+      gameId: d.id,
+      label: link?.name?.trim() || "이름 없음",
+      items,
+      createdAt: ts?.toMillis ? ts.toMillis() : null,
+    });
+  }
+  return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+/** 불러온 문항에 새 id 를 부여한다 — 원본과 id 가 겹치면 학생별 순서 셔플에서
+ *  같은 문제가 두 번 잡힐 수 있다. */
+export function cloneItems(items: QuizItem[]): QuizItem[] {
+  return items.map((it) => ({
+    ...it,
+    id: "q_" + Math.random().toString(36).slice(2, 10),
+    options: [...it.options],
+  }));
+}
+
+/* ───────────────── 차시 문항 가져오기 ───────────────── */
+
+/**
+ * 러닝크루 차시 문항(kind="quiz")을 퀴즈런 문항으로 변환한다.
+ *
+ * 두 모델이 options/answerIndex 로 같은 모양이라 변환이랄 게 거의 없다.
+ * 다만 퀴즈런은 정답이 반드시 있어야 하므로(에너지 충전 판정) 정답 미설정이거나
+ * 설문·투표용(ungraded)인 문항은 걸러낸다.
+ */
+export function fromLessonQuestions(
+  questions: {
+    id: string;
+    kind: string;
+    title?: string;
+    text?: string;
+    options?: string[];
+    answerIndex?: number;
+    ungraded?: boolean;
+  }[],
+  /** 문항 본문이 리치텍스트 JSON 이라 평문화가 필요하다 — 호출부가 주입한다 */
+  toPlainText: (text: string) => string
+): QuizItem[] {
+  const out: QuizItem[] = [];
+  for (const q of questions) {
+    if (q.kind !== "quiz" || q.ungraded) continue;
+    const options = (q.options ?? []).filter((o) => o.trim());
+    const ai = q.answerIndex ?? -1;
+    if (options.length < 2 || ai < 0 || ai >= options.length) continue;
+    const prompt =
+      (q.title?.trim() || toPlainText(q.text ?? "").trim()).slice(0, 300);
+    if (!prompt) continue;
+    out.push({
+      id: "q_" + Math.random().toString(36).slice(2, 10),
+      prompt,
+      options,
+      answerIndex: ai,
+    });
+  }
+  return out;
 }

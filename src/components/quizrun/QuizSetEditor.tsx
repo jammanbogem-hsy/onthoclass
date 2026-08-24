@@ -11,6 +11,7 @@
 import { useCallback, useState } from "react";
 import { Icon } from "@/components/Icon";
 import type { QuizItem } from "@/lib/quizrun";
+import { QuizImportModal } from "@/components/quizrun/QuizImportModal";
 
 const newItem = (): QuizItem => ({
   id: "q_" + Math.random().toString(36).slice(2, 10),
@@ -29,13 +30,17 @@ export function isIncomplete(it: QuizItem): boolean {
 }
 
 export function QuizSetEditor({
+  cid,
   items,
   onChange,
 }: {
+  /** 지난 게임·차시에서 문제를 불러오기 위해 필요 */
+  cid: string;
   items: QuizItem[];
   onChange: (items: QuizItem[]) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const patch = useCallback(
     (id: string, p: Partial<QuizItem>) =>
@@ -83,19 +88,30 @@ export function QuizSetEditor({
             </span>
           )}
         </p>
-        <button
-          type="button"
-          onClick={add}
-          className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-primary)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-on-primary)]"
-        >
-          <Icon name="add" size={15} />
-          문제 추가
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-primary)]"
+          >
+            <Icon name="download" size={15} />
+            불러오기
+          </button>
+          <button
+            type="button"
+            onClick={add}
+            className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-primary)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-on-primary)]"
+          >
+            <Icon name="add" size={15} />
+            문제 추가
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (
         <p className="rounded-xl bg-[var(--md-sys-color-surface-container)] px-3 py-6 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
-          문제를 추가하세요. 학생은 이 문제를 풀어 러닝 에너지를 충전합니다.
+          문제를 추가하거나 <b>불러오기</b>로 지난 게임·차시 문항을 가져오세요.
+          학생은 이 문제를 풀어 러닝 에너지를 충전합니다.
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">
@@ -201,6 +217,16 @@ export function QuizSetEditor({
             );
           })}
         </ul>
+      )}
+      {importOpen && (
+        <QuizImportModal
+          cid={cid}
+          onPick={(picked) => {
+            onChange([...items, ...picked]);
+            setImportOpen(false);
+          }}
+          onClose={() => setImportOpen(false)}
+        />
       )}
     </div>
   );
