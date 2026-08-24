@@ -66,8 +66,6 @@ const signed = (n: number) => (n > 0 ? "+" : "") + Math.round(n).toLocaleString(
 // 테마 토큰(primary/error)을 쓰면 색 테마를 바꿀 때 의미가 뒤집히므로 고정색이다.
 const PNL_UP = "#d63a3a";
 const PNL_DOWN = "#2f6fd0";
-const pnlCls = (n: number) =>
-  n > 0 ? "font-bold" : n < 0 ? "font-bold" : "";
 const pnlStyle = (n: number) =>
   n > 0
     ? { color: PNL_UP }
