@@ -62,12 +62,18 @@ const skey = (s: TradingSession[]) =>
   JSON.stringify([...s].sort((a, b) => a.start - b.start));
 
 const signed = (n: number) => (n > 0 ? "+" : "") + Math.round(n).toLocaleString();
+// 손익 색 — 한국 증시 관례를 따른다(수익=빨강, 손실=파랑).
+// 테마 토큰(primary/error)을 쓰면 색 테마를 바꿀 때 의미가 뒤집히므로 고정색이다.
+const PNL_UP = "#d63a3a";
+const PNL_DOWN = "#2f6fd0";
 const pnlCls = (n: number) =>
+  n > 0 ? "font-bold" : n < 0 ? "font-bold" : "";
+const pnlStyle = (n: number) =>
   n > 0
-    ? "text-[var(--md-sys-color-primary)]"
+    ? { color: PNL_UP }
     : n < 0
-      ? "text-[var(--md-sys-color-error)]"
-      : "text-[var(--md-sys-color-on-surface-variant)]";
+      ? { color: PNL_DOWN }
+      : { color: "var(--md-sys-color-on-surface-variant)" };
 
 export function TradingAdminModal({
   cid,
@@ -719,6 +725,17 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
       .sort((a, b) => b.totalPnl - a.totalPnl);
   }, [positions, prices, wallets]);
 
+  // 학생별 최근 거래 3건 — 순위만 봐서는 "무엇을 언제 샀는지" 가 안 보인다.
+  // trades 는 최신순으로 구독되므로 앞에서부터 담으면 그대로 최신 3건이 된다.
+  const recentByUid = useMemo(() => {
+    const m: Record<string, Trade[]> = {};
+    for (const t of trades) {
+      const list = m[t.uid] ?? (m[t.uid] = []);
+      if (list.length < 3) list.push(t);
+    }
+    return m;
+  }, [trades]);
+
   // 학급 전체 요약 — 투자에 참여한 학생 수·총 평가액·총 보유 만보(참여 학생 기준)·전체 손익.
   const summary = useMemo(() => {
     const totalValue = rows.reduce((s, r) => s + r.value, 0);
@@ -770,7 +787,8 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
             전체 손익
           </p>
           <p
-            className={`mt-0.5 text-base font-extrabold ${pnlCls(summary.totalPnl)}`}
+            className="mt-0.5 text-base font-extrabold"
+            style={pnlStyle(summary.totalPnl)}
           >
             {signed(summary.totalPnl)}
           </p>
@@ -815,6 +833,32 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
                   <p className="truncate text-sm font-bold">
                     {resolveStudentName(members, r.uid)}
                   </p>
+                  {/* 최근 거래 — 무엇을 얼마에 샀는지 한눈에 */}
+                  {(recentByUid[r.uid]?.length ?? 0) > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {recentByUid[r.uid].map((t) => {
+                        const st = stockBySymbol(t.symbol);
+                        const buy = t.side === "buy";
+                        return (
+                          <span
+                            key={t.id}
+                            title={`${buy ? "매수" : "매도"} ${st?.real ?? t.symbol} ${t.qty}주 · ${Math.round(t.mbPrice)}만보`}
+                            className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold"
+                            style={{
+                              background: buy ? "#fdeaea" : "#e8f0fc",
+                              color: buy ? PNL_UP : PNL_DOWN,
+                            }}
+                          >
+                            {buy ? "▲" : "▼"}
+                            {st?.alias ?? t.symbol}
+                            <span className="tabular-nums opacity-80">
+                              {t.qty}주
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                   {r.held.length > 0 ? (
                     <div className="mt-0.5 flex flex-wrap gap-1">
                       {r.held.map((h) => {
@@ -856,7 +900,10 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
                       만보
                     </span>
                   </p>
-                  <p className={`text-xs font-bold tabular-nums ${pnlCls(r.totalPnl)}`}>
+                  <p
+                    className="text-xs font-bold tabular-nums"
+                    style={pnlStyle(r.totalPnl)}
+                  >
                     <span className="mr-1 font-semibold text-[var(--md-sys-color-on-surface-variant)]">
                       총손익
                     </span>
