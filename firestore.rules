@@ -620,6 +620,26 @@ service cloud.firestore {
           allow create, update: if signedIn() && uid() == studentUid && isMember(classId);
           allow delete: if isTeacher(classId);
         }
+
+        // 퀴즈런 학생별 진행 상태(에너지·점수·정답수). 본인만 자기 문서 작성.
+        //   3D 게임이라 클라이언트 값을 그대로 신뢰할 수는 없다 — 학급 내 순위는
+        //   즉시 보여주되, 실제 보상(XP)은 xpRequests 를 통해 교사 승인을 거친다.
+        //   여기서는 최소한의 형식·범위만 강제해 말도 안 되는 값을 막는다.
+        match /runs/{studentUid} {
+          allow read: if isMember(classId);
+          allow create, update: if signedIn() && uid() == studentUid
+            && isMember(classId)
+            && request.resource.data.uid == uid()
+            && request.resource.data.energy is number
+            && request.resource.data.energy >= 0
+            && request.resource.data.score is number
+            && request.resource.data.score >= 0
+            && request.resource.data.correct is int
+            && request.resource.data.correct >= 0
+            && request.resource.data.wrong is int
+            && request.resource.data.wrong >= 0;
+          allow delete: if isTeacher(classId);
+        }
       }
 
       // --- 모둠(그룹) ---

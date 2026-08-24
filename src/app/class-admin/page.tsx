@@ -71,6 +71,7 @@ import { MarketManageModal } from "@/components/MarketManageModal";
 import { TradingAdminModal } from "@/components/TradingAdminModal";
 import { GameStartModal } from "@/components/GameStartModal";
 import { GameConsole } from "@/components/GameConsole";
+import { QuizRunConsole } from "@/components/quizrun/QuizRunConsole";
 import { GameHistoryModal } from "@/components/GameHistoryModal";
 import { FeedbackInboxModal } from "@/components/FeedbackInboxModal";
 import { watchFeedback, type Feedback } from "@/lib/feedback";
@@ -695,7 +696,16 @@ function ClassAdminInner() {
           onStarted={() => setModal("game-console")}
         />
       )}
-      {modal === "game-console" && activeGame && (
+      {/* 게임 종류에 따라 콘솔이 갈린다 — 빙고는 교사가 차례를 돌리는 진행자,
+          퀴즈런은 시작·종료만 하고 지켜본다 */}
+      {modal === "game-console" && activeGame?.kind === "quiz-run" && (
+        <QuizRunConsole
+          cid={cid}
+          game={activeGame}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "game-console" && activeGame && activeGame.kind !== "quiz-run" && (
         <GameConsole
           cid={cid}
           game={activeGame}

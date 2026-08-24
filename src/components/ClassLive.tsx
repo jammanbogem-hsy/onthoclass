@@ -26,6 +26,7 @@ import { LinkPushModal } from "@/components/LinkPushModal";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { ActivityLockOverlay } from "@/components/ActivityLockOverlay";
 import { GameStudentStage } from "@/components/GameStudentStage";
+import { QuizRunStudent } from "@/components/quizrun/QuizRunStudent";
 import { GameStudentDock } from "@/components/GameStudentDock";
 import { MyTurnIntro } from "@/components/MyTurnIntro";
 import { TurnBanner } from "@/components/TurnBanner";
@@ -287,7 +288,17 @@ function ClassLiveInner() {
           onClose={() => setLinkClosedNonce(classApp.linkNonce)}
         />
       )}
-      {showStudentStage && cid && uid && game && (
+      {/* 퀴즈런은 3D — 브라우저 전용이라 SSR 을 끈 별도 진입 */}
+      {showStudentStage && cid && uid && game?.kind === "quiz-run" && (
+        <QuizRunStudent
+          cid={cid}
+          game={game}
+          uid={uid}
+          name={myName || user?.displayName || "이름없음"}
+          onMinimize={() => setDismissedStage(stageKey)}
+        />
+      )}
+      {showStudentStage && cid && uid && game && game.kind !== "quiz-run" && (
         <GameStudentStage
           cid={cid}
           game={game}
