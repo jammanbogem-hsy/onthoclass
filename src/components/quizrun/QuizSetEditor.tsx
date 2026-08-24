@@ -12,6 +12,8 @@ import { useCallback, useState } from "react";
 import { Icon } from "@/components/Icon";
 import type { QuizItem } from "@/lib/quizrun";
 import { QuizImportModal } from "@/components/quizrun/QuizImportModal";
+import { saveQuizSet } from "@/lib/quizBank";
+import { useDialog } from "@/components/Dialog";
 
 const newItem = (): QuizItem => ({
   id: "q_" + Math.random().toString(36).slice(2, 10),
@@ -31,16 +33,36 @@ export function isIncomplete(it: QuizItem): boolean {
 
 export function QuizSetEditor({
   cid,
+  ownerUid,
   items,
   onChange,
 }: {
   /** 지난 게임·차시에서 문제를 불러오기 위해 필요 */
   cid: string;
+  /** 문제 은행(교사 소유)에 저장·조회하기 위해 필요 */
+  ownerUid: string;
   items: QuizItem[];
   onChange: (items: QuizItem[]) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const dialog = useDialog();
+
+  /** 지금 만든 문제를 은행에 저장 — 다른 반·다음 학기에서 쓰기 위해 */
+  async function saveToBank() {
+    const usable = items.filter((it) => !isIncomplete(it));
+    if (usable.length === 0) return;
+    const name = await dialog.prompt({
+      title: "문제 은행에 저장",
+      placeholder: "세트 이름 (예: 5학년 과학 3단원 용액)",
+      okLabel: "저장",
+    });
+    if (!name?.trim()) return;
+    await saveQuizSet(ownerUid, { name, items: usable });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
 
   const patch = useCallback(
     (id: string, p: Partial<QuizItem>) =>
@@ -89,6 +111,20 @@ export function QuizSetEditor({
           )}
         </p>
         <div className="flex items-center gap-1.5">
+          {items.some((it) => !isIncomplete(it)) && (
+            <button
+              type="button"
+              onClick={saveToBank}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                saved
+                  ? "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"
+                  : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-primary)]"
+              }`}
+            >
+              <Icon name={saved ? "check" : "inventory_2"} size={15} />
+              {saved ? "저장됨" : "은행에 저장"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setImportOpen(true)}
@@ -221,6 +257,7 @@ export function QuizSetEditor({
       {importOpen && (
         <QuizImportModal
           cid={cid}
+          ownerUid={ownerUid}
           onPick={(picked) => {
             onChange([...items, ...picked]);
             setImportOpen(false);

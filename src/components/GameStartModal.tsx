@@ -345,7 +345,12 @@ export function GameStartModal({
             {kind === "quiz-run" ? (
               <>
                 <Section title="문제 세트">
-                  <QuizSetEditor cid={cid} items={items} onChange={setItems} />
+                  <QuizSetEditor
+                    cid={cid}
+                    ownerUid={by}
+                    items={items}
+                    onChange={setItems}
+                  />
                 </Section>
                 <Section title="게임 시간">
                   <div className="flex items-center gap-2">

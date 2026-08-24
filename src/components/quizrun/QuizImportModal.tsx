@@ -22,24 +22,41 @@ import {
   type PastQuizSet,
   type QuizItem,
 } from "@/lib/quizrun";
+import {
+  deleteQuizSet,
+  listMyQuizSets,
+  type QuizBankSet,
+} from "@/lib/quizBank";
 
-type Tab = "past" | "lesson";
+type Tab = "bank" | "past" | "lesson";
 
 export function QuizImportModal({
   cid,
+  ownerUid,
   onPick,
   onClose,
 }: {
   cid: string;
+  /** 문제 은행은 교사 소유라 uid 가 필요하다 */
+  ownerUid: string;
   /** 고른 문항들 — 호출부가 기존 목록에 이어붙인다 */
   onPick: (items: QuizItem[]) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("past");
+  const [tab, setTab] = useState<Tab>("bank");
+  const [bank, setBank] = useState<QuizBankSet[] | null>(null);
   const [past, setPast] = useState<PastQuizSet[] | null>(null);
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState("");
+
+  const reloadBank = useCallback(() => {
+    listMyQuizSets(ownerUid)
+      .then(setBank)
+      .catch(() => setBank([]));
+  }, [ownerUid]);
+
+  useEffect(reloadBank, [reloadBank]);
 
   useEffect(() => {
     listPastQuizSets(cid)
@@ -103,6 +120,7 @@ export function QuizImportModal({
         <div className="flex gap-1 px-5 pt-3">
           {(
             [
+              ["bank", "문제 은행"],
               ["past", "지난 게임"],
               ["lesson", "차시 문항"],
             ] as const
@@ -128,7 +146,64 @@ export function QuizImportModal({
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          {tab === "past" ? (
+          {tab === "bank" ? (
+            bank === null ? (
+              <p className="py-8 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
+                불러오는 중…
+              </p>
+            ) : bank.length === 0 ? (
+              <p className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-4 py-8 text-center text-sm leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                저장된 문제 세트가 없어요.
+                <br />
+                문제를 만든 뒤 <b>은행에 저장</b>을 누르면
+                <br />
+                다른 반·다음 학기에도 쓸 수 있어요.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {bank.map((b) => (
+                  <li
+                    key={b.id}
+                    className="flex items-center gap-2 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] pr-2"
+                  >
+                    <button
+                      onClick={() => onPick(cloneItems(b.items))}
+                      className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left"
+                    >
+                      <Icon
+                        name="inventory_2"
+                        size={18}
+                        className="shrink-0 text-[var(--md-sys-color-primary)]"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">
+                          {b.name}
+                        </span>
+                        <span className="block text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                          {b.subject ? `${b.subject} · ` : ""}문제 {b.items.length}개
+                        </span>
+                      </span>
+                      <Icon
+                        name="add"
+                        size={18}
+                        className="shrink-0 text-[var(--md-sys-color-on-surface-variant)]"
+                      />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await deleteQuizSet(b.id).catch(() => {});
+                        reloadBank();
+                      }}
+                      aria-label={`${b.name} 삭제`}
+                      className="shrink-0 rounded-full p-1.5 text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+                    >
+                      <Icon name="delete" size={16} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : tab === "past" ? (
             past === null ? (
               <p className="py-8 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
                 불러오는 중…
