@@ -22,8 +22,11 @@ import {
   type QuizRunConfig,
 } from "@/lib/quizrun";
 
-const QuizRunStage = dynamic(
-  () => import("@/components/quizrun/QuizRunStage").then((m) => m.QuizRunStage),
+// 어솔 원본 GamePage — 그래픽·에셋·HUD·연출이 배포본과 동일하다.
+// (직접 만든 껍데기는 생김새가 달라 폐기했다)
+const EarsoulGamePage = dynamic(
+  () =>
+    import("@/components/quizrun/EarsoulGamePage").then((m) => m.GamePage),
   {
     ssr: false,
     loading: () => (
@@ -103,13 +106,13 @@ export function QuizRunStudent({
 
       <div className="min-h-0 flex-1">
         {playing && mine ? (
-          <QuizRunStage
+          <EarsoulGamePage
             cid={cid}
             gid={game.id}
             uid={uid}
             cfg={cfg}
             run={mine}
-            onFinish={() => {}}
+            onExit={onMinimize}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl bg-[var(--md-sys-color-surface)] p-6">

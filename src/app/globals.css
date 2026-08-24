@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "./material3.css";
+/* 퀴즈런 게임 스킨 — .quizrun-root 안에서만 적용(어솔 원본 그대로) */
+@import "./quizrun-skin.css";
 
 @font-face {
   font-family: "Galmuri11";
