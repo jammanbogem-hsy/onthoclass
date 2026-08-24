@@ -23,6 +23,7 @@ export function QuestionOverlay({
   chargePerCorrect,
   wrongLockSec,
   onAnswer,
+  canClose,
   onClose,
 }: {
   item: QuizItem | null;
@@ -32,16 +33,15 @@ export function QuestionOverlay({
   wrongLockSec: number;
   /** 채점 결과를 상위로 — 에너지 충전·통계 반영은 상위가 담당 */
   onAnswer: (correct: boolean) => void;
-  /** 게임으로 돌아가기 */
+  /** 에너지가 0 이면 닫을 수 없다 — 버튼이 먹통으로 보이지 않도록 안내로 바꾼다 */
+  canClose: boolean;
+  /** 게임으로 돌아가기.
+   *  주의: 부모는 이 컴포넌트에 key={item.id} 를 주어야 한다 —
+   *  문제가 바뀔 때 리마운트되어 정답/오답 상태가 초기화된다. */
   onClose: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>({ t: "asking" });
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // 문제가 바뀌면 다시 풀 수 있는 상태로
-  useEffect(() => {
-    setPhase({ t: "asking" });
-  }, [item?.id]);
 
   useEffect(
     () => () => {
@@ -117,14 +117,16 @@ export function QuestionOverlay({
               계속 풀면 에너지를 더 모을 수 있어요
             </p>
             <div className="mt-1 flex gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-5 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)]"
-              >
-                <Icon name="close" size={16} />
-                게임으로
-              </button>
+              {canClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-5 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)]"
+                >
+                  <Icon name="close" size={16} />
+                  게임으로
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setPhase({ t: "asking" })}
@@ -156,7 +158,7 @@ export function QuestionOverlay({
                 <Icon name="timer" size={16} />
                 아쉬워요 · {phase.left}초 뒤 다음 문제
               </p>
-            ) : (
+            ) : canClose ? (
               <button
                 type="button"
                 onClick={onClose}
@@ -164,6 +166,10 @@ export function QuestionOverlay({
               >
                 게임으로 돌아가기
               </button>
+            ) : (
+              <p className="text-center text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                에너지가 없어요 — 문제를 맞히면 다시 움직일 수 있어요
+              </p>
             )}
           </>
         )}

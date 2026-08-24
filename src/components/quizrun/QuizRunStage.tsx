@@ -44,7 +44,6 @@ export function QuizRunStage({
   cid,
   gid,
   uid,
-  name,
   cfg,
   run,
   onFinish,
@@ -52,7 +51,6 @@ export function QuizRunStage({
   cid: string;
   gid: string;
   uid: string;
-  name: string;
   cfg: QuizRunConfig;
   run: QuizRun;
   onFinish: () => void;
@@ -95,14 +93,16 @@ export function QuizRunStage({
   // GameCanvas 는 키 입력을 내부에서 처리하므로, 여기서는 "이동 중인지"를
   // 플레이어 위치 변화로 감지한다(onPlayerPosition 이 매 프레임 온다).
   const lastPos = useRef<{ x: number; z: number } | null>(null);
-  const lastAt = useRef<number>(Date.now());
+  const lastAt = useRef<number>(0); // 첫 프레임에서 채운다(렌더 중 Date.now() 금지)
 
   const handlePose = useCallback(
     (p: PlayerMapPose) => {
       setPose(p);
       const now = Date.now();
-      const delta = (now - lastAt.current) / 1000;
+      const prevAt = lastAt.current;
       lastAt.current = now;
+      if (prevAt === 0) return; // 첫 프레임 — 간격을 알 수 없다
+      const delta = (now - prevAt) / 1000;
       const prev = lastPos.current;
       lastPos.current = { x: p.x, z: p.z };
       if (!prev || delta <= 0 || delta > 1) return; // 탭 복귀 등 큰 간격은 무시
@@ -114,11 +114,9 @@ export function QuizRunStage({
   );
 
   const outOfEnergy = energy <= 0;
-
-  // 에너지가 떨어지면 자동으로 문제 화면 — 학생이 뭘 해야 할지 헤매지 않게
-  useEffect(() => {
-    if (outOfEnergy) setQuizOpen(true);
-  }, [outOfEnergy]);
+  // 에너지가 떨어지면 문제 화면을 연다 — effect 로 setState 하면 한 프레임
+  // 깜빡이므로 파생값으로 계산한다(학생이 뭘 해야 할지 헤매지 않게).
+  const showQuiz = quizOpen || outOfEnergy;
 
   // ── 수집 ──
   const handleCollect = useCallback((item: LearningObject) => {
@@ -131,14 +129,13 @@ export function QuizRunStage({
   }, []);
 
   // ── 문제 ──
-  const [item, setItem] = useState<QuizItem | null>(null);
-  useEffect(() => {
-    const r = nextItem(cfg.items, { order, cursor, uid });
-    setItem(r.item);
-    if (r.order !== order) setOrder(r.order);
-    if (r.cursor !== cursor) setCursor(r.cursor);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursor, cfg.items, uid]);
+  // 다음 문제는 (문항·순서·커서)에서 결정되는 파생값 — state 로 두고 effect 로
+  // 채우면 한 프레임 빈 화면이 뜬다.
+  const picked = useMemo(
+    () => nextItem(cfg.items, { order, cursor, uid }),
+    [cfg.items, order, cursor, uid]
+  );
+  const item: QuizItem | null = picked.item;
 
   const handleAnswer = useCallback(
     (isCorrect: boolean) => {
@@ -148,9 +145,13 @@ export function QuizRunStage({
       } else {
         setWrong((w) => w + 1);
       }
-      setCursor((c) => c + 1); // 정답·오답 모두 다음 문제로 (재도전 없음)
+      // 정답·오답 모두 다음 문제로(재도전 없음).
+      // 한 바퀴를 다 돌았으면 nextItem 이 새로 섞은 순서를 여기서 반영한다.
+      const after = nextItem(cfg.items, { order, cursor: cursor + 1, uid });
+      if (after.order !== order) setOrder(after.order);
+      setCursor(after.cursor);
     },
-    [cfg]
+    [cfg, order, cursor, uid]
   );
 
   // ── 서버 동기화 (주기적) ──
@@ -203,7 +204,7 @@ export function QuizRunStage({
         attachedObjects={attachedObjects}
         collectedIds={collectedIds}
         ballRadius={ballRadius}
-        paused={outOfEnergy || quizOpen}
+        paused={showQuiz}
         reducedMotion={false}
         controlVector={controlVector}
         activePowerUps={activePowerUps}
@@ -254,24 +255,17 @@ export function QuizRunStage({
       </div>
 
       {/* 에너지 0 안내 — 왜 안 움직이는지 알려준다 */}
-      {outOfEnergy && !quizOpen && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p className="rounded-2xl bg-black/70 px-5 py-3 text-center text-sm font-bold text-white backdrop-blur">
-            에너지가 다 떨어졌어요
-            <br />
-            문제를 풀어 충전하세요
-          </p>
-        </div>
-      )}
 
-      {quizOpen && (
+      {showQuiz && item && (
         <QuestionOverlay
+          key={item.id}
           item={item}
           energy={energy}
           energyMax={cfg.energyMax}
           chargePerCorrect={cfg.chargePerCorrect}
           wrongLockSec={cfg.wrongLockSec}
           onAnswer={handleAnswer}
+          canClose={!outOfEnergy}
           onClose={() => setQuizOpen(false)}
         />
       )}

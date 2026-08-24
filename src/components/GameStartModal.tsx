@@ -6,11 +6,21 @@ import { listLessons, type Lesson } from "@/lib/lessons";
 import { listProjects, type Project } from "@/lib/projects";
 import {
   createGame,
+  createQuizRunGame,
   type BoardSize,
   type GameConfig,
+  type GameKind,
   type GameLink,
   type GameOrder,
 } from "@/lib/games";
+import {
+  DIFFICULTY,
+  QUIZRUN_DEFAULTS,
+  type Difficulty,
+  type QuizItem,
+  type QuizRunConfig,
+} from "@/lib/quizrun";
+import { QuizSetEditor, isIncomplete } from "@/components/quizrun/QuizSetEditor";
 
 /**
  * 학급 게임 시작 모달 — 개념 빙고
@@ -35,7 +45,19 @@ export function GameStartModal({
   const [pick, setPick] = useState<GameLink | null>(null);
   const [openProjId, setOpenProjId] = useState<string | null>(null);
 
-  // 설정
+  // 게임 종류 — 빙고(기존) / 퀴즈런(신규). 둘은 설정도 진행도 완전히 다르다.
+  const [kind, setKind] = useState<GameKind>("bingo-concept");
+
+  // 퀴즈런 설정
+  const [items, setItems] = useState<QuizItem[]>([]);
+  const [durationMin, setDurationMin] = useState(10);
+  const [drainPerSec, setDrainPerSec] = useState(QUIZRUN_DEFAULTS.drainPerSec);
+  const [chargePerCorrect, setChargePerCorrect] = useState(
+    QUIZRUN_DEFAULTS.chargePerCorrect
+  );
+  const [difficulty, setDifficulty] = useState<Difficulty>("normal");
+
+  // 빙고 설정
   const [boardSize, setBoardSize] = useState<BoardSize>(5);
   const [wordsPerStudent, setWordsPerStudent] = useState<number>(5);
   const [bingoTarget, setBingoTarget] = useState<number>(1);
@@ -91,6 +113,25 @@ export function GameStartModal({
     setErr("");
     setBusy(true);
     try {
+      if (kind === "quiz-run") {
+        const usable = items.filter((it) => !isIncomplete(it));
+        if (usable.length === 0) {
+          setErr("완성된 문제가 최소 1개 필요합니다.");
+          setBusy(false);
+          return;
+        }
+        const quiz: QuizRunConfig = {
+          ...QUIZRUN_DEFAULTS,
+          durationSec: Math.max(60, Math.floor(durationMin * 60)),
+          drainPerSec: Math.max(1, drainPerSec),
+          chargePerCorrect: Math.max(1, chargePerCorrect),
+          difficulty,
+          items: usable,
+        };
+        const gid = await createQuizRunGame(cid, by, pick, quiz);
+        onStarted(gid);
+        return;
+      }
       const cfg: GameConfig = {
         boardSize,
         wordsPerStudent: Math.max(1, Math.floor(wordsPerStudent)),
@@ -271,6 +312,126 @@ export function GameStartModal({
 
           {/* 설정 */}
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
+            <Section title="게임 종류">
+              <div className="grid grid-cols-2 gap-1.5">
+                {(
+                  [
+                    ["bingo-concept", "개념 빙고", "grid_view"],
+                    ["quiz-run", "퀴즈런", "sports_esports"],
+                  ] as const
+                ).map(([k, label, icon]) => (
+                  <button
+                    key={k}
+                    onClick={() => setKind(k)}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition ${
+                      kind === k
+                        ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                        : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)]"
+                    }`}
+                  >
+                    <Icon name={icon} size={16} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {kind === "quiz-run" && (
+                <p className="mt-1.5 text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                  문제를 풀어 <b>러닝 에너지</b>를 충전하고, 그 에너지로 3D 공을
+                  굴려 아이템을 모으는 게임이에요.
+                </p>
+              )}
+            </Section>
+
+            {kind === "quiz-run" ? (
+              <>
+                <Section title="문제 세트">
+                  <QuizSetEditor items={items} onChange={setItems} />
+                </Section>
+                <Section title="게임 시간">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={durationMin}
+                      onChange={(e) =>
+                        setDurationMin(
+                          Math.max(1, Math.min(60, Number(e.target.value) || 1))
+                        )
+                      }
+                      className="m3-field w-24"
+                    />
+                    <span className="text-sm text-[var(--md-sys-color-on-surface-variant)]">
+                      분
+                    </span>
+                  </div>
+                </Section>
+                <Section title="에너지">
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      <span>움직일 때 초당 소모</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={drainPerSec}
+                        onChange={(e) =>
+                          setDrainPerSec(
+                            Math.max(1, Math.min(20, Number(e.target.value) || 1))
+                          )
+                        }
+                        className="m3-field w-20"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      <span>정답 1개당 충전</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={chargePerCorrect}
+                        onChange={(e) =>
+                          setChargePerCorrect(
+                            Math.max(1, Math.min(200, Number(e.target.value) || 1))
+                          )
+                        }
+                        className="m3-field w-20"
+                      />
+                    </label>
+                    <p className="rounded-xl bg-[var(--md-sys-color-surface-container)] px-3 py-2 text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                      정답 1개로 약{" "}
+                      <b className="text-[var(--md-sys-color-primary)]">
+                        {(chargePerCorrect / drainPerSec).toFixed(1)}초
+                      </b>{" "}
+                      움직일 수 있어요. 시작 에너지 {QUIZRUN_DEFAULTS.energyStart}(약{" "}
+                      {(QUIZRUN_DEFAULTS.energyStart / drainPerSec).toFixed(0)}초),
+                      최대 {QUIZRUN_DEFAULTS.energyMax}.
+                    </p>
+                  </div>
+                </Section>
+                <Section title="난이도">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setDifficulty(d)}
+                        className={`rounded-xl py-2 text-sm font-bold transition ${
+                          difficulty === d
+                            ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                            : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface)]"
+                        }`}
+                      >
+                        {DIFFICULTY[d].label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                    다음 크기 단계로 넘어가는 데 필요한 점수를 조절해요.
+                  </p>
+                </Section>
+              </>
+            ) : (
+              <>
             <Section title="보드 크기">
               <div className="grid grid-cols-4 gap-1.5">
                 {([3, 4, 5, 7] as BoardSize[]).map((s) => (
@@ -385,6 +546,8 @@ export function GameStartModal({
                 </span>
               </label>
             </Section>
+            </>
+            )}
 
             {pick && (
               <p className="rounded-xl bg-[var(--md-sys-color-tertiary-container)] px-3 py-2 text-xs font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
