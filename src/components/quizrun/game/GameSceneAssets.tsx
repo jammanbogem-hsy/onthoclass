@@ -1,13 +1,85 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { Clone, useAnimations, useGLTF } from '@react-three/drei'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
+  AnimationMixer,
   DoubleSide,
   InstancedMesh,
+  Mesh,
   Object3D,
   Quaternion,
   Vector3,
 } from 'three'
-import type { LearningObject, StageTheme } from '@/lib/quizrun-engine/types'
-import { getObjectVisualScale } from '@/lib/quizrun-engine/mechanics'
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import type {
+  AttachmentNormal,
+  LearningObject,
+  StageTheme,
+} from '@/lib/quizrun-engine/types'
+import {
+  getAttachedObjectVisualScale,
+  isArchitectureCollectible,
+} from '@/lib/quizrun-engine/collectibleScale'
+import { getSizeTier } from '@/lib/quizrun-engine/mechanics'
+import { getAssetBackedLevelUpModelId } from '@/lib/quizrun-engine/levelUpAssets'
+import { getStructuredCollectibleAsset } from '@/lib/quizrun-engine/structuredCollectibleAssets'
+import {
+  getLevelOneAssetVariant,
+  type LevelOneAssetVariant,
+} from '@/lib/quizrun-engine/levelOneAssets'
+import {
+  getTreeAssetVariation,
+  type TreeAssetVariant,
+} from '@/lib/quizrun-engine/treeAssets'
+import type {
+  MudAssetVariant,
+  NaturalBlockAssetVariant,
+  SurfaceZone,
+  WorldObstacle,
+} from '@/lib/quizrun-engine/worldPhysics'
+import {
+  athleteRunningShoeUrl,
+  benchChairUrl,
+  beraIceCreamUrl,
+  candyLegoUrl,
+  carUrl,
+  catDollUrl,
+  catUrl,
+  drinkVendingMachineUrl,
+  energyDrinkUrl,
+  fallenLogAObstacleUrl,
+  fallenLogBObstacleUrl,
+  greenLegoUrl,
+  inlineSkatesUrl,
+  jumpingWaterBottleUrl,
+  level2DigitalWatchUrl,
+  level2HeadsetUrl,
+  level2NoteUrl,
+  level2RunningShoeUrl,
+  lotteTowerUrl,
+  lowPolyTreeAUrl,
+  lowPolyTreeBUrl,
+  lowPolyTreeCUrl,
+  luxuryCar2Url,
+  luxuryCarUrl,
+  mudAObstacleUrl,
+  mudBObstacleUrl,
+  noiseCancelingHeadsetUrl,
+  orangeJuiceUrl,
+  phantomKeyringUrl,
+  raccoonUrl,
+  redLegoUrl,
+  runningMedalUrl,
+  runningSunglassesUrl,
+  runningVestUrl,
+  shibaInuUrl,
+  shimmeringRunningBagUrl,
+  sodaCoolerUrl,
+  stopwatchModelUrl,
+  taekwondoUniformUrl,
+  treeRootObstacleUrl,
+  waterBottleUrl,
+  yellowLegoUrl,
+} from '@/lib/quizrun-engine/data/modelUrls'
 
 export interface LearningObjectMeshProps {
   item: LearningObject
@@ -19,12 +91,20 @@ export interface AttachedObjectMeshProps {
   index: number
   orbRadius: number
   slotCount?: number
+  attachmentNormal?: AttachmentNormal
 }
 
 export interface GardenSetDressingProps {
   floorSize?: number
   receiveShadow?: boolean
   theme?: StageTheme
+  treeObstacles?: readonly Pick<WorldObstacle, 'id' | 'x' | 'z'>[]
+}
+
+export interface NaturalObstacleModelsProps {
+  obstacles: readonly WorldObstacle[]
+  surfaceZones: readonly SurfaceZone[]
+  castShadow?: boolean
 }
 
 type VectorTuple = [number, number, number]
@@ -33,7 +113,35 @@ const PAPER = '#FFFDF7'
 const INK = '#273548'
 const WOOD = '#A96F45'
 const GOLD = '#F8C84A'
+const CAT_MODEL_FLOOR_OFFSET = -0.499
+const WORLD_COLLECTIBLE_OFFSET = -0.58
 const PALETTE = ['#FF6B6B', '#38BDF8', '#FBBF24', '#2DD4BF', '#A78BFA']
+const LEVEL_ONE_ASSET_URLS: Record<LevelOneAssetVariant, string> = {
+  'red-lego': redLegoUrl,
+  'green-lego': greenLegoUrl,
+  'yellow-lego': yellowLegoUrl,
+  water: waterBottleUrl,
+  candy: candyLegoUrl,
+  'orange-juice': orangeJuiceUrl,
+  'phantom-keyring': phantomKeyringUrl,
+}
+const TREE_ASSET_URLS: Record<TreeAssetVariant, string> = {
+  'low-poly-tree-a': lowPolyTreeAUrl,
+  'low-poly-tree-b': lowPolyTreeBUrl,
+  'low-poly-tree-c': lowPolyTreeCUrl,
+}
+const NATURAL_BLOCK_ASSET_URLS: Record<
+  NaturalBlockAssetVariant,
+  string
+> = {
+  'tree-root': treeRootObstacleUrl,
+  'fallen-log-a': fallenLogAObstacleUrl,
+  'fallen-log-b': fallenLogBObstacleUrl,
+}
+const MUD_ASSET_URLS: Record<MudAssetVariant, string> = {
+  'mud-a': mudAObstacleUrl,
+  'mud-b': mudBObstacleUrl,
+}
 const SCENERY_THEMES = {
   'sunny-plaza': {
     ground: '#D9F1D3',
@@ -45,13 +153,13 @@ const SCENERY_THEMES = {
     markers: PALETTE,
   },
   'forest-trail': {
-    ground: '#ABC99E',
-    track: '#CDB88D',
-    trail: '#E4D1A7',
-    plaza: '#91B88B',
-    trunk: '#76503A',
-    leaves: ['#235C3B', '#34734A', '#4C8B4E', '#6CA45D'],
-    markers: ['#FBBF24', '#F97316', '#38BDF8', '#A3E635', '#FB7185'],
+    ground: '#1D3029',
+    track: '#394740',
+    trail: '#465046',
+    plaza: '#263D37',
+    trunk: '#2B2425',
+    leaves: ['#173128', '#204234', '#29533C', '#315E43'],
+    markers: ['#FFD35A', '#FF8A65', '#66C7FF', '#B7E56D', '#F28AB2'],
   },
   'starlight-river': {
     ground: '#526B73',
@@ -283,33 +391,6 @@ function WaterBottle({
   )
 }
 
-function Stopwatch({ color }: { color: string }) {
-  return (
-    <group>
-      <mesh castShadow rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.48, 0.48, 0.18, 14]} />
-        <Paint color={color} roughness={0.48} />
-      </mesh>
-      <mesh position={[0, 0, 0.11]}>
-        <circleGeometry args={[0.38, 16]} />
-        <Paint color={PAPER} />
-      </mesh>
-      <BoxPart color={INK} position={[0, 0.1, 0.15]} scale={[0.05, 0.42, 0.04]} />
-      <BoxPart
-        color={INK}
-        position={[0.12, -0.02, 0.15]}
-        rotation={[0, 0, -0.65]}
-        scale={[0.28, 0.05, 0.04]}
-      />
-      <BoxPart color={INK} position={[0, 0.56, 0]} scale={[0.22, 0.18, 0.16]} />
-      <mesh position={[0, 0.74, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.15, 0.045, 5, 14]} />
-        <Paint color={INK} />
-      </mesh>
-    </group>
-  )
-}
-
 function RunningCap({
   color,
   pin = false,
@@ -333,43 +414,6 @@ function RunningCap({
         scale={[0.62, 0.08, 0.46]}
       />
       <BoxPart color={PAPER} position={[0, 0.2, 0.5]} scale={[0.2, 0.08, 0.05]} />
-    </group>
-  )
-}
-
-function Sunglasses({ color }: { color: string }) {
-  return (
-    <group>
-      {[-0.32, 0.32].map((x) => (
-        <group key={x} position={[x, 0, 0]}>
-          <mesh castShadow>
-            <torusGeometry args={[0.27, 0.075, 7, 18]} />
-            <Paint color={color} roughness={0.4} />
-          </mesh>
-          <mesh position={[0, 0, 0.02]}>
-            <circleGeometry args={[0.22, 16]} />
-            <meshStandardMaterial
-              color="#6E70C9"
-              roughness={0.2}
-              transparent
-              opacity={0.74}
-            />
-          </mesh>
-        </group>
-      ))}
-      <BoxPart color={color} scale={[0.22, 0.07, 0.07]} />
-      <BoxPart
-        color={color}
-        position={[-0.64, 0, -0.18]}
-        rotation={[0, -0.55, 0]}
-        scale={[0.4, 0.07, 0.07]}
-      />
-      <BoxPart
-        color={color}
-        position={[0.64, 0, -0.18]}
-        rotation={[0, 0.55, 0]}
-        scale={[0.4, 0.07, 0.07]}
-      />
     </group>
   )
 }
@@ -757,36 +801,6 @@ function TreasureBox({
   )
 }
 
-function HydrationPack({
-  color,
-  compact = false,
-}: {
-  color: string
-  compact?: boolean
-}) {
-  return (
-    <group>
-      <BoxPart color={color} scale={[0.8, 1.02, 0.48]} />
-      <BoxPart
-        color={INK}
-        position={[0, 0.02, 0.3]}
-        scale={[0.52, 0.56, 0.12]}
-      />
-      {!compact &&
-        [-0.48, 0.48].map((x) => (
-          <mesh key={x} castShadow position={[x, -0.05, 0]}>
-            <cylinderGeometry args={[0.15, 0.17, 0.62, 8]} />
-            <Paint color="#38BDF8" roughness={0.4} />
-          </mesh>
-        ))}
-      <mesh position={[0, 0.62, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.22, 0.05, 6, 14, Math.PI]} />
-        <Paint color={INK} />
-      </mesh>
-    </group>
-  )
-}
-
 function Trophy({ color }: { color: string }) {
   return (
     <group>
@@ -891,17 +905,279 @@ function FallbackShape({ item }: { item: LearningObject }) {
   return <GiftBox color={item.color} />
 }
 
+function ImportedCollectibleMesh({
+  url,
+  detail,
+  modelScale = 1,
+  castShadow = true,
+}: {
+  url: string
+  detail: 'world' | 'attached'
+  modelScale?: number
+  castShadow?: boolean
+}) {
+  const { scene } = useGLTF(url)
+  const model = useMemo(() => scene.clone(true), [scene])
+
+  useLayoutEffect(() => {
+    model.traverse((child) => {
+      if (!(child instanceof Mesh)) return
+      child.castShadow = castShadow
+      child.receiveShadow = true
+    })
+  }, [castShadow, model])
+
+  return (
+    <primitive
+      object={model}
+      position={[0, detail === 'world' ? -0.58 : 0, 0]}
+      scale={modelScale}
+    />
+  )
+}
+
+function useSkinnedSceneClone(scene: Object3D) {
+  const model = useMemo(() => cloneSkeleton(scene), [scene])
+
+  useLayoutEffect(() => {
+    model.traverse((child) => {
+      if (!(child instanceof Mesh)) return
+      child.castShadow = true
+      child.receiveShadow = true
+    })
+  }, [model])
+
+  return model
+}
+
+function JumpingWaterBottle() {
+  const { scene, animations } = useGLTF(jumpingWaterBottleUrl)
+  const model = useSkinnedSceneClone(scene)
+  const { actions, names } = useAnimations(animations, model)
+
+  useEffect(() => {
+    const action = names[0] ? actions[names[0]] : undefined
+    action?.reset().fadeIn(0.12).play()
+    return () => {
+      action?.fadeOut(0.08)
+    }
+  }, [actions, names])
+
+  return <primitive object={model} position={[0, -0.58, 0]} />
+}
+
+function AttachedWaterBottle() {
+  const { scene, animations } = useGLTF(jumpingWaterBottleUrl)
+  const model = useSkinnedSceneClone(scene)
+
+  useLayoutEffect(() => {
+    const clip = animations[0]
+    if (!clip) return
+
+    const mixer = new AnimationMixer(model)
+    const action = mixer.clipAction(clip)
+    action.play()
+    mixer.setTime(1 / 24)
+    model.updateMatrixWorld(true)
+
+    return () => {
+      action.stop()
+      mixer.uncacheAction(clip, model)
+      mixer.uncacheRoot(model)
+    }
+  }, [animations, model])
+
+  return <primitive object={model} />
+}
+
+function ShimmeringWaterBottle({
+  detail,
+}: {
+  detail: 'world' | 'attached'
+}) {
+  return detail === 'world' ? (
+    <JumpingWaterBottle />
+  ) : (
+    <AttachedWaterBottle />
+  )
+}
+
+function MovingRaccoon() {
+  const { scene, animations } = useGLTF(raccoonUrl)
+  const model = useSkinnedSceneClone(scene)
+  const { actions, names } = useAnimations(animations, model)
+
+  useEffect(() => {
+    const action = names[0] ? actions[names[0]] : undefined
+    action?.reset().fadeIn(0.12).play()
+    return () => {
+      action?.fadeOut(0.08)
+    }
+  }, [actions, names])
+
+  return <primitive object={model} position={[0, -0.827, 0]} />
+}
+
+function AttachedRaccoon() {
+  const { scene, animations } = useGLTF(raccoonUrl)
+  const model = useSkinnedSceneClone(scene)
+
+  useLayoutEffect(() => {
+    const clip = animations[0]
+    if (!clip) return
+
+    const mixer = new AnimationMixer(model)
+    const action = mixer.clipAction(clip)
+    action.play()
+    mixer.setTime(1 / 24)
+    model.updateMatrixWorld(true)
+
+    return () => {
+      action.stop()
+      mixer.uncacheAction(clip, model)
+      mixer.uncacheRoot(model)
+    }
+  }, [animations, model])
+
+  return <primitive object={model} position={[0, -0.247, 0]} />
+}
+
+function RaccoonCollectible({
+  detail,
+}: {
+  detail: 'world' | 'attached'
+}) {
+  return detail === 'world' ? <MovingRaccoon /> : <AttachedRaccoon />
+}
+
+function MovingCat() {
+  const { scene, animations } = useGLTF(catUrl)
+  const model = useSkinnedSceneClone(scene)
+  const { actions, names } = useAnimations(animations, model)
+
+  useEffect(() => {
+    const action = names[0] ? actions[names[0]] : undefined
+    action?.reset().fadeIn(0.12).play()
+    return () => {
+      action?.fadeOut(0.08)
+    }
+  }, [actions, names])
+
+  return (
+    <primitive
+      object={model}
+      position={[0, CAT_MODEL_FLOOR_OFFSET + WORLD_COLLECTIBLE_OFFSET, 0]}
+    />
+  )
+}
+
+function AttachedCat() {
+  const { scene, animations } = useGLTF(catUrl)
+  const model = useSkinnedSceneClone(scene)
+
+  useLayoutEffect(() => {
+    const clip = animations[0]
+    if (!clip) return
+
+    const mixer = new AnimationMixer(model)
+    const action = mixer.clipAction(clip)
+    action.play()
+    mixer.setTime(1 / 24)
+    model.updateMatrixWorld(true)
+
+    return () => {
+      action.stop()
+      mixer.uncacheAction(clip, model)
+      mixer.uncacheRoot(model)
+    }
+  }, [animations, model])
+
+  return (
+    <primitive object={model} position={[0, CAT_MODEL_FLOOR_OFFSET, 0]} />
+  )
+}
+
+function CatCollectible({
+  detail,
+}: {
+  detail: 'world' | 'attached'
+}) {
+  return detail === 'world' ? <MovingCat /> : <AttachedCat />
+}
+
+function LevelOneAssetMesh({
+  itemId,
+  detail,
+}: {
+  itemId: string
+  detail: 'world' | 'attached'
+}) {
+  const variant = getLevelOneAssetVariant(itemId)
+  return (
+    <ImportedCollectibleMesh
+      url={LEVEL_ONE_ASSET_URLS[variant]}
+      detail={detail}
+    />
+  )
+}
+
+useGLTF.preload(redLegoUrl)
+useGLTF.preload(greenLegoUrl)
+useGLTF.preload(yellowLegoUrl)
+useGLTF.preload(waterBottleUrl)
+useGLTF.preload(candyLegoUrl)
+useGLTF.preload(orangeJuiceUrl)
+useGLTF.preload(stopwatchModelUrl)
+useGLTF.preload(jumpingWaterBottleUrl)
+useGLTF.preload(runningSunglassesUrl)
+useGLTF.preload(level2HeadsetUrl)
+useGLTF.preload(level2NoteUrl)
+useGLTF.preload(level2RunningShoeUrl)
+useGLTF.preload(level2DigitalWatchUrl)
+useGLTF.preload(shimmeringRunningBagUrl)
+useGLTF.preload(catDollUrl)
+useGLTF.preload(athleteRunningShoeUrl)
+useGLTF.preload(raccoonUrl)
+useGLTF.preload(inlineSkatesUrl)
+useGLTF.preload(runningVestUrl)
+useGLTF.preload(runningMedalUrl)
+useGLTF.preload(sodaCoolerUrl)
+useGLTF.preload(catUrl)
+useGLTF.preload(carUrl)
+useGLTF.preload(noiseCancelingHeadsetUrl)
+useGLTF.preload(luxuryCarUrl)
+useGLTF.preload(luxuryCar2Url)
+useGLTF.preload(drinkVendingMachineUrl)
+
 /**
- * Original, texture-free running-park collectibles. Each item keeps a strong
- * silhouette at the four external tier scales used by GameCanvas.
+ * Every generated level-up collectible is backed by an imported GLB. The
+ * procedural cases below remain only as compatibility fallbacks for old data.
  */
 export function LearningObjectMesh({
   item,
   detail = 'world',
 }: LearningObjectMeshProps) {
+  const structuredAsset = getStructuredCollectibleAsset(item.modelId)
+  if (structuredAsset) {
+    return (
+      <ImportedCollectibleMesh
+        url={structuredAsset.url}
+        detail={detail}
+        modelScale={structuredAsset.sourceLevel > 4 ? 1.2 : 1}
+        castShadow={
+          detail === 'world' || !isArchitectureCollectible(item)
+        }
+      />
+    )
+  }
+
+  if (getSizeTier(item.size).level === 1) {
+    return <LevelOneAssetMesh itemId={item.id} detail={detail} />
+  }
+
   const compact = detail === 'attached'
 
-  switch (item.modelId ?? item.id) {
+  switch (getAssetBackedLevelUpModelId(item)) {
     case 'runner-lace':
       return <RunnerLace color={item.color} />
     case 'crew-badge':
@@ -918,13 +1194,23 @@ export function LearningObjectMesh({
     case 'cap-pin':
       return <RunningCap color={item.color} pin />
     case 'water-bottle':
-      return <WaterBottle color={item.color} compact={compact} />
+      return <ShimmeringWaterBottle detail={detail} />
     case 'stopwatch':
-      return <Stopwatch color={item.color} />
+      return (
+        <ImportedCollectibleMesh
+          url={stopwatchModelUrl}
+          detail={detail}
+        />
+      )
     case 'running-cap':
       return <RunningCap color={item.color} />
     case 'sunglasses':
-      return <Sunglasses color={item.color} />
+      return (
+        <ImportedCollectibleMesh
+          url={runningSunglassesUrl}
+          detail={detail}
+        />
+      )
     case 'wristwatch':
       return <Wristwatch color={item.color} />
     case 'headphones':
@@ -933,8 +1219,34 @@ export function LearningObjectMesh({
       return <GiftBox color={item.color} />
     case 'running-shoe':
       return <RunningShoe color={item.color} compact={compact} />
+    case 'level2-headset':
+      return <ImportedCollectibleMesh url={level2HeadsetUrl} detail={detail} />
+    case 'level2-note':
+      return <ImportedCollectibleMesh url={level2NoteUrl} detail={detail} />
+    case 'level2-running-shoe':
+      return (
+        <ImportedCollectibleMesh url={level2RunningShoeUrl} detail={detail} />
+      )
+    case 'level2-digital-watch':
+      return (
+        <ImportedCollectibleMesh url={level2DigitalWatchUrl} detail={detail} />
+      )
+    case 'hydration-pack':
+      return (
+        <ImportedCollectibleMesh url={shimmeringRunningBagUrl} detail={detail} />
+      )
+    case 'level2-cat-doll':
+      return <ImportedCollectibleMesh url={catDollUrl} detail={detail} />
+    case 'level2-bera-ice-cream':
+      return <ImportedCollectibleMesh url={beraIceCreamUrl} detail={detail} />
+    case 'level2-energy-drink':
+      return <ImportedCollectibleMesh url={energyDrinkUrl} detail={detail} />
+    case 'level2-taekwondo-uniform':
+      return (
+        <ImportedCollectibleMesh url={taekwondoUniformUrl} detail={detail} />
+      )
     case 'crew-medal':
-      return <Badge color={item.color} medal />
+      return <ImportedCollectibleMesh url={runningMedalUrl} detail={detail} />
     case 'play-ball':
       return <PlayBall color={item.color} />
     case 'skateboard':
@@ -943,8 +1255,6 @@ export function LearningObjectMesh({
       return <GemCluster color={item.color} />
     case 'treasure-box':
       return <TreasureBox color={item.color} compact={compact} />
-    case 'hydration-pack':
-      return <HydrationPack color={item.color} compact={compact} />
     case 'running-shoe-pair':
       return (
         <group>
@@ -956,6 +1266,22 @@ export function LearningObjectMesh({
           </group>
         </group>
       )
+    case 'level3-athlete-running-shoe':
+      return (
+        <ImportedCollectibleMesh url={athleteRunningShoeUrl} detail={detail} />
+      )
+    case 'level3-raccoon':
+      return <RaccoonCollectible detail={detail} />
+    case 'level3-inline-skates':
+      return <ImportedCollectibleMesh url={inlineSkatesUrl} detail={detail} />
+    case 'level3-running-vest':
+      return <ImportedCollectibleMesh url={runningVestUrl} detail={detail} />
+    case 'level3-soda-cooler':
+      return <ImportedCollectibleMesh url={sodaCoolerUrl} detail={detail} />
+    case 'level3-cat':
+      return <CatCollectible detail={detail} />
+    case 'level3-shiba-inu':
+      return <ImportedCollectibleMesh url={shibaInuUrl} detail={detail} />
     case 'giant-sneaker':
       return (
         <group scale={1.12}>
@@ -974,35 +1300,84 @@ export function LearningObjectMesh({
       return <TreasureBox color={item.color} large compact={compact} />
     case 'crew-kiosk':
       return <CrewKiosk color={item.color} compact={compact} />
+    case 'level4-car':
+      return (
+        <ImportedCollectibleMesh
+          url={carUrl}
+          detail={detail}
+          modelScale={1.3}
+        />
+      )
+    case 'level4-noise-canceling-headset':
+      return (
+        <ImportedCollectibleMesh
+          url={noiseCancelingHeadsetUrl}
+          detail={detail}
+        />
+      )
+    case 'level4-luxury-car':
+      return (
+        <ImportedCollectibleMesh
+          url={luxuryCarUrl}
+          detail={detail}
+          modelScale={1.45}
+        />
+      )
+    case 'level4-luxury-car-2':
+      return (
+        <ImportedCollectibleMesh
+          url={luxuryCar2Url}
+          detail={detail}
+          modelScale={1.45}
+        />
+      )
+    case 'level4-drink-vending-machine':
+      return (
+        <ImportedCollectibleMesh url={drinkVendingMachineUrl} detail={detail} />
+      )
+    case 'level4-lotte-tower':
+      return (
+        <ImportedCollectibleMesh
+          url={lotteTowerUrl}
+          detail={detail}
+          castShadow={detail === 'world'}
+        />
+      )
     default:
       return <FallbackShape item={item} />
   }
 }
 
 /**
- * Mount inside the rolling-orb group. Fibonacci-sphere slots and a stable
- * item-id yaw keep all collected models anchored while the ball rotates.
+ * Mount inside the rolling-orb group. New collections preserve their actual
+ * contact normal; legacy collections fall back to Fibonacci-sphere slots.
  */
 export function AttachedObjectMesh({
   item,
   index,
   orbRadius,
   slotCount = 30,
+  attachmentNormal,
 }: AttachedObjectMeshProps) {
   const transform = useMemo(() => {
-    const slots = Math.max(1, slotCount)
-    const slot = ((index % slots) + 0.5) / slots
-    const y = 1 - slot * 2
-    const ring = Math.sqrt(Math.max(0, 1 - y * y))
-    const theta = index * GOLDEN_ANGLE
-    const normal = new Vector3(
-      Math.cos(theta) * ring,
-      y,
-      Math.sin(theta) * ring,
-    ).normalize()
-    const scale = getObjectVisualScale(item.size)
-    const surfaceLift = Math.min(scale * 0.12, orbRadius * 0.12)
-    const position = normal.clone().multiplyScalar(orbRadius + surfaceLift)
+    let normal: Vector3
+    if (attachmentNormal) {
+      normal = new Vector3(...attachmentNormal).normalize()
+    } else {
+      const slots = Math.max(1, slotCount)
+      const slot = ((index % slots) + 0.5) / slots
+      const y = 1 - slot * 2
+      const ring = Math.sqrt(Math.max(0, 1 - y * y))
+      const theta = index * GOLDEN_ANGLE
+      normal = new Vector3(
+        Math.cos(theta) * ring,
+        y,
+        Math.sin(theta) * ring,
+      ).normalize()
+    }
+    const scale = getAttachedObjectVisualScale(item, orbRadius)
+    const surfaceInset = Math.min(scale * 0.025, orbRadius * 0.025)
+    const position = normal.clone().multiplyScalar(orbRadius - surfaceInset)
     const orientation = new Quaternion().setFromUnitVectors(UP, normal)
     const seed = Array.from(item.id).reduce(
       (total, character) => total + character.charCodeAt(0),
@@ -1012,7 +1387,7 @@ export function AttachedObjectMesh({
       new Quaternion().setFromAxisAngle(UP, ((seed % 24) / 24) * Math.PI * 2),
     )
     return { orientation, position, scale }
-  }, [index, item.id, item.size, orbRadius, slotCount])
+  }, [attachmentNormal, index, item, orbRadius, slotCount])
 
   return (
     <group
@@ -1175,51 +1550,221 @@ function rotateOffset(
   return [x * cosine + z * sine, -x * sine + z * cosine]
 }
 
+interface ImportedTreeSpec {
+  id: string
+  variant: TreeAssetVariant
+  position: VectorTuple
+  rotationY: number
+  scale: number
+}
+
+function ImportedTree({ spec }: { spec: ImportedTreeSpec }) {
+  const url = TREE_ASSET_URLS[spec.variant]
+  const { scene } = useGLTF(url)
+
+  return (
+    <Clone
+      name={`imported-tree-${spec.variant}`}
+      object={scene}
+      position={spec.position}
+      rotation={[0, spec.rotationY, 0]}
+      scale={spec.scale}
+      castShadow
+      receiveShadow
+    />
+  )
+}
+
+function ImportedTrees({ specs }: { specs: ImportedTreeSpec[] }) {
+  return (
+    <>
+      {specs.map((spec) => (
+        <ImportedTree key={spec.id} spec={spec} />
+      ))}
+    </>
+  )
+}
+
+interface ImportedBenchSpec {
+  id: string
+  position: VectorTuple
+  rotationY: number
+}
+
+function ImportedBench({ spec }: { spec: ImportedBenchSpec }) {
+  const { scene } = useGLTF(benchChairUrl)
+
+  return (
+    <Clone
+      name="imported-bench-chair"
+      object={scene}
+      position={spec.position}
+      rotation={[0, spec.rotationY, 0]}
+      scale={2.1}
+      castShadow
+      receiveShadow
+    />
+  )
+}
+
+function ImportedBenches({ specs }: { specs: ImportedBenchSpec[] }) {
+  return (
+    <>
+      {specs.map((spec) => (
+        <ImportedBench key={spec.id} spec={spec} />
+      ))}
+    </>
+  )
+}
+
+function NaturalBlockModel({
+  obstacle,
+  castShadow,
+}: {
+  obstacle: WorldObstacle & { assetVariant: NaturalBlockAssetVariant }
+  castShadow: boolean
+}) {
+  const { scene } = useGLTF(
+    NATURAL_BLOCK_ASSET_URLS[obstacle.assetVariant],
+  )
+
+  return (
+    <Clone
+      name={`natural-obstacle-${obstacle.assetVariant}`}
+      object={scene}
+      position={[obstacle.x, 0.01, obstacle.z]}
+      rotation={[0, obstacle.rotationY ?? 0, 0]}
+      scale={obstacle.modelScale ?? [1, 1, 1]}
+      castShadow={castShadow}
+      receiveShadow
+    />
+  )
+}
+
+function MudModel({
+  zone,
+}: {
+  zone: SurfaceZone & { assetVariant: MudAssetVariant }
+}) {
+  const { scene } = useGLTF(MUD_ASSET_URLS[zone.assetVariant])
+
+  return (
+    <Clone
+      name={`natural-surface-${zone.assetVariant}`}
+      object={scene}
+      position={[zone.x, -0.015, zone.z]}
+      rotation={[0, zone.rotationY, 0]}
+      scale={zone.modelScale ?? [1, 1, 1]}
+      castShadow={false}
+      receiveShadow
+    />
+  )
+}
+
+export function NaturalObstacleModels({
+  obstacles,
+  surfaceZones,
+  castShadow = true,
+}: NaturalObstacleModelsProps) {
+  const naturalBlockers = obstacles.filter(
+    (
+      obstacle,
+    ): obstacle is WorldObstacle & {
+      assetVariant: NaturalBlockAssetVariant
+    } => obstacle.assetVariant !== undefined,
+  )
+  const mudZones = surfaceZones.filter(
+    (
+      zone,
+    ): zone is SurfaceZone & { assetVariant: MudAssetVariant } =>
+      zone.assetVariant !== undefined,
+  )
+
+  return (
+    <>
+      {naturalBlockers.map((obstacle) => (
+        <NaturalBlockModel
+          key={obstacle.id}
+          obstacle={obstacle}
+          castShadow={castShadow}
+        />
+      ))}
+      {mudZones.map((zone) => (
+        <MudModel key={zone.id} zone={zone} />
+      ))}
+    </>
+  )
+}
+
+useGLTF.preload(lowPolyTreeAUrl)
+useGLTF.preload(lowPolyTreeBUrl)
+useGLTF.preload(lowPolyTreeCUrl)
+useGLTF.preload(benchChairUrl)
+useGLTF.preload(treeRootObstacleUrl)
+useGLTF.preload(fallenLogAObstacleUrl)
+useGLTF.preload(fallenLogBObstacleUrl)
+useGLTF.preload(mudAObstacleUrl)
+useGLTF.preload(mudBObstacleUrl)
+
 /**
- * Deterministic stage scenery. Track markers, trees, bushes, benches, gear
- * racks and stepping blocks stay instanced for mobile rendering.
+ * Deterministic stage scenery. Tree models preserve their complete imported
+ * scenes while the simpler markers, bushes, racks, and blocks stay instanced
+ * for mobile rendering.
  */
 export function GardenSetDressing({
   floorSize = 60,
   receiveShadow = true,
   theme = 'sunny-plaza',
+  treeObstacles = [],
 }: GardenSetDressingProps) {
   const parkSize = Math.max(88, Math.min(220, floorSize))
   const mapScale = parkSize / 60
   const themeColors = SCENERY_THEMES[theme]
+  const treeSpecs = useMemo<ImportedTreeSpec[]>(
+    () =>
+      treeObstacles
+        .filter((obstacle) => obstacle.id.includes('tree'))
+        .map((obstacle) => {
+          const variation = getTreeAssetVariation(
+            `${theme}-${obstacle.id}`,
+          )
+          const baseScale = obstacle.id.startsWith('forest-tree')
+            ? 3.05
+            : theme === 'starlight-river'
+              ? 3.35
+              : 3.5
+
+          return {
+            id: obstacle.id,
+            variant: variation.variant,
+            position: [obstacle.x, 0, obstacle.z],
+            rotationY: variation.rotationY,
+            scale: baseScale * variation.scaleMultiplier,
+          }
+        }),
+    [theme, treeObstacles],
+  )
+  const benchSpecs = useMemo<ImportedBenchSpec[]>(
+    () =>
+      treeObstacles
+        .filter((obstacle) => obstacle.id.startsWith('bench-'))
+        .map((obstacle) => {
+          const angle = Math.atan2(obstacle.z, obstacle.x)
+          return {
+            id: obstacle.id,
+            position: [obstacle.x, 0, obstacle.z],
+            rotationY: -angle,
+          }
+        }),
+    [treeObstacles],
+  )
   const scenery = useMemo(() => {
     const edgeRadius = parkSize * 0.468
     const treeCount = Math.round(22 * mapScale)
-    const trunks: InstanceSpec[] = []
-    const leaves: InstanceSpec[] = []
     const bushes: InstanceSpec[] = []
 
     Array.from({ length: treeCount }, (_, index) => {
       const angle = (index / treeCount) * Math.PI * 2
-      const radius = edgeRadius - (index % 3) * 0.65
-      const x = Math.cos(angle) * radius
-      const z = Math.sin(angle) * radius
-      trunks.push({
-        color: index % 2 ? WOOD : themeColors.trunk,
-        position: [x, 0.78, z],
-        scale: [0.38, 1.56, 0.38],
-        rotationY: angle,
-      })
-      leaves.push(
-        {
-          color: themeColors.leaves[index % themeColors.leaves.length],
-          position: [x, 2.2, z],
-          scale: [1.5, 1.28, 1.42],
-          rotationY: angle,
-        },
-        {
-          color:
-            themeColors.leaves[(index + 2) % themeColors.leaves.length],
-          position: [x + Math.cos(angle + 0.7) * 0.55, 2.7, z + Math.sin(angle + 0.7) * 0.55],
-          scale: [0.95, 0.88, 0.92],
-          rotationY: angle,
-        },
-      )
       if (index % 2 === 0) {
         const bushAngle = angle + Math.PI / treeCount
         const bushRadius = edgeRadius - 2.2
@@ -1236,52 +1781,6 @@ export function GardenSetDressing({
         })
       }
     })
-
-    if (theme === 'forest-trail') {
-      Array.from({ length: 18 }, (_, index) => {
-        const angle = index * GOLDEN_ANGLE + 0.35
-        const radius =
-          parkSize * (0.1 + (index % 3) * 0.07) +
-          Math.sin(index * 1.3) * 1.4
-        const x = Math.cos(angle) * radius
-        const z = Math.sin(angle) * radius
-        trunks.push({
-          color: themeColors.trunk,
-          position: [x, 0.68, z],
-          scale: [0.31, 1.36, 0.31],
-          rotationY: angle,
-        })
-        leaves.push({
-          color:
-            themeColors.leaves[(index + 1) % themeColors.leaves.length],
-          position: [x, 1.95, z],
-          scale: [1.18, 1.08, 1.15],
-          rotationY: angle,
-        })
-      })
-    }
-
-    if (theme === 'starlight-river') {
-      Array.from({ length: 16 }, (_, index) => {
-        const angle = (index / 16) * Math.PI * 2
-        const radius = parkSize * (index % 2 ? 0.18 : 0.34)
-        const x = Math.cos(angle) * radius
-        const z = Math.sin(angle) * radius
-        trunks.push({
-          color: '#29394E',
-          position: [x, 0.88, z],
-          scale: [0.12, 1.76, 0.12],
-          rotationY: angle,
-        })
-        leaves.push({
-          color:
-            themeColors.markers[index % themeColors.markers.length],
-          position: [x, 1.85, z],
-          scale: [0.34, 0.34, 0.34],
-          rotationY: angle,
-        })
-      })
-    }
 
     const routeMarkers: InstanceSpec[] = Array.from(
       { length: Math.round(48 * mapScale) },
@@ -1323,30 +1822,6 @@ export function GardenSetDressing({
         }
       },
     )
-
-    const benchParts: InstanceSpec[] = []
-    Array.from({ length: 8 }, (_, index) => {
-      const angle = (index / 8) * Math.PI * 2 + Math.PI / 8
-      const baseX = Math.cos(angle) * parkSize * 0.25
-      const baseZ = Math.sin(angle) * parkSize * 0.25
-      const yaw = -angle
-      const parts = [
-        { x: 0, y: 0.45, z: 0, scale: [1.75, 0.16, 0.5], color: WOOD },
-        { x: 0, y: 0.92, z: 0.22, scale: [1.75, 0.62, 0.14], color: WOOD },
-        { x: -0.62, y: 0.2, z: 0, scale: [0.12, 0.5, 0.38], color: INK },
-        { x: 0.62, y: 0.2, z: 0, scale: [0.12, 0.5, 0.38], color: INK },
-      ]
-
-      parts.forEach((part) => {
-        const [offsetX, offsetZ] = rotateOffset(part.x, part.z, yaw)
-        benchParts.push({
-          color: part.color,
-          position: [baseX + offsetX, part.y, baseZ + offsetZ],
-          scale: part.scale as VectorTuple,
-          rotationY: yaw,
-        })
-      })
-    })
 
     const rackParts: InstanceSpec[] = []
     const gear: InstanceSpec[] = []
@@ -1422,15 +1897,12 @@ export function GardenSetDressing({
     )
 
     return {
-      benchParts,
       bushes,
       gear,
-      leaves,
       plazaDots,
       rackParts,
       routeMarkers,
       steppingBlocks,
-      trunks,
     }
   }, [mapScale, parkSize, theme, themeColors])
 
@@ -1576,10 +2048,9 @@ export function GardenSetDressing({
         castShadow={false}
         receiveShadow={receiveShadow}
       />
-      <InstancedBoxes specs={scenery.trunks} />
-      <InstancedPolyhedra specs={scenery.leaves} />
+      <ImportedTrees specs={treeSpecs} />
+      <ImportedBenches specs={benchSpecs} />
       <InstancedPolyhedra specs={scenery.bushes} />
-      <InstancedBoxes specs={scenery.benchParts} />
       <InstancedBoxes specs={scenery.rackParts} />
       <InstancedBoxes specs={scenery.gear} />
       <InstancedBoxes specs={scenery.steppingBlocks} />

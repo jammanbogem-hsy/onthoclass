@@ -7,6 +7,7 @@ import { MaterialIcon } from './MaterialIcon'
 
 interface GameMiniMapProps {
   stage: GameStage
+  objects: LearningObject[]
   collectedIds: string[]
   player: PlayerMapPose
   radarTreasures?: LearningObject[]
@@ -16,11 +17,16 @@ const TIER_COLORS = ['#2FA47C', '#4169D8', '#E6A800', '#E85D4A']
 
 export function GameMiniMap({
   stage,
+  objects,
   collectedIds,
   player,
   radarTreasures = [],
 }: GameMiniMapProps) {
   const layout = useMemo(() => createWorldPhysicsLayout(stage), [stage])
+  const hasTunnels = layout.tunnels.length > 0
+  const hasSlickZones = layout.surfaceZones.some(
+    (zone) => zone.kind === 'slick',
+  )
   const collectedSet = useMemo(
     () => new Set(collectedIds),
     [collectedIds],
@@ -41,13 +47,37 @@ export function GameMiniMap({
           <MaterialIcon name="map" />
           미니맵
         </span>
-        <small>2층·승강기 표시</small>
+        <small>
+          {hasTunnels
+            ? '2층·승강기·터널 표시'
+            : hasSlickZones
+              ? '빙판 약 60%·승강기'
+              : '2층·승강기 표시'}
+        </small>
       </header>
       <svg
         viewBox="0 0 100 100"
         role="img"
-        aria-label="수집물과 2층 이동 구조가 표시된 현재 맵"
+        aria-label={
+          hasTunnels
+            ? '수집물과 2층 이동 구조, 터널이 표시된 현재 맵'
+            : hasSlickZones
+              ? '수집물과 2층 이동 구조, 빙판길이 표시된 현재 맵'
+              : '수집물과 2층 이동 구조가 표시된 현재 맵'
+        }
       >
+        <defs>
+          <pattern
+            id="minimap-ice-hatch"
+            width="4"
+            height="4"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(18)"
+          >
+            <rect width="4" height="4" fill="#CDEEFF" />
+            <path d="M 0 0 V 4" stroke="#FFFFFF" strokeWidth="0.85" />
+          </pattern>
+        </defs>
         <rect className="minimap-ground" x="1" y="1" width="98" height="98" rx="12" />
         <g className="minimap-surfaces">
           {layout.surfaceZones.map((zone) => (
@@ -59,6 +89,22 @@ export function GameMiniMap({
               rx={toMapSize(zone.halfWidth)}
               ry={toMapSize(zone.halfDepth)}
               transform={`rotate(${zone.rotationY * (180 / Math.PI)} ${toMapX(zone.x)} ${toMapY(zone.z)})`}
+            />
+          ))}
+        </g>
+        <g className="minimap-tunnels">
+          {layout.tunnels.map((tunnel) => (
+            <rect
+              key={tunnel.id}
+              x={
+                toMapX(tunnel.x) -
+                toMapSize(tunnel.halfWidth + tunnel.wallThickness)
+              }
+              y={toMapY(tunnel.z) - toMapSize(tunnel.halfDepth)}
+              width={toMapSize((tunnel.halfWidth + tunnel.wallThickness) * 2)}
+              height={toMapSize(tunnel.halfDepth * 2)}
+              rx="1.2"
+              transform={`rotate(${tunnel.rotationY * (180 / Math.PI)} ${toMapX(tunnel.x)} ${toMapY(tunnel.z)})`}
             />
           ))}
         </g>
@@ -74,6 +120,21 @@ export function GameMiniMap({
               transform={`rotate(${zone.rotationY * (180 / Math.PI)} ${toMapX(zone.x)} ${toMapY(zone.z)})`}
             />
           ))}
+        </g>
+        <g className="minimap-ridges">
+          {layout.rideableObstacles
+            .filter((obstacle) => obstacle.id.startsWith('forest-ridge-'))
+            .map((obstacle) => (
+              <rect
+                key={obstacle.id}
+                x={toMapX(obstacle.x) - toMapSize(obstacle.halfWidth)}
+                y={toMapY(obstacle.z) - toMapSize(obstacle.halfDepth)}
+                width={toMapSize(obstacle.halfWidth * 2)}
+                height={Math.max(0.8, toMapSize(obstacle.halfDepth * 2))}
+                rx="0.45"
+                transform={`rotate(${obstacle.rotationY * (180 / Math.PI)} ${toMapX(obstacle.x)} ${toMapY(obstacle.z)})`}
+              />
+            ))}
         </g>
         <g className="minimap-upper-levels">
           {layout.elevatedPlatforms.map((platform) => (
@@ -110,7 +171,7 @@ export function GameMiniMap({
           ))}
         </g>
         <g className="minimap-items">
-          {stage.objects.map((item) => {
+          {objects.map((item) => {
             if (collectedSet.has(item.id)) return null
             const tier = getSizeTier(item.size)
             return (
@@ -151,6 +212,18 @@ export function GameMiniMap({
         2층
         <i className="is-elevator" />
         승강기
+        {hasTunnels && (
+          <>
+            <i className="is-tunnel" />
+            터널
+          </>
+        )}
+        {hasSlickZones && (
+          <>
+            <i className="is-slick" />
+            빙판
+          </>
+        )}
       </footer>
     </aside>
   )

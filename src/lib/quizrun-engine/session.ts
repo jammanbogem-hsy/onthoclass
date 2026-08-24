@@ -6,10 +6,7 @@
 // 순수 함수만 남기고, 저장은 호출부가 맡는다.
 // 공 성장 곡선(calculateBallRadius)은 mechanics 가 먼저 필요로 해 growth.ts 로 분리했다.
 
-import { calculateBallRadius } from './growth'
-import type { GameSession } from './types'
-
-export const SESSION_KEY = 'earsoul-learning-session-v3'
+import type { AttachmentNormal, GameSession } from './types'
 
 const emptySession = (): GameSession => {
   const now = Date.now()
@@ -25,13 +22,11 @@ const emptySession = (): GameSession => {
     collectedPowerUpIds: [],
     collectedIds: [],
     collectedLabels: [],
+    attachmentNormals: {},
     durationSeconds: 0,
     status: 'playing',
   }
 }
-
-
-
 
 /** 원본의 saveSession 을 대신한다 — 저장은 호출부(Firestore)가 맡고,
  *  여기서는 updatedAt 갱신만 한다(원본과 동일한 동작). */
@@ -47,7 +42,11 @@ export function startSession(): GameSession {
 export function recordCollection(
   session: GameSession,
   item: { id: string; stageId?: string; label: string; points: number },
-  options: { multiplier?: number; combo?: number } = {},
+  options: {
+    multiplier?: number
+    combo?: number
+    attachmentNormal?: AttachmentNormal
+  } = {},
 ): GameSession {
   if (session.collectedIds.includes(item.id)) return session
 
@@ -68,6 +67,12 @@ export function recordCollection(
       : stageScores,
     collectedIds: [...session.collectedIds, item.id],
     collectedLabels: [...session.collectedLabels, item.label],
+    attachmentNormals: options.attachmentNormal
+      ? {
+          ...(session.attachmentNormals ?? {}),
+          [item.id]: options.attachmentNormal,
+        }
+      : session.attachmentNormals ?? {},
   })
 }
 
@@ -108,19 +113,6 @@ export function finishSession(session: GameSession): GameSession {
     ),
   })
 }
-
-
-const BALL_GROWTH_MILESTONES = [
-  { collectedCount: 0, radius: 0.42 },
-  { collectedCount: 6, radius: 0.52 },
-  { collectedCount: 18, radius: 0.88 },
-  { collectedCount: 36, radius: 1.26 },
-  { collectedCount: 48, radius: 1.62 },
-  { collectedCount: 64, radius: 1.9 },
-  { collectedCount: 80, radius: 2.05 },
-] as const
-
-
 
 export function getStarRating(session: GameSession): number {
   return Math.max(1, Math.min(3, Math.ceil(session.collectedIds.length / 10)))

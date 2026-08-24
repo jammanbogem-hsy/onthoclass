@@ -1,6 +1,7 @@
 export type LearningSubject = '한글' | '수학' | '과학' | '생활'
 export type StageTheme = 'sunny-plaza' | 'forest-trail' | 'starlight-river'
 export type SizeTierLevel = 1 | 2 | 3 | 4
+export type AttachmentNormal = [number, number, number]
 
 export type ObjectShape =
   | 'box'
@@ -47,7 +48,7 @@ export interface GameStage {
   description: string
   theme: StageTheme
   mapSize: number
-  /** Legacy count target retained for older sessions and remote packs. */
+  /** Primary map completion target. Score is recorded as a secondary result. */
   objectiveCount: number
   scoreGoal: number
   tierGoals: StageTierGoal[]
@@ -77,6 +78,7 @@ export interface GameSession {
   collectedPowerUpIds: string[]
   collectedIds: string[]
   collectedLabels: string[]
+  attachmentNormals: Record<string, AttachmentNormal>
   durationSeconds: number
   status: 'playing' | 'completed'
 }

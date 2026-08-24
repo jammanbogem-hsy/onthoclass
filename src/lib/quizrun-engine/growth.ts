@@ -3,12 +3,15 @@
 //  상태는 Firestore 에 두므로 quizrun.ts 가 그 역할을 대신한다.)
 const BALL_GROWTH_MILESTONES = [
   { collectedCount: 0, radius: 0.42 },
-  { collectedCount: 6, radius: 0.52 },
-  { collectedCount: 18, radius: 0.88 },
-  { collectedCount: 36, radius: 1.26 },
-  { collectedCount: 48, radius: 1.62 },
-  { collectedCount: 64, radius: 1.9 },
-  { collectedCount: 80, radius: 2.05 },
+  { collectedCount: 5, radius: 0.504 },
+  { collectedCount: 6, radius: 0.54 },
+  { collectedCount: 17, radius: 0.862 },
+  { collectedCount: 18, radius: 0.9 },
+  { collectedCount: 35, radius: 1.24 },
+  { collectedCount: 36, radius: 1.28 },
+  { collectedCount: 48, radius: 1.64 },
+  { collectedCount: 64, radius: 1.92 },
+  { collectedCount: 80, radius: 2.08 },
 ] as const
 
 function createStageGrowthMilestones(tierCounts: readonly number[]) {
@@ -22,23 +25,22 @@ function createStageGrowthMilestones(tierCounts: readonly number[]) {
   return [
     { collectedCount: 0, radius: 0.42 },
     { collectedCount: tierOne - 1, radius: 0.504 },
-    { collectedCount: tierOne, radius: 0.52 },
+    { collectedCount: tierOne, radius: 0.54 },
     { collectedCount: tierTwo - 1, radius: 0.862 },
-    { collectedCount: tierTwo, radius: 0.88 },
+    { collectedCount: tierTwo, radius: 0.9 },
     { collectedCount: tierThree - 1, radius: 1.24 },
-    { collectedCount: tierThree, radius: 1.26 },
+    { collectedCount: tierThree, radius: 1.28 },
     {
       collectedCount: Math.round(tierThree + finalGrowthSpan * 0.43),
-      radius: 1.62,
+      radius: 1.64,
     },
     {
       collectedCount: Math.round(tierThree + finalGrowthSpan * 0.72),
-      radius: 1.9,
+      radius: 1.92,
     },
-    { collectedCount: tierFour, radius: 2.05 },
+    { collectedCount: tierFour, radius: 2.08 },
   ]
 }
-
 
 export function calculateBallRadius(
   collectedCount: number,

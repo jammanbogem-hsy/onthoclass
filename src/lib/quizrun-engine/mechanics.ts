@@ -109,8 +109,20 @@ export function getStageScore(
   )
 }
 
+/**
+ * 맵 진행 상황.
+ *
+ * 레벨은 "그 레벨의 오브젝트를 requiredCount 개 모으면" 올라간다 — 아무거나
+ * 누적해서 세는 게 아니다. 1레벨을 30개 모아도 2레벨을 채우지 않으면 3레벨
+ * 물건에는 손이 닿지 않는다. 초등학생이 "몇 개 더 모으면 되는지"를 화면에서
+ * 바로 읽을 수 있고, 점수 배점을 설계하지 않아도 등수가 나온다.
+ *
+ * 공 크기는 여전히 수집 가능 여부를 정하는 장치다(canCollect). 그래서 레벨별
+ * 달성분을 requiredCount 로 잘라 누적한 effectiveCount 로 반지름을 구한다 —
+ * 한 레벨에서 초과로 모은 개수가 다음 레벨을 열어버리지 않도록.
+ */
 export function getStageProgress(
-  objects: Pick<LearningObject, 'id' | 'points'>[],
+  objects: Pick<LearningObject, 'id' | 'points' | 'size'>[],
   collectedIds: string[],
   goalConfig: number | StageGoalConfig,
   awardedStageScore?: number,
@@ -124,80 +136,76 @@ export function getStageProgress(
     ? Math.max(0, awardedStageScore ?? 0)
     : getStageScore(objects, collectedIds)
   const isLegacyGoal = typeof goalConfig === 'number'
-  const objectiveCount = isLegacyGoal
-    ? goalConfig
-    : goalConfig.objectiveCount
-  const goal = Math.max(1, Math.min(objects.length, objectiveCount))
   const scoreGoal = isLegacyGoal ? 0 : Math.max(1, goalConfig.scoreGoal)
   const tierGoals = isLegacyGoal
     ? []
     : [...goalConfig.tierGoals].sort((a, b) => a.level - b.level)
+
+  // 레벨별로 몇 개 모았는지
+  const collectedByLevel = new Map<number, number>()
+  for (const item of objects) {
+    if (!collectedSet.has(item.id)) continue
+    const level = getSizeTier(item.size).level
+    collectedByLevel.set(level, (collectedByLevel.get(level) ?? 0) + 1)
+  }
+
   const tierProgress: StageTierProgress[] = tierGoals.map((tierGoal) => {
-    const countProgress = Math.min(
-      1,
-      collectedCount / Math.max(1, tierGoal.requiredCount),
-    )
-    const scoreProgress = Math.min(
-      1,
-      stageScore / Math.max(1, tierGoal.requiredScore),
-    )
+    const got = collectedByLevel.get(tierGoal.level) ?? 0
 
     return {
       ...tierGoal,
-      collectedCount,
+      collectedCount: got,
       score: stageScore,
-      ready:
-        collectedCount >= tierGoal.requiredCount &&
-        stageScore >= tierGoal.requiredScore,
-      progress: Math.min(countProgress, scoreProgress),
+      ready: got >= tierGoal.requiredCount,
+      progress: Math.min(1, got / Math.max(1, tierGoal.requiredCount)),
     }
   })
-  const completedTierLevel =
-    [...tierProgress].reverse().find((tier) => tier.ready)?.level ?? 0
-  const nextTierGoal = tierProgress.find((tier) => !tier.ready) ?? null
-  const finalTierGoal = tierGoals[tierGoals.length - 1]
-  const completionCount = finalTierGoal?.requiredCount ?? goal
-  const finalTierEntryGoal =
-    tierGoals[Math.max(0, tierGoals.length - 2)] ?? finalTierGoal
-  const finalTierEntryProgress = Math.min(
-    1,
-    collectedCount /
-      Math.max(1, finalTierEntryGoal?.requiredCount ?? completionCount),
+
+  // 레벨은 순서대로 열린다 — 앞 레벨을 채우지 못하면 거기서 멈춘다.
+  let clearedTiers = 0
+  for (const tier of tierProgress) {
+    if (!tier.ready) break
+    clearedTiers += 1
+  }
+  const nextTierGoal = tierProgress[clearedTiers] ?? null
+  const completionCount = tierGoals.reduce(
+    (sum, tier) => sum + tier.requiredCount,
+    0,
   )
+  const goal = Math.max(1, completionCount || (isLegacyGoal ? goalConfig : 1))
+  const effectiveCount = tierProgress.reduce(
+    (sum, tier) => sum + Math.min(tier.collectedCount, tier.requiredCount),
+    0,
+  )
+  // 성장 곡선은 누적 기준이므로 레벨별 목표를 누적값으로 바꿔 넘긴다.
+  const cumulativeTierCounts = tierGoals.reduce<number[]>(
+    (acc, tier) => [...acc, (acc[acc.length - 1] ?? 0) + tier.requiredCount],
+    [],
+  )
+  const ballRadius = calculateBallRadius(effectiveCount, cumulativeTierCounts)
   const reachedTierLevel = isLegacyGoal
     ? 0
-    : getReachableSizeTier(
-        calculateBallRadius(
-          collectedCount,
-          tierGoals.map((tier) => tier.requiredCount),
-        ),
-      ).level
-  const ready = isLegacyGoal
-    ? collectedCount >= goal
-    : stageScore >= scoreGoal &&
-      reachedTierLevel >= (finalTierGoal?.level ?? 1)
+    : Math.min(tierGoals.length, clearedTiers + 1)
+  const ready = tierGoals.length > 0 && clearedTiers >= tierGoals.length
 
   return {
     collectedCount,
-    goal: isLegacyGoal ? goal : scoreGoal,
+    /** 레벨 목표에 실제로 반영된 개수(초과분 제외) — 공 크기의 근거 */
+    effectiveCount,
+    ballRadius,
+    goal,
     objectiveCount: goal,
     stageScore,
     scoreGoal,
     scoreRemaining: Math.max(0, scoreGoal - stageScore),
     tierProgress,
-    completedTierLevel: Math.max(completedTierLevel, reachedTierLevel),
+    completedTierLevel: clearedTiers,
     reachedTierLevel,
     nextTierGoal,
-    bonusCount: Math.max(0, collectedCount - completionCount),
+    // 레벨 목표에 안 잡힌 초과 수집분 — 한 레벨에서 목표보다 많이 모은 몫이다
+    bonusCount: Math.max(0, collectedCount - effectiveCount),
     ready,
-    progress: isLegacyGoal
-      ? Math.min(1, collectedCount / goal)
-      : ready
-        ? 1
-        : Math.min(
-            finalTierEntryProgress,
-            Math.min(1, stageScore / scoreGoal),
-          ),
+    progress: Math.min(1, effectiveCount / goal),
   }
 }
 
@@ -224,7 +232,6 @@ export function isStageUnlocked(
 
   return (
     progress.ready &&
-    progress.stageScore >= requirement.requiredScore &&
     progress.reachedTierLevel >= requirement.requiredTierLevel
   )
 }
@@ -237,17 +244,24 @@ export function getReachableSizeTier(ballRadius: number) {
   )
 }
 
-export function canCompletePack(objects: LearningObject[]): boolean {
-  const remaining = [...objects].sort((a, b) => a.size - b.size)
-  let collectedCount = 0
-
-  while (remaining.length) {
-    const radius = calculateBallRadius(collectedCount)
-    const nextIndex = remaining.findIndex((item) => canCollect(radius, item.size))
-    if (nextIndex === -1) return false
-    remaining.splice(nextIndex, 1)
-    collectedCount += 1
+/**
+ * 맵을 끝까지 깰 수 있는지 검사한다.
+ *
+ * 레벨별 목표 방식에서는 "모든 물건을 다 주울 수 있는가"가 아니라 "레벨마다
+ * 목표 개수만큼 물건이 깔려 있는가"가 조건이다 — 3레벨 물건이 8개뿐이면
+ * 10개를 모을 수 없으니 학생이 그 맵에 갇힌다.
+ */
+export function canCompletePack(
+  objects: Pick<LearningObject, 'size'>[],
+  tierGoals: Pick<StageTierGoal, 'level' | 'requiredCount'>[],
+): boolean {
+  const availableByLevel = new Map<number, number>()
+  for (const item of objects) {
+    const level = getSizeTier(item.size).level
+    availableByLevel.set(level, (availableByLevel.get(level) ?? 0) + 1)
   }
 
-  return true
+  return tierGoals.every(
+    (goal) => (availableByLevel.get(goal.level) ?? 0) >= goal.requiredCount,
+  )
 }

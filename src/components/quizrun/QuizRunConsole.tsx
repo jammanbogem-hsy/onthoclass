@@ -6,29 +6,27 @@
  * 빙고 콘솔(GameConsole)과 별개다. 빙고는 차례를 돌리는 진행자 역할이지만
  * 퀴즈런에서 교사는 시작·종료만 하고 나머지는 지켜본다.
  *
- * 순위는 4개 카테고리(점수·정답수·공크기·단계)를 각각 0~100 으로 환산해
- * 가중합한 총점 기준 — 게임을 잘하는 학생만 이기지 않도록 정답 수 비중을
- * 점수와 같게 뒀다.
+ * 순위는 모은 오브젝트 개수 기준이다. 레벨마다 정해진 개수를 모아야 다음
+ * 레벨이 열리므로 개수 하나로 진행도가 다 표현되고, 오브젝트를 모으려면
+ * 에너지가 필요하고 에너지는 정답으로만 차니 정답 수도 이미 반영된다.
+ * 동점은 정답 수, 그다음 완주 시간으로 가른다.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GlassCard } from "@/components/Glass";
 import { Icon } from "@/components/Icon";
 import { useNameMask } from "@/components/NameMask";
 import { setGameStatus, clearActiveGame, type Game } from "@/lib/games";
 import {
   computeRanking,
+  formatClock,
+  getGameStartAt,
+  getIntroRemainingSec,
   watchRuns,
-  RANK_WEIGHTS,
   type QuizRun,
 } from "@/lib/quizrun";
-
-const CATEGORY_LABEL: Record<keyof typeof RANK_WEIGHTS, string> = {
-  score: "점수",
-  correct: "정답 수",
-  ballRadius: "공 크기",
-  stageIndex: "단계",
-};
+import { useRemainingSec } from "@/components/quizrun/useRemainingSec";
+import { QuizRunGallery } from "@/components/quizrun/QuizRunGallery";
 
 export function QuizRunConsole({
   cid,
@@ -56,6 +54,28 @@ export function QuizRunConsole({
 
   const started = game.status === "play";
   const done = game.status === "done";
+
+  // 제한시간 — 학생 화면과 같은 기준(인트로가 끝난 시각)을 본다
+  const remainingSec = useRemainingSec(
+    getGameStartAt(game.playStartedAt),
+    game.quiz?.durationSec,
+    started
+  );
+  // 인트로 상영 중에는 남은 초를 대신 보여 준다(교사가 진행 상황을 알도록)
+  const introLeft = started ? getIntroRemainingSec(game.playStartedAt) : null;
+  const inIntro = introLeft !== null && introLeft > 0;
+
+  // 시간이 다 되면 교사가 누르지 않아도 게임을 마감한다.
+  const autoEnded = useRef(false);
+  useEffect(() => {
+    if (!started || remainingSec === null || remainingSec > 0) return;
+    if (autoEnded.current) return;
+    autoEnded.current = true;
+    void (async () => {
+      await setGameStatus(cid, game.id, "done");
+      await clearActiveGame(cid);
+    })().catch(() => {});
+  }, [started, remainingSec, cid, game.id]);
 
   async function start() {
     setBusy(true);
@@ -137,7 +157,7 @@ export function QuizRunConsole({
             />
             순위
             <span className="text-xs font-normal text-[var(--md-sys-color-on-surface-variant)]">
-              4개 항목을 100점 만점으로 환산해 합산
+              모은 오브젝트 개수 순 (동점은 정답 수 → 완주 시간)
             </span>
           </p>
 
@@ -180,22 +200,24 @@ export function QuizRunConsole({
                         </span>
                       )}
                       <span className="shrink-0 text-base font-black tabular-nums">
-                        {r.total}
+                        {r.collected}
+                        <span className="ml-0.5 text-[11px] font-bold">개</span>
                       </span>
                     </div>
-                    {/* 카테고리별 환산값 — 왜 이 순위인지 교사가 알 수 있게 */}
+                    {/* 왜 이 순위인지 교사가 알 수 있게 */}
                     <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 pl-8 text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
-                      {(
-                        Object.keys(CATEGORY_LABEL) as (keyof typeof RANK_WEIGHTS)[]
-                      ).map((k) => (
-                        <span key={k} className="tabular-nums">
-                          {CATEGORY_LABEL[k]} {r.parts[k]}
-                        </span>
-                      ))}
-                      {run && (
+                      <span className="tabular-nums">
+                        정답 {r.correct}/{r.correct + r.wrong}
+                      </span>
+                      <span className="tabular-nums">맵 {r.stageIndex + 1}</span>
+                      {r.elapsedSec !== null && (
                         <span className="tabular-nums">
-                          · 정답 {run.correct}/{run.correct + run.wrong}
+                          완주 {Math.floor(r.elapsedSec / 60)}분{" "}
+                          {r.elapsedSec % 60}초
                         </span>
+                      )}
+                      {run && (
+                        <span className="tabular-nums">· 점수 {run.score}</span>
                       )}
                     </div>
                   </li>
@@ -217,6 +239,27 @@ export function QuizRunConsole({
               게임 시작
             </button>
           )}
+          {started && inIntro && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-2.5 text-sm font-black tabular-nums">
+              <Icon name="movie" size={16} />
+              인트로 {introLeft}초
+            </span>
+          )}
+          {started && !inIntro && remainingSec !== null && (
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2.5 text-sm font-black tabular-nums ${
+                remainingSec <= 60
+                  ? "bg-[var(--md-sys-color-error)] text-[var(--md-sys-color-on-error)]"
+                  : "bg-[var(--md-sys-color-surface-container-high)]"
+              }`}
+              aria-label={`남은 시간 ${Math.floor(remainingSec / 60)}분 ${
+                remainingSec % 60
+              }초`}
+            >
+              <Icon name="timer" size={16} />
+              {formatClock(remainingSec)}
+            </span>
+          )}
           {started && (
             <button
               onClick={finish}
@@ -233,6 +276,18 @@ export function QuizRunConsole({
             </p>
           )}
         </div>
+
+        {/* 종료 후 학급 전시 — 사진이 모이면 나타난다 */}
+        {done && (
+          <div className="max-h-[46vh] overflow-y-auto border-t border-[var(--md-sys-color-outline-variant)] px-5 pb-4">
+            <QuizRunGallery
+              ranking={ranking}
+              runs={runs}
+              uid=""
+              title={`퀴즈런 · ${game.link.name}`}
+            />
+          </div>
+        )}
       </GlassCard>
     </div>
   );
