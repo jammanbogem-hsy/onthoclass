@@ -35,10 +35,85 @@ export const AVATARS_PAGE2 = Array.from(
   { length: 25 },
   (_, i) => `/avatar2/${i + 1}.png`
 );
+// 학생·동물·창의적인 캐릭터 20종 (3페이지)
+export const AVATARS_PAGE3 = [
+  "01-boy-green-glasses.png",
+  "02-boy-backward-cap.png",
+  "03-boy-headphones.png",
+  "04-boy-star-hairclip.png",
+  "05-boy-explorer.png",
+  "06-girl-braids.png",
+  "07-girl-purple-glasses.png",
+  "08-girl-cat-headband.png",
+  "09-girl-earmuffs.png",
+  "10-girl-double-buns.png",
+  "11-baby-dinosaur.png",
+  "12-shiba-inu.png",
+  "13-leaf-slime.png",
+  "14-axolotl.png",
+  "15-otter.png",
+  "16-sweet-potato.png",
+  "17-tteokbokki.png",
+  "18-alpaca.png",
+  "19-moon-rabbit.png",
+  "20-blueberry-yogurt.png",
+].map((name) => `/avatar3/${name}`);
+
+// 아이스크림·맛있는 음식 20종 (4페이지)
+export const AVATARS_PAGE4 = [
+  "01-strawberry-popsicle.png",
+  "02-chocolate-almond-bar.png",
+  "03-rainbow-fruit-pop.png",
+  "04-vanilla-soft-serve.png",
+  "05-mint-choco-cone.png",
+  "06-strawberry-vanilla-cone.png",
+  "07-mango-gelato.png",
+  "08-pistachio-gelato.png",
+  "09-blueberry-ice-cream.png",
+  "10-watermelon-popsicle.png",
+  "11-samgyeopsal.png",
+  "12-steak.png",
+  "13-soy-marinated-crab.png",
+  "14-korean-fried-chicken.png",
+  "15-bibimbap.png",
+  "16-gimbap.png",
+  "17-jajangmyeon.png",
+  "18-grilled-eel-rice.png",
+  "19-shrimp-tempura.png",
+  "20-hotteok.png",
+].map((name) => `/avatar4/${name}`);
+
+// 포켓몬·동물 캐릭터 20종 (5페이지)
+export const AVATARS_PAGE5 = [
+  "01-pigeon.png",
+  "02-shark.png",
+  "03-pikachu.png",
+  "04-bulbasaur.png",
+  "05-snorlax.png",
+  "06-squirtle.png",
+  "07-charmander.png",
+  "08-eevee.png",
+  "09-jigglypuff.png",
+  "10-psyduck.png",
+  "11-gengar.png",
+  "12-togepi.png",
+  "13-meowth.png",
+  "14-penguin.png",
+  "15-red-panda.png",
+  "16-dolphin.png",
+  "17-lion.png",
+  "18-panda.png",
+  "19-capybara.png",
+  "20-tiger.png",
+].map((name) => `/avatar5/${name}`);
+
 // 아바타 선택 페이지 목록
 export const AVATAR_PAGES: { label: string; items: string[] }[] = [
   { label: "1페이지", items: AVATARS },
   { label: "2페이지", items: AVATARS_PAGE2 },
+  { label: "3페이지", items: AVATARS_PAGE3 },
+  { label: "4페이지", items: AVATARS_PAGE4 },
+  { label: "5페이지", items: AVATARS_PAGE5 },
 ];
 
 // 교사 가입 코드는 서버(claimTeacherRole)에서만 검증한다 — 클라이언트에 두지 않음.
@@ -247,6 +322,8 @@ export type UserPrefs = {
   theme?: string;
   font?: string;
   nameMask?: boolean;
+  /** 내 배지 그라데이션 "grad:from,to" — 학생이 직접 고른다 */
+  pill?: string;
 };
 
 function readPrefs(v: Record<string, unknown> | undefined): UserPrefs {
@@ -255,6 +332,7 @@ function readPrefs(v: Record<string, unknown> | undefined): UserPrefs {
     theme: typeof p.theme === "string" ? p.theme : undefined,
     font: typeof p.font === "string" ? p.font : undefined,
     nameMask: typeof p.nameMask === "boolean" ? p.nameMask : undefined,
+    pill: typeof p.pill === "string" ? p.pill : undefined,
   };
 }
 

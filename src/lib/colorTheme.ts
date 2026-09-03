@@ -152,7 +152,8 @@ export function applyTheme(key: ThemeKey): void {
 /** FOUC 방지: 하이드레이션 전에 <head> 인라인으로 실행할 스크립트 문자열.
  *  hue 테마는 팔레트를 계산해 넣어야 해서, 보정표와 공식을 스크립트에 함께 굽는다
  *  (여기서 안 넣으면 첫 페인트가 기본 초록으로 번쩍인다). */
-export const THEME_INIT_SCRIPT = `(function(){try{
+export const THEME_INIT_SCRIPT = `(function(){
+try{(function(){
 var v=localStorage.getItem('${KEY}');if(!v||v==='default')return;
 document.documentElement.setAttribute('data-theme',v);
 var m=/^hue:(\\d{1,3})$/.exec(v);if(!m)return;
@@ -175,4 +176,96 @@ S.setProperty('--md-sys-color-p-90',C(0.9,60));
 S.setProperty('--md-sys-color-p-95',C(0.945,60));
 S.setProperty('--md-sys-color-p-99',C(0.985,60));
 S.setProperty('--md-brand-mint',C(0.925,55));
+})()}catch(e){}
+try{
+var pv=localStorage.getItem('jampill:v1');
+var pm=pv&&/^grad:(\\d{1,3}),(\\d{1,3})$/.exec(pv);
+if(pm){
+  var f=+pm[1]%360,t=+pm[2]%360;
+  var T2=${JSON.stringify(L40_TABLE)};
+  var L=function(h){var i=Math.floor(h/15),k=(h-i*15)/15;return T2[i]*(1-k)+T2[Math.min(i+1,T2.length-1)]*k};
+  var C2=function(h){return 'hsl('+h+' 70% '+(Math.round(L(h)*1000)/10)+'%)'};
+  var d=(((t-f+540)%360)-180), mid=((f+d/2)%360+360)%360;
+  document.documentElement.style.setProperty('--jam-pill-gradient',
+    'linear-gradient(90deg,'+C2(f)+','+C2(mid)+','+C2(t)+','+C2(f)+')');
+}
 }catch(e){}})();`;
+
+/* ───────── 내 배지 그라데이션 (학생이 직접 고름) ───────── */
+
+/** "grad:210,320" — 시작·끝 hue 두 개. 없으면 테마 색을 따른다. */
+export type PillGradient = { from: number; to: number };
+
+export const PILL_PRESETS: { label: string; from: number; to: number }[] = [
+  { label: "노을", from: 20, to: 330 },
+  { label: "바다", from: 190, to: 240 },
+  { label: "숲", from: 90, to: 160 },
+  { label: "포도", from: 265, to: 320 },
+  { label: "사탕", from: 330, to: 30 },
+  { label: "오로라", from: 150, to: 260 },
+];
+
+export function parsePillGradient(v: unknown): PillGradient | null {
+  if (typeof v !== "string") return null;
+  const m = /^grad:(\d{1,3}),(\d{1,3})$/.exec(v);
+  if (!m) return null;
+  const from = Number(m[1]);
+  const to = Number(m[2]);
+  if (from > 360 || to > 360) return null;
+  return { from: from % 360, to: to % 360 };
+}
+
+export const formatPillGradient = (g: PillGradient) =>
+  `grad:${Math.round(g.from) % 360},${Math.round(g.to) % 360}`;
+
+/**
+ * 배지에 넣을 CSS 그라데이션.
+ *
+ * hueSwatch 를 쓰는 이유: 배지 위에는 흰 글자가 올라간다. 아무 밝기나 쓰면
+ * 노랑·연두에서 글자가 안 보이는데, hueSwatch 는 테마용으로 이미 hue 별
+ * 밝기를 보정해 둔 값(흰 글자 대비 4.5:1 이상)을 돌려준다.
+ * 가운데에 두 색의 중간 hue 를 넣어 띠가 탁해지지 않게 했다.
+ */
+export function pillGradientCss(g: PillGradient): string {
+  // 색상환에서 가까운 쪽으로 도는 중간 hue (330°→30° 처럼 0 을 넘는 경우 포함)
+  const diff = (((g.to - g.from + 540) % 360) - 180);
+  const midHue = ((g.from + diff / 2) % 360 + 360) % 360;
+  const a = hueSwatch(g.from);
+  const b = hueSwatch(midHue);
+  const c = hueSwatch(g.to);
+  return `linear-gradient(90deg, ${a}, ${b}, ${c}, ${a})`;
+}
+
+const PILL_KEY = "jampill:v1";
+
+/** 배지 그라데이션을 <html> 변수로 적용. 없으면 변수를 지워 테마 색으로 되돌린다. */
+export function applyPill(v: string | null): void {
+  if (typeof document === "undefined") return;
+  const el = document.documentElement;
+  const g = v ? parsePillGradient(v) : null;
+  if (!g) el.style.removeProperty("--jam-pill-gradient");
+  else el.style.setProperty("--jam-pill-gradient", pillGradientCss(g));
+}
+
+export function getPill(): string | null {
+  if (typeof window === "undefined") return null;
+  const v = localStorage.getItem(PILL_KEY);
+  return v && parsePillGradient(v) ? v : null;
+}
+
+/** 로컬 캐시만 갱신 — 계정에서 내려온 값 반영용(되쓰기 루프 방지) */
+export function setPillLocal(v: string | null): void {
+  if (typeof document === "undefined") return;
+  try {
+    if (v) localStorage.setItem(PILL_KEY, v);
+    else localStorage.removeItem(PILL_KEY);
+  } catch {
+    /* noop */
+  }
+  applyPill(v);
+}
+
+export function setPill(v: string | null): void {
+  setPillLocal(v);
+  void savePrefIfSignedIn({ pill: v ?? "" });
+}

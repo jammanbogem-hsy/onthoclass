@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
+import { QuizRunRecentCard } from "@/components/quizrun/QuizRunRecentCard";
 import { TopBar } from "@/components/TopBar";
 import { ClassBuilder } from "@/components/ClassBuilder";
 import { GroupBuilder } from "@/components/GroupBuilder";
@@ -365,9 +366,10 @@ function ClassDetail() {
                 animation: jam-rainbow-pill 6s linear infinite;
               }
               .jam-levelup-pill{
-                background:linear-gradient(90deg,
+                /* 학생이 고른 그라데이션이 있으면 그걸, 없으면 테마 색을 쓴다 */
+                background: var(--jam-pill-gradient, linear-gradient(90deg,
                   var(--md-sys-color-p-40),var(--md-sys-color-t-50),
-                  var(--md-sys-color-p-50),var(--md-sys-color-p-40));
+                  var(--md-sys-color-p-50),var(--md-sys-color-p-40)));
                 background-size:300% 100%;
                 animation: jam-rainbow-pill 5s linear infinite;
                 box-shadow:0 4px 14px color-mix(in srgb,var(--md-sys-color-primary) 35%,transparent);
@@ -377,6 +379,11 @@ function ClassDetail() {
         </div>
 
         <ClassThermometer degree={degree} />
+
+        {/* 최근 퀴즈런 결과 — 학생 전용. 학생은 '게임 이력'(교사 전용 모달)에 들어갈 수
+            없어 여기서만 자기 러닝볼과 등수를 볼 수 있다. 교사는 학급 관리 → 게임 이력에서
+            같은 내용을 더 자세히 보므로 메인 화면에는 띄우지 않는다. */}
+        {!isTeacher && <QuizRunRecentCard cid={room.id} uid={user.uid} />}
 
         <ClassBuilder classId={room.id} isTeacher={isTeacher} />
       </main>

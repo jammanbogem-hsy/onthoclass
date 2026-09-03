@@ -17,7 +17,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNameMask } from "@/components/NameMask";
 import { setPrefsUid, savePrefIfSignedIn } from "@/lib/prefs";
 import { watchUserPrefs } from "@/lib/users";
-import { getTheme, isThemeKey, setThemeLocal } from "@/lib/colorTheme";
+import {
+  getPill,
+  getTheme,
+  isThemeKey,
+  setPillLocal,
+  setThemeLocal,
+} from "@/lib/colorTheme";
 import { getFont, isFontKey, setFontLocal } from "@/lib/fontTheme";
 
 export function PrefsSync() {
@@ -37,13 +43,15 @@ export function PrefsSync() {
         first &&
         p.theme === undefined &&
         p.font === undefined &&
-        p.nameMask === undefined
+        p.nameMask === undefined &&
+        p.pill === undefined
       ) {
         first = false;
         void savePrefIfSignedIn({
           theme: getTheme(),
           font: getFont(),
           nameMask: false,
+          pill: getPill() ?? "",
         });
         return;
       }
@@ -52,6 +60,7 @@ export function PrefsSync() {
       if (isThemeKey(p.theme)) setThemeLocal(p.theme);
       if (isFontKey(p.font)) setFontLocal(p.font);
       if (typeof p.nameMask === "boolean") setMaskedFromRemote(p.nameMask);
+      if (typeof p.pill === "string") setPillLocal(p.pill || null);
     });
 
     return () => {

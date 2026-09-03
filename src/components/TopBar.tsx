@@ -17,11 +17,16 @@ import {
   type FontKey,
 } from "@/lib/fontTheme";
 import {
+  PILL_PRESETS,
   THEMES,
+  formatPillGradient,
+  getPill,
   getTheme,
   hueSwatch,
   isHueTheme,
   parseHue,
+  pillGradientCss,
+  setPill,
   setTheme,
   type ThemeKey,
 } from "@/lib/colorTheme";
@@ -45,6 +50,7 @@ export function TopBar() {
   const [font, setFontState] = useState<FontKey>("default");
   const [theme, setThemeState] = useState<ThemeKey>("default");
   const [wheelOpen, setWheelOpen] = useState(false);
+  const [pill, setPillState] = useState<string | null>(null);
   const curHue = isHueTheme(theme) ? parseHue(theme) : null;
   const ref = useRef<HTMLDivElement>(null);
   const avatarSrc = profile?.avatar || user?.photoURL || "";
@@ -52,6 +58,7 @@ export function TopBar() {
   useEffect(() => {
     setFontState(getFont());
     setThemeState(getTheme());
+    setPillState(getPill());
   }, []);
 
   // 글꼴 메뉴를 연 순간에만 원격 폰트 CSS 를 받아 미리보기를 실제 글꼴로 보여준다
@@ -64,6 +71,11 @@ export function TopBar() {
   function pickFont(k: FontKey) {
     setFont(k);
     setFontState(k);
+  }
+
+  function pickPill(v: string | null) {
+    setPill(v);
+    setPillState(v);
   }
 
   function pickTheme(k: ThemeKey) {
@@ -268,6 +280,45 @@ export function TopBar() {
                   </div>
                 )}
               </div>
+              {/* 내 배지 그라데이션 — 학생이 자기 '마이페이지' 배지 색을 고른다.
+                  흰 글자가 올라가므로 hueSwatch(테마용 밝기 보정값)를 그대로 써서
+                  어떤 색을 골라도 글자가 읽힌다. */}
+              <div className="mt-3 rounded-xl bg-[var(--md-sys-color-surface-container)] p-2">
+                <p className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                  <Icon name="gradient" size={14} />
+                  내 배지 색
+                </p>
+                <div className="grid grid-cols-3 gap-1.5 px-1">
+                  {PILL_PRESETS.map((g) => {
+                    const v = formatPillGradient(g);
+                    const on = pill === v;
+                    return (
+                      <button
+                        key={g.label}
+                        onClick={() => pickPill(v)}
+                        aria-pressed={on}
+                        title={g.label}
+                        className={`flex h-8 items-center justify-center rounded-full text-[11px] font-bold text-white transition ${
+                          on
+                            ? "ring-2 ring-[var(--md-sys-color-on-surface)] ring-offset-2 ring-offset-[var(--md-sys-color-surface-container)]"
+                            : "hover:scale-105"
+                        }`}
+                        style={{ background: pillGradientCss(g) }}
+                      >
+                        {g.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => pickPill(null)}
+                  className="mt-1.5 w-full rounded-lg px-2 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+                >
+                  {pill ? "기본(테마 색)으로" : "지금은 테마 색을 써요"}
+                </button>
+              </div>
+
               {/* 글꼴 선택 — 기기별 저장, 전체 UI 폰트 변경 */}
               <div className="mt-3 rounded-xl bg-[var(--md-sys-color-surface-container)] p-2">
                 <p className="mb-1 flex items-center gap-1.5 px-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
