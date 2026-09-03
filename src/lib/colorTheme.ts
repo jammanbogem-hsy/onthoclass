@@ -289,3 +289,53 @@ export function setPill(v: string | null): void {
   setPillLocal(v);
   void savePrefIfSignedIn({ pill: v ?? "" });
 }
+
+/* ───────── 최근 쓴 배지 색 ───────── */
+
+const RECENT_KEY = "jampill-recent:v1";
+const RECENT_MAX = 8;
+
+/**
+ * 직접 만든 색은 프리셋과 달리 다시 찾아가기 어렵다 — 색상환에서 같은 각도를
+ * 두 번 짚기가 쉽지 않아서다. 그래서 편집기에서 저장한 것만 기록해 둔다.
+ * (프리셋은 항상 목록에 있으므로 기록하지 않는다)
+ *
+ * 기기별 보관이다. 배지 설정 자체는 계정에 동기화되지만, '최근'은 편의 기능이라
+ * 계정 문서를 늘리기보다 로컬에 둔다.
+ */
+export function getRecentPills(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((v): v is string => typeof v === "string" && !!parsePillGradient(v))
+      .slice(0, RECENT_MAX);
+  } catch {
+    return [];
+  }
+}
+
+export function pushRecentPill(v: string): void {
+  if (typeof window === "undefined" || !parsePillGradient(v)) return;
+  try {
+    // 같은 색을 다시 쓰면 맨 앞으로 올린다(중복 쌓임 방지)
+    const next = [v, ...getRecentPills().filter((x) => x !== v)].slice(
+      0,
+      RECENT_MAX
+    );
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* noop */
+  }
+}
+
+export function clearRecentPills(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(RECENT_KEY);
+  } catch {
+    /* noop */
+  }
+}

@@ -12,10 +12,13 @@ import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import {
   PILL_STYLES,
+  clearRecentPills,
   formatPillGradient,
+  getRecentPills,
   hueSwatch,
   parsePillGradient,
   pillGradientCss,
+  pushRecentPill,
   type PillGradient,
   type PillStyle,
 } from "@/lib/colorTheme";
@@ -92,6 +95,14 @@ export function PillEditor({
   const [g, setG] = useState<PillGradient>(
     () => parsePillGradient(value) ?? { from: 200, to: 320, style: "h" }
   );
+  // 열 때 한 번만 읽는다 — 편집 중에 목록이 바뀌면 오히려 헷갈린다
+  const [recent, setRecent] = useState<string[]>(() => getRecentPills());
+
+  const save = () => {
+    const v = formatPillGradient(g);
+    pushRecentPill(v);
+    onSave(v);
+  };
 
   return (
     <div
@@ -165,9 +176,51 @@ export function PillEditor({
           ))}
         </div>
 
+        {recent.length > 0 && (
+          <>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                최근 쓴 색
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  clearRecentPills();
+                  setRecent([]);
+                }}
+                className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+              >
+                비우기
+              </button>
+            </div>
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {recent.map((v) => {
+                const rg = parsePillGradient(v);
+                if (!rg) return null;
+                const on = formatPillGradient(g) === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setG(rg)}
+                    aria-label={`최근 색 ${rg.from}도에서 ${rg.to}도`}
+                    aria-pressed={on}
+                    className={`h-7 w-12 rounded-full transition ${
+                      on
+                        ? "ring-2 ring-[var(--md-sys-color-on-surface)] ring-offset-2 ring-offset-[var(--md-sys-color-surface-container-high)]"
+                        : "hover:scale-105"
+                    }`}
+                    style={{ background: pillGradientCss(rg) }}
+                  />
+                );
+              })}
+            </div>
+          </>
+        )}
+
         <div className="flex gap-2">
           <button
-            onClick={() => onSave(formatPillGradient(g))}
+            onClick={save}
             className="flex-1 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--md-sys-color-on-primary)]"
           >
             이 색으로 하기
