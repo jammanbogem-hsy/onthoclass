@@ -193,30 +193,45 @@ if(pm){
 
 /* ───────── 내 배지 그라데이션 (학생이 직접 고름) ───────── */
 
-/** "grad:210,320" — 시작·끝 hue 두 개. 없으면 테마 색을 따른다. */
-export type PillGradient = { from: number; to: number };
+/** 그라데이션 방향. 저장 문자열에는 한 글자로 들어간다. */
+export type PillStyle = "h" | "d" | "v" | "r";
 
-export const PILL_PRESETS: { label: string; from: number; to: number }[] = [
-  { label: "노을", from: 20, to: 330 },
-  { label: "바다", from: 190, to: 240 },
-  { label: "숲", from: 90, to: 160 },
-  { label: "포도", from: 265, to: 320 },
-  { label: "사탕", from: 330, to: 30 },
-  { label: "오로라", from: 150, to: 260 },
+export const PILL_STYLES: { key: PillStyle; label: string }[] = [
+  { key: "h", label: "가로" },
+  { key: "d", label: "대각선" },
+  { key: "v", label: "세로" },
+  { key: "r", label: "원형" },
+];
+
+/** "grad:210,320" 또는 "grad:210,320,d" — 시작·끝 hue + 방향.
+ *  방향이 없으면 가로(h). 없던 시절 저장값과 호환된다. */
+export type PillGradient = { from: number; to: number; style: PillStyle };
+
+export const PILL_PRESETS: (PillGradient & { label: string })[] = [
+  { label: "노을", from: 20, to: 330, style: "h" },
+  { label: "바다", from: 190, to: 240, style: "h" },
+  { label: "숲", from: 90, to: 160, style: "d" },
+  { label: "포도", from: 265, to: 320, style: "h" },
+  { label: "사탕", from: 330, to: 30, style: "d" },
+  { label: "오로라", from: 150, to: 260, style: "v" },
 ];
 
 export function parsePillGradient(v: unknown): PillGradient | null {
   if (typeof v !== "string") return null;
-  const m = /^grad:(\d{1,3}),(\d{1,3})$/.exec(v);
+  const m = /^grad:(\d{1,3}),(\d{1,3})(?:,([hdvr]))?$/.exec(v);
   if (!m) return null;
   const from = Number(m[1]);
   const to = Number(m[2]);
   if (from > 360 || to > 360) return null;
-  return { from: from % 360, to: to % 360 };
+  return {
+    from: from % 360,
+    to: to % 360,
+    style: (m[3] as PillStyle) ?? "h", // 방향 없는 옛 저장값 = 가로
+  };
 }
 
 export const formatPillGradient = (g: PillGradient) =>
-  `grad:${Math.round(g.from) % 360},${Math.round(g.to) % 360}`;
+  `grad:${Math.round(g.from) % 360},${Math.round(g.to) % 360},${g.style}`;
 
 /**
  * 배지에 넣을 CSS 그라데이션.
@@ -233,7 +248,12 @@ export function pillGradientCss(g: PillGradient): string {
   const a = hueSwatch(g.from);
   const b = hueSwatch(midHue);
   const c = hueSwatch(g.to);
-  return `linear-gradient(90deg, ${a}, ${b}, ${c}, ${a})`;
+  // 가로는 알약이 좌우로 기니 끝에 시작색을 한 번 더 넣어 흐름이 이어지게 한다.
+  if (g.style === "r") return `radial-gradient(circle at 30% 30%, ${a}, ${b}, ${c})`;
+  const angle = g.style === "v" ? "180deg" : g.style === "d" ? "135deg" : "90deg";
+  return g.style === "h"
+    ? `linear-gradient(${angle}, ${a}, ${b}, ${c}, ${a})`
+    : `linear-gradient(${angle}, ${a}, ${b}, ${c})`;
 }
 
 const PILL_KEY = "jampill:v1";

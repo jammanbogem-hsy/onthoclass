@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Icon } from "@/components/Icon";
+import { PillEditor } from "@/components/PillEditor";
 import { NotificationBell } from "@/components/NotificationBell";
 import { AvatarPicker } from "@/components/AvatarPicker";
 import { NoticeTicker } from "@/components/NoticeTicker";
@@ -21,6 +22,7 @@ import {
   THEMES,
   formatPillGradient,
   getPill,
+  parsePillGradient,
   getTheme,
   hueSwatch,
   isHueTheme,
@@ -51,6 +53,10 @@ export function TopBar() {
   const [theme, setThemeState] = useState<ThemeKey>("default");
   const [wheelOpen, setWheelOpen] = useState(false);
   const [pill, setPillState] = useState<string | null>(null);
+  const [pillEditOpen, setPillEditOpen] = useState(false);
+  // 프리셋과 같은 값이면 프리셋 칩에 선택 표시가 뜨므로, '직접 만들기' 옆
+  // 미리보기는 프리셋이 아닐 때만 보여준다.
+  const isPreset = PILL_PRESETS.some((g) => formatPillGradient(g) === pill);
   const curHue = isHueTheme(theme) ? parseHue(theme) : null;
   const ref = useRef<HTMLDivElement>(null);
   const avatarSrc = profile?.avatar || user?.photoURL || "";
@@ -312,8 +318,24 @@ export function TopBar() {
                 </div>
                 <button
                   type="button"
+                  onClick={() => setPillEditOpen(true)}
+                  className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--md-sys-color-outline)] px-2 py-1.5 text-xs font-bold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_10%,transparent)]"
+                >
+                  <Icon name="palette" size={14} />
+                  직접 만들기
+                  {pill && !isPreset && (
+                    <span
+                      className="ml-1 h-3.5 w-6 rounded-full"
+                      style={{
+                        background: pillGradientCss(parsePillGradient(pill)!),
+                      }}
+                    />
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={() => pickPill(null)}
-                  className="mt-1.5 w-full rounded-lg px-2 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+                  className="mt-1 w-full rounded-lg px-2 py-1 text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
                 >
                   {pill ? "기본(테마 색)으로" : "지금은 테마 색을 써요"}
                 </button>
@@ -376,6 +398,16 @@ export function TopBar() {
             await setUserAvatar(user.uid, path, user.photoURL ?? "");
             await refreshProfile();
           }}
+        />
+      )}
+      {pillEditOpen && (
+        <PillEditor
+          value={pill}
+          onSave={(v) => {
+            pickPill(v);
+            setPillEditOpen(false);
+          }}
+          onClose={() => setPillEditOpen(false)}
         />
       )}
     </header>

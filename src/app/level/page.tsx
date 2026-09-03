@@ -493,8 +493,9 @@ function LevelInner() {
 
         <style>{`
           .jam-level-hero{
-            background:linear-gradient(120deg,
-              var(--md-sys-color-p-40),var(--md-sys-color-p-50) 55%,var(--md-sys-color-t-50));
+            /* 학생이 고른 배지 색이 있으면 배너도 같은 색으로 — 없으면 테마 색 */
+            background: var(--jam-pill-gradient, linear-gradient(120deg,
+              var(--md-sys-color-p-40),var(--md-sys-color-p-50) 55%,var(--md-sys-color-t-50)));
           }
         `}</style>
       </main>
