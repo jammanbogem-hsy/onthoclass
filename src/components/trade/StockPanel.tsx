@@ -15,8 +15,10 @@ import {
   type Candle,
   type StockQuote,
   type TradeSide,
+  type Trade,
   type TradingStock,
 } from "@/lib/trading";
+import { averageTradePrices, previewOrder } from "@/components/trade/insights";
 import { StockChart } from "@/components/trade/StockChart";
 import {
   aggregateWeekly,
@@ -75,6 +77,8 @@ export type StockPanelProps = {
   holdingQty: number;
   avgCost: number;
   balance: number;
+  portfolioValue?: number;
+  trades?: Trade[];
   marketOpen: boolean;
   nextOpenText: string | null;
   /** 교사 보기 모드 — 거래 컨트롤을 모두 숨기고 차트·시세만 보여주는 관전 시트. */
@@ -88,6 +92,8 @@ export function StockPanel({
   holdingQty,
   avgCost,
   balance,
+  portfolioValue,
+  trades = [],
   marketOpen,
   nextOpenText,
   viewer = false,
@@ -152,6 +158,14 @@ export function StockPanel({
     if (period === "3m") return aggregateWeekly(c.slice(0, 66)); // 주봉 ~13개
     return aggregateWeekly(c); // 1년 — 주봉 ~52개
   }, [candles, period]);
+
+  const averages = view.length ? averageTradePrices(trades, stock.symbol, Math.min(...view.map(c => c.t))) : { buy: null, sell: null };
+  const referenceLines = viewer ? [] : [
+    ...(averages.buy == null ? [] : [{ label: "내 평균 매수가", value: averages.buy, color: "var(--trade-up)", dash: "6 4" }]),
+    ...(averages.sell == null ? [] : [{ label: "내 평균 매도가", value: averages.sell, color: "var(--trade-down)", dash: "2 4" }]),
+    ...(holdingQty > 0 && avgCost > 0 ? [{ label: "현재 보유 평단", value: avgCost, color: "var(--md-sys-color-primary)", dash: "10 3 2 3" }] : []),
+  ];
+  const preview = canTrade && portfolioValue !== undefined ? previewOrder(balance, portfolioValue, holdingQty, unit, clampedQty, side, fee) : null;
 
   const periodLabel = PERIODS.find((p) => p.key === period)!.label;
 
@@ -245,7 +259,8 @@ export function StockPanel({
         )}
       </div>
 
-      <div className="flex flex-col gap-4 overflow-y-auto p-5">
+      <div className={`grid gap-5 overflow-y-auto p-5 ${viewer ? "" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
+        <div className="flex min-w-0 flex-col gap-4">
         {/* 현재가 */}
         <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-4 py-3">
           <p className="text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">
@@ -293,7 +308,17 @@ export function StockPanel({
             days={view.length}
             weekly={isWeekly}
             divisor={divisor}
+            referenceLines={referenceLines}
           />
+        )}
+        {!viewer && (
+          <div className="rounded-xl border border-[var(--md-sys-color-outline-variant)] p-3 text-xs">
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {referenceLines.map(line => <span key={line.label} className="font-semibold tabular-nums" style={{ color: line.color }}>{line.label} {line.value.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}만보</span>)}
+              {!referenceLines.length && <span>이 종목의 거래 내역이 아직 없어요.</span>}
+            </div>
+            <p className="mt-2 text-[var(--md-sys-color-on-surface-variant)]">매수·매도 평균: 차트 기간 내 조회된 체결의 수량 가중평균, 수수료 제외 · 보유 평단: 현재 잔고 기준, 매수 수수료 포함</p>
+          </div>
         )}
         {hi > 0 && (
           <div className="flex items-center justify-between gap-2 text-sm">
@@ -374,6 +399,8 @@ export function StockPanel({
           </div>
         )}
 
+        </div>
+        <div className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-0 xl:self-start">
         {/* 거래 영역 — 교사 보기 모드에선 전부 숨김(관전 전용) */}
         {!viewer &&
           (!marketOpen ? (
@@ -497,6 +524,19 @@ export function StockPanel({
                     : "실제 증권사처럼 팔 때도 수수료가 조금 빠져요"}
                 </p>
 
+                {preview && (
+                  <section aria-label="주문 후 미리보기" className="rounded-2xl border border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)] p-4 text-[var(--md-sys-color-on-primary-container)]">
+                    <h3 className="text-sm font-bold">주문 후 미리보기</h3>
+                    <dl className="mt-3 space-y-2 text-sm tabular-nums">
+                      <div className="flex justify-between gap-2"><dt>남는 현금</dt><dd className="font-bold">{fmtMb(balance)} → {fmtMb(preview.cash)}</dd></div>
+                      <div className="flex justify-between gap-2"><dt>이 종목 비중</dt><dd className="font-bold">{preview.beforeWeight.toFixed(1)}% → {preview.afterWeight.toFixed(1)}%</dd></div>
+                      <div className="flex justify-between gap-2"><dt>보유 수량</dt><dd>{holdingQty}주 → {preview.nextQty}주</dd></div>
+                    </dl>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--md-sys-color-surface)]"><div className="h-full rounded-full bg-[var(--md-sys-color-primary)] transition-all" style={{ width: `${Math.min(100, preview.afterWeight)}%` }} /></div>
+                    <p className="mt-2 text-[11px]">현금 포함 총자산 기준 · 수수료 반영 예상치이며 체결 시세에 따라 달라질 수 있어요.</p>
+                  </section>
+                )}
+
                 {doneMsg && (
                   <p className="flex items-center justify-center gap-1.5 rounded-2xl bg-[var(--md-sys-color-tertiary-container)] px-4 py-3 text-center text-sm font-extrabold text-[var(--md-sys-color-on-tertiary-container)]">
                     <Icon name="celebration" size={18} className="shrink-0" />
@@ -532,6 +572,7 @@ export function StockPanel({
             )}
           </>
         ))}
+        </div>
       </div>
     </>
   );

@@ -369,6 +369,8 @@ export type Holding = {
 };
 
 export type Position = {
+  /** 서버에서 거래와 함께 갱신하는 수수료 포함 누적 매수금액. 기존 계좌는 이관 전 생략. */
+  invested?: number;
   holdings: Record<string, Holding>;
   /** 실현손익 누계(만보) — 매도 시 (매도가 - 평단) × 수량 */
   realized: number;
@@ -389,6 +391,7 @@ export function watchMyPosition(
       cb({
         holdings: (v.holdings as Record<string, Holding>) ?? {},
         realized: (v.realized as number) ?? 0,
+        invested: typeof v.invested === "number" && Number.isFinite(v.invested) && v.invested >= 0 ? v.invested : undefined,
         updatedAt: ts?.toMillis ? ts.toMillis() : null,
       });
     },
@@ -412,6 +415,7 @@ export function watchAllPositions(
             uid: d.id,
             holdings: (v.holdings as Record<string, Holding>) ?? {},
             realized: (v.realized as number) ?? 0,
+        invested: typeof v.invested === "number" && Number.isFinite(v.invested) && v.invested >= 0 ? v.invested : undefined,
             updatedAt: ts?.toMillis ? ts.toMillis() : null,
           };
         })
@@ -436,6 +440,7 @@ export async function listAllPositions(
       uid: d.id,
       holdings: (v.holdings as Record<string, Holding>) ?? {},
       realized: (v.realized as number) ?? 0,
+        invested: typeof v.invested === "number" && Number.isFinite(v.invested) && v.invested >= 0 ? v.invested : undefined,
       updatedAt: ts?.toMillis ? ts.toMillis() : null,
     };
   });
@@ -458,6 +463,14 @@ export type Trade = {
   total: number;
   /** 이 거래에 부과된 수수료(만보) */
   fee: number;
+  /**
+   * 매도 체결의 실현손익(만보) = 실수령액 − 체결 시점 평단×수량.
+   * 서버(executeTrade)가 체결 순간의 평단으로 계산해 박아둔다. 매수는 null,
+   * 이 필드가 생기기 전의 옛 매도도 null → fillTradePnl() 이 이력 재생으로 채운다.
+   */
+  pnl: number | null;
+  /** 매도한 주식의 원가(만보) = 체결 시점 평단×수량 — 실현 수익률의 분모. */
+  costBasis: number | null;
   at: number | null;
 };
 
@@ -473,9 +486,18 @@ function mapTrade(id: string, v: Record<string, unknown>): Trade {
     mbPrice: (v.mbPrice as number) ?? 0,
     total: (v.total as number) ?? 0,
     fee: (v.fee as number) ?? 0,
+    pnl: typeof v.pnl === "number" ? (v.pnl as number) : null,
+    costBasis: typeof v.costBasis === "number" ? (v.costBasis as number) : null,
     at: ts?.toMillis ? ts.toMillis() : null,
   };
 }
+
+/**
+ * 손익 계산용 이력 조회 상한 — fillTradePnl() 은 누락 없는 전체 이력을 전제하므로
+ * 기간 손익/수익률을 계산하는 화면은 이 상한으로 구독한다. 학급 한 반이 한 학기에
+ * 남기는 체결 수를 넉넉히 덮는 값(초과하면 가장 오래된 거래가 잘려 평단이 어긋난다).
+ */
+export const TRADE_HISTORY_MAX = 1000;
 
 /** 학급 최근 체결 내역(전체 공개 — 시장 분위기 연출용) */
 export function watchRecentTrades(
@@ -494,12 +516,18 @@ export function watchRecentTrades(
   );
 }
 
-/** 우리 반 수익률 랭킹 한 줄 — 이름·총손익·수익률만(보유 종목/잔액은 서버가 감춘다). */
+/** 우리 반 수익률 랭킹 한 줄 — 이름·손익·수익률만(보유 종목/잔액/투자원금은 서버가 감춘다). */
 export type RankingRow = {
   uid: string;
   name: string;
+  /** 총손익 = 실현 + 평가 */
   totalPnl: number;
+  /** 총수익률(%) = 총손익 ÷ 누적 매수금액 — totalReturnPct() 와 같은 정의 */
   returnPct: number;
+  /** 이미 팔아서 확정한 손익 누계 */
+  realized: number;
+  /** 아직 안 판 주식의 평가손익 */
+  unrealized: number;
 };
 
 /**
@@ -509,13 +537,13 @@ export type RankingRow = {
  * 종목의 만보 환산 배율(mbDivisor)이 바뀌면 현재 시세와 단위가 어긋나 허위 수익률이
  * 나온다. 교사용 '트레이딩 관리'와 같은 데이터·같은 수식을 쓰므로 두 화면이 일치한다.
  */
-export async function fetchTradingRanking(cid: string): Promise<RankingRow[]> {
-  const fn = httpsCallable<{ cid: string }, { ok: true; rows: RankingRow[] }>(
+export async function fetchTradingRanking(cid: string): Promise<{ rows: RankingRow[]; generatedAt: number | null }> {
+  const fn = httpsCallable<{ cid: string }, { ok: true; rows: RankingRow[]; generatedAt?: number }>(
     getFunctionsClient(),
     "getTradingRanking"
   );
   const res = await fn({ cid });
-  return res.data.rows ?? [];
+  return { rows: res.data.rows ?? [], generatedAt: res.data.generatedAt ?? null };
 }
 
 /** 내 거래 내역 */
@@ -559,4 +587,388 @@ export async function executeTrade(
     const msg = (err as { message?: string })?.message;
     throw new Error(msg || "거래에 실패했습니다.");
   }
+}
+
+/* ===================================================================== *
+ *  수익 계산 — 학생 화면(/trade)·교사 관리(TradingAdminModal)·주식대회가
+ *  같은 수식을 쓰도록 여기 한 곳에 모은다. 서버(getTradingRanking)도 같은
+ *  정의를 중복 구현하므로 세 화면의 숫자가 항상 일치한다.
+ *
+ *  용어:
+ *   평가손익 = (현재가 − 평단) × 보유수량   … 아직 안 판 주식의 오르내림
+ *   실현손익 = 매도 실수령액 − 평단 × 수량   … 이미 팔아서 확정된 손익(누계는 positions.realized)
+ *   총손익   = 실현손익 + 평가손익
+ *   총수익률 = 총손익 ÷ 누적 매수금액(수수료 포함) — "주식 사는 데 쓴 만보 대비 얼마를 벌었나"
+ * ===================================================================== */
+
+// ---------- 기간 ----------
+export type PeriodKey = "today" | "week" | "month" | "all";
+
+export const TRADE_PERIODS: readonly { key: PeriodKey; label: string }[] = [
+  { key: "today", label: "오늘" },
+  { key: "week", label: "1주일" },
+  { key: "month", label: "1개월" },
+  { key: "all", label: "전체" },
+] as const;
+
+/** 그날(KST) 자정 epoch ms */
+function kstMidnight(now: number): number {
+  return Math.floor((now + KST_OFFSET_MS) / 86400000) * 86400000 - KST_OFFSET_MS;
+}
+
+/** 기간 시작 시각(epoch ms) — "전체"는 0. 하루 단위 경계는 KST 자정 기준. */
+export function periodStartMs(key: PeriodKey, now: number = Date.now()): number {
+  const midnight = kstMidnight(now);
+  if (key === "today") return midnight;
+  if (key === "week") return midnight - 6 * 86400000; // 오늘 포함 7일
+  if (key === "month") return midnight - 29 * 86400000; // 오늘 포함 30일
+  return 0;
+}
+
+// ---------- 매도 실현손익 채우기 ----------
+/**
+ * pnl 이 비어 있는 옛 매도 체결을 이력 재생으로 채운다.
+ *
+ * 서버(executeTrade)와 똑같이 (uid, 종목)별 가중평균 평단을 굴린다 — 매수는
+ * 실제 청구액(수수료 포함), 매도는 실수령액(수수료 차감) 기준이라 지갑에서 실제로
+ * 오간 만보와 정확히 일치한다. 종목의 만보 환산 배율(mbDivisor)이 바뀌어도
+ * "그때 실제로 낸/받은 돈"만 더하므로 왜곡되지 않는다.
+ *
+ * 주의: 반드시 **누락 없는 전체 이력**을 넘겨야 한다(limit 에 잘린 목록이면 평단이
+ * 어긋난다). 잘린 목록에는 쓰지 말 것.
+ */
+export function fillTradePnl(trades: Trade[]): Trade[] {
+  if (trades.every((t) => t.side === "buy" || t.pnl !== null)) return trades;
+  const chron = [...trades].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const book = new Map<string, { qty: number; avg: number }>();
+  const filled = new Map<string, { pnl: number; costBasis: number }>();
+  for (const t of chron) {
+    const key = `${t.uid}|${t.symbol}`;
+    const cur = book.get(key) ?? { qty: 0, avg: 0 };
+    if (t.side === "buy") {
+      const qty = cur.qty + t.qty;
+      book.set(key, { qty, avg: qty > 0 ? (cur.avg * cur.qty + t.total) / qty : 0 });
+    } else {
+      const costBasis = cur.avg * t.qty;
+      if (t.pnl === null) filled.set(t.id, { pnl: t.total - costBasis, costBasis });
+      book.set(key, { qty: Math.max(0, cur.qty - t.qty), avg: cur.avg });
+    }
+  }
+  if (filled.size === 0) return trades;
+  return trades.map((t) => {
+    const f = filled.get(t.id);
+    return f ? { ...t, pnl: f.pnl, costBasis: f.costBasis } : t;
+  });
+}
+
+// ---------- 기간 손익 ----------
+export type PeriodStats = {
+  /** 기간 중 매도로 확정한 손익(만보) */
+  realized: number;
+  /** 기간 중 판 주식의 원가 합(만보) — 실현 수익률 분모 */
+  sellCost: number;
+  /** 실현 수익률(%) = realized / sellCost */
+  realizedPct: number;
+  /** 기간 중 매수에 쓴 금액(수수료 포함) */
+  buyAmount: number;
+  /** 기간 중 매도로 받은 금액(수수료 차감) */
+  sellAmount: number;
+  /** 기간 중 낸 수수료 합 */
+  fee: number;
+  buyCount: number;
+  sellCount: number;
+};
+
+export const EMPTY_PERIOD_STATS: PeriodStats = {
+  realized: 0,
+  sellCost: 0,
+  realizedPct: 0,
+  buyAmount: 0,
+  sellAmount: 0,
+  fee: 0,
+  buyCount: 0,
+  sellCount: 0,
+};
+
+/** 기간 [from, to) 안의 체결만 모아 집계 — trades 는 fillTradePnl() 을 거친 목록이어야 한다. */
+export function periodStats(
+  trades: Trade[],
+  from: number,
+  to: number = Number.POSITIVE_INFINITY
+): PeriodStats {
+  const s: PeriodStats = { ...EMPTY_PERIOD_STATS };
+  for (const t of trades) {
+    const at = t.at ?? 0;
+    if (at < from || at >= to) continue;
+    s.fee += t.fee;
+    if (t.side === "buy") {
+      s.buyAmount += t.total;
+      s.buyCount += 1;
+    } else {
+      s.sellAmount += t.total;
+      s.sellCount += 1;
+      s.realized += t.pnl ?? 0;
+      s.sellCost += t.costBasis ?? 0;
+    }
+  }
+  s.realizedPct = s.sellCost > 0 ? (s.realized / s.sellCost) * 100 : 0;
+  return s;
+}
+
+// ---------- 보유 평가 ----------
+export type HoldingRow = {
+  symbol: string;
+  stock: TradingStock | undefined;
+  qty: number;
+  avgCost: number;
+  /** 현재 만보 단가 — 시세가 없으면 평단으로 대체(손익 0 처리) */
+  cur: number;
+  value: number;
+  cost: number;
+  pnl: number;
+  pct: number;
+};
+
+/** 보유 종목별 평가 — 평가액 내림차순. */
+export function holdingRows(
+  holdings: Record<string, Holding>,
+  prices: TradingPrices | null
+): HoldingRow[] {
+  return Object.entries(holdings)
+    .filter(([, h]) => h && h.qty > 0)
+    .map(([symbol, h]) => {
+      const cur = prices?.stocks[symbol]?.mbPrice ?? h.avgCost;
+      const value = cur * h.qty;
+      const cost = h.avgCost * h.qty;
+      const pnl = value - cost;
+      return {
+        symbol,
+        stock: stockBySymbol(symbol),
+        qty: h.qty,
+        avgCost: h.avgCost,
+        cur,
+        value,
+        cost,
+        pnl,
+        pct: cost > 0 ? (pnl / cost) * 100 : 0,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+}
+
+// ---------- 학생 1명 종합 성적 ----------
+export type TradingStats = {
+  uid: string;
+  /** 주식 평가액(만보) */
+  value: number;
+  /** 보유 원가(만보) */
+  cost: number;
+  /** 평가손익 */
+  unrealized: number;
+  /** 실현손익 누계(positions.realized) */
+  realized: number;
+  /** 총손익 = 실현 + 평가 */
+  totalPnl: number;
+  /** 누적 매수금액(수수료 포함) — 총수익률 분모 */
+  invested: number;
+  /** 총수익률(%) = totalPnl / invested. 매수 이력이 없으면 보유 원가로 대체. */
+  returnPct: number;
+  /** 보유 수익률(%) = unrealized / cost — 지금 들고 있는 종목만 */
+  holdingPct: number;
+  /** 총 거래 횟수 */
+  tradeCount: number;
+  holdings: HoldingRow[];
+  /** 선택 기간의 매매 성적 */
+  period: PeriodStats;
+};
+
+/** 총수익률(%) — 누적 매수금액 대비 총손익. 매수 이력이 없으면 보유 원가로 대체한다. */
+export function totalReturnPct(
+  totalPnl: number,
+  invested: number,
+  cost: number
+): number {
+  const base = invested > 0 ? invested : cost;
+  return base > 0 ? (totalPnl / base) * 100 : 0;
+}
+
+/**
+ * 학생 1명의 종합 성적 — 포지션(정본) + 현재 시세 + 본인 체결 이력으로 계산한다.
+ * trades 는 그 학생의 **전체 이력**(fillTradePnl 적용 전/후 무관, 여기서 채운다).
+ */
+export function tradingStats(
+  uid: string,
+  position: Position | null,
+  prices: TradingPrices | null,
+  trades: Trade[],
+  period: { from: number; to?: number } = { from: 0 }
+): TradingStats {
+  const mine = trades.filter((t) => t.uid === uid);
+  const filled = fillTradePnl(mine);
+  const rows = holdingRows(position?.holdings ?? {}, prices);
+  const value = rows.reduce((s, r) => s + r.value, 0);
+  const cost = rows.reduce((s, r) => s + r.cost, 0);
+  const unrealized = value - cost;
+  const realized = position?.realized ?? 0;
+  const totalPnl = realized + unrealized;
+  const invested = position?.invested ?? filled.reduce((s, t) => (t.side === "buy" ? s + t.total : s), 0);
+  return {
+    uid,
+    value,
+    cost,
+    unrealized,
+    realized,
+    totalPnl,
+    invested,
+    returnPct: totalReturnPct(totalPnl, invested, cost),
+    holdingPct: cost > 0 ? (unrealized / cost) * 100 : 0,
+    tradeCount: filled.length,
+    holdings: rows,
+    period: periodStats(filled, period.from, period.to),
+  };
+}
+
+/**
+ * 학급 전원 성적 — 교사 화면(투자 현황·주식대회) 공용.
+ * trades 는 학급 **전체 이력**(모든 학생)을 넘긴다. 한 번만 fillTradePnl 을 돌린다.
+ */
+export function classTradingStats(
+  positions: Array<{ uid: string } & Position>,
+  prices: TradingPrices | null,
+  trades: Trade[],
+  period: { from: number; to?: number } = { from: 0 }
+): TradingStats[] {
+  const filled = fillTradePnl(trades);
+  const byUid = new Map<string, Trade[]>();
+  for (const t of filled) {
+    const list = byUid.get(t.uid);
+    if (list) list.push(t);
+    else byUid.set(t.uid, [t]);
+  }
+  // 포지션 문서가 없어도 거래 이력만 있으면(전량 매도 후 등) 집계에 포함한다.
+  const uids = new Set<string>([...positions.map((p) => p.uid), ...byUid.keys()]);
+  const posByUid = new Map(positions.map((p) => [p.uid, p]));
+  return [...uids].map((uid) =>
+    tradingStats(uid, posByUid.get(uid) ?? null, prices, byUid.get(uid) ?? [], period)
+  );
+}
+
+// ---------- 일별 / 종목별 실현손익 (MTS '실현손익' 조회) ----------
+/** 하루치 실현손익 — day 는 그날(KST) 자정 epoch ms. */
+export type DailyRealized = {
+  day: number;
+  realized: number;
+  /** 그날 판 주식의 원가 합 — 수익률 분모 */
+  sellCost: number;
+  realizedPct: number;
+  buyAmount: number;
+  sellAmount: number;
+  fee: number;
+};
+
+/** 종목 하나의 기간 실현손익. */
+export type SymbolRealized = {
+  symbol: string;
+  stock: TradingStock | undefined;
+  realized: number;
+  sellCost: number;
+  realizedPct: number;
+  /** 기간 중 판 수량 */
+  soldQty: number;
+  buyAmount: number;
+  sellAmount: number;
+  fee: number;
+};
+
+/** 매도 체결만 골라 키별로 접는 공용 루틴 — 일별/종목별 표가 같은 수식을 쓰게 한다. */
+function foldSells<T extends { realized: number; sellCost: number; buyAmount: number; sellAmount: number; fee: number }>(
+  trades: Trade[],
+  from: number,
+  to: number,
+  keyOf: (t: Trade) => string | null,
+  init: (t: Trade) => T
+): T[] {
+  const map = new Map<string, T>();
+  for (const t of trades) {
+    const at = t.at ?? 0;
+    if (at < from || at >= to) continue;
+    const key = keyOf(t);
+    if (key === null) continue;
+    let row = map.get(key);
+    if (!row) {
+      row = init(t);
+      map.set(key, row);
+    }
+    row.fee += t.fee;
+    if (t.side === "buy") {
+      row.buyAmount += t.total;
+    } else {
+      row.sellAmount += t.total;
+      row.realized += t.pnl ?? 0;
+      row.sellCost += t.costBasis ?? 0;
+    }
+  }
+  return [...map.values()];
+}
+
+/**
+ * 일별 실현손익 — 최신 날짜부터. 매수만 있던 날도 한 줄로 남긴다(그날 산 금액을 보여주려고).
+ * trades 는 fillTradePnl() 을 거친 전체 이력이어야 한다.
+ */
+export function dailyRealized(
+  trades: Trade[],
+  from: number,
+  to: number = Number.POSITIVE_INFINITY
+): DailyRealized[] {
+  const rows = foldSells(
+    trades,
+    from,
+    to,
+    (t) => (t.at ? String(kstMidnight(t.at)) : null),
+    (t) => ({
+      day: kstMidnight(t.at ?? 0),
+      realized: 0,
+      sellCost: 0,
+      realizedPct: 0,
+      buyAmount: 0,
+      sellAmount: 0,
+      fee: 0,
+    })
+  );
+  for (const r of rows) r.realizedPct = r.sellCost > 0 ? (r.realized / r.sellCost) * 100 : 0;
+  return rows.sort((a, b) => b.day - a.day);
+}
+
+/** 종목별 실현손익 — 실현손익 내림차순. trades 는 fillTradePnl() 을 거친 전체 이력. */
+export function symbolRealized(
+  trades: Trade[],
+  from: number,
+  to: number = Number.POSITIVE_INFINITY
+): SymbolRealized[] {
+  const rows = foldSells(
+    trades,
+    from,
+    to,
+    (t) => t.symbol,
+    (t) => ({
+      symbol: t.symbol,
+      stock: stockBySymbol(t.symbol),
+      realized: 0,
+      sellCost: 0,
+      realizedPct: 0,
+      soldQty: 0,
+      buyAmount: 0,
+      sellAmount: 0,
+      fee: 0,
+    })
+  );
+  // 판 수량은 fold 루틴 밖에서 따로 센다(매수 수량과 섞이면 안 된다).
+  for (const t of trades) {
+    const at = t.at ?? 0;
+    if (at < from || at >= to || t.side !== "sell") continue;
+    const row = rows.find((r) => r.symbol === t.symbol);
+    if (row) row.soldQty += t.qty;
+  }
+  for (const r of rows) r.realizedPct = r.sellCost > 0 ? (r.realized / r.sellCost) * 100 : 0;
+  return rows.sort((a, b) => b.realized - a.realized);
 }

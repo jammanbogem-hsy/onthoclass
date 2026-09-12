@@ -12,7 +12,7 @@ import { Icon } from "@/components/Icon";
 import { toMbPrice, type Candle } from "@/lib/trading";
 
 // 차트 레이아웃(px). 폭은 컨테이너 실측값(반응형), 높이는 고정.
-const H = 176;
+const H = 240;
 const PAD_X = 8;
 const PAD_TOP = 14;
 const PAD_BOT = 10;
@@ -40,6 +40,7 @@ export function StockChart({
   days = 30,
   weekly = false,
   divisor,
+  referenceLines = [],
 }: {
   candles: Candle[];
   /** 종목 포인트 컬러 — 캔들 색은 등락색으로 정하므로 여기선 쓰지 않지만 props 계약 유지. */
@@ -49,6 +50,7 @@ export function StockChart({
   weekly?: boolean;
   /** 종목별 만보 환산 배율 — 생략하면 기본(MB_DIVISOR). */
   divisor?: number;
+  referenceLines?: { label: string; value: number; color: string; dash: string }[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(320);
@@ -77,6 +79,7 @@ export function StockChart({
   if (chron.length < 2) {
     return (
       <div
+        ref={ref}
         className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[var(--md-sys-color-surface-container)] text-sm text-[var(--md-sys-color-on-surface-variant)]"
         style={{ height: H }}
       >
@@ -93,17 +96,16 @@ export function StockChart({
   const cx = (i: number) => PAD_X + (i + 0.5) * slotW;
 
   // 만보 환산 OHLC + 가격 도메인
-  let lo = Infinity;
-  let hi = -Infinity;
   const mb = chron.map((c) => {
     const o = toMbPrice(c.o, divisor);
     const h = toMbPrice(c.h, divisor);
     const l = toMbPrice(c.l, divisor);
     const cl = toMbPrice(c.c, divisor);
-    if (l < lo) lo = l;
-    if (h > hi) hi = h;
     return { o, h, l, c: cl };
   });
+  const values = referenceLines.filter(line => Number.isFinite(line.value)).map(line => line.value);
+  const lo = Math.min(...mb.map(c => c.l), ...values);
+  const hi = Math.max(...mb.map(c => c.h), ...values);
   const headroom = (hi - lo) * 0.06 || 1; // 위아래 여백으로 꼬리가 가장자리에 붙지 않게
   const dMin = lo - headroom;
   const dRange = hi + headroom - dMin || 1;
@@ -126,7 +128,7 @@ export function StockChart({
       ? Math.max(TIP_W / 2 + 2, Math.min(w - TIP_W / 2 - 2, cx(active)))
       : 0;
   const a =
-    active != null ? { c: chron[active], m: mb[active], x: cx(active) } : null;
+    active != null && active < n ? { c: chron[active], m: mb[active], x: cx(active) } : null;
 
   return (
     <div ref={ref} className="relative w-full" style={{ height: H }}>
@@ -237,6 +239,12 @@ export function StockChart({
             </g>
           );
         })}
+        {referenceLines.filter(line => Number.isFinite(line.value)).map(line => (
+          <g key={line.label}>
+            <title>{line.label}: {line.value.toFixed(2)}만보</title>
+            <line x1={PAD_X} x2={w - PAD_X} y1={py(line.value)} y2={py(line.value)} stroke={line.color} strokeWidth={1.5} strokeDasharray={line.dash} />
+          </g>
+        ))}
       </svg>
 
       {/* 툴팁(HTML 오버레이) */}

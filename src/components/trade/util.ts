@@ -85,6 +85,26 @@ export function signColor(pct: number): string {
   return "var(--trade-flat)";
 }
 
+/**
+ * 손익 고정색 — 한국 증시 관례(수익=빨강, 손실=파랑).
+ * .trade-scope 밖(교사 모달 등 CSS 변수가 없는 곳)에서 쓴다. 테마 토큰(primary/error)을
+ * 쓰면 색 테마를 바꿀 때 의미가 뒤집히므로 일부러 고정색이다.
+ */
+export const PNL_UP = "#d63a3a";
+export const PNL_DOWN = "#2f6fd0";
+
+/** 손익 → 고정색 style 객체(.trade-scope 밖 전용) */
+export const pnlStyleFixed = (n: number): { color: string } =>
+  n > 0
+    ? { color: PNL_UP }
+    : n < 0
+      ? { color: PNL_DOWN }
+      : { color: "var(--md-sys-color-on-surface-variant)" };
+
+/** 부호 붙인 정수 표기 — +1,234 / -56 / 0 */
+export const signed = (n: number): string =>
+  (n > 0 ? "+" : "") + Math.round(n).toLocaleString();
+
 /** 손익(만보) → 색상 CSS 변수 */
 export function pnlColor(pnl: number): string {
   if (pnl > 0) return "var(--trade-up)";

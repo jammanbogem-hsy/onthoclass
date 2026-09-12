@@ -6,30 +6,39 @@ import { Button } from "@/components/ui";
 import { Switch } from "@/components/ui/Switch";
 import { resolveStudentName } from "@/lib/names";
 import type { Member } from "@/lib/classes";
-import { watchAllWallets, type ManboWallet } from "@/lib/manbo";
 import {
+  TRADE_PERIODS,
+  classTradingStats,
+  tradingStats,
+  fillTradePnl,
   isTradingOpen,
   nextOpenAt,
+  periodStartMs,
   saveTradingConfig,
   setTradingOverride,
   stockBySymbol,
-  watchAllPositions,
-  watchRecentTrades,
   watchTradingConfig,
-  watchTradingPrices,
-  type Position,
-  type Trade,
+  type PeriodKey,
   type TradingConfig,
   type TradingOverride,
-  type TradingPrices,
   type TradingSession,
+  type TradingStats,
   type TradingWindow,
 } from "@/lib/trading";
+import { StudentTradingTable } from "@/components/trade/StudentTradingTable";
+import { AccountSheet } from "@/components/trade/AccountSheet";
+import { ContestTab } from "@/components/trade/ContestTab";
+import { useClassTrading } from "@/components/trade/useClassTrading";
+import {
+  pnlStyleFixed as pnlStyle,
+  signed,
+} from "@/components/trade/util";
 
 /**
  * 만보 트레이딩 관리(교사 전용) —
  *  [거래 시간] 개장 on/off + 매주 반복(weekly, KST) + 일회성 개장(sessions) 설정 → saveTradingConfig.
- *  [투자 현황] 학급 포지션·시세로 학생별 평가액/손익 순위표 + 최근 체결 내역.
+ *  [투자 현황] 학급 포지션·시세로 학생별 평가액/실현·평가 손익 + 기간 매매 성적 + 최근 체결.
+ *  [주식대회] 이 학급이 참가 중인 대회 순위 — 개설은 메인 화면(ContestTab 참고).
  * 종목은 alias(만보전자 등)로 표시하되 실제 종목명(real)을 괄호로 병기한다.
  * 개장 시간은 서버(executeTrade)가 재검증하므로 여기 설정은 학생 매매 가능 시각만 정한다.
  */
@@ -61,18 +70,6 @@ const wkey = (w: TradingWindow[]) =>
 const skey = (s: TradingSession[]) =>
   JSON.stringify([...s].sort((a, b) => a.start - b.start));
 
-const signed = (n: number) => (n > 0 ? "+" : "") + Math.round(n).toLocaleString();
-// 손익 색 — 한국 증시 관례를 따른다(수익=빨강, 손실=파랑).
-// 테마 토큰(primary/error)을 쓰면 색 테마를 바꿀 때 의미가 뒤집히므로 고정색이다.
-const PNL_UP = "#d63a3a";
-const PNL_DOWN = "#2f6fd0";
-const pnlStyle = (n: number) =>
-  n > 0
-    ? { color: PNL_UP }
-    : n < 0
-      ? { color: PNL_DOWN }
-      : { color: "var(--md-sys-color-on-surface-variant)" };
-
 export function TradingAdminModal({
   cid,
   members,
@@ -82,7 +79,7 @@ export function TradingAdminModal({
   members: Member[];
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"schedule" | "board">("schedule");
+  const [tab, setTab] = useState<"schedule" | "board" | "contest">("schedule");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -96,7 +93,7 @@ export function TradingAdminModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-3)]"
+        className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-3)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-[var(--md-sys-color-outline-variant)] px-5 py-4">
@@ -149,6 +146,7 @@ export function TradingAdminModal({
             [
               ["schedule", "거래 시간 설정"],
               ["board", "학급 투자 현황"],
+              ["contest", "주식대회"],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -167,8 +165,10 @@ export function TradingAdminModal({
 
         {tab === "schedule" ? (
           <ScheduleTab cid={cid} now={now} />
-        ) : (
+        ) : tab === "board" ? (
           <BoardTab cid={cid} members={members} />
+        ) : (
+          <ContestTab cid={cid} />
         )}
       </div>
     </div>
@@ -658,88 +658,49 @@ function ScheduleTab({ cid, now }: { cid: string; now: number }) {
 }
 
 // ---------- 탭 2: 학급 투자 현황 ----------
-type RankRow = {
-  uid: string;
-  value: number;
-  cost: number;
-  unrealized: number;
-  realized: number;
-  totalPnl: number;
-  returnPct: number;
-  held: { symbol: string; qty: number }[];
-};
+/** 순위표 한 줄 — 공용 손익 계산(TradingStats)에 지갑 잔액만 얹는다. */
+type BoardRow = TradingStats & { balance: number };
 
 function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
-  const [positions, setPositions] = useState<Array<{ uid: string } & Position>>(
-    []
+  const { positions, prices, trades, wallets } = useClassTrading(cid);
+  // 기간 조회 — 실현손익(판 거래)에만 적용된다. 평가손익은 지금 이 순간 기준.
+  const [period, setPeriod] = useState<PeriodKey>("week");
+  const periodLabel = TRADE_PERIODS.find((p) => p.key === period)?.label ?? "";
+  // 학생 한 명을 눌러 계좌 현황(잔고·실현손익)을 열어볼 때의 대상 uid.
+  const [openUid, setOpenUid] = useState<string | null>(null);
+
+  // 매도 실현손익을 한 번만 채워 순위표·학생 상세가 같은 목록을 쓰게 한다.
+  const filled = useMemo(() => fillTradePnl(trades), [trades]);
+
+  const rows: BoardRow[] = useMemo(() => {
+    const from = periodStartMs(period);
+    const stats = new Map(classTradingStats(positions, prices, filled, { from }).map(row => [row.uid, row]));
+    return members.filter(m => m.role === "student").map(m => ({
+      ...(stats.get(m.uid) ?? tradingStats(m.uid, null, prices, [], { from })),
+      balance: wallets[m.uid]?.balance ?? 0,
+    }));
+  }, [positions, prices, filled, wallets, period, members]);
+
+  const openRow = openUid ? rows.find((r) => r.uid === openUid) ?? null : null;
+  const openTrades = useMemo(
+    () => (openUid ? filled.filter((t) => t.uid === openUid) : []),
+    [filled, openUid]
   );
-  const [prices, setPrices] = useState<TradingPrices | null>(null);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [wallets, setWallets] = useState<Record<string, ManboWallet>>({});
 
-  useEffect(() => {
-    const o1 = watchAllPositions(cid, setPositions);
-    const o2 = watchTradingPrices(setPrices);
-    const o3 = watchRecentTrades(cid, setTrades);
-    const o4 = watchAllWallets(cid, setWallets);
-    return () => {
-      o1();
-      o2();
-      o3();
-      o4();
-    };
-  }, [cid]);
-
-  const rows: (RankRow & { balance: number })[] = useMemo(() => {
-    const stocks = prices?.stocks ?? {};
-    return positions
-      .map((p) => {
-        let value = 0;
-        let cost = 0;
-        const held: { symbol: string; qty: number }[] = [];
-        for (const [symbol, h] of Object.entries(p.holdings)) {
-          if (!h || h.qty <= 0) continue;
-          const mb = stocks[symbol]?.mbPrice ?? h.avgCost;
-          value += mb * h.qty;
-          cost += h.avgCost * h.qty;
-          held.push({ symbol, qty: h.qty });
-        }
-        held.sort((a, b) => b.qty - a.qty);
-        const unrealized = value - cost;
-        const totalPnl = p.realized + unrealized;
-        return {
-          uid: p.uid,
-          value,
-          cost,
-          unrealized,
-          realized: p.realized,
-          totalPnl,
-          returnPct: cost > 0 ? (unrealized / cost) * 100 : 0,
-          held,
-          balance: wallets[p.uid]?.balance ?? 0,
-        };
-      })
-      .filter((r) => r.held.length > 0 || r.realized !== 0)
-      .sort((a, b) => b.totalPnl - a.totalPnl);
-  }, [positions, prices, wallets]);
-
-  // 학생별 최근 거래 3건 — 순위만 봐서는 "무엇을 언제 샀는지" 가 안 보인다.
-  // trades 는 최신순으로 구독되므로 앞에서부터 담으면 그대로 최신 3건이 된다.
-  const recentByUid = useMemo(() => {
-    const m: Record<string, Trade[]> = {};
-    for (const t of trades) {
-      const list = m[t.uid] ?? (m[t.uid] = []);
-      if (list.length < 3) list.push(t);
-    }
-    return m;
-  }, [trades]);
-
-  // 학급 전체 요약 — 투자에 참여한 학생 수·총 평가액·총 보유 만보(참여 학생 기준)·전체 손익.
+  // 학급 전체 요약 — 투자에 참여한 학생 수·총 평가액·총 보유 만보(참여 학생 기준)·
+  // 전체 손익·고른 기간의 실현손익 합계.
   const summary = useMemo(() => {
     const totalValue = rows.reduce((s, r) => s + r.value, 0);
     const totalBalance = rows.reduce((s, r) => s + r.balance, 0);
     const totalPnl = rows.reduce((s, r) => s + r.totalPnl, 0);
-    return { participants: rows.length, totalValue, totalBalance, totalPnl };
+    const periodRealized = rows.reduce((s, r) => s + r.period.realized, 0);
+    return {
+      participants: rows.filter(r => r.tradeCount > 0 || r.holdings.length > 0).length,
+      totalValue,
+      totalBalance,
+      totalPnl,
+      periodRealized,
+    };
   }, [rows]);
 
   return (
@@ -755,7 +716,7 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
       </p>
 
       {/* 학급 전체 요약 — 참여 인원·총 평가액·총 보유 만보·전체 손익을 한눈에 */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-3 text-center">
           <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
             투자 참여
@@ -791,143 +752,49 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
             {signed(summary.totalPnl)}
           </p>
         </div>
+        <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-3 text-center">
+          <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+            {periodLabel} 실현손익
+          </p>
+          <p
+            className="mt-0.5 text-base font-extrabold"
+            style={pnlStyle(summary.periodRealized)}
+          >
+            {signed(summary.periodRealized)}
+          </p>
+        </div>
       </div>
 
-      {/* 순위표 */}
-      <section>
-        <p className="mb-2.5 flex items-center gap-1.5 text-sm font-bold">
-          <Icon name="leaderboard" size={18} className="text-[var(--md-sys-color-primary)]" />
-          학생별 수익 순위
-          <span className="text-xs font-normal text-[var(--md-sys-color-on-surface-variant)]">
-            총손익(실현+평가) 내림차순
-          </span>
-        </p>
-        {rows.length === 0 ? (
-          <p className="rounded-2xl bg-[var(--md-sys-color-surface-container)] py-8 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
-            아직 거래한 학생이 없어요.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1.5">
-            {rows.map((r, i) => (
-              <li
-                key={r.uid}
-                className="flex items-center gap-2.5 rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-2.5"
-              >
-                <span className="flex w-6 shrink-0 items-center justify-center">
-                  {i < 3 ? (
-                    <Icon
-                      name="trophy"
-                      size={20}
-                      fill
-                      style={{ color: ["#d9a400", "#9098a1", "#b0763a"][i] }}
-                    />
-                  ) : (
-                    <span className="text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">
-                      {i + 1}
-                    </span>
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">
-                    {resolveStudentName(members, r.uid)}
-                  </p>
-                  {/* 최근 거래 — 무엇을 얼마에 샀는지 한눈에 */}
-                  {(recentByUid[r.uid]?.length ?? 0) > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {recentByUid[r.uid].map((t) => {
-                        const st = stockBySymbol(t.symbol);
-                        const buy = t.side === "buy";
-                        return (
-                          <span
-                            key={t.id}
-                            title={`${buy ? "매수" : "매도"} ${st?.real ?? t.symbol} ${t.qty}주 · ${Math.round(t.mbPrice)}만보`}
-                            className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold"
-                            style={{
-                              background: buy ? "#fdeaea" : "#e8f0fc",
-                              color: buy ? PNL_UP : PNL_DOWN,
-                            }}
-                          >
-                            {buy ? "▲" : "▼"}
-                            {st?.alias ?? t.symbol}
-                            <span className="tabular-nums opacity-80">
-                              {t.qty}주
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {r.held.length > 0 ? (
-                    <div className="mt-0.5 flex flex-wrap gap-1">
-                      {r.held.map((h) => {
-                        const s = stockBySymbol(h.symbol);
-                        return (
-                          <span
-                            key={h.symbol}
-                            title={s?.real}
-                            className="inline-flex items-center gap-1 rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2 py-0.5 text-[11px] font-semibold"
-                          >
-                            <Icon
-                              name={s?.icon ?? "candlestick_chart"}
-                              size={13}
-                              style={{ color: s?.color }}
-                            />
-                            {s?.alias ?? h.symbol}
-                            <span className="tabular-nums text-[var(--md-sys-color-on-surface-variant)]">
-                              {h.qty}주
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="mt-0.5 text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
-                      보유 종목 없음 (실현손익만)
-                    </p>
-                  )}
-                </div>
-                {/* 숫자마다 라벨을 붙인다 — 맨 위 큰 숫자(주식 평가액)가 지갑 잔액으로
-                    오해되던 문제. 퍼센트도 '보유 종목만의 수익률'이라 따로 밝힌다. */}
-                <div className="shrink-0 text-right">
-                  <p className="text-sm font-black tabular-nums">
-                    <span className="mr-1 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
-                      주식
-                    </span>
-                    {Math.round(r.value).toLocaleString()}
-                    <span className="ml-0.5 text-[11px] font-semibold text-[var(--md-sys-color-on-surface-variant)]">
-                      만보
-                    </span>
-                  </p>
-                  <p
-                    className="text-xs font-bold tabular-nums"
-                    style={pnlStyle(r.totalPnl)}
-                  >
-                    <span className="mr-1 font-semibold text-[var(--md-sys-color-on-surface-variant)]">
-                      총손익
-                    </span>
-                    {signed(r.totalPnl)}
-                    {r.cost > 0 && (
-                      <span
-                        className="ml-1 font-semibold"
-                        title="지금 보유 중인 종목만의 수익률(이미 판 거래는 제외)"
-                      >
-                        (보유 {r.returnPct > 0 ? "+" : ""}
-                        {r.returnPct.toFixed(1)}%)
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
-                    실현 {signed(r.realized)} · 평가 {signed(r.unrealized)}
-                  </p>
-                  <p className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
-                    현금 {Math.round(r.balance).toLocaleString()} 만보
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* 기간 선택 — 실현손익(판 거래)에만 적용된다. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <p className="mr-1 text-sm font-bold">기간</p>
+        {TRADE_PERIODS.map((p) => {
+          const on = p.key === period;
+          return (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              aria-pressed={on}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                on
+                  ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                  : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface-variant)]"
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
+          실현손익·매매 횟수에만 적용 (평가손익은 지금 이 순간 기준)
+        </span>
+      </div>
+
+      <StudentTradingTable
+        rows={rows.map(r => ({ ...r, name: resolveStudentName(members, r.uid) }))}
+        periodLabel={periodLabel}
+        onSelect={setOpenUid}
+      />
 
       {/* 최근 체결 */}
       <section>
@@ -941,7 +808,7 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {trades.map((t) => {
+            {trades.slice(0, 30).map((t) => {
               const s = stockBySymbol(t.symbol);
               const buy = t.side === "buy";
               return (
@@ -997,6 +864,49 @@ function BoardTab({ cid, members }: { cid: string; members: Member[] }) {
           </ul>
         )}
       </section>
+
+      {/* 학생 계좌 현황 — 순위표 행을 누르면 열린다. 학생 본인이 /trade 에서 보는 것과
+          같은 AccountSheet(잔고·실현손익)라 교사와 학생이 같은 숫자를 본다. */}
+      {openRow && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4"
+          onClick={() => setOpenUid(null)}
+        >
+          <div
+            className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-3)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-[var(--md-sys-color-outline-variant)] px-5 py-4">
+              <Icon
+                name="account_balance_wallet"
+                size={20}
+                className="text-[var(--md-sys-color-primary)]"
+              />
+              <p className="min-w-0 flex-1 truncate text-base font-semibold">
+                {resolveStudentName(members, openRow.uid)}
+                <span className="ml-1.5 text-sm font-normal text-[var(--md-sys-color-on-surface-variant)]">
+                  계좌 현황
+                </span>
+              </p>
+              <button
+                onClick={() => setOpenUid(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container-highest)]"
+              >
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <AccountSheet
+                stats={openRow}
+                trades={openTrades}
+                balance={openRow.balance}
+                period={period}
+                onPeriodChange={setPeriod}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

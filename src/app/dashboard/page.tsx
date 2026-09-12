@@ -30,6 +30,11 @@ import { MissionCelebrate } from "@/components/MissionCelebrate";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { useDialog } from "@/components/Dialog";
 import { NameMaskToggle } from "@/components/NameMask";
+import {
+  CreateContestModal,
+  ContestBoardModal,
+} from "@/components/contest/ContestModals";
+import { listStockContests, type ContestMeta } from "@/lib/contest";
 
 // 학급·폴더 라벨 색 — 다양한 파스텔 톤(초등 친화). colorIndex 로 선택.
 const SUBJECT_GRADIENTS = [
@@ -69,6 +74,10 @@ export default function DashboardPage() {
   const [dragOver, setDragOver] = useState<string | null>(null); // 드롭 대상(폴더/미분류)
   const [overCardId, setOverCardId] = useState<string | null>(null); // 카드 위 재배치 표시
   const [modal, setModal] = useState<"create" | "join" | null>(null);
+  // 주식대회(교사) — 메인 화면에서 개설하고, 진행 중/끝난 대회를 카드로 본다.
+  const [contests, setContests] = useState<ContestMeta[] | null>(null);
+  const [contestModal, setContestModal] = useState<"create" | null>(null);
+  const [openContestId, setOpenContestId] = useState<string | null>(null);
   const isTeacher = profile?.role === "teacher";
 
   useEffect(() => {
@@ -234,6 +243,18 @@ export default function DashboardPage() {
     if (!isTeacher) return;
     return watchTradingPrices(setTradingPrices);
   }, [isTeacher]);
+
+  // 내가 개설한 주식대회 목록 — 규칙상 클라이언트가 직접 못 읽어 callable 로 조회한다.
+  const reloadContests = useCallback(() => {
+    if (!isTeacher) return;
+    listStockContests()
+      .then(setContests)
+      .catch(() => setContests([]));
+  }, [isTeacher]);
+
+  useEffect(() => {
+    reloadContests();
+  }, [reloadContests]);
 
   // 학급별 트레이딩 요약(참여 인원·총 평가액·전체 손익) — 포지션·시세가 바뀌면 재계산.
   const tradingSummaries = (() => {
@@ -452,6 +473,10 @@ export default function DashboardPage() {
                 <Icon name="create_new_folder" size={18} />
                 폴더 만들기
               </GlassButton>
+              <GlassButton onClick={() => setContestModal("create")}>
+                <Icon name="emoji_events" size={18} />
+                주식대회 열기
+              </GlassButton>
               {/* 전역 이름 가리기 — 여기서 켜면 내 모든 학급·차시 화면에 적용 */}
               <NameMaskToggle />
             </>
@@ -461,6 +486,60 @@ export default function DashboardPage() {
             </GlassButton>
           )}
         </div>
+
+        {/* 진행 중인 주식대회 — 눌러서 순위 보기(교사) */}
+        {isTeacher && contests && contests.length > 0 && (
+          <section className="mt-6">
+            <h2 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-black/70 dark:text-white/70">
+              <Icon name="emoji_events" size={18} style={{ color: "#d9a400" }} fill />
+              주식대회
+            </h2>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {contests.map((ct) => {
+                const done = ct.status === "done";
+                return (
+                  <button
+                    key={ct.id}
+                    onClick={() => setOpenContestId(ct.id)}
+                    className="flex items-center gap-3 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] px-4 py-3 text-left transition hover:brightness-[0.97]"
+                  >
+                    <span
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                      style={{
+                        background: done
+                          ? "var(--md-sys-color-surface-container-highest)"
+                          : "color-mix(in srgb, #d9a400 18%, transparent)",
+                      }}
+                    >
+                      <Icon
+                        name={done ? "check_circle" : "trophy"}
+                        size={20}
+                        fill
+                        style={{
+                          color: done
+                            ? "var(--md-sys-color-on-surface-variant)"
+                            : "#d9a400",
+                        }}
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold">{ct.name}</span>
+                      <span className="block truncate text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                        {ct.classNames.join(" · ")} · {ct.participants}명 ·{" "}
+                        {done ? "종료" : "진행 중"}
+                      </span>
+                    </span>
+                    <Icon
+                      name="chevron_right"
+                      size={18}
+                      className="shrink-0 text-[var(--md-sys-color-on-surface-variant)]"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {!isTeacher && classes && classes.length > 0 ? (
           <StudentClassBoard
@@ -742,6 +821,26 @@ export default function DashboardPage() {
         </section>
         )}
       </main>
+
+      {/* 주식대회 — 개설 / 순위 보기 */}
+      {contestModal === "create" && (
+        <CreateContestModal
+          classes={(classes ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          onClose={() => setContestModal(null)}
+          onCreated={(id) => {
+            setContestModal(null);
+            reloadContests();
+            setOpenContestId(id);
+          }}
+        />
+      )}
+      {openContestId && (
+        <ContestBoardModal
+          contestId={openContestId}
+          onClose={() => setOpenContestId(null)}
+          onChanged={reloadContests}
+        />
+      )}
 
       {modal === "create" && (
         <CreateModal

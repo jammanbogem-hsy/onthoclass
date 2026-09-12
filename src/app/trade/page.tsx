@@ -7,8 +7,9 @@
 //  · 데스크톱(lg+)은 토스 WTS 처럼 좌(종목목록)·우(거래창+거래소식+랭킹) 와이드 2컬럼,
 //    모바일은 세로 스택 + 바텀시트. matchMedia 로 완전히 분리 렌더링(둘 다 마운트해
 //    캔들을 이중으로 불러오는 낭비를 피한다).
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { usePageVisible } from "@/hooks/usePageVisible";
 import { useAuth } from "@/contexts/AuthContext";
 import { TopBar } from "@/components/TopBar";
 import { GlassCard } from "@/components/Glass";
@@ -17,39 +18,43 @@ import { watchWallet, type ManboWallet } from "@/lib/manbo";
 import { getMyRole, type Role } from "@/lib/classes";
 import {
   EMPTY_TRADING_CONFIG,
+  TRADE_HISTORY_MAX,
   TRADING_STOCKS,
+  fillTradePnl,
   isTradingOpen,
   nextOpenAt,
+  periodStartMs,
   refreshTradingPrices,
   stockBySymbol,
-  toMbPrice,
+  tradingStats,
   watchMyPosition,
   watchMyTrades,
   watchRecentTrades,
   watchTradingConfig,
   watchTradingMarket,
   watchTradingPrices,
+  type PeriodKey,
   type Position,
-  type StockQuote,
   type Trade,
   type TradingConfig,
   type TradingMarket,
   type TradingPrices,
 } from "@/lib/trading";
+import { AccountSheet } from "@/components/trade/AccountSheet";
+import { ContestBoardModal } from "@/components/contest/ContestModals";
+import { listStockContests, type ContestMeta } from "@/lib/contest";
 import { StockSheet } from "@/components/trade/StockSheet";
+import { StockWatchlist } from "@/components/trade/StockWatchlist";
 import { StockPanel } from "@/components/trade/StockPanel";
 import { MarketStrip } from "@/components/trade/MarketStrip";
 import { RankingBoard } from "@/components/trade/RankingBoard";
 import { TradeSideDrawer } from "@/components/trade/TradeSideDrawer";
 import {
-  arrow,
   fmtAgo,
   fmtMb,
-  fmtMbDelta,
   fmtNextOpen,
   fmtPct,
   pnlColor,
-  signColor,
 } from "@/components/trade/util";
 
 function fmtDate(ms: number | null) {
@@ -59,18 +64,17 @@ function fmtDate(ms: number | null) {
 }
 
 /** lg(1024px) 이상인지 — 데스크톱 와이드 레이아웃과 모바일 바텀시트를 완전히 분리 렌더링하기 위함. */
+const subscribeDesktop = (notify: () => void) => {
+  const mq = window.matchMedia("(min-width: 1024px)");
+  mq.addEventListener("change", notify);
+  return () => mq.removeEventListener("change", notify);
+};
 function useIsDesktop(): boolean {
-  const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches
+  return useSyncExternalStore(
+    subscribeDesktop,
+    () => window.matchMedia("(min-width: 1024px)").matches,
+    () => false,
   );
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
-    setIsDesktop(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-  return isDesktop;
 }
 
 function TradeInner() {
@@ -79,6 +83,7 @@ function TradeInner() {
   const params = useSearchParams();
   const cid = params.get("id") || params.get("class");
   const isDesktop = useIsDesktop();
+  const pageVisible = usePageVisible();
 
   const [wallet, setWallet] = useState<ManboWallet>({
     balance: 0,
@@ -94,6 +99,11 @@ function TradeInner() {
   const [now, setNow] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [period, setPeriod] = useState<PeriodKey>("week"); // '내 계좌'의 기간 조회 범위
+  // 우리 반이 참가 중인 주식대회 — 규칙상 직접 못 읽어 callable 로 1회 조회.
+  const [contests, setContests] = useState<ContestMeta[]>([]);
+  const [openContestId, setOpenContestId] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState("market");
   const [sideOpen, setSideOpen] = useState(false); // 데스크톱 우측 서랍(거래소식·랭킹) 열림 상태
   const [role, setRole] = useState<Role | null>(null);
 
@@ -116,6 +126,17 @@ function TradeInner() {
     refreshTradingPrices().catch(() => {});
   }, [user]);
 
+  useEffect(() => {
+    if (!user || !cid) return;
+    let alive = true;
+    listStockContests(cid)
+      .then((list) => alive && setContests(list))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [user, cid]);
+
   // 개장 여부/상대시간 표시를 위해 주기적으로 now 갱신
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 20_000);
@@ -123,6 +144,7 @@ function TradeInner() {
   }, []);
 
   useEffect(() => {
+    if (!pageVisible) return;
     // 시세·시장 지수는 전역 문서 — 학생/교사 보기 모드 공통으로 구독.
     const offPrices = watchTradingPrices(setPrices);
     const offMarket = watchTradingMarket(setMarket);
@@ -133,63 +155,59 @@ function TradeInner() {
     const offConfig = watchTradingConfig(cid, (c) =>
       setConfig(c ?? EMPTY_TRADING_CONFIG)
     );
-    // 학급 체결 피드는 교사 보기 모드에서도 유지(반 아이들 거래를 실시간 관전).
-    const offRecent = watchRecentTrades(cid, setRecentTrades);
     // 교사 보기 모드: 내 지갑·포지션·거래기록은 구독하지 않음(화면에도 노출 안 함).
     if (viewer) {
       return () => {
         offPrices();
         offMarket();
         offConfig();
-        offRecent();
       };
     }
     const offWallet = watchWallet(cid, user.uid, setWallet);
     const offPos = watchMyPosition(cid, user.uid, setPosition);
-    const offMine = watchMyTrades(cid, user.uid, setMyTrades);
+    // 기간 손익은 이력 재생(fillTradePnl)에 기대므로 잘리지 않게 넉넉히 구독한다.
+    const offMine = watchMyTrades(cid, user.uid, setMyTrades, TRADE_HISTORY_MAX);
     return () => {
       offPrices();
       offMarket();
       offConfig();
-      offRecent();
       offWallet();
       offPos();
       offMine();
     };
-  }, [user, cid, viewer]);
+  }, [user, cid, viewer, pageVisible]);
+
+  const showTradeFeed = isDesktop ? sideOpen : mobileTab === "history";
+  useEffect(() => {
+    if (!user || !cid || !pageVisible || !showTradeFeed) return;
+    return watchRecentTrades(cid, setRecentTrades);
+  }, [user, cid, pageVisible, showTradeFeed]);
 
   const open = useMemo(() => isTradingOpen(config, now), [config, now]);
   const nextOpen = useMemo(() => nextOpenAt(config, now), [config, now]);
   const nextOpenText = nextOpen ? fmtNextOpen(nextOpen) : null;
 
   const holdings = position?.holdings ?? {};
-  const realized = position?.realized ?? 0;
 
-  // 포트폴리오 집계
-  const portfolio = useMemo(() => {
-    const rows = Object.entries(position?.holdings ?? {})
-      .filter(([, h]) => h.qty > 0)
-      .map(([symbol, h]) => {
-        const stock = stockBySymbol(symbol);
-        const cur = prices?.stocks[symbol]?.mbPrice ?? h.avgCost;
-        const value = cur * h.qty;
-        const cost = h.avgCost * h.qty;
-        const pnl = value - cost;
-        const pct = cost > 0 ? (pnl / cost) * 100 : 0;
-        return { symbol, stock, ...h, cur, value, cost, pnl, pct };
-      });
-    const totalValue = rows.reduce((s, r) => s + r.value, 0);
-    const totalCost = rows.reduce((s, r) => s + r.cost, 0);
-    const unrealized = totalValue - totalCost;
-    // 분산투자 안내용 — 가장 비중이 큰 종목과 그 비율(%).
-    const topHolding = rows.reduce<(typeof rows)[number] | null>(
-      (max, r) => (!max || r.value > max.value ? r : max),
-      null
-    );
-    const topConcentration =
-      totalValue > 0 && topHolding ? (topHolding.value / totalValue) * 100 : 0;
-    return { rows, totalValue, totalCost, unrealized, topHolding, topConcentration };
-  }, [position, prices]);
+  // 내 성적 — 보유 평가·실현손익·총수익률·기간 매매 성적을 한 번에 계산한다.
+  // (교사용 '트레이딩 관리'·'주식대회'와 같은 lib 함수를 써서 숫자가 항상 일치한다.)
+  const periodFrom = useMemo(() => periodStartMs(period, now), [period, now]);
+  const stats = useMemo(
+    () =>
+      tradingStats(user?.uid ?? "", position, prices, myTrades, { from: periodFrom }),
+    [user, position, prices, myTrades, periodFrom]
+  );
+  // 실현손익이 채워진 체결 목록 — '내 거래 기록'에서 매도 건마다 손익을 보여준다.
+  const filledTrades = useMemo(
+    () => fillTradePnl(myTrades.filter((t) => t.uid === (user?.uid ?? ""))),
+    [myTrades, user]
+  );
+
+  // 분산투자 안내용 — 가장 비중이 큰 종목과 그 비율(%). holdings 는 평가액 내림차순.
+  const topHolding = stats.holdings[0] ?? null;
+  const topConcentration =
+    stats.value > 0 && topHolding ? (topHolding.value / stats.value) * 100 : 0;
+  const totalAssets = wallet.balance + stats.value;
 
   async function doRefresh() {
     if (refreshing) return;
@@ -217,78 +235,14 @@ function TradeInner() {
   const sheetStock = selected ? stockBySymbol(selected) : undefined;
   const panelStock = stockBySymbol(selected ?? TRADING_STOCKS[0].symbol)!;
 
-  const stockListNode = (
-    <div className="flex flex-col gap-2">
-      {TRADING_STOCKS.map((s) => {
-        const q: StockQuote | undefined = prices?.stocks[s.symbol];
-        const pct = q?.changePct ?? 0;
-        const diffMb = q ? q.mbPrice - toMbPrice(q.prevClose, s.mbDivisor) : 0;
-        const held = holdings[s.symbol]?.qty ?? 0;
-        const active =
-          isDesktop &&
-          (selected ? selected === s.symbol : s.symbol === TRADING_STOCKS[0].symbol);
-        return (
-          <button
-            key={s.symbol}
-            onClick={() => setSelected(s.symbol)}
-            aria-pressed={active}
-            className="flex items-center gap-3 rounded-2xl border px-4 py-4 text-left transition active:scale-[0.99]"
-            style={{
-              borderColor: active
-                ? "var(--md-sys-color-primary)"
-                : "var(--md-sys-color-outline-variant)",
-              background: active
-                ? "color-mix(in srgb, var(--md-sys-color-primary) 8%, var(--md-sys-color-surface-container-low))"
-                : "var(--md-sys-color-surface-container-low)",
-            }}
-          >
-            {/* 색상 원형칩 아이콘 */}
-            <span
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
-              style={{
-                background: `color-mix(in srgb, ${s.color} 16%, transparent)`,
-              }}
-            >
-              <Icon name={s.icon} size={26} style={{ color: s.color }} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-base font-extrabold">
-                {s.alias}
-                {held > 0 && (
-                  <span className="rounded-full bg-[var(--md-sys-color-primary-container)] px-2 py-0.5 text-xs font-bold text-[var(--md-sys-color-on-primary-container)]">
-                    {held}주 보유
-                  </span>
-                )}
-              </p>
-            </div>
-            {/* 현재가(크고 진하게) + 등락률/전일比 */}
-            <div className="shrink-0 text-right">
-              <p className="whitespace-nowrap text-xl font-black text-[var(--md-sys-color-on-surface)]">
-                {q ? fmtMb(q.mbPrice) : "—"}
-              </p>
-              <p
-                className="mt-0.5 whitespace-nowrap text-sm font-bold"
-                style={{ color: signColor(pct) }}
-              >
-                {q ? (
-                  <>
-                    {arrow(pct)} {fmtPct(pct)}
-                    <span className="ml-1 opacity-90">
-                      {fmtMbDelta(diffMb)}
-                    </span>
-                  </>
-                ) : (
-                  "시세 준비 중"
-                )}
-              </p>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
+  const stockListNode = <StockWatchlist key={`${cid}:${user.uid}`} storageKey={`trade-watchlist:${cid}:${user.uid}`} prices={prices} holdings={holdings} selected={isDesktop ? panelStock.symbol : selected} onSelect={setSelected} favoritesOnly={!isDesktop && mobileTab === "favorite"} />;
 
-  const portfolioNode = !viewer && (
+  // ---------- 내 계좌 (MTS 계좌 화면) ----------
+  // 실제 MTS 처럼 [잔고]·[실현손익] 두 탭을 AccountSheet 로 보여주고, 그 위에 총자산·총손익을
+  // 크게 얹는다. 교사가 학생을 눌러 보는 화면(TradingAdminModal)도 같은 AccountSheet 를 쓴다.
+  //  · 실현손익 = 이미 팔아서 확정된 손익(기간 안의 매도만 더한다)
+  //  · 평가손익 = 아직 안 판 주식의 오르내림(지금 이 순간 기준이라 기간 개념이 없다)
+  const accountNode = !viewer && (
     <>
       <h2 className="mb-2 mt-8 flex items-center gap-2 text-lg font-bold">
         <Icon
@@ -296,59 +250,61 @@ function TradeInner() {
           size={20}
           className="text-[var(--md-sys-color-primary)]"
         />
-        내 주식 보관함
+        내 계좌
       </h2>
       <GlassCard className="p-4">
-        {/* 총 평가 요약 */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-3 text-center">
+        {/* 총자산 — 현금 + 주식 평가액 */}
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <div>
             <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-              주식 평가액
+              내 총자산 (현금 + 주식)
             </p>
-            <p className="mt-0.5 text-base font-extrabold">
-              {fmtMb(portfolio.totalValue)}
+            <p className="text-3xl font-black tabular-nums">
+              {Math.round(totalAssets).toLocaleString()}
+              <span className="ml-1 text-base font-bold text-[var(--md-sys-color-on-surface-variant)]">
+                만보
+              </span>
             </p>
           </div>
-          <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-3 text-center">
+          <div className="text-right">
             <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-              평가 손익
+              총손익 (실현 + 평가)
             </p>
             <p
-              className="mt-0.5 text-base font-extrabold"
-              style={{ color: pnlColor(portfolio.unrealized) }}
+              className="text-2xl font-black tabular-nums"
+              style={{ color: pnlColor(stats.totalPnl) }}
             >
-              {portfolio.unrealized >= 0 ? "+" : ""}
-              {fmtMb(portfolio.unrealized)}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-3 text-center">
-            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-              실현 손익
-            </p>
-            <p
-              className="mt-0.5 text-base font-extrabold"
-              style={{ color: pnlColor(realized) }}
-            >
-              {realized >= 0 ? "+" : ""}
-              {fmtMb(realized)}
+              {stats.totalPnl >= 0 ? "+" : ""}
+              {Math.round(stats.totalPnl).toLocaleString()}
+              <span className="ml-1.5 text-base font-extrabold">
+                ({fmtPct(stats.returnPct)})
+              </span>
             </p>
           </div>
         </div>
 
+        <AccountSheet
+          stats={stats}
+          trades={filledTrades}
+          balance={wallet.balance}
+          period={period}
+          onPeriodChange={setPeriod}
+        />
+
         {/* 분산투자 안내 — 한 종목에 70% 넘게 몰려 있으면 부드럽게 알려준다(경고 아님). */}
-        {portfolio.topHolding && portfolio.topConcentration >= 70 && (
+        {topHolding && topConcentration >= 70 && (
           <div className="mt-3 flex items-start gap-2 rounded-2xl bg-[var(--md-sys-color-tertiary-container)] px-4 py-3 text-sm text-[var(--md-sys-color-on-tertiary-container)]">
             <Icon name="pie_chart" size={18} className="mt-0.5 shrink-0" />
             <span>
-              <b>{portfolio.topHolding.stock?.alias ?? portfolio.topHolding.symbol}</b>
-              에 내 주식 재산의 {Math.round(portfolio.topConcentration)}%가 몰려 있어요.
+              <b>{topHolding.stock?.alias ?? topHolding.symbol}</b>
+              에 내 주식 재산의 {Math.round(topConcentration)}%가 몰려 있어요.
               달걀을 한 바구니에 담지 않듯, 여러 종목에 나눠 담으면 위험을 줄일 수 있어요.
             </span>
           </div>
         )}
 
-        {portfolio.rows.length === 0 ? (
-          <p className="mt-3 rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-8 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
+        {stats.holdings.length === 0 && stats.tradeCount === 0 && (
+          <p className="mt-3 rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-6 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
             아직 가진 주식이 없어요. 위에서 마음에 드는 종목을 골라 보세요!
             <Icon
               name="shopping_cart"
@@ -356,46 +312,6 @@ function TradeInner() {
               className="ml-1 inline-block align-middle"
             />
           </p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-2">
-            {portfolio.rows.map((r) => (
-              <li
-                key={r.symbol}
-                className="flex items-center gap-3 rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-2.5"
-              >
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                  style={{
-                    background: `color-mix(in srgb, ${r.stock?.color ?? "var(--md-sys-color-primary)"} 16%, transparent)`,
-                  }}
-                >
-                  <Icon
-                    name={r.stock?.icon ?? "candlestick_chart"}
-                    size={20}
-                    style={{ color: r.stock?.color ?? "var(--md-sys-color-primary)" }}
-                  />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-bold">
-                    {r.stock?.alias ?? r.symbol}
-                  </p>
-                  <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                    {r.qty}주 · 평균 {fmtMb(r.avgCost)} → 지금 {fmtMb(r.cur)}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="font-extrabold">{fmtMb(r.value)}</p>
-                  <p
-                    className="text-xs font-bold"
-                    style={{ color: pnlColor(r.pnl) }}
-                  >
-                    {r.pnl >= 0 ? "+" : ""}
-                    {fmtMb(r.pnl)} ({fmtPct(r.pct)})
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
         )}
       </GlassCard>
     </>
@@ -449,7 +365,7 @@ function TradeInner() {
     </>
   );
 
-  const rankingNode = <RankingBoard cid={cid} prices={prices} myUid={user.uid} />;
+  const rankingNode = <RankingBoard key={cid} cid={cid} myUid={user.uid} />;
 
   const myTradesNode = !viewer && (
     <>
@@ -462,13 +378,13 @@ function TradeInner() {
         내 거래 기록
       </h2>
       <GlassCard className="mb-10 p-4">
-        {myTrades.length === 0 ? (
+        {filledTrades.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
             아직 거래한 적이 없어요.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {myTrades.map((t) => {
+            {filledTrades.slice(0, 50).map((t) => {
               const alias = stockBySymbol(t.symbol)?.alias ?? t.symbol;
               const buy = t.side === "buy";
               return (
@@ -490,12 +406,27 @@ function TradeInner() {
                   <span className="min-w-0 flex-1 truncate font-medium">
                     {alias} {t.qty}주
                   </span>
-                  <span
-                    className="shrink-0 font-extrabold"
-                    style={{ color: buy ? "var(--trade-up)" : "var(--trade-down)" }}
-                  >
-                    {buy ? "-" : "+"}
-                    {fmtMb(t.total)}
+                  <span className="shrink-0 text-right">
+                    <span
+                      className="block font-extrabold"
+                      style={{ color: buy ? "var(--trade-up)" : "var(--trade-down)" }}
+                    >
+                      {buy ? "-" : "+"}
+                      {fmtMb(t.total)}
+                    </span>
+                    {/* 매도 건은 그때 확정된 실현손익을 함께 보여준다(MTS 의 '실현손익' 열). */}
+                    {!buy && t.pnl !== null && (
+                      <span
+                        className="block text-[11px] font-bold"
+                        style={{ color: pnlColor(t.pnl) }}
+                      >
+                        실현 {t.pnl >= 0 ? "+" : ""}
+                        {fmtMb(t.pnl)}
+                        {t.costBasis && t.costBasis > 0
+                          ? ` (${fmtPct((t.pnl / t.costBasis) * 100)})`
+                          : ""}
+                      </span>
+                    )}
                   </span>
                 </li>
               );
@@ -509,7 +440,7 @@ function TradeInner() {
   return (
     <div className="trade-scope contents">
       <TopBar />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6 lg:max-w-7xl">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pt-6 pb-24 lg:pb-6 lg:max-w-7xl">
         <button
           onClick={() => router.push(`/level?id=${cid}`)}
           className="mb-3 inline-flex items-center gap-1 text-sm text-[var(--md-sys-color-on-surface-variant)] transition hover:text-[var(--md-sys-color-on-surface)]"
@@ -531,7 +462,7 @@ function TradeInner() {
         <GlassCard strong className="overflow-hidden p-0">
           <div className="jam-trade-hero flex flex-col gap-3 px-6 py-5 text-white lg:flex-row lg:items-center lg:gap-6 lg:py-4">
             <div className="flex items-center gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/25 lg:h-10 lg:w-10">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/25 lg:h-10 lg:w-10">
                 <Icon name={viewer ? "visibility" : "savings"} size={26} className="text-white" />
               </span>
               {viewer ? (
@@ -591,10 +522,66 @@ function TradeInner() {
         {/* 시장 지수 요약 스트립 (토스 홈 상단 느낌, 전체 폭) — 데이터 없으면 스스로 숨김 */}
         <MarketStrip market={market} />
 
+        {/* 우리 반 주식대회 — 눌러서 지금 등수 보기 */}
+        {contests.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2">
+            {contests.map((ct) => {
+              const done = ct.status === "done";
+              return (
+                <button
+                  key={ct.id}
+                  onClick={() => setOpenContestId(ct.id)}
+                  className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition hover:brightness-[0.98]"
+                  style={{
+                    borderColor: done
+                      ? "var(--md-sys-color-outline-variant)"
+                      : "color-mix(in srgb, #d9a400 45%, transparent)",
+                    background: done
+                      ? "var(--md-sys-color-surface-container-low)"
+                      : "color-mix(in srgb, #d9a400 10%, var(--md-sys-color-surface-container-low))",
+                  }}
+                >
+                  <span
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                    style={{ background: "color-mix(in srgb, #d9a400 20%, transparent)" }}
+                  >
+                    <Icon
+                      name={done ? "check_circle" : "trophy"}
+                      size={22}
+                      fill
+                      style={{ color: "#d9a400" }}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-base font-extrabold">
+                      {ct.name}
+                    </span>
+                    <span className="block truncate text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                      {done
+                        ? "끝난 대회 · 결과 보기"
+                        : `진행 중 · 참가 ${ct.participants}명 · 내 등수 보기`}
+                    </span>
+                    {ct.desc && (
+                      <span className="mt-0.5 block truncate text-xs text-[var(--md-sys-color-on-surface)]">
+                        {ct.desc}
+                      </span>
+                    )}
+                  </span>
+                  <Icon
+                    name="chevron_right"
+                    size={20}
+                    className="shrink-0 text-[var(--md-sys-color-on-surface-variant)]"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {isDesktop ? (
           // ---------- 데스크톱: 좌(종목목록+보관함) · 우(거래창+거래소식+랭킹) 와이드 2컬럼 ----------
           <div className="mt-6 grid grid-cols-12 items-start gap-6">
-            <div className="col-span-5 min-w-0">
+            <div className="col-span-4 min-w-0 xl:col-span-3">
               <h2 className="mb-2 flex items-center gap-2 text-lg font-bold">
                 <Icon
                   name="storefront"
@@ -604,9 +591,8 @@ function TradeInner() {
                 오늘의 종목
               </h2>
               {stockListNode}
-              {portfolioNode}
             </div>
-            <div className="col-span-7 min-w-0">
+            <div className="col-span-8 min-w-0 xl:col-span-9">
               <div className="flex w-full flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-1)]">
                 <StockPanel
                   cid={cid}
@@ -615,6 +601,8 @@ function TradeInner() {
                   holdingQty={holdings[panelStock.symbol]?.qty ?? 0}
                   avgCost={holdings[panelStock.symbol]?.avgCost ?? 0}
                   balance={wallet.balance}
+                  portfolioValue={stats.holdings.every(h => (prices?.stocks[h.symbol]?.mbPrice ?? 0) > 0) ? stats.value : undefined}
+                  trades={myTrades}
                   marketOpen={open}
                   nextOpenText={nextOpenText}
                   viewer={viewer}
@@ -625,23 +613,16 @@ function TradeInner() {
         ) : (
           // ---------- 모바일: 세로 스택 + 바텀시트 ----------
           <>
-            <h2 className="mb-2 mt-6 flex items-center gap-2 text-lg font-bold">
-              <Icon
-                name="storefront"
-                size={20}
-                className="text-[var(--md-sys-color-primary)]"
-              />
-              오늘의 종목
-            </h2>
-            {stockListNode}
-            {portfolioNode}
-            {feedNode}
-            {rankingNode}
-            {myTradesNode}
+            {(mobileTab === "market" || mobileTab === "favorite") && <><h2 className="mb-2 mt-6 text-lg font-bold">{mobileTab === "favorite" ? "관심종목" : "오늘의 종목"}</h2>{stockListNode}</>}
+            {mobileTab === "account" && accountNode}
+            {mobileTab === "history" && <>{myTradesNode}{feedNode}{rankingNode}</>}
+            <nav aria-label="트레이딩 메뉴" className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg">
+              {[["market", "시장"], ["favorite", "관심"], ...(!viewer ? [["account", "내 자산"]] : []), ["history", "거래 내역"]].map(([key, label]) => <button key={key} onClick={() => setMobileTab(key)} aria-current={mobileTab === key ? "page" : undefined} className="min-h-11 flex-1 rounded-xl px-2 py-3 text-sm font-bold" style={{ background: mobileTab === key ? "var(--md-sys-color-primary-container)" : undefined }}>{label}</button>)}
+            </nav>
           </>
         )}
 
-        {isDesktop && myTradesNode}
+        {isDesktop && <div className="mt-6">{accountNode}{myTradesNode}</div>}
       </main>
 
       {isDesktop && (
@@ -649,6 +630,14 @@ function TradeInner() {
           {feedNode}
           {rankingNode}
         </TradeSideDrawer>
+      )}
+
+      {openContestId && (
+        <ContestBoardModal
+          contestId={openContestId}
+          myUid={viewer ? undefined : user.uid}
+          onClose={() => setOpenContestId(null)}
+        />
       )}
 
       {!isDesktop && sheetStock && (
@@ -659,6 +648,8 @@ function TradeInner() {
           holdingQty={holdings[sheetStock.symbol]?.qty ?? 0}
           avgCost={holdings[sheetStock.symbol]?.avgCost ?? 0}
           balance={wallet.balance}
+          portfolioValue={stats.holdings.every(h => (prices?.stocks[h.symbol]?.mbPrice ?? 0) > 0) ? stats.value : undefined}
+          trades={myTrades}
           marketOpen={open}
           nextOpenText={nextOpenText}
           viewer={viewer}
