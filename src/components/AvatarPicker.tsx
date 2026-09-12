@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { AVATAR_PAGES } from "@/lib/users";
 
-/** 아바타 선택 모달 — 1·2페이지 탭으로 이동, 고르면 팝 애니메이션 후 onSelect */
+/** 아바타 선택 모달 — 페이지 탭으로 이동, 고르면 팝 애니메이션 후 onSelect */
 export function AvatarPicker({
   current,
   onClose,
@@ -76,12 +76,12 @@ export function AvatarPicker({
         </div>
 
         {/* 페이지 탭 */}
-        <div className="mb-3 flex justify-center gap-2">
+        <div className="mb-3 grid grid-cols-5 gap-1.5">
           {AVATAR_PAGES.map((pg, i) => (
             <button
               key={pg.label}
               onClick={() => setPage(i)}
-              className={`rounded-full px-4 py-1.5 text-sm font-bold transition ${
+              className={`rounded-full px-2 py-1.5 text-xs font-bold transition sm:text-sm ${
                 page === i
                   ? "bg-[var(--md-sys-color-primary)] text-white"
                   : "border border-[var(--md-sys-color-outline)] text-black/55 hover:bg-black/5"
