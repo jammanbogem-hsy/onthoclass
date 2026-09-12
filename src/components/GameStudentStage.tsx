@@ -129,43 +129,34 @@ export function GameStudentStage({
                 ? "result"
                 : "later";
 
-  // 작성/플레이 중 heartbeat (5초 간격) + 탭 가시성 즉시 반영
-  useEffect(() => {
-    if (stage !== "write" && stage !== "play" && stage !== "select" && stage !== "build")
-      return;
-    const ping = () => {
-      if (document.visibilityState !== "visible") return;
-      pingActive(cid, game.id, uid).catch(() => {});
-    };
-    ping();
-    const t = setInterval(ping, 5000);
+  const activityWrites = useRef(Promise.resolve());
+  const trackActivity = stage === "write" || stage === "play" || stage === "select" || stage === "build";
 
-    // 탭 이탈/복귀 즉시 반영 — 응답안함이 1~2초 안에 잡힘
-    const onVis = () => {
-      if (document.visibilityState === "visible") {
-        setInactive(cid, game.id, uid, false).catch(() => {});
-      } else {
-        setInactive(cid, game.id, uid, true).catch(() => {});
-      }
+  // 기존 20초 응답 판정 안에서 10초 간격으로 기록. 탭 이탈은 즉시 반영.
+  useEffect(() => {
+    if (!trackActivity) return;
+    let lastInactive: boolean | undefined;
+    const report = (heartbeat = false) => {
+      const inactive = document.visibilityState !== "visible" || !document.hasFocus();
+      if (inactive === lastInactive && (inactive || !heartbeat)) return;
+      lastInactive = inactive;
+      // 연속 blur/visibility 이벤트를 합치고 상태 쓰기의 순서를 보장한다.
+      activityWrites.current = activityWrites.current.then(() => setInactive(cid, game.id, uid, inactive)).catch(() => { lastInactive = undefined; });
     };
-    const onBlur = () => {
-      setInactive(cid, game.id, uid, true).catch(() => {});
-    };
-    const onFocus = () => {
-      setInactive(cid, game.id, uid, false).catch(() => {});
-    };
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", onFocus);
+    report();
+    const onChange = () => report();
+    const timer = setInterval(() => report(true), 10_000);
+    document.addEventListener("visibilitychange", onChange);
+    window.addEventListener("blur", onChange);
+    window.addEventListener("focus", onChange);
     return () => {
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", onFocus);
-      // 언마운트 시 inactive 처리 — 다른 페이지로 이동/오버레이 닫힘
-      setInactive(cid, game.id, uid, true).catch(() => {});
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onChange);
+      window.removeEventListener("blur", onChange);
+      window.removeEventListener("focus", onChange);
+      if (lastInactive !== true) activityWrites.current = activityWrites.current.then(() => setInactive(cid, game.id, uid, true)).catch(() => {});
     };
-  }, [stage, cid, game.id, uid]);
+  }, [trackActivity, cid, game.id, uid]);
 
   // 제출에 저장된 이름이 비었거나 "이름없음"이면, 정확한 학급 이름으로 보정(이미 참여한 경우).
   useEffect(() => {

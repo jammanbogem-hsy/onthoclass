@@ -472,6 +472,19 @@ export function GamePage({
     void patchRun(cid, gid, uid, { startedAt: Date.now() }).catch(() => {})
   }, [cid, gid, uid])
 
+  // 화면을 떠날 때 마지막 점수를 한 번 더 올린다 — 주기 동기화(3초) 사이에
+  // 모은 것이 기록에 빠지지 않도록. 등수의 기준인 두 값만 쓴다.
+  useEffect(() => {
+    return () => {
+      const cur = sessionRef.current
+      if (!cur) return
+      void patchRun(cid, gid, uid, {
+        score: cur.score,
+        collected: cur.collectedIds.length,
+      }).catch(() => {})
+    }
+  }, [cid, gid, uid])
+
   // 진행 상태를 주기적으로 서버에 올린다(매 프레임 쓰면 요금·쿼터가 터진다).
   useEffect(() => {
     const t = setInterval(() => {

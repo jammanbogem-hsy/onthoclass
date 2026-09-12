@@ -86,6 +86,9 @@ export type Game = {
   by: string;
   createdAt: number | null;
   updatedAt: number | null;
+  /** 플레이가 시작된 시각. 퀴즈런 제한시간(quiz.durationSec)의 기준점이다.
+   *  updatedAt 은 이후 갱신마다 바뀌어 기준으로 쓸 수 없다. */
+  playStartedAt: number | null;
 };
 
 export type GameSubmissionStatus =
@@ -141,7 +144,7 @@ export async function createGame(
   config: GameConfig
 ): Promise<string> {
   const gid = randId();
-  const g: Omit<Game, "id" | "createdAt" | "updatedAt"> = {
+  const g: Omit<Game, "id" | "createdAt" | "updatedAt" | "playStartedAt"> = {
     kind: "bingo-concept",
     // 로비 단계: 학생이 참여만 한 상태로 모이고, 교사가 "단어 받기 시작" 을 누르면 submit 으로 전이
     status: "draft",
@@ -209,6 +212,9 @@ export async function setGameStatus(
 ): Promise<void> {
   await updateDoc(gameRef(cid, gid), {
     status,
+    // 플레이로 넘어가는 순간을 남긴다 — 퀴즈런 제한시간은 이 시각부터 잰다.
+    // 모든 학생이 같은 기준을 봐야 하므로 서버 시각을 쓴다.
+    ...(status === "play" ? { playStartedAt: serverTimestamp() } : {}),
     updatedAt: serverTimestamp(),
   });
 }
@@ -1094,6 +1100,7 @@ function mapGame(id: string, v: Record<string, unknown>): Game {
     by: (v.by as string) ?? "",
     createdAt: ts("createdAt"),
     updatedAt: ts("updatedAt"),
+    playStartedAt: ts("playStartedAt"),
   };
 }
 

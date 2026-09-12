@@ -11,7 +11,6 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
-import { useNameMask } from "@/components/NameMask";
 import type { Game } from "@/lib/games";
 import { requestClassXp } from "@/lib/xp";
 import {
@@ -21,6 +20,7 @@ import {
   getIntroRemainingSec,
   joinRun,
   patchRun,
+  xpFromScore,
   watchRuns,
   type QuizRun,
   type QuizRunConfig,
@@ -29,6 +29,7 @@ import { useRemainingSec } from "@/components/quizrun/useRemainingSec";
 import { QuizRunIntro } from "@/components/quizrun/QuizRunIntro";
 import { QuizRunLeaderboard } from "@/components/quizrun/QuizRunLeaderboard";
 import { QuizRunGallery } from "@/components/quizrun/QuizRunGallery";
+import { QuizRunHallOfFame } from "@/components/quizrun/QuizRunHallOfFame";
 import { captureGameShot, uploadGameShot } from "@/lib/quizrunShot";
 
 // 어솔 원본 GamePage — 그래픽·에셋·HUD·연출이 배포본과 동일하다.
@@ -59,26 +60,44 @@ export function QuizRunStudent({
   name: string;
   onMinimize: () => void;
 }) {
-  const { mask } = useNameMask();
   const cfg = game.quiz as QuizRunConfig | undefined;
   const [runs, setRuns] = useState<QuizRun[]>([]);
-  // "한 번만 실행" 가드 — state 로 두면 effect 안에서 setState 를 부르게 되어
-  // 불필요한 렌더가 한 번 더 돈다. ref 는 렌더를 유발하지 않는다.
-  const joined = useRef(false);
   const xpSent = useRef(false);
+  // 참여 등록 재시도 횟수 — 실패해도 화면이 조용히 "대기"로 남지 않도록,
+  // 몇 초 간격으로 다시 시도하고 그래도 안 되면 버튼을 띄운다.
+  const [joinTry, setJoinTry] = useState(0);
+  const [joinFailed, setJoinFailed] = useState(false);
 
   useEffect(() => watchRuns(cid, game.id, setRuns), [cid, game.id]);
 
   const mine = runs.find((r) => r.uid === uid) ?? null;
   const ranking = useMemo(() => computeRanking(runs), [runs]);
-  const myRank = ranking.findIndex((r) => r.uid === uid);
 
-  // 참여 등록 (한 번만)
+  // 참여 등록.
+  //
+  // 예전에는 한 번 시도하고 실패를 삼켰다 — 그러면 그 학생의 run 문서가
+  // 끝내 생기지 않고, 화면은 "곧 시작해요"에 멈춘 채 남는다(관전처럼 보인다).
+  // 이미 문서가 있으면 건너뛰고, 없으면 될 때까지 다시 시도한다.
+  // 게임 도중에도 돌기 때문에 중간 입장이 그대로 된다.
   useEffect(() => {
-    if (joined.current || !cfg) return;
-    joined.current = true;
-    void joinRun(cid, game.id, uid, name, cfg).catch(() => {});
-  }, [cfg, cid, game.id, uid, name]);
+    if (!cfg || mine) return;
+    let alive = true;
+    void joinRun(cid, game.id, uid, name, cfg)
+      .then(() => {
+        if (alive) setJoinFailed(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setJoinFailed(true);
+        // 네트워크가 잠깐 끊긴 경우가 대부분이라 조용히 다시 시도한다
+        window.setTimeout(() => {
+          if (alive) setJoinTry((n) => n + 1);
+        }, 3000);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cfg, mine, cid, game.id, uid, name, joinTry]);
 
   // 인트로가 끝나야 게임이 시작된다 — 제한시간도 그 시각부터 잰다.
   // (영상을 건너뛴 학생이 더 오래 플레이하지 않도록)
@@ -119,7 +138,14 @@ export function QuizRunStudent({
 
   // 끝난 순간의 공 사진을 찍어 올린다 — 학급 전시(그리드)에 쓴다.
   const [shotState, setShotState] = useState<"idle" | "done">("idle");
-  const gameOver = game.status === "done" || (remainingSec !== null && remainingSec <= 0);
+  // 맵을 다 깬 학생은 스스로 끝난다. 예전에는 그 순간 스테이지를 닫아버려
+  // 기록도 결과도 못 봤다 — 이제는 결과 화면으로 넘어간다.
+  const [selfFinished, setSelfFinished] = useState(false);
+  const handleGameFinished = useCallback(() => setSelfFinished(true), []);
+  const gameOver =
+    game.status === "done" ||
+    selfFinished ||
+    (remainingSec !== null && remainingSec <= 0);
   useEffect(() => {
     if (!gameOver || !sawGame || shotState !== "idle") return;
     let alive = true;
@@ -145,21 +171,28 @@ export function QuizRunStudent({
   useEffect(() => {
     if (game.status !== "done" || xpSent.current || !mine) return;
     xpSent.current = true;
+    // 경험치는 교사가 정한 비율로 환산한다 — 점수를 그대로 XP 로 주면
+    // 한 판에 수백 XP 가 들어와 학급 레벨이 무너진다.
+    const score = Math.round(mine.score);
+    const points = xpFromScore(score, cfg?.xpDivisor);
     void requestClassXp(cid, uid, {
       activity: `quizrun:${game.id}`,
       label: `퀴즈런 · ${game.link.name}`,
-      score: Math.round(mine.score),
-      reason: `정답 ${mine.correct}개 · 점수 ${Math.round(mine.score)}`,
+      score,
+      points,
+      reason: `정답 ${mine.correct}개 · 점수 ${score} ÷ ${
+        cfg?.xpDivisor ?? "기본"
+      } → ${points} XP`,
     }).catch(() => {});
-  }, [game.status, game.id, game.link.name, mine, cid, uid]);
+  }, [game.status, game.id, game.link.name, mine, cid, uid, cfg?.xpDivisor]);
 
   if (!cfg) return null;
 
   // 제한시간이 다 되면 교사가 종료를 누르기 전에도 학생 화면은 결과로 넘어간다.
   // (교사 콘솔도 같은 시각에 게임을 종료하지만, 콘솔이 닫혀 있을 수 있다)
   const timeUp = remainingSec !== null && remainingSec <= 0;
-  const playing = game.status === "play" && !timeUp && !showIntro;
-  const ended = game.status === "done" || timeUp;
+  const playing = game.status === "play" && !timeUp && !showIntro && !selfFinished;
+  const ended = game.status === "done" || timeUp || selfFinished;
   // 공 사진은 게임이 아직 화면에 있을 때만 찍을 수 있다. 그래서 끝나자마자
   // 결과로 넘기지 않고 캡처가 끝날 때까지 게임을 한 박자 더 붙들어 둔다.
   const capturing = ended && sawGame && shotState !== "done";
@@ -209,7 +242,7 @@ export function QuizRunStudent({
               uid={uid}
               cfg={cfg}
               run={mine}
-              onExit={onMinimize}
+              onExit={handleGameFinished}
             />
             {playing && (
               <QuizRunLeaderboard ranking={ranking} runs={runs} uid={uid} />
@@ -223,41 +256,10 @@ export function QuizRunStudent({
             )}
           </>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-4 overflow-y-auto rounded-2xl bg-[var(--md-sys-color-surface)] p-6">
+          <div className={`flex h-full flex-col items-center gap-4 overflow-y-auto rounded-2xl bg-[var(--md-sys-color-surface)] p-6 ${done ? "justify-start" : "justify-center"}`}>
             {done ? (
               <>
-                <p className="text-xl font-black">게임 끝!</p>
-                {myRank >= 0 && (
-                  <p className="text-sm font-bold text-[var(--md-sys-color-primary)]">
-                    {myRank + 1}등 · {ranking[myRank].collected}개 모음
-                  </p>
-                )}
-                {mine && (
-                  <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                    정답 {mine.correct}개 · 점수 {Math.round(mine.score)}
-                  </p>
-                )}
-                <div className="mt-2 w-full max-w-sm">
-                  {ranking.slice(0, 5).map((r, i) => (
-                    <div
-                      key={r.uid}
-                      className={`flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm ${
-                        r.uid === uid
-                          ? "bg-[var(--md-sys-color-primary-container)] font-bold text-[var(--md-sys-color-on-primary-container)]"
-                          : ""
-                      }`}
-                    >
-                      <span className="w-5 text-xs font-bold">{i + 1}</span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {mask(r.name)}
-                      </span>
-                      <span className="tabular-nums">{r.collected}개</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                  경험치는 선생님이 확인한 뒤 지급돼요
-                </p>
+                <QuizRunHallOfFame ranking={ranking} runs={runs} uid={uid} />
                 <QuizRunGallery
                   ranking={ranking}
                   runs={runs}
@@ -281,6 +283,20 @@ export function QuizRunStudent({
                 <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   참여 {runs.length}명 · 선생님이 시작하면 자동으로 열려요
                 </p>
+                {/* 참여 등록이 안 되면 화면이 조용히 대기로 남는다 — 알리고
+                    직접 다시 시도할 수 있게 한다 */}
+                {!mine && joinFailed && (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl bg-[var(--md-sys-color-error-container)] px-4 py-3 text-[var(--md-sys-color-on-error-container)]">
+                    <p className="text-sm font-bold">참여 등록이 안 됐어요</p>
+                    <button
+                      onClick={() => setJoinTry((n) => n + 1)}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--md-sys-color-error)] px-4 py-1.5 text-sm font-bold text-[var(--md-sys-color-on-error)]"
+                    >
+                      <Icon name="refresh" size={16} />
+                      다시 시도
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

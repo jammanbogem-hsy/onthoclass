@@ -52,6 +52,7 @@ export function GameStartModal({
   const [items, setItems] = useState<QuizItem[]>([]);
   const [durationMin, setDurationMin] = useState(10);
   const [drainPerSec, setDrainPerSec] = useState(QUIZRUN_DEFAULTS.drainPerSec);
+  const [xpDivisor, setXpDivisor] = useState(QUIZRUN_DEFAULTS.xpDivisor);
   const [chargePerCorrect, setChargePerCorrect] = useState(
     QUIZRUN_DEFAULTS.chargePerCorrect
   );
@@ -125,6 +126,7 @@ export function GameStartModal({
           durationSec: Math.max(60, Math.floor(durationMin * 60)),
           drainPerSec: Math.max(1, drainPerSec),
           chargePerCorrect: Math.max(1, chargePerCorrect),
+          xpDivisor: Math.max(1, Math.min(500, xpDivisor)),
           difficulty,
           items: usable,
         };
@@ -411,6 +413,38 @@ export function GameStartModal({
                       움직일 수 있어요. 시작 에너지 {QUIZRUN_DEFAULTS.energyStart}(약{" "}
                       {(QUIZRUN_DEFAULTS.energyStart / drainPerSec).toFixed(0)}초),
                       최대 {QUIZRUN_DEFAULTS.energyMax}.
+                    </p>
+                  </div>
+                </Section>
+                <Section title="경험치 비율">
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      <span>게임 점수 ÷</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={xpDivisor}
+                        onChange={(e) =>
+                          setXpDivisor(
+                            Math.max(
+                              1,
+                              Math.min(500, Number(e.target.value) || 1)
+                            )
+                          )
+                        }
+                        className="m3-field w-20"
+                      />
+                    </label>
+                    <p className="rounded-xl bg-[var(--md-sys-color-surface-container)] px-3 py-2 text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+                      게임이 끝나면 점수를 이 값으로 나눠 경험치를 요청해요
+                      (올림).{" "}
+                      <b className="text-[var(--md-sys-color-primary)]">
+                        5,000점 → {Math.ceil(5000 / Math.max(1, xpDivisor))} XP
+                      </b>
+                      , 20,000점 → {Math.ceil(20000 / Math.max(1, xpDivisor))}{" "}
+                      XP. 한 판에 보통 수천~2만 점이 나오니, 주고 싶은 XP 에
+                      맞춰 조절하세요. 지급은 선생님 승인 후예요.
                     </p>
                   </div>
                 </Section>

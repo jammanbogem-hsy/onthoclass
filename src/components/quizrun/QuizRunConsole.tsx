@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GlassCard } from "@/components/Glass";
 import { Icon } from "@/components/Icon";
 import { useNameMask } from "@/components/NameMask";
-import { setGameStatus, clearActiveGame, type Game } from "@/lib/games";
+import { setGameStatus, type Game } from "@/lib/games";
 import {
   computeRanking,
   formatClock,
@@ -71,10 +71,10 @@ export function QuizRunConsole({
     if (!started || remainingSec === null || remainingSec > 0) return;
     if (autoEnded.current) return;
     autoEnded.current = true;
-    void (async () => {
-      await setGameStatus(cid, game.id, "done");
-      await clearActiveGame(cid);
-    })().catch(() => {});
+    // 활성 포인터는 그대로 둔다 — 지우면 학생 화면에서 game 이 null 이 되어
+    // 결과(명예의 전당)를 볼 틈도 없이 통째로 닫힌다. 정리는 교사가
+    // 상단 배너의 "게임 종료" 로 직접 한다.
+    void setGameStatus(cid, game.id, "done").catch(() => {});
   }, [started, remainingSec, cid, game.id]);
 
   async function start() {
@@ -89,8 +89,9 @@ export function QuizRunConsole({
   async function finish() {
     setBusy(true);
     try {
+      // status 만 done 으로. 활성 포인터를 여기서 지우면 학생들이 결과를
+      // 못 본 채 화면이 닫힌다(정리는 상단 배너의 "게임 종료" 담당).
       await setGameStatus(cid, game.id, "done");
-      await clearActiveGame(cid);
     } finally {
       setBusy(false);
     }

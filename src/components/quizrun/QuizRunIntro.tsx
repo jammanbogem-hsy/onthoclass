@@ -21,6 +21,23 @@ import {
   QUIZRUN_INTRO_VIDEO,
   getIntroRemainingSec,
 } from "@/lib/quizrun";
+import {
+  femaleRunnerUrl,
+  maleRunnerUrl,
+  rollingBallUrl,
+  runModelUrl,
+  standModelUrl,
+} from "@/lib/quizrun-engine/data/modelUrls";
+
+/** 게임이 열리자마자 화면에 필요한 모델 — 인트로가 도는 동안 미리 받아 둔다.
+ *  이게 없으면 게임이 시작되고도 캐릭터가 한참 뒤에 나타난다. */
+const FIRST_FRAME_MODELS = [
+  standModelUrl,
+  runModelUrl,
+  rollingBallUrl,
+  maleRunnerUrl,
+  femaleRunnerUrl,
+];
 
 export function QuizRunIntro({
   playStartedAt,
@@ -50,10 +67,17 @@ export function QuizRunIntro({
     return () => window.clearInterval(t);
   }, [playStartedAt, onDone]);
 
-  // 인트로가 도는 20초 동안 3D 게임 모듈을 미리 받아 둔다 — 영상이 끝나자마자
-  // 바로 들어가도록.
+  // 인트로가 도는 20초 동안 3D 게임 모듈과 첫 화면 모델을 미리 받아 둔다 —
+  // 영상이 끝나자마자 캐릭터가 서 있도록.
+  //
+  // 모델은 drei 의 useGLTF.preload 대신 fetch 로 굽는다. 여기서 three 를
+  // 끌어오면 인트로 번들이 통째로 무거워지는데, 모델 파일은 1년 캐시가 걸려
+  // 있어 그냥 받아만 둬도 게임 쪽 요청이 캐시에 맞는다.
   useEffect(() => {
     void import("@/components/quizrun/EarsoulGamePage").catch(() => {});
+    for (const url of FIRST_FRAME_MODELS) {
+      void fetch(url, { cache: "force-cache" }).catch(() => {});
+    }
   }, []);
 
   // 늦게 들어온 학생은 영상 중간부터 — 모두 같은 지점을 본다.

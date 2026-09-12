@@ -29,6 +29,7 @@ export function ActiveGameBanner({
 }) {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [busy, setBusy] = useState(false);
+  const isQuizRun = game.kind === "quiz-run";
 
   async function doEnd() {
     setBusy(true);
@@ -46,17 +47,28 @@ export function ActiveGameBanner({
       role="status"
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--md-sys-color-tertiary)] text-white">
-        <Icon name="grid_view" size={18} />
+        <Icon name={isQuizRun ? "directions_run" : "grid_view"} size={18} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <p className="text-sm font-bold">
-          학급 게임 진행 중 · 개념 빙고
+          학급 게임 진행 중 · {isQuizRun ? "퀴즈런" : "개념 빙고"}
           <span className="ml-1 inline-block h-2 w-2 animate-pulse rounded-full bg-[var(--md-sys-color-tertiary)] align-middle" />
         </p>
+        {/* 요약은 게임 종류마다 다르다. 퀴즈런의 참여자는 runs 에 있어서
+            여기(빙고의 submissions)로는 셀 수 없다 — 늘 0명으로 보이므로 뺐다. */}
         <p className="truncate text-xs">
-          {game.link.name} · 참여 <b>{subs.length}</b>명 ·{" "}
-          {game.config.boardSize}×{game.config.boardSize} 보드 · 단어{" "}
-          {game.config.wordsPerStudent}개 · 빙고 {game.config.bingoTarget}줄
+          {isQuizRun ? (
+            <>
+              {game.link.name} · 문제 <b>{game.quiz?.items.length ?? 0}</b>개 ·
+              제한 {Math.round((game.quiz?.durationSec ?? 0) / 60)}분
+            </>
+          ) : (
+            <>
+              {game.link.name} · 참여 <b>{subs.length}</b>명 ·{" "}
+              {game.config.boardSize}×{game.config.boardSize} 보드 · 단어{" "}
+              {game.config.wordsPerStudent}개 · 빙고 {game.config.bingoTarget}줄
+            </>
+          )}
         </p>
       </div>
       <button
