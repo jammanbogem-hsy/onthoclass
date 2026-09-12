@@ -18,6 +18,9 @@ import {
   getFirestore,
   type DocumentReference,
 } from "firebase-admin/firestore";
+import { randomUUID } from "node:crypto";
+import { loadSharedCache, hasInvested, sumBuyTotal, type CacheClaim } from "./sharedCache";
+import { USAGE_FEATURES, usageDay, validateUsage, mergeUsage, type UsageEntry, type UsageCounts } from "./usage";
 import Anthropic from "@anthropic-ai/sdk";
 
 initializeApp();
@@ -3483,6 +3486,22 @@ export const refreshTradingPrices = onCall(
   }
 );
 
+/** 기존 계좌만 최초 1회 이력을 집계. 포지션과 같은 트랜잭션으로 매매와의 경합 방지. */
+async function ensureTradingInvested(cid: string, uid: string): Promise<number> {
+  const db = getFirestore();
+  const ref = db.doc(`classes/${cid}/positions/${uid}`);
+  return db.runTransaction(async tx => {
+    const position = await tx.get(ref);
+    const invested = position.data()?.invested;
+    if (hasInvested(invested)) return invested;
+    const history = await tx.get(db.collection(`classes/${cid}/trades`).where("uid", "==", uid).select("side", "total"));
+    const total = sumBuyTotal(history.docs.map(d => d.data()));
+    // 누락된 문서를 새 계좌로 만들지 않는다.
+    if (position.exists) tx.set(ref, { invested: total }, { merge: true });
+    return total;
+  });
+}
+
 /**
  * 우리 반 수익률 랭킹 — 학생용.
  *
@@ -3491,9 +3510,10 @@ export const refreshTradingPrices = onCall(
  * 종목의 만보 환산 배율(mbDivisor)이 바뀌면 옛 스케일로 굳어버려 현재 시세와 단위가
  * 어긋난다(예: 만보해운 배율 2000→500 변경 후 평단 10만보 vs 현재가 43만보 → 허위 +330%).
  * 그래서 정본인 positions 를 서버에서 직접 읽어 집계한다 — 교사용 '트레이딩 관리'
- * (TradingAdminModal BoardTab)와 완전히 같은 수식이라 두 화면이 항상 일치한다.
+ * (TradingAdminModal BoardTab)와 같은 수식을 사용하며 랭킹은 캐시 집계 시각 기준이다.
  *
- * 노출 범위: 이름·총손익·수익률만. 보유 종목/수량/잔액은 반환하지 않는다.
+ * 노출 범위: 이름·총손익·수익률·실현/평가 손익만. 보유 종목/수량/잔액·투자원금은
+ * 반환하지 않는다.
  */
 export const getTradingRanking = onCall(
   { memory: "256MiB" },
@@ -3501,7 +3521,14 @@ export const getTradingRanking = onCall(
     req
   ): Promise<{
     ok: true;
-    rows: Array<{ uid: string; name: string; totalPnl: number; returnPct: number }>;
+    rows: Array<{
+      uid: string;
+      name: string;
+      totalPnl: number;
+      returnPct: number;
+      realized: number;
+      unrealized: number;
+    }>;
   }> => {
     if (!req.auth) {
       throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
@@ -3519,53 +3546,95 @@ export const getTradingRanking = onCall(
       throw new HttpsError("permission-denied", "해당 학급의 멤버만 볼 수 있습니다.");
     }
 
-    const [posSnap, priceSnap, memberList] = await Promise.all([
-      fdb.collection(`classes/${cid}/positions`).get(),
-      fdb.doc("tradingPrices/current").get(),
-      fdb.collection(`classes/${cid}/members`).get(),
-    ]);
-    const stocks =
-      (priceSnap.data()?.stocks as Record<string, { mbPrice?: number }>) ?? {};
-    const nameOf = new Map<string, string>();
-    for (const m of memberList.docs) {
-      nameOf.set(m.id, (m.data()?.displayName as string) || "친구");
-    }
-
-    const rows = posSnap.docs
-      .map((d) => {
-        const holdings =
-          (d.data()?.holdings as Record<string, { qty: number; avgCost: number }>) ?? {};
-        const realized = (d.data()?.realized as number) ?? 0;
-        let value = 0;
-        let cost = 0;
-        let held = 0;
-        for (const [symbol, h] of Object.entries(holdings)) {
-          if (!h || h.qty <= 0) continue;
-          held++;
-          value += (stocks[symbol]?.mbPrice ?? h.avgCost) * h.qty;
-          cost += h.avgCost * h.qty;
+    type RankingResult = { ok: true; generatedAt: number; rows: Array<{ uid: string; name: string; totalPnl: number; returnPct: number; realized: number; unrealized: number }> };
+    // 학급 공용 캐시. 매 요청의 멤버 검증은 캐시 조회보다 먼저 유지한다.
+    // 기본 규칙에서 클라이언트가 접근할 수 없는 서버 전용 경로.
+    const cacheRef = fdb.doc(`tradingRankingCache/${cid}`);
+    const token = randomUUID();
+    return loadSharedCache<RankingResult>({
+      claim: async owner => fdb.runTransaction(async tx => {
+        const snap = await tx.get(cacheRef);
+        const data = snap.data();
+        const value = data?.value as RankingResult | undefined;
+        const now = Date.now();
+        if (value && now - value.generatedAt < 30_000) return { kind: "hit", value } as CacheClaim<RankingResult>;
+        if (typeof data?.leaseUntil === "number" && data.leaseUntil > now) {
+          // 이미 다른 인스턴스가 갱신 중이면 직전 집계를 제공한다.
+          return value ? { kind: "hit", value } : { kind: "busy" };
         }
-        const unrealized = value - cost;
-        return {
-          uid: d.id,
-          name: nameOf.get(d.id) ?? "친구",
-          totalPnl: realized + unrealized,
-          // 교사용 '트레이딩 관리'와 동일: 지금 보유한 주식의 평가수익률.
-          returnPct: cost > 0 ? (unrealized / cost) * 100 : 0,
-          held,
+        tx.set(cacheRef, { owner, leaseUntil: now + 60_000 }, { merge: true });
+        return { kind: "owner" };
+      }),
+      publish: async (owner, value) => { await fdb.runTransaction(async tx => {
+        const snap = await tx.get(cacheRef);
+        if (snap.data()?.owner === owner) tx.set(cacheRef, { value, leaseUntil: 0, owner: "" });
+      }); },
+      release: async owner => { await fdb.runTransaction(async tx => {
+        const snap = await tx.get(cacheRef);
+        if (snap.data()?.owner === owner) tx.set(cacheRef, { leaseUntil: 0, owner: "" }, { merge: true });
+      }); },
+    }, token, async (): Promise<RankingResult> => {
+      const [initialPositions, priceSnap, memberList] = await Promise.all([
+        fdb.collection(`classes/${cid}/positions`).get(),
+        fdb.doc("tradingPrices/current").get(),
+        fdb.collection(`classes/${cid}/members`).get(),
+      ]);
+      const legacy = initialPositions.docs.filter(d => !hasInvested(d.data()?.invested));
+      // 작은 묶음으로 이관해 대규모 학급에서도 한꺼번에 트랜잭션을 만들지 않는다.
+      for (let i = 0; i < legacy.length; i += 10) {
+        await Promise.all(legacy.slice(i, i + 10).map(d => ensureTradingInvested(cid, d.id)));
+      }
+      // 이관 중 매매가 있었어도 보유량과 누적 매수금액은 같은 문서 스냅샷을 사용한다.
+      const posSnap = legacy.length ? await fdb.collection(`classes/${cid}/positions`).get() : initialPositions;
+      const stocks =
+        (priceSnap.data()?.stocks as Record<string, { mbPrice?: number }>) ?? {};
+      const nameOf = new Map<string, string>();
+      for (const m of memberList.docs) {
+        nameOf.set(m.id, (m.data()?.displayName as string) || "친구");
+      }
+      const rows = posSnap.docs
+        .map((d) => {
+          const holdings =
+            (d.data()?.holdings as Record<string, { qty: number; avgCost: number }>) ?? {};
+          const realized = (d.data()?.realized as number) ?? 0;
+          let value = 0;
+          let cost = 0;
+          let held = 0;
+          for (const [symbol, h] of Object.entries(holdings)) {
+            if (!h || h.qty <= 0) continue;
+            held++;
+            value += (stocks[symbol]?.mbPrice ?? h.avgCost) * h.qty;
+            cost += h.avgCost * h.qty;
+          }
+          const unrealized = value - cost;
+          const totalPnl = realized + unrealized;
+          // 총수익률 — 주식 사는 데 쓴 누적 만보 대비 총손익(실현+평가).
+          // trading.ts totalReturnPct() 와 동일 정의(매수 이력이 없으면 보유 원가로 대체).
+          const invested = hasInvested(d.data()?.invested) ? d.data()!.invested as number : 0;
+          const base = invested > 0 ? invested : cost;
+          return {
+            uid: d.id,
+            name: nameOf.get(d.id) ?? "친구",
+            totalPnl,
+            returnPct: base > 0 ? (totalPnl / base) * 100 : 0,
+            realized,
+            unrealized,
+            held,
+          };
+        })
+        .filter((r) => r.held > 0 || r.realized !== 0)
+        .sort((a, b) => b.returnPct - a.returnPct)
+        .map(({ uid: u, name, totalPnl, returnPct, realized, unrealized }) => ({
+          uid: u,
+          name,
+          totalPnl,
+          returnPct,
           realized,
-        };
-      })
-      .filter((r) => r.held > 0 || r.realized !== 0)
-      .sort((a, b) => b.returnPct - a.returnPct)
-      .map(({ uid: u, name, totalPnl, returnPct }) => ({
-        uid: u,
-        name,
-        totalPnl,
-        returnPct,
-      }));
+          unrealized,
+        }));
 
-    return { ok: true, rows };
+      return { ok: true, rows, generatedAt: Date.now() };
+    });
   }
 );
 
@@ -3693,11 +3762,21 @@ export const executeTrade = onCall(
         };
       }
 
+      let invested = posSnap.data()?.invested;
+      if (!hasInvested(invested)) {
+        const history = await tx.get(fdb.collection(`classes/${cid}/trades`).where("uid", "==", uid).select("side", "total"));
+        invested = sumBuyTotal(history.docs.map(d => d.data()));
+      }
+
       const newHoldings: Record<string, { qty: number; avgCost: number }> = { ...holdings };
       let newBalance: number;
       let newRealized = realized;
 
       let total: number; // 실제 청구/지급액(만보) — 체결 스냅샷·클라 표시용
+      // 매도 체결의 실현손익 — 체결 순간의 평단으로 계산해 체결 문서에 박아둔다.
+      // (기간별 실현손익 조회가 이 값만 더하면 되도록. 매수는 null.)
+      let pnl: number | null = null;
+      let costBasis: number | null = null;
 
       if (side === "buy") {
         const chargeTotal = subtotal + fee;
@@ -3739,7 +3818,9 @@ export const executeTrade = onCall(
         }
         const proceeds = Math.max(0, subtotal - fee);
         total = proceeds;
-        newRealized = realized + (proceeds - cur.avgCost * quantity);
+        costBasis = cur.avgCost * quantity;
+        pnl = proceeds - costBasis;
+        newRealized = realized + pnl;
         const nextQty = cur.qty - quantity;
         if (nextQty === 0) {
           delete newHoldings[symbol];
@@ -3771,6 +3852,7 @@ export const executeTrade = onCall(
       // 전량 매도로 제거된 심볼이 문서에 유령으로 남아 재매도(만보 복제)가 가능해진다.
       tx.set(posRef, {
         holdings: newHoldings,
+        invested: invested + (side === "buy" ? total : 0),
         realized: newRealized,
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -3784,6 +3866,8 @@ export const executeTrade = onCall(
         mbPrice,
         total,
         fee,
+        pnl,
+        costBasis,
         at: FieldValue.serverTimestamp(),
       });
 
@@ -3796,3 +3880,493 @@ export const executeTrade = onCall(
     return { ok: true, balance: result.balance, position: result.position };
   }
 );
+
+/* ===================================================================== *
+ *  주식대회 (stockContests) — 교사가 메인 화면에서 이름을 붙여 개설하고,
+ *  참가 학급 학생들의 "대회 개설 이후 성과"로 등수를 매긴다.
+ *
+ *  왜 개설 시점 스냅샷인가: 누적 총손익으로 겨루면 대회 전에 벌어둔 학생이 그대로
+ *  1등이라 대회가 되지 않는다. 개설 순간의 자산·손익을 baseline 에 박아두고
+ *  (지금 손익 − 시작 손익)만 겨룬다.
+ *
+ *  등수 기준 2가지(교사가 고름, 결과 화면에서 전환 가능):
+ *    pct    : 대회 손익 ÷ 대회 시작 총자산(현금+주식) × 100  — 가진 만보가 달라도 공평
+ *    amount : 대회 손익(만보) 그대로
+ *
+ *  문서: stockContests/{contestId}
+ *    ownerUid, name, cids[], classNames[], metric, status("running"|"done"),
+ *    createdAt, finishedAt, baseline: { [uid]: {cid,name,cash,value,cost,realized} },
+ *    result: 확정 순위(종료 시 저장)
+ *  규칙상 클라이언트 직접 접근 전면 금지 — 아래 callable 로만 읽고 쓴다.
+ *  (학생은 남의 positions 를 못 읽으므로 순위 집계는 서버만 할 수 있다.)
+ * ===================================================================== */
+
+/** 대회 하나가 담을 수 있는 참가 학급 수 상한 — 문서 크기·읽기량 보호. */
+const CONTEST_MAX_CLASSES = 12;
+/** 순위 계산 시 학급당 훑는 체결 문서 상한(대회 기간 매매 횟수 표시용). */
+const CONTEST_TRADE_SCAN_MAX = 2000;
+
+type ContestBaseline = {
+  cid: string;
+  name: string;
+  /** 개설 시점 현금(만보) */
+  cash: number;
+  /** 개설 시점 주식 평가액 */
+  value: number;
+  /** 개설 시점 보유 원가 */
+  cost: number;
+  /** 개설 시점 실현손익 누계 */
+  realized: number;
+};
+
+/** 클라이언트에 내려주는 대회 메타(참가자 baseline 은 제외). */
+type ContestMeta = {
+  id: string;
+  name: string;
+  /** 교사가 붙인 설명(선택) — 대회 취지·규칙 안내 */
+  desc: string;
+  cids: string[];
+  classNames: string[];
+  metric: "pct" | "amount";
+  status: "running" | "done";
+  /** 참가 학생 수 */
+  participants: number;
+  createdAt: number | null;
+  finishedAt: number | null;
+  /** 이 대회를 개설한 교사 본인인가 — 종료/삭제 버튼 노출 판단용 */
+  isOwner: boolean;
+};
+
+type ContestStanding = {
+  uid: string;
+  name: string;
+  cid: string;
+  className: string;
+  /** 대회 손익 = (지금 실현+평가) − (시작 실현+평가) */
+  pnl: number;
+  /** 대회 수익률(%) = pnl ÷ 시작 총자산 */
+  pct: number;
+  /** 시작 총자산(현금+주식) */
+  startAssets: number;
+  /** 지금 총자산(현금+주식) */
+  nowAssets: number;
+  /** 대회 기간 중 확정한 실현손익 */
+  realizedInContest: number;
+  /** 대회 기간 중 매매 횟수 */
+  tradeCount: number;
+};
+
+/** 학급 교사 여부 — 대회 개설/종료 권한. */
+async function assertClassTeacher(
+  fdb: FirebaseFirestore.Firestore,
+  cid: string,
+  uid: string
+): Promise<void> {
+  const m = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+  if (!m.exists || m.data()?.role !== "teacher") {
+    throw new HttpsError(
+      "permission-denied",
+      "담당 교사만 주식대회를 열 수 있습니다."
+    );
+  }
+}
+
+/** 학급 한 반의 학생별 {현금·평가액·원가·실현손익} 을 한 번에 뽑는다. */
+async function readClassAccounts(
+  fdb: FirebaseFirestore.Firestore,
+  cid: string,
+  stocks: Record<string, { mbPrice?: number }>
+): Promise<Map<string, { name: string; cash: number; value: number; cost: number; realized: number }>> {
+  const [memberSnap, posSnap, walletSnap] = await Promise.all([
+    fdb.collection(`classes/${cid}/members`).get(),
+    fdb.collection(`classes/${cid}/positions`).get(),
+    fdb.collection(`classes/${cid}/manbo`).get(),
+  ]);
+  const cashOf = new Map<string, number>();
+  for (const w of walletSnap.docs) cashOf.set(w.id, (w.data()?.balance as number) ?? 0);
+  const posOf = new Map<string, { value: number; cost: number; realized: number }>();
+  for (const p of posSnap.docs) {
+    const holdings =
+      (p.data()?.holdings as Record<string, { qty: number; avgCost: number }>) ?? {};
+    let value = 0;
+    let cost = 0;
+    for (const [symbol, h] of Object.entries(holdings)) {
+      if (!h || h.qty <= 0) continue;
+      value += (stocks[symbol]?.mbPrice ?? h.avgCost) * h.qty;
+      cost += h.avgCost * h.qty;
+    }
+    posOf.set(p.id, { value, cost, realized: (p.data()?.realized as number) ?? 0 });
+  }
+  const out = new Map<
+    string,
+    { name: string; cash: number; value: number; cost: number; realized: number }
+  >();
+  for (const m of memberSnap.docs) {
+    // 교사는 참가자가 아니다.
+    if (m.data()?.role === "teacher") continue;
+    const p = posOf.get(m.id);
+    out.set(m.id, {
+      name: (m.data()?.displayName as string) || "학생",
+      cash: cashOf.get(m.id) ?? 0,
+      value: p?.value ?? 0,
+      cost: p?.cost ?? 0,
+      realized: p?.realized ?? 0,
+    });
+  }
+  return out;
+}
+
+/** 시세 캐시(tradingPrices/current)의 종목 맵. */
+async function readStockPrices(
+  fdb: FirebaseFirestore.Firestore
+): Promise<Record<string, { mbPrice?: number }>> {
+  const snap = await fdb.doc("tradingPrices/current").get();
+  return (snap.data()?.stocks as Record<string, { mbPrice?: number }>) ?? {};
+}
+
+/**
+ * 주식대회 개설 — 교사 전용.
+ * 참가 학급 전원의 개설 시점 계좌를 baseline 에 스냅샷한다(이후 성과만 겨루기 위해).
+ */
+export const createStockContest = onCall(
+  { region: "asia-northeast3", memory: "256MiB" },
+  async (req): Promise<{ ok: true; id: string }> => {
+    if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { name, desc, cids, metric } = (req.data ?? {}) as {
+      name?: string;
+      desc?: string;
+      cids?: string[];
+      metric?: string;
+    };
+    const title = (name ?? "").trim();
+    if (!title || title.length > 40) {
+      throw new HttpsError("invalid-argument", "대회 이름을 1~40자로 정해 주세요.");
+    }
+    const note = (desc ?? "").trim().slice(0, 300);
+    if (!Array.isArray(cids) || cids.length === 0) {
+      throw new HttpsError("invalid-argument", "참가할 학급을 선택해 주세요.");
+    }
+    if (cids.length > CONTEST_MAX_CLASSES) {
+      throw new HttpsError(
+        "invalid-argument",
+        `학급은 최대 ${CONTEST_MAX_CLASSES}개까지 넣을 수 있어요.`
+      );
+    }
+    const rankBy = metric === "amount" ? "amount" : "pct";
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+    const classIds = [...new Set(cids.filter((c) => typeof c === "string" && c))];
+
+    // 모든 참가 학급의 교사여야 한다.
+    await Promise.all(classIds.map((cid) => assertClassTeacher(fdb, cid, uid)));
+
+    const stocks = await readStockPrices(fdb);
+    const classNames: string[] = [];
+    const baseline: Record<string, ContestBaseline> = {};
+    for (const cid of classIds) {
+      const [clsSnap, accounts] = await Promise.all([
+        fdb.doc(`classes/${cid}`).get(),
+        readClassAccounts(fdb, cid, stocks),
+      ]);
+      classNames.push((clsSnap.data()?.name as string) || "학급");
+      for (const [studentUid, a] of accounts) {
+        baseline[studentUid] = {
+          cid,
+          name: a.name,
+          cash: a.cash,
+          value: a.value,
+          cost: a.cost,
+          realized: a.realized,
+        };
+      }
+    }
+    if (Object.keys(baseline).length === 0) {
+      throw new HttpsError("failed-precondition", "선택한 학급에 학생이 없어요.");
+    }
+
+    const ref = fdb.collection("stockContests").doc();
+    await ref.set({
+      ownerUid: uid,
+      name: title,
+      desc: note,
+      cids: classIds,
+      classNames,
+      metric: rankBy,
+      status: "running",
+      baseline,
+      createdAt: FieldValue.serverTimestamp(),
+      finishedAt: null,
+      result: null,
+    });
+    return { ok: true, id: ref.id };
+  }
+);
+
+/** 대회 문서 → 클라이언트에 내려줄 메타(참가자 baseline 은 제외). */
+function contestMeta(
+  id: string,
+  d: FirebaseFirestore.DocumentData
+): ContestMeta {
+  return {
+    id,
+    name: (d.name as string) ?? "",
+    desc: (d.desc as string) ?? "",
+    cids: (d.cids as string[]) ?? [],
+    classNames: (d.classNames as string[]) ?? [],
+    metric: d.metric === "amount" ? "amount" : "pct",
+    status: d.status === "done" ? "done" : "running",
+    participants: Object.keys((d.baseline as Record<string, unknown>) ?? {}).length,
+    createdAt: d.createdAt?.toMillis?.() ?? null,
+    finishedAt: d.finishedAt?.toMillis?.() ?? null,
+    isOwner: false,
+  };
+}
+
+/**
+ * 내 대회 목록 — cid 를 주면 그 학급이 참가 중인 대회(학생도 조회 가능),
+ * 안 주면 내가 개설한 대회 전체(교사).
+ */
+export const listStockContests = onCall(
+  { region: "asia-northeast3" },
+  async (req): Promise<{ ok: true; contests: ContestMeta[] }> => {
+    if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { cid } = (req.data ?? {}) as { cid?: string };
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    let docs: FirebaseFirestore.QueryDocumentSnapshot[];
+    if (cid) {
+      const member = await fdb.doc(`classes/${cid}/members/${uid}`).get();
+      if (!member.exists) {
+        throw new HttpsError("permission-denied", "해당 학급의 멤버만 볼 수 있습니다.");
+      }
+      const snap = await fdb
+        .collection("stockContests")
+        .where("cids", "array-contains", cid)
+        .get();
+      docs = snap.docs;
+    } else {
+      const snap = await fdb
+        .collection("stockContests")
+        .where("ownerUid", "==", uid)
+        .get();
+      docs = snap.docs;
+    }
+    const contests = docs
+      .map((d) => ({
+        ...contestMeta(d.id, d.data()),
+        isOwner: d.data()?.ownerUid === uid,
+      }))
+      // 진행 중을 먼저, 그다음 최신 개설순 — 인덱스 없이 서버에서 정렬한다.
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === "running" ? -1 : 1;
+        return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+      });
+    return { ok: true, contests };
+  }
+);
+
+/**
+ * 대회 순위 — 참가 학급 멤버(학생 포함)면 볼 수 있다.
+ * 종료된 대회는 확정 저장된 result 를 그대로 돌려준다(그 뒤 시세가 변해도 결과 불변).
+ */
+export const getStockContestStandings = onCall(
+  { region: "asia-northeast3", memory: "256MiB" },
+  async (
+    req
+  ): Promise<{ ok: true; contest: ContestMeta; rows: ContestStanding[] }> => {
+    if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { contestId } = (req.data ?? {}) as { contestId?: string };
+    if (!contestId) throw new HttpsError("invalid-argument", "contestId 가 필요합니다.");
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+
+    const snap = await fdb.doc(`stockContests/${contestId}`).get();
+    if (!snap.exists) throw new HttpsError("not-found", "대회를 찾을 수 없습니다.");
+    const d = snap.data()!;
+    const cids = (d.cids as string[]) ?? [];
+    const isOwner = d.ownerUid === uid;
+    if (!isOwner) {
+      // 참가 학급 중 한 곳의 멤버여야 한다.
+      const members = await Promise.all(
+        cids.map((cid) => fdb.doc(`classes/${cid}/members/${uid}`).get())
+      );
+      if (!members.some((m) => m.exists)) {
+        throw new HttpsError("permission-denied", "참가 학급의 멤버만 볼 수 있습니다.");
+      }
+    }
+    const meta = { ...contestMeta(contestId, d), isOwner };
+
+    if (d.status === "done" && Array.isArray(d.result)) {
+      return { ok: true, contest: meta, rows: d.result as ContestStanding[] };
+    }
+
+    const rows = await computeStandings(fdb, contestId, d);
+    return { ok: true, contest: meta, rows };
+  }
+);
+
+/** 진행 중 대회의 현재 순위 계산 — 개설 시점 baseline 과 지금 계좌를 비교한다. */
+async function computeStandings(
+  fdb: FirebaseFirestore.Firestore,
+  contestId: string,
+  d: FirebaseFirestore.DocumentData
+): Promise<ContestStanding[]> {
+  const baseline = (d.baseline as Record<string, ContestBaseline>) ?? {};
+  const cids = (d.cids as string[]) ?? [];
+  const classNames = (d.classNames as string[]) ?? [];
+  const startedAt: number = d.createdAt?.toMillis?.() ?? 0;
+  const stocks = await readStockPrices(fdb);
+
+  const nameOfClass = new Map<string, string>();
+  cids.forEach((cid, i) => nameOfClass.set(cid, classNames[i] ?? "학급"));
+
+  // 학급별 현재 계좌 + 대회 기간 체결 수
+  const accountsByClass = new Map<
+    string,
+    Map<string, { name: string; cash: number; value: number; cost: number; realized: number }>
+  >();
+  const tradeCountOf = new Map<string, number>();
+  const realizedInContestOf = new Map<string, number>();
+  await Promise.all(
+    cids.map(async (cid) => {
+      const [accounts, tradeSnap] = await Promise.all([
+        readClassAccounts(fdb, cid, stocks),
+        fdb
+          .collection(`classes/${cid}/trades`)
+          .where("at", ">=", new Date(startedAt))
+          .select("uid", "pnl")
+          .limit(CONTEST_TRADE_SCAN_MAX)
+          .get(),
+      ]);
+      accountsByClass.set(cid, accounts);
+      for (const t of tradeSnap.docs) {
+        const v = t.data() as { uid?: string; pnl?: number | null };
+        if (!v.uid) continue;
+        tradeCountOf.set(v.uid, (tradeCountOf.get(v.uid) ?? 0) + 1);
+        if (typeof v.pnl === "number") {
+          realizedInContestOf.set(v.uid, (realizedInContestOf.get(v.uid) ?? 0) + v.pnl);
+        }
+      }
+    })
+  );
+
+  const rows: ContestStanding[] = [];
+  for (const [studentUid, base] of Object.entries(baseline)) {
+    const now = accountsByClass.get(base.cid)?.get(studentUid);
+    const nowValue = now?.value ?? base.value;
+    const nowCost = now?.cost ?? base.cost;
+    const nowRealized = now?.realized ?? base.realized;
+    const nowCash = now?.cash ?? base.cash;
+    // 대회 손익 = 지금 총손익 − 시작 총손익 (총손익 = 실현 + 평가)
+    const pnl =
+      nowRealized + (nowValue - nowCost) - (base.realized + (base.value - base.cost));
+    const startAssets = base.cash + base.value;
+    rows.push({
+      uid: studentUid,
+      name: now?.name || base.name,
+      cid: base.cid,
+      className: nameOfClass.get(base.cid) ?? "학급",
+      pnl,
+      pct: startAssets > 0 ? (pnl / startAssets) * 100 : 0,
+      startAssets,
+      nowAssets: nowCash + nowValue,
+      realizedInContest: realizedInContestOf.get(studentUid) ?? 0,
+      tradeCount: tradeCountOf.get(studentUid) ?? 0,
+    });
+  }
+  return rows;
+}
+
+/** 대회 종료 — 교사(개설자) 전용. 그 시점 순위를 확정 저장한다. */
+export const finishStockContest = onCall(
+  { region: "asia-northeast3", memory: "256MiB" },
+  async (req): Promise<{ ok: true; rows: ContestStanding[] }> => {
+    if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { contestId } = (req.data ?? {}) as { contestId?: string };
+    if (!contestId) throw new HttpsError("invalid-argument", "contestId 가 필요합니다.");
+    const uid = req.auth.uid;
+    const fdb = getFirestore();
+    const ref = fdb.doc(`stockContests/${contestId}`);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError("not-found", "대회를 찾을 수 없습니다.");
+    const d = snap.data()!;
+    if (d.ownerUid !== uid) {
+      throw new HttpsError("permission-denied", "개설한 교사만 종료할 수 있습니다.");
+    }
+    if (d.status === "done" && Array.isArray(d.result)) {
+      return { ok: true, rows: d.result as ContestStanding[] };
+    }
+    const rows = await computeStandings(fdb, contestId, d);
+    await ref.set(
+      { status: "done", result: rows, finishedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    return { ok: true, rows };
+  }
+);
+
+/** 대회 삭제 — 개설자 전용. */
+export const deleteStockContest = onCall(
+  { region: "asia-northeast3" },
+  async (req): Promise<{ ok: true }> => {
+    if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    const { contestId } = (req.data ?? {}) as { contestId?: string };
+    if (!contestId) throw new HttpsError("invalid-argument", "contestId 가 필요합니다.");
+    const fdb = getFirestore();
+    const ref = fdb.doc(`stockContests/${contestId}`);
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: true };
+    if (snap.data()?.ownerUid !== req.auth.uid) {
+      throw new HttpsError("permission-denied", "개설한 교사만 삭제할 수 있습니다.");
+    }
+    await ref.delete();
+    return { ok: true };
+  }
+);
+
+/* 학급 사용량: 5분 구간을 학생별 일간 문서에 병합한다. 원시 클릭/입력 내용은 저장하지 않는다. */
+export const recordClassUsage = onCall({ memory: "256MiB", maxInstances: 10 }, async req => {
+  if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  const { cid, entries } = req.data ?? {};
+  if (typeof cid !== "string" || !cid || cid.includes("/") || cid.length > 128) throw new HttpsError("invalid-argument", "학급이 올바르지 않습니다.");
+  let validated: UsageEntry[];
+  try { validated = validateUsage(entries, Date.now()); } catch (error) { throw new HttpsError("invalid-argument", (error as Error).message); }
+  const db = getFirestore();
+  const uid = req.auth.uid;
+  const member = await db.doc(`classes/${cid}/members/${uid}`).get();
+  if (member.data()?.role !== "student") throw new HttpsError("permission-denied", "이 학급 학생만 기록할 수 있습니다.");
+  const days = [...new Set(validated.map(entry => usageDay(entry.start)))];
+  await db.runTransaction(async tx => {
+    const refs = days.map(day => db.doc(`classes/${cid}/usageDays/${day}_${uid}`));
+    const snapshots = await Promise.all(refs.map(ref => tx.get(ref)));
+    days.forEach((day, i) => {
+      const previous = snapshots[i].data();
+      const buckets: Record<string, UsageCounts> = { ...(previous?.buckets ?? {}) };
+      let changed = false;
+      for (const entry of validated.filter(e => usageDay(e.start) === day)) {
+        const key = String(entry.start);
+        const merged = mergeUsage(buckets[key] ?? {}, entry.counts);
+        if (JSON.stringify(merged) !== JSON.stringify(buckets[key] ?? {})) { buckets[key] = merged; changed = true; }
+      }
+      if (!changed) return;
+      const counts: UsageCounts = {};
+      for (const bucket of Object.values(buckets)) for (const feature of USAGE_FEATURES) counts[feature] = (counts[feature] ?? 0) + (bucket[feature] ?? 0);
+      const activeSeconds = Object.values(counts).reduce((sum, value) => sum + value, 0);
+      tx.set(refs[i], { uid, day, counts, activeSeconds, buckets, updatedAt: FieldValue.serverTimestamp() });
+    });
+  });
+  return { ok: true };
+});
+
+export const getClassUsage = onCall({ memory: "256MiB", maxInstances: 10 }, async req => {
+  if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  const { cid, from, to } = req.data ?? {};
+  if (typeof cid !== "string" || !cid || cid.includes("/") || cid.length > 128 || typeof from !== "string" || typeof to !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw new HttpsError("invalid-argument", "조회 범위가 올바르지 않습니다.");
+  const start = Date.parse(from), end = Date.parse(to);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || new Date(start).toISOString().slice(0, 10) !== from || new Date(end).toISOString().slice(0, 10) !== to || end < start || end - start > 27 * 86400_000) throw new HttpsError("invalid-argument", "최대 28일씩 조회할 수 있습니다.");
+  const db = getFirestore();
+  await assertClassTeacher(db, cid, req.auth.uid);
+  const snap = await db.collection(`classes/${cid}/usageDays`).where("day", ">=", from).where("day", "<=", to).orderBy("day").limit(2001).select("uid", "day", "counts", "activeSeconds", "updatedAt").get();
+  return { rows: snap.docs.slice(0, 2000).map(d => { const value = d.data(); return { uid: value.uid, day: value.day, counts: value.counts, activeSeconds: value.activeSeconds, updatedAt: value.updatedAt?.toMillis?.() ?? null }; }), truncated: snap.size > 2000 };
+});
