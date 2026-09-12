@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ActivityOrderModal } from "@/components/ActivityOrderModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard, GlassButton } from "@/components/Glass";
 import { TopBar } from "@/components/TopBar";
@@ -775,6 +776,9 @@ function TeacherPanel({
   const [crossOpen, setCrossOpen] = useState(false);
   const [docMapOpen, setDocMapOpen] = useState(false);
   // 활동 드래그앤드랍 순서 변경 — 사이(삽입 위치)에 줄 표시
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [orderError, setOrderError] = useState("");
+  const [orderSaving, setOrderSaving] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [overBefore, setOverBefore] = useState(true);
@@ -783,7 +787,7 @@ function TeacherPanel({
     setOverId(null);
   }
   async function reorderTo(targetId: string, before: boolean) {
-    if (!dragId || dragId === targetId) return;
+    if (orderSaving || !dragId || dragId === targetId) return;
     const ids = phaseQs.map((q) => q.id);
     const from = ids.indexOf(dragId);
     if (from < 0) return;
@@ -791,14 +795,17 @@ function TeacherPanel({
     const ti = ids.indexOf(targetId);
     if (ti < 0) return;
     ids.splice(before ? ti : ti + 1, 0, dragId); // 사이에 삽입
-    // 낙관적 반영
-    const orderMap = new Map(ids.map((id, i) => [id, i]));
-    setQuestions((prev) =>
-      prev.map((q) =>
-        orderMap.has(q.id) ? { ...q, order: orderMap.get(q.id)! } : q
-      )
-    );
-    await reorderQuestions(cid, lid, ids).catch(() => {});
+    try { await saveActivityOrder(ids); } catch (error) { setOrderError(error instanceof Error ? error.message : "순서를 저장하지 못했습니다."); }
+  }
+  async function saveActivityOrder(ids: string[]) {
+    if (orderSaving) throw new Error("순서를 저장 중입니다. 잠시 기다려 주세요.");
+    if (ids.length !== phaseQs.length || new Set(ids).size !== ids.length || ids.some(id => !phaseQs.some(q => q.id === id))) throw new Error("활동 목록이 변경됐습니다. 목록을 다시 열어 주세요.");
+    setOrderSaving(true); setOrderError("");
+    try {
+      await reorderQuestions(cid, lid, ids);
+      const order = new Map(ids.map((id, index) => [id, index]));
+      setQuestions(previous => previous.map(q => order.has(q.id) ? { ...q, order: order.get(q.id)! } : q));
+    } finally { setOrderSaving(false); }
   }
   // 차시 전체 지식맵 분석(질문 리프) — 단일 분석 진입점
   const analysis = useLeaves(cid, lid, questions);
@@ -1045,6 +1052,8 @@ function TeacherPanel({
               )}
           </div>
 
+          <GlassButton variant="ghost" className="!px-4 !py-2 text-xs" disabled={!loaded || phaseQs.length < 2 || orderSaving} onClick={() => setOrderOpen(true)}><Icon name="reorder" size={16} />활동 순서 변경</GlassButton>
+
           {/* 외부 자료(PDF) → 지식맵: 패들렛 등 다른 도구의 학생 응답을 가져와 분석 */}
           <GlassButton
             variant="ghost"
@@ -1153,6 +1162,8 @@ function TeacherPanel({
         </div>
       </div>
 
+      {orderError && <p role="alert" className="mb-3 text-sm text-[var(--md-sys-color-error)]">{orderError}</p>}
+      {orderOpen && <ActivityOrderModal key={phase} questions={phaseQs} phase={phase} onSave={saveActivityOrder} onClose={() => setOrderOpen(false)} />}
       {docMapOpen && (
         <DocMapImportModal
           cid={cid}
@@ -1242,7 +1253,7 @@ function TeacherPanel({
               )}
               {/* 드래그 핸들 */}
               <button
-                draggable
+                draggable={!orderSaving}
                 onDragStart={(e) => {
                   setDragId(q.id);
                   e.dataTransfer.effectAllowed = "move";

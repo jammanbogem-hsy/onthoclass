@@ -591,9 +591,10 @@ export async function reorderQuestions(
   lid: string,
   orderedIds: string[]
 ): Promise<void> {
+  if (orderedIds.length > 500 || new Set(orderedIds).size !== orderedIds.length) throw new Error("한 번에 중복 없이 최대 500개 활동을 정렬할 수 있습니다.");
   const batch = writeBatch(getDbClient());
   orderedIds.forEach((qid, i) => {
-    batch.set(doc(questionsCol(cid, lid), qid), { order: i }, { merge: true });
+    batch.update(doc(questionsCol(cid, lid), qid), { order: i });
   });
   await batch.commit();
 }
