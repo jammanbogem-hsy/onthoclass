@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+  <defs><filter id="rough"><feTurbulence baseFrequency=".02" numOctaves="3" seed="22" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter><filter id="grain"><feTurbulence baseFrequency=".75" numOctaves="2" seed="3"/></filter></defs>
+  <rect width="1200" height="1600" fill="#fffdf7"/><rect width="1200" height="1600" opacity=".04" filter="url(#grain)"/>
+  <g filter="url(#rough)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M95 1280q220-85 440-9t570-15" fill="none" stroke="#78b85e" stroke-width="38"/>
+    <g transform="translate(330 240)">
+      <path d="M255 770L88 1168h342Z" fill="#dc9e55" stroke="#8d633e" stroke-width="23"/>
+      <path d="M98 735Q25 622 122 532Q37 365 205 331Q225 135 393 257Q527 185 570 354Q744 391 650 536Q741 690 592 752Z" fill="#f3a0b9" stroke="#c64e78" stroke-width="24"/>
+      <path d="M122 575q75-89 152 2q76-93 155 2q79-92 164-2" fill="none" stroke="#fff4e8" stroke-width="26"/>
+      <path d="M168 409q53-68 108 0M375 421q56-70 118 0" fill="none" stroke="#d85d86" stroke-width="22"/>
+      <g fill="#d8425f"><circle cx="166" cy="653" r="16"/><circle cx="510" cy="642" r="18"/><circle cx="318" cy="326" r="17"/></g>
+      <path d="M171 1182q83-35 170 0" fill="none" stroke="#735035" stroke-width="22"/>
+    </g>
+    <g transform="translate(105 270)" stroke="#5e9bbb" stroke-width="17" fill="none"><path d="M0 100q55-70 110 0t110 0"/><path d="M35 180q55-70 110 0t110 0"/></g>
+    <g transform="translate(850 190)" stroke="#efb52d" stroke-width="18"><circle cx="110" cy="110" r="65" fill="#ffd94e"/><path d="M110 0v-55M110 275v-55M0 110h-55M275 110h-55M31 31l-42-42M189 189l43 43M31 189l-42 43M189 31l43-42"/></g>
+    <g transform="translate(100 1240)" fill="#66b7d8" stroke="#297da2" stroke-width="13"><path d="M0 110q45-105 95 0q51-110 103 0q60-98 109 0v160H0Z"/></g>
+    <g transform="translate(820 1250)" fill="#66b7d8" stroke="#297da2" stroke-width="13"><path d="M0 110q45-105 95 0q51-110 103 0q60-98 109 0v160H0Z"/></g>
+  </g>
+</svg>

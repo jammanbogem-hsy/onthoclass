@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+  <defs><filter id="rough"><feTurbulence baseFrequency=".022" numOctaves="3" seed="49" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter><filter id="grain"><feTurbulence baseFrequency=".8" numOctaves="2" seed="6"/></filter></defs>
+  <rect width="1200" height="1600" fill="#fffdf7"/><rect width="1200" height="1600" opacity=".035" filter="url(#grain)"/>
+  <g filter="url(#rough)" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="70" y="690" width="1060" height="650" rx="105" fill="#67c8e9" stroke="#2987b3" stroke-width="24"/>
+    <path d="M95 870q90-70 180 0t180 0t180 0t180 0t180 0t110 0M100 1110q95-65 190 0t190 0t190 0t190 0t250 0" fill="none" stroke="#d9f8ff" stroke-width="27"/>
+    <path d="M265 210h170v400H265Z" fill="#f7c94d" stroke="#dc8731" stroke-width="22"/><path d="M435 300h220v105H435q-85 0-85 95q0 90 93 90" fill="none" stroke="#ef7351" stroke-width="78"/><path d="M300 610q18 90 110 0M355 610q22 93 112 0" fill="none" stroke="#4bbadf" stroke-width="18"/>
+    <g transform="translate(490 790)"><circle cx="100" cy="100" r="52" fill="#f1b17f" stroke="#634038" stroke-width="13"/><path d="M50 80q48-80 101 0" fill="#4c342c" stroke="#4c342c" stroke-width="24"/><circle cx="82" cy="102" r="7"/><circle cx="121" cy="102" r="7"/><path d="M80 127q22 18 43 0" fill="none" stroke="#aa4543" stroke-width="8"/><path d="M100 153v210M100 210l-115 75M100 210l128 45M100 360l-90 115M100 360l104 100" fill="none" stroke="#ef6c65" stroke-width="29"/><circle cx="100" cy="250" r="115" fill="none" stroke="#ffd755" stroke-width="36"/></g>
+    <g transform="translate(810 910)"><circle cx="90" cy="80" r="50" fill="#d89464" stroke="#5f4034" stroke-width="13"/><path d="M42 65q46-72 97 0" fill="#352e29" stroke="#352e29" stroke-width="25"/><circle cx="74" cy="85" r="7"/><circle cx="111" cy="85" r="7"/><path d="M73 112q19 18 40 0" fill="none" stroke="#9d403d" stroke-width="8"/><path d="M90 130v205M90 180l-102 80M90 180l105 70M90 332l-78 105M90 332l84 110" fill="none" stroke="#426fc0" stroke-width="28"/></g>
+    <g transform="translate(850 170)" stroke="#e6a823" stroke-width="20"><circle cx="105" cy="105" r="68" fill="#ffdb3d"/><path d="M105 0v-53M105 263v-53M0 105h-53M263 105h-53M31 31l-40-40M180 180l40 40M31 180l-40 40M180 31l40-40"/></g>
+    <g fill="#79d4ed" stroke="#2987b3" stroke-width="11"><path d="M215 500q-55 75 0 94q55-19 0-94"/><path d="M725 515q-55 75 0 94q55-19 0-94"/><path d="M150 380q-46 65 0 82q48-17 0-82"/></g>
+  </g>
+</svg>
