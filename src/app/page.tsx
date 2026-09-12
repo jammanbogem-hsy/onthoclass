@@ -133,7 +133,14 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (loading || !user || profileLoading) return;
-    router.replace(profile?.role ? "/dashboard" : "/onboarding");
+    const requestedPath = new URLSearchParams(window.location.search).get("next");
+    const safePath =
+      requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
+        ? requestedPath
+        : null;
+    router.replace(
+      profile?.role ? (safePath ?? "/dashboard") : "/onboarding"
+    );
   }, [user, loading, profile, profileLoading, router]);
 
   const inputCls = "m3-field";

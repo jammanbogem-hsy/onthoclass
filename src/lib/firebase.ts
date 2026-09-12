@@ -9,7 +9,13 @@ import {
   type FirebaseOptions,
 } from "firebase/app";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from "firebase/firestore";
 import { getFunctions, type Functions } from "firebase/functions";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
@@ -45,7 +51,26 @@ export function getAuthClient(): Auth {
 }
 
 export function getDbClient(): Firestore {
-  if (!_db) _db = getFirestore(app());
+  if (_db) return _db;
+  // 디스크(IndexedDB) 캐시를 켠다.
+  //
+  // 기본값인 메모리 캐시는 새로고침·새 탭마다 비워져서, 그때마다 구독 중인
+  // 컬렉션을 통째로 다시 내려받는다(= Firestore 읽기 과금). 한 반 25명이
+  // 하루에도 여러 번 화면을 여니 이게 읽기 대부분을 차지했다.
+  //
+  // 디스크 캐시를 쓰면 재방문 때 캐시에서 먼저 그리고, 리스너는 마지막
+  // 동기화 이후의 "변경분"만 받아온다. 화면·기능은 그대로이고 로딩만 빨라진다.
+  // 탭을 여러 개 열어도 캐시를 공유하도록 multipleTab 관리자를 쓴다.
+  try {
+    _db = initializeFirestore(app(), {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // IndexedDB 를 못 쓰는 환경(사생활 보호 모드 등)이거나 이미 초기화된 경우
+    _db = getFirestore(app());
+  }
   return _db;
 }
 
