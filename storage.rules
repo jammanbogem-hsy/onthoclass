@@ -61,6 +61,30 @@ service firebase.storage {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Lesson 7 여름 앨범 — 학급 멤버십은 Storage 규칙에서 조회할 수 없으므로
+    // 로그인 사용자 읽기, 본인 uid 폴더에만 안전한 이미지 쓰기를 허용한다.
+    // 실제 책 목록/URL 공개 범위는 Firestore 의 학급 멤버 규칙이 제한한다.
+    match /classes/{cid}/book7/{uid}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 8 * 1024 * 1024
+        && safeImage();
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // 퀴즈런 결과 사진 — 게임이 끝난 순간의 공. 학급 전시에 함께 걸리므로
+    // 보드 첨부와 같은 범위(로그인 사용자 읽기)로 둔다. Storage 규칙에서는
+    // 학급 멤버십을 알 수 없어 더 좁히지 못한다.
+    match /classes/{cid}/quizrun/{gid}/{uid}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 2 * 1024 * 1024
+        && safeImage();
+      allow delete: if isTeacherAccount();
+    }
+
     // 피드백/오류 신고 사진
     match /classes/{cid}/feedback/{uid}/{fid}/{file} {
       // 오류 신고는 교사 검토용 + 작성 본인만(Firestore feedback 권한과 동일).

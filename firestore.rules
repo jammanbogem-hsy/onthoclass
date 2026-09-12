@@ -63,6 +63,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 주식대회: 클라이언트 직접 접근 전면 금지 — callable(createStockContest /
+    // listStockContests / getStockContestStandings / finishStockContest /
+    // deleteStockContest)로만 읽고 쓴다. 학생은 남의 positions 를 읽을 수 없어
+    // 순위 집계는 admin 권한 서버에서만 가능하고, 개설 시점 baseline 스냅샷도
+    // 조작되면 안 되기 때문이다.
+    match /stockContests/{contestId} {
+      allow read, write: if false;
+    }
+
     // 읽기전용 공유 지식맵 스냅샷: 링크를 가진 누구나 열람(비로그인 포함),
     // 생성은 교사 계정 본인, 수정/삭제는 소유자만. (학생 식별정보는 저장 시 제거)
     match /shares/{shareId} {
@@ -361,6 +370,47 @@ service cloud.firestore {
                 .affectedKeys().hasOnly(['photoURL']));
       }
 
+      // Lesson 7 여름 앨범: 같은 학급은 완성본을 함께 읽고,
+      // 멤버는 자기 두 페이지 문서만 생성·교체한다. 교사 자기 문서는 학생 화면
+      // 체험용이며 클라이언트가 실제 책/인원 집계에서 제외한다.
+      match /book7Pages/{studentUid} {
+        allow read: if isMember(classId);
+        allow create, update: if isMember(classId)
+          && uid() == studentUid
+          && request.resource.data.uid == uid()
+          && request.resource.data.keys().hasOnly(
+               ['uid', 'page1URL', 'page2URL', 'page1Caption',
+                'page2Caption', 'updatedAt'])
+          && request.resource.data.page1URL is string
+          && request.resource.data.page1URL.size() <= 1000
+          && request.resource.data.page2URL is string
+          && request.resource.data.page2URL.size() <= 1000
+          && request.resource.data.page1Caption is string
+          && request.resource.data.page1Caption.size() > 0
+          && request.resource.data.page1Caption.size() <= 180
+          && request.resource.data.page2Caption is string
+          && request.resource.data.page2Caption.size() > 0
+          && request.resource.data.page2Caption.size() <= 180;
+        allow delete: if (isMember(classId) && uid() == studentUid)
+          || isTeacher(classId);
+      }
+
+      // Lesson 7 바탕화면 소감 — 한 사람당 한 장, 같은 학급만 읽는다.
+      match /book7Notes/{studentUid} {
+        allow read: if isMember(classId);
+        allow create, update: if isMember(classId)
+          && uid() == studentUid
+          && request.resource.data.uid == uid()
+          && request.resource.data.keys().hasOnly(['uid', 'text', 'mood', 'updatedAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 400
+          && request.resource.data.mood is string
+          && request.resource.data.mood.size() <= 8;
+        allow delete: if (isMember(classId) && uid() == studentUid)
+          || isTeacher(classId);
+      }
+
       // --- 클래스 레벨 온톨로지 (위계 머지/정규화 캐시) ---
       match /ontology/{scope} {
         allow read: if isMember(classId);
@@ -649,7 +699,13 @@ service cloud.firestore {
             && request.resource.data.correct is int
             && request.resource.data.correct >= 0
             && request.resource.data.wrong is int
-            && request.resource.data.wrong >= 0;
+            && request.resource.data.wrong >= 0
+            // collected(모은 오브젝트 개수)가 등수를 정한다. 이 규칙을 배포하기
+            // 전에 만들어진 run 문서에는 이 필드가 없을 수 있어, 있을 때만 검사한다
+            // — 없다고 막으면 수업 중인 게임이 그 자리에서 멈춘다.
+            && (!('collected' in request.resource.data)
+                || (request.resource.data.collected is int
+                    && request.resource.data.collected >= 0));
           allow delete: if isTeacher(classId);
         }
       }
