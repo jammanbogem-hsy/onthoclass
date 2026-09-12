@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DrawingPad } from "@/components/DrawingPad";
 import { Icon } from "@/components/Icon";
 import { IconButton } from "@/components/ui";
 import {
@@ -13,6 +14,10 @@ import {
 import type { Attachment } from "@/lib/lessons";
 
 const MAX_ATTACHMENTS = 6;
+
+// 첨부 버튼(사진·음성·그리기) 공통 모양 — 초등 손가락 기준 44px 터치 타깃.
+const ADD_BTN =
+  "inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2.5 text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition hover:bg-black/5 disabled:opacity-40";
 
 // 업로드 대상: 질문 제출 / 보드 카드 / 피드백
 export type UploadTarget =
@@ -65,8 +70,9 @@ export async function uploadImageFiles(
 }
 
 /**
- * 첨부 입력 — 사진 촬영/선택 + 음성 녹음.
+ * 첨부 입력 — 사진 촬영/선택 + 음성 녹음 + 그림판.
  * 업로드 즉시 Storage 에 올리고 Attachment 메타데이터를 onChange 로 전달한다.
+ * 그림은 PNG 로 구워 "사진"과 같은 image 첨부로 올린다(표시·결과·내보내기 공용).
  */
 export function AttachmentField({
   target,
@@ -78,6 +84,7 @@ export function AttachmentField({
   disabled,
   compact,
   imageLayout,
+  allowDraw = true,
 }: {
   target: UploadTarget;
   value: Attachment[];
@@ -92,12 +99,15 @@ export function AttachmentField({
   disabled?: boolean;
   compact?: boolean;
   imageLayout?: "thumb" | "full";
+  /** 그림판 버튼 노출(기본 켬). 좁은 위젯 등에서 끌 수 있다. */
+  allowDraw?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [drawing, setDrawing] = useState(false);
 
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
@@ -154,6 +164,28 @@ export function AttachmentField({
       commitAdd(await uploadImages(target, Array.from(files), room));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "사진 업로드에 실패했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 그림판에서 완성된 그림 → 사진과 같은 경로/형식으로 업로드 */
+  async function onDrawn(blob: Blob) {
+    setDrawing(false);
+    setErr("");
+    setBusy(true);
+    try {
+      const att = await doUpload(target, {
+        type: "image",
+        data: blob,
+        name: `그림 ${new Date().toLocaleTimeString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`,
+      });
+      commitAdd([att]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "그림 업로드에 실패했습니다.");
     } finally {
       setBusy(false);
     }
@@ -262,7 +294,7 @@ export function AttachmentField({
           type="button"
           disabled={disabled || busy || full || recording}
           onClick={() => fileRef.current?.click()}
-          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2.5 text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition hover:bg-black/5 disabled:opacity-40"
+          className={ADD_BTN}
         >
           <Icon name="photo_camera" size={18} />
           사진
@@ -292,10 +324,21 @@ export function AttachmentField({
             type="button"
             disabled={disabled || busy || full}
             onClick={startRecording}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2.5 text-sm font-semibold text-[var(--md-sys-color-on-surface)] transition hover:bg-black/5 disabled:opacity-40"
+            className={ADD_BTN}
           >
             <Icon name="mic" size={18} />
             음성 녹음
+          </button>
+        )}
+        {allowDraw && (
+          <button
+            type="button"
+            disabled={disabled || busy || full || recording}
+            onClick={() => setDrawing(true)}
+            className={ADD_BTN}
+          >
+            <Icon name="draw" size={18} />
+            그리기
           </button>
         )}
         {busy && (
@@ -315,6 +358,10 @@ export function AttachmentField({
         <p className="rounded-lg bg-[var(--md-sys-color-error-container)] px-3 py-1.5 text-xs text-[var(--md-sys-color-on-error-container)]">
           {err}
         </p>
+      )}
+
+      {drawing && (
+        <DrawingPad onSave={onDrawn} onClose={() => setDrawing(false)} />
       )}
     </div>
   );

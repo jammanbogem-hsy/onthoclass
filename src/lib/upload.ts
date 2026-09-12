@@ -1,5 +1,6 @@
-// 제출 첨부(사진/음성) 업로드 헬퍼
+// 제출 첨부(사진/음성/그림) 업로드 헬퍼
 // - 사진은 업로드 전 캔버스로 리사이즈+압축해 용량/비용을 크게 줄인다.
+// - 그림판이 만든 Blob 은 이미 굽힌 상태(PNG/JPEG)라 그대로 올린다.
 // - Storage 경로: classes/{cid}/lessons/{lid}/questions/{qid}/submissions/{uid}/{id}.{ext}
 import {
   deleteObject,
@@ -75,8 +76,14 @@ async function uploadTo(
   let blob: Blob = data;
   let ext = "bin";
   if (type === "image") {
-    blob = data instanceof File ? await compressImage(data) : data;
-    ext = "jpg";
+    if (data instanceof File) {
+      // 사진: 리사이즈+JPEG 압축
+      blob = await compressImage(data);
+      ext = "jpg";
+    } else {
+      // 그림판에서 구운 Blob — 이미 최적 형식이라 재압축하지 않는다.
+      ext = blob.type === "image/png" ? "png" : "jpg";
+    }
   } else {
     // 음성: webm/opus 기본. mime 에서 확장자 추출
     ext = (blob.type.split("/")[1] || "webm").split(";")[0];
