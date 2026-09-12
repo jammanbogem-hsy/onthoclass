@@ -25,6 +25,7 @@ import { FocusLockOverlay } from "@/components/FocusLockOverlay";
 import { LinkPushModal } from "@/components/LinkPushModal";
 import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { ActivityLockOverlay } from "@/components/ActivityLockOverlay";
+import { UsageTracker } from "@/components/UsageTracker";
 import { GameStudentStage } from "@/components/GameStudentStage";
 import { QuizRunStudent } from "@/components/quizrun/QuizRunStudent";
 import { GameStudentDock } from "@/components/GameStudentDock";
@@ -174,7 +175,10 @@ function ClassLiveInner() {
   // 자동으로 다시 띄운다. stageKey 만으로는 currentUid 변화를 못 잡으므로 별도 처리.
   // 같은 rising-edge 에서 "내 차례!" 인트로도 함께 띄운다(누가 차례인지 못 알아채는 문제 해결).
   const isMyBingoTurn =
-    !!game && game.status === "play" && game.turn.currentUid === uid;
+    !!game &&
+    game.kind !== "quiz-run" &&
+    game.status === "play" &&
+    game.turn.currentUid === uid;
   const prevMyTurnRef = useRef(false);
   useEffect(() => {
     if (isMyBingoTurn && !prevMyTurnRef.current) {
@@ -238,6 +242,7 @@ function ClassLiveInner() {
 
   return (
     <>
+      {role === "student" && cid && uid && <UsageTracker key={`${cid}:${uid}`} cid={cid} uid={uid} override={showStudentStage ? game?.kind === "quiz-run" ? "quizrun" : "game" : undefined} />}
       {celebrate && (
         <MissionCelebrate
           key={`${celebrate.kind}:${celebrate.title}:${celebrate.subtitle ?? ""}`}
@@ -316,10 +321,13 @@ function ClassLiveInner() {
           onOpen={() => setDismissedStage(null)}
         />
       )}
-      {/* 빙고: 지금 누구 차례인지 모두에게 알리는 상단 배너(플레이 중 상시) */}
+      {/* 빙고: 지금 누구 차례인지 모두에게 알리는 상단 배너(플레이 중 상시).
+          퀴즈런은 차례가 없다 — currentUid 가 늘 null 이라 걸러내지 않으면
+          "선생님을 기다려요"가 게임 내내 붙어 있는다. */}
       {role === "student" &&
         !!uid &&
         !!game &&
+        game.kind !== "quiz-run" &&
         game.status === "play" && (
           <TurnBanner
             currentUid={game.turn.currentUid}

@@ -4,10 +4,27 @@
       "collectionGroup": "trades",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "uid", "order": "ASCENDING" },
-        { "fieldPath": "at", "order": "DESCENDING" }
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "usageDays",
+      "fieldPath": "buckets",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "usageDays",
+      "fieldPath": "counts",
+      "indexes": []
+    }
+  ]
 }

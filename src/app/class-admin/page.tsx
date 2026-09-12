@@ -68,6 +68,7 @@ import {
   type PresentationRequest,
 } from "@/lib/presentations";
 import { MarketManageModal } from "@/components/MarketManageModal";
+import { UsageHeatmapModal } from "@/components/UsageHeatmapModal";
 import { TradingAdminModal } from "@/components/TradingAdminModal";
 import { GameStartModal } from "@/components/GameStartModal";
 import { GameConsole } from "@/components/GameConsole";
@@ -162,6 +163,7 @@ function ClassAdminInner() {
     | "game-console"
     | "game-history"
     | "feedback-inbox"
+    | "usage"
     | "trading"
   >(null);
   const [showAllQuests, setShowAllQuests] = useState(false);
@@ -348,6 +350,7 @@ function ClassAdminInner() {
               <Icon name="storefront" size={16} />
               러닝마켓
             </button>
+            <button onClick={() => setModal("usage")} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)]"><Icon name="grid_view" size={16} />사용 히트맵</button>
             <button
               onClick={() => setModal("trading")}
               className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
@@ -681,6 +684,7 @@ function ClassAdminInner() {
           onClose={() => setModal(null)}
         />
       )}
+      {modal === "usage" && <UsageHeatmapModal cid={cid} members={members} onClose={() => setModal(null)} />}
       {modal === "trading" && (
         <TradingAdminModal
           cid={cid}
