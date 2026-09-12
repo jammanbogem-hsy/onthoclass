@@ -10,6 +10,8 @@ import {
   type FeedbackKind,
 } from "@/lib/feedback";
 import type { Attachment } from "@/lib/lessons";
+import { ChangelogPanel } from "@/components/ChangelogPanel";
+import { APP_VERSION, hasUnseenUpdate } from "@/lib/changelog";
 
 const KINDS: { key: FeedbackKind; label: string; icon: string }[] = [
   { key: "bug", label: "오류 신고", icon: "bug_report" },
@@ -21,6 +23,8 @@ const KINDS: { key: FeedbackKind; label: string; icon: string }[] = [
  * 학생용 떠 있는 오류보고/피드백 버튼 + 입력 폼.
  * 학급 페이지 어디서나(ClassLive) 마운트되어 우측(또는 좌측) 하단에 표시된다.
  * 증상/피드백명(title) + 내용(body) + 사진 첨부를 받아 classes/{cid}/feedback 에 저장.
+ * [업데이트] 탭에서는 앱 버전과 업데이트 내역(changelog)을 보여준다 — 못 본 새 버전이
+ * 있으면 버튼에 빨간 점이 뜬다.
  */
 export function FeedbackWidget({
   cid,
@@ -42,6 +46,10 @@ export function FeedbackWidget({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
+  const [tab, setTab] = useState<"write" | "news">("write");
+  // 새 업데이트 표시(빨간 점). 이 위젯은 포털이라 서버 렌더 결과가 없어(document 체크로
+  // null 반환) 첫 렌더에서 바로 localStorage 를 읽어도 하이드레이션 불일치가 없다.
+  const [unseen, setUnseen] = useState(() => hasUnseenUpdate());
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -106,6 +114,12 @@ export function FeedbackWidget({
         >
           <Icon name="feedback" size={18} />
           의견·오류
+          {unseen && (
+            <span
+              aria-label="새 업데이트 있음"
+              className="h-2 w-2 shrink-0 rounded-full bg-[var(--md-sys-color-error)]"
+            />
+          )}
         </button>
       )}
 
@@ -117,7 +131,10 @@ export function FeedbackWidget({
           <header className="flex items-center justify-between gap-2 border-b border-[var(--md-sys-color-outline-variant)] px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-extrabold text-[var(--md-sys-color-on-surface)]">
               <Icon name="feedback" size={18} />
-              오류 신고 · 의견 보내기
+              {tab === "write" ? "오류 신고 · 의견 보내기" : "업데이트 내역"}
+              <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-[var(--md-sys-color-on-surface-variant)]">
+                v{APP_VERSION}
+              </span>
             </h2>
             <button
               onClick={() => !busy && setOpen(false)}
@@ -128,7 +145,41 @@ export function FeedbackWidget({
             </button>
           </header>
 
-          {done ? (
+          {/* 탭 — 의견 보내기 / 업데이트 내역 */}
+          <div className="flex gap-1.5 px-4 pt-3">
+            {(
+              [
+                ["write", "의견 보내기", "edit"],
+                ["news", "업데이트", "campaign"],
+              ] as const
+            ).map(([k, label, icon]) => (
+              <button
+                key={k}
+                onClick={() => {
+                  setTab(k);
+                  if (k === "news") setUnseen(false);
+                }}
+                aria-pressed={tab === k}
+                className={`inline-flex flex-1 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  tab === k
+                    ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                    : "border border-[var(--md-sys-color-outline)] text-[var(--md-sys-color-on-surface-variant)]"
+                }`}
+              >
+                <Icon name={icon} size={14} />
+                {label}
+                {k === "news" && unseen && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--md-sys-color-error)]" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {tab === "news" ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <ChangelogPanel onSeen={() => setUnseen(false)} />
+            </div>
+          ) : done ? (
             <div className="flex flex-col items-center gap-3 p-6 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--md-sys-color-primary-container)]">
                 <Icon
@@ -224,6 +275,7 @@ export function FeedbackWidget({
                   value={atts}
                   onChange={setAtts}
                   compact
+                  allowDraw={false}
                 />
               </div>
 

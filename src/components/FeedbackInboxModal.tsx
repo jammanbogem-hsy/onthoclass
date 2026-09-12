@@ -11,6 +11,8 @@ import {
 } from "@/lib/feedback";
 import { listMembers, type Member } from "@/lib/classes";
 import { resolveStudentName } from "@/lib/names";
+import { ChangelogPanel } from "@/components/ChangelogPanel";
+import { APP_VERSION } from "@/lib/changelog";
 
 const KIND_META: Record<
   FeedbackKind,
@@ -42,6 +44,7 @@ function fmt(ms: number | null): string {
 
 /**
  * 교사: 학생 오류 신고 / 피드백 받은함. 종류·처리상태 필터 + 사진 확인 + 처리 완료 토글.
+ * [업데이트] 탭에서는 앱 버전과 업데이트 내역(changelog)을 본다 — 학생 화면과 같은 내용.
  */
 export function FeedbackInboxModal({
   cid,
@@ -52,6 +55,7 @@ export function FeedbackInboxModal({
 }) {
   const [list, setList] = useState<Feedback[] | null>(null);
   const [filter, setFilter] = useState<"open" | "all">("open");
+  const [tab, setTab] = useState<"inbox" | "news">("inbox");
   const [members, setMembers] = useState<Member[]>([]);
 
   useEffect(() => watchFeedback(cid, setList), [cid]);
@@ -86,8 +90,11 @@ export function FeedbackInboxModal({
         <header className="flex items-center justify-between gap-2 border-b border-[var(--md-sys-color-outline-variant)] px-5 py-4">
           <h2 className="flex items-center gap-2 text-lg font-extrabold text-[var(--md-sys-color-on-surface)]">
             <Icon name="feedback" size={22} />
-            학생 피드백 · 오류 신고
-            {openCount > 0 && (
+            {tab === "inbox" ? "학생 피드백 · 오류 신고" : "업데이트 내역"}
+            <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[var(--md-sys-color-on-surface-variant)]">
+              v{APP_VERSION}
+            </span>
+            {tab === "inbox" && openCount > 0 && (
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--md-sys-color-error)] px-1.5 text-xs font-bold text-white">
                 {openCount}
               </span>
@@ -102,25 +109,51 @@ export function FeedbackInboxModal({
           </button>
         </header>
 
-        {/* 필터 */}
-        <div className="flex items-center gap-2 border-b border-[var(--md-sys-color-outline-variant)] px-5 py-2.5">
-          {(["open", "all"] as const).map((f) => (
+        {/* 탭(받은함 / 업데이트) + 받은함 필터 */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--md-sys-color-outline-variant)] px-5 py-2.5">
+          {(
+            [
+              ["inbox", "받은함", "inbox"],
+              ["news", "업데이트", "campaign"],
+            ] as const
+          ).map(([k, label, icon]) => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
-                filter === f
-                  ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+              key={k}
+              onClick={() => setTab(k)}
+              aria-pressed={tab === k}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold transition ${
+                tab === k
+                  ? "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]"
                   : "text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
               }`}
             >
-              {f === "open" ? "처리 전" : "전체"}
+              <Icon name={icon} size={14} />
+              {label}
             </button>
           ))}
+          {tab === "inbox" && (
+            <span className="ml-auto flex items-center gap-2">
+              {(["open", "all"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                    filter === f
+                      ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                      : "text-[var(--md-sys-color-on-surface-variant)] hover:bg-black/5"
+                  }`}
+                >
+                  {f === "open" ? "처리 전" : "전체"}
+                </button>
+              ))}
+            </span>
+          )}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-5">
-          {list === null ? (
+          {tab === "news" ? (
+            <ChangelogPanel />
+          ) : list === null ? (
             <p className="p-3 text-sm text-[var(--md-sys-color-on-surface-variant)]">
               불러오는 중…
             </p>
