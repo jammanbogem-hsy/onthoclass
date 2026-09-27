@@ -46,3 +46,8 @@ functions/.secret.local
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local game validation scratch and emulator logs
+/work/
+firebase-debug.log
+firestore-debug.log

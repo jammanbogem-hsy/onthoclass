@@ -71,6 +71,7 @@ import { MarketManageModal } from "@/components/MarketManageModal";
 import { UsageHeatmapModal } from "@/components/UsageHeatmapModal";
 import { TradingAdminModal } from "@/components/TradingAdminModal";
 import { GameStartModal } from "@/components/GameStartModal";
+import { PuyoPortal } from "@/components/puyo/PuyoPortal";
 import { GameConsole } from "@/components/GameConsole";
 import { QuizRunConsole } from "@/components/quizrun/QuizRunConsole";
 import { GameHistoryModal } from "@/components/GameHistoryModal";
@@ -427,7 +428,7 @@ function ClassAdminInner() {
           />
         )}
         {/* 자동 종료·차례 이관 — 콘솔을 닫아도 항상 동작(상시 마운트) */}
-        {activeGame && (
+        {activeGame?.kind === "bingo-concept" && (
           <GameAutoPilot cid={cid} game={activeGame} subs={gameSubs} />
         )}
 
@@ -709,7 +710,8 @@ function ClassAdminInner() {
           onClose={() => setModal(null)}
         />
       )}
-      {modal === "game-console" && activeGame && activeGame.kind !== "quiz-run" && (
+      {modal === "game-console" && activeGame?.kind === "puyo" && <PuyoPortal cid={cid} gid={activeGame.id} />}
+      {modal === "game-console" && activeGame && activeGame.kind === "bingo-concept" && (
         <GameConsole
           cid={cid}
           game={activeGame}

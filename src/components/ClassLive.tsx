@@ -27,6 +27,7 @@ import { useCelebrateQueue } from "@/components/useCelebrateQueue";
 import { ActivityLockOverlay } from "@/components/ActivityLockOverlay";
 import { UsageTracker } from "@/components/UsageTracker";
 import { GameStudentStage } from "@/components/GameStudentStage";
+import { PuyoPortal } from "@/components/puyo/PuyoPortal";
 import { QuizRunStudent } from "@/components/quizrun/QuizRunStudent";
 import { GameStudentDock } from "@/components/GameStudentDock";
 import { MyTurnIntro } from "@/components/MyTurnIntro";
@@ -176,7 +177,7 @@ function ClassLiveInner() {
   // 같은 rising-edge 에서 "내 차례!" 인트로도 함께 띄운다(누가 차례인지 못 알아채는 문제 해결).
   const isMyBingoTurn =
     !!game &&
-    game.kind !== "quiz-run" &&
+    game.kind === "bingo-concept" &&
     game.status === "play" &&
     game.turn.currentUid === uid;
   const prevMyTurnRef = useRef(false);
@@ -303,7 +304,8 @@ function ClassLiveInner() {
           onMinimize={() => setDismissedStage(stageKey)}
         />
       )}
-      {showStudentStage && cid && uid && game && game.kind !== "quiz-run" && (
+      {role === "student" && cid && uid && game?.kind === "puyo" && <PuyoPortal cid={cid} gid={game.id} autoEnter={game.status !== "done"} />}
+      {showStudentStage && cid && uid && game && game.kind === "bingo-concept" && (
         <GameStudentStage
           cid={cid}
           game={game}
@@ -314,7 +316,7 @@ function ClassLiveInner() {
         />
       )}
       {/* 학생이 명시적으로 닫았을 때 — 우하단 도크로 다시 진입(결과 단계 포함) */}
-      {!showStudentStage && role === "student" && !!cid && !!uid && !!game && (
+      {!showStudentStage && role === "student" && !!cid && !!uid && !!game && game.kind !== "puyo" && (
         <GameStudentDock
           game={game}
           mySub={mySub}
@@ -327,7 +329,7 @@ function ClassLiveInner() {
       {role === "student" &&
         !!uid &&
         !!game &&
-        game.kind !== "quiz-run" &&
+        game.kind === "bingo-concept" &&
         game.status === "play" && (
           <TurnBanner
             currentUid={game.turn.currentUid}

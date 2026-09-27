@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { User } from "firebase/auth";
 import { Icon } from "@/components/Icon";
 import { QuizRunHistoryPanel } from "@/components/quizrun/QuizRunHistoryPanel";
+import { PuyoHistory } from "@/components/puyo/PuyoHistory";
 import { GraphView } from "@/components/GraphView";
 import { WordCloud } from "@/components/WordCloud";
 import {
@@ -145,7 +146,7 @@ export function GameHistoryModal({
   useEffect(() => {
     if (focused) {
       // 퀴즈런에는 제출(submissions)이 없다 — 읽어봐야 빈 결과라 건너뛴다
-      if (focused.kind !== "quiz-run") ensureSubs(focused.id);
+      if (focused.kind === "bingo-concept") ensureSubs(focused.id);
       setAddState("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,7 +414,7 @@ export function GameHistoryModal({
                         </span>
                         {/* 빙고와 퀴즈런은 이력에서 보여 주는 것이 전혀 다르다 */}
                         <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-1.5 py-0.5">
-                          {g.kind === "quiz-run" ? "퀴즈런" : "빙고"}
+                          {g.kind === "puyo" ? "뿌요뿌요" : g.kind === "quiz-run" ? "퀴즈런" : "빙고"}
                         </span>
                         {fmtDate(g.createdAt)}
                       </span>
@@ -433,6 +434,8 @@ export function GameHistoryModal({
                   왼쪽에서 게임을 선택하세요.
                 </p>
               </div>
+            ) : focused.kind === "puyo" ? (
+              <PuyoHistory cid={cid} game={focused} />
             ) : focused.kind === "quiz-run" ? (
               // 퀴즈런에는 제출 단어가 없다 — 워드클라우드·지식맵 대신
               // 순위와 러닝볼 전시를 보여 준다.

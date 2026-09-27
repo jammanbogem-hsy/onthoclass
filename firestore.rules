@@ -671,10 +671,43 @@ service cloud.firestore {
         allow update: if isTeacher(classId)
           || (
             isMember(classId)
+            && resource.data.kind != "puyo"
             && resource.data.status == "play"
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["turn", "ranks", "updatedAt"])
           );
+
+        // Puyo lobby heartbeats are separate from bingo submissions.
+        match /puyoPresence/{playerUid} {
+          allow read: if isMember(classId);
+          allow create, update: if isMember(classId) && playerUid == uid()
+            && request.resource.data.keys().hasOnly(["uid", "name", "online", "at"])
+            && request.resource.data.uid == uid()
+            && request.resource.data.name is string && request.resource.data.name.size() <= 100
+            && request.resource.data.online is bool && request.resource.data.at == request.time;
+        }
+        // Pairing and results are written by callable functions. Clients can update
+        // only their own bounded state during the server's match window.
+        match /puyoStates/{playerUid} {
+          function game() { return get(/databases/$(database)/documents/classes/$(classId)/games/$(gameId)).data; }
+          allow read: if isMember(classId);
+          allow update: if isMember(classId) && playerUid == uid()
+            && game().kind == "puyo" && game().status == "play"
+            && uid() in game().puyo.rosterIds
+            && request.time >= timestamp.value(game().puyo.startsAt)
+            && request.time <= timestamp.value(game().puyo.endsAt + 1500)
+            && request.resource.data.keys().hasOnly(["uid", "score", "sent", "maxChain", "lost", "seq", "state", "at"])
+            && request.resource.data.uid == uid()
+            && request.resource.data.seq == resource.data.seq + 1
+            && request.resource.data.score is int && request.resource.data.score >= resource.data.score
+            && request.resource.data.score <= 100000000
+            && request.resource.data.sent is int && request.resource.data.sent >= resource.data.sent
+            && request.resource.data.sent <= request.resource.data.score / 70
+            && request.resource.data.maxChain is int && request.resource.data.maxChain >= 0 && request.resource.data.maxChain <= 19
+            && request.resource.data.lost is bool && resource.data.lost == false
+            && request.resource.data.state is string && request.resource.data.state.size() <= 16000
+            && request.resource.data.at == request.time;
+        }
 
         // 학생별 제출/상태: 본인만 자기 문서 작성, 멤버 모두 열람
         match /submissions/{studentUid} {

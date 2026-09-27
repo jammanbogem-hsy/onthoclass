@@ -8,15 +8,16 @@ import {
   type FirebaseApp,
   type FirebaseOptions,
 } from "firebase/app";
-import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, connectAuthEmulator, type Auth } from "firebase/auth";
 import {
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
   type Firestore,
+  connectFirestoreEmulator,
 } from "firebase/firestore";
-import { getFunctions, type Functions } from "firebase/functions";
+import { getFunctions, connectFunctionsEmulator, type Functions } from "firebase/functions";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 const firebaseConfig: FirebaseOptions = {
@@ -36,6 +37,8 @@ let _auth: Auth | undefined;
 let _db: Firestore | undefined;
 let _fns: Functions | undefined;
 let _storage: FirebaseStorage | undefined;
+// Explicit local test switch; production builds never enable emulators.
+const emulators = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === "true";
 
 function app(): FirebaseApp {
   if (!_app) _app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -46,7 +49,10 @@ export function getAuthClient(): Auth {
   // getAuth 는 기본으로 IndexedDB 우선 지속성(브라우저 재시작 후에도 로그인 유지) +
   // 팝업 리졸버(signInWithPopup)를 모두 등록한다. initializeAuth 로 커스터마이즈하면
   // popupRedirectResolver 를 직접 넘기지 않는 한 Google 팝업 로그인이 깨지므로 getAuth 사용.
-  if (!_auth) _auth = getAuth(app());
+  if (!_auth) {
+    _auth = getAuth(app());
+    if (emulators) connectAuthEmulator(_auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  }
   return _auth;
 }
 
@@ -71,12 +77,16 @@ export function getDbClient(): Firestore {
     // IndexedDB 를 못 쓰는 환경(사생활 보호 모드 등)이거나 이미 초기화된 경우
     _db = getFirestore(app());
   }
+  if (emulators) connectFirestoreEmulator(_db, "127.0.0.1", 8080);
   return _db;
 }
 
 export function getFunctionsClient(): Functions {
   // Cloud Functions 배포 리전과 일치해야 함 (서울)
-  if (!_fns) _fns = getFunctions(app(), "asia-northeast3");
+  if (!_fns) {
+    _fns = getFunctions(app(), "asia-northeast3");
+    if (emulators) connectFunctionsEmulator(_fns, "127.0.0.1", 5001);
+  }
   return _fns;
 }
 

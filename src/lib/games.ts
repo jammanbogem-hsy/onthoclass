@@ -17,11 +17,12 @@ import {
 } from "firebase/firestore";
 import { getDbClient } from "@/lib/firebase";
 import type { QuizRunConfig } from "@/lib/quizrun";
+import type { PuyoConfig } from "@/lib/puyo";
 
 /** 게임 종류. 빙고와 퀴즈런은 데이터가 전혀 겹치지 않는다 —
  *  공유하는 것은 이 문서의 껍데기(생성·활성포인터·상태·결과)뿐이고,
  *  각자의 알맹이는 config(빙고) / quiz(퀴즈런) 로 나뉜다. */
-export type GameKind = "bingo-concept" | "quiz-run";
+export type GameKind = "bingo-concept" | "quiz-run" | "puyo";
 export type GameStatus =
   | "draft" // 교사가 설정 중(미공개)
   | "submit" // 학생 단어 제출
@@ -73,6 +74,7 @@ export type Game = {
   config: GameConfig;
   /** 퀴즈런 설정. kind="quiz-run" 일 때만 존재. */
   quiz?: QuizRunConfig;
+  puyo?: PuyoConfig;
   link: GameLink;
   /** 선정 단계 풀 + 가중치(submittedBy/selectedBy). 교사가 최종 확정하면 status→build */
   candidates: GameCandidate[];
@@ -1097,6 +1099,7 @@ function mapGame(id: string, v: Record<string, unknown>): Game {
     ranks: Array.isArray(v.ranks) ? (v.ranks as Game["ranks"]) : [],
     // 퀴즈런 설정은 그대로 통과시킨다(빙고 기본값 채우기 로직을 타지 않도록)
     ...(v.quiz ? { quiz: v.quiz as QuizRunConfig } : {}),
+    ...(v.puyo ? { puyo: v.puyo as PuyoConfig } : {}),
     by: (v.by as string) ?? "",
     createdAt: ts("createdAt"),
     updatedAt: ts("updatedAt"),

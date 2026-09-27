@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createPuyoGame, puyoUrl } from "@/lib/puyo";
 import { Icon } from "@/components/Icon";
 import { listLessons, type Lesson } from "@/lib/lessons";
 import { listProjects, type Project } from "@/lib/projects";
@@ -39,6 +41,8 @@ export function GameStartModal({
   onClose: () => void;
   onStarted: (gameId: string) => void;
 }) {
+  const router = useRouter();
+  const [puyoMinutes, setPuyoMinutes] = useState(3);
   const [projects, setProjects] = useState<Project[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,13 +111,20 @@ export function GameStartModal({
   }, [lessons]);
 
   async function start() {
-    if (!pick) {
+    if (!pick && kind !== "puyo") {
       setErr("연결할 프로젝트 또는 차시를 선택해 주세요.");
       return;
     }
     setErr("");
     setBusy(true);
     try {
+      if (kind === "puyo") {
+        const gid = await createPuyoGame(cid, by, puyoMinutes * 60, pick ?? { name: "학급 뿌요뿌요" });
+        onClose();
+        router.push(puyoUrl(cid, gid));
+        return;
+      }
+      if (!pick) return;
       if (kind === "quiz-run") {
         const usable = items.filter((it) => !isIncomplete(it));
         if (usable.length === 0) {
@@ -166,7 +177,7 @@ export function GameStartModal({
               size={22}
               className="text-[var(--md-sys-color-primary)]"
             />
-            학급 게임 — 개념 빙고
+            학급 게임 — {kind === "puyo" ? "뿌요뿌요" : kind === "quiz-run" ? "퀴즈런" : "개념 빙고"}
           </h2>
           <button
             onClick={onClose}
@@ -320,6 +331,7 @@ export function GameStartModal({
                   [
                     ["bingo-concept", "개념 빙고", "grid_view"],
                     ["quiz-run", "퀴즈런", "sports_esports"],
+                    ["puyo", "뿌요뿌요", "extension"],
                   ] as const
                 ).map(([k, label, icon]) => (
                   <button
@@ -344,7 +356,27 @@ export function GameStartModal({
               )}
             </Section>
 
-            {kind === "quiz-run" ? (
+            {kind === "puyo" ? (
+              <>
+                <div className="flex justify-center gap-1 rounded-2xl bg-violet-100 p-4">
+                  {["gengar", "snorlax", "charmander", "squirtle"].map(name => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={name} src={`/puyo/assets/${name}.svg`} alt={name} width={52} height={52} />
+                  ))}
+                </div>
+                <Section title="경기 제한 시간">
+                  <label className="flex items-center gap-2">
+                    <input aria-label="뿌요뿌요 제한 시간(분)" type="number" min={1} max={15} value={puyoMinutes} onChange={e => setPuyoMinutes(Math.max(1, Math.min(15, Number(e.target.value) || 1)))} className="m3-field w-24" />
+                    <span>분</span>
+                  </label>
+                </Section>
+                <p className="rounded-2xl bg-[var(--md-sys-color-surface)] p-4 text-sm leading-7">
+                  대기실에서 <b>접속 학생을 체크</b>한 뒤 시작해요. 선택한 학생이 홀수면 선생님이 함께 참여해 랜덤으로 1:1 대진을 만들어요.
+                </p>
+                <p className="text-xs leading-6 text-[var(--md-sys-color-on-surface-variant)]">같은 색 4개를 연결해 지우고 연쇄로 상대에게 회색 방해뿌요를 보내세요. 보드가 차면 패배, 시간이 끝나면 높은 점수가 승리해요. 동점은 무승부예요.</p>
+                <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">프로젝트·차시 연결은 선택 사항이에요.</p>
+              </>
+            ) : kind === "quiz-run" ? (
               <>
                 <Section title="문제 세트">
                   <QuizSetEditor
@@ -600,7 +632,7 @@ export function GameStartModal({
             )}
             <button
               onClick={start}
-              disabled={busy || !pick}
+              disabled={busy || (!pick && kind !== "puyo")}
               className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-3 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
             >
               <Icon name="play_arrow" size={18} />

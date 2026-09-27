@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { finishPuyo } from "@/lib/puyo";
 import { Icon } from "@/components/Icon";
 import {
   endGame,
@@ -34,6 +35,7 @@ export function ActiveGameBanner({
   async function doEnd() {
     setBusy(true);
     try {
+      if (game.kind === "puyo" && game.status === "play") await finishPuyo(cid, game.id, true);
       await endGame(cid, game.id);
     } finally {
       setBusy(false);
@@ -51,13 +53,15 @@ export function ActiveGameBanner({
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <p className="text-sm font-bold">
-          학급 게임 진행 중 · {isQuizRun ? "퀴즈런" : "개념 빙고"}
+          학급 게임 진행 중 · {game.kind === "puyo" ? "뿌요뿌요" : isQuizRun ? "퀴즈런" : "개념 빙고"}
           <span className="ml-1 inline-block h-2 w-2 animate-pulse rounded-full bg-[var(--md-sys-color-tertiary)] align-middle" />
         </p>
         {/* 요약은 게임 종류마다 다르다. 퀴즈런의 참여자는 runs 에 있어서
             여기(빙고의 submissions)로는 셀 수 없다 — 늘 0명으로 보이므로 뺐다. */}
         <p className="truncate text-xs">
-          {isQuizRun ? (
+          {game.kind === "puyo" ? (
+            <>1:1 대전 · 제한 {(game.puyo?.durationSec ?? 180) / 60}분 · {game.puyo?.players?.length ?? 0}명</>
+          ) : isQuizRun ? (
             <>
               {game.link.name} · 문제 <b>{game.quiz?.items.length ?? 0}</b>개 ·
               제한 {Math.round((game.quiz?.durationSec ?? 0) / 60)}분

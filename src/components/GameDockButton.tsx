@@ -32,7 +32,7 @@ export function GameDockButton({
           {game.link.name.slice(0, 14)}
         </span>
         <span className="text-sm font-bold">
-          콘솔 열기 · {subs.length}명
+          {game.kind === "puyo" ? `뿌요뿌요 · ${game.puyo?.players?.length ?? 0}명` : `콘솔 열기 · ${subs.length}명`}
         </span>
       </span>
     </button>

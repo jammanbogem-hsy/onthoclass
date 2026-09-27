@@ -25,6 +25,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 initializeApp();
 setGlobalOptions({ region: "asia-northeast3" }); // 서울 리전
+export { puyoStart, puyoFinish, puyoClock } from "./puyo";
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
