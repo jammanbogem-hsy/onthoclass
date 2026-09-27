@@ -73,6 +73,7 @@ export default function DashboardPage() {
   const [dragId, setDragId] = useState<string | null>(null); // 드래그 중 학급 id
   const [dragOver, setDragOver] = useState<string | null>(null); // 드롭 대상(폴더/미분류)
   const [overCardId, setOverCardId] = useState<string | null>(null); // 카드 위 재배치 표시
+  const [overAfter, setOverAfter] = useState(false); // 대상 카드의 뒤(오른쪽)에 삽입할지
   const [modal, setModal] = useState<"create" | "join" | null>(null);
   // 주식대회(교사) — 메인 화면에서 개설하고, 진행 중/끝난 대회를 카드로 본다.
   const [contests, setContests] = useState<ContestMeta[] | null>(null);
@@ -170,7 +171,8 @@ export default function DashboardPage() {
   async function reorderWithin(
     container: string | null, // groupId or null(미분류)
     draggedId: string,
-    targetId: string
+    targetId: string,
+    after = false // true면 대상 카드 뒤에, false면 앞에 삽입
   ) {
     setOverCardId(null);
     setDragId(null);
@@ -180,7 +182,7 @@ export default function DashboardPage() {
       if (!g || !g.classIds.includes(draggedId)) return;
       const ids = g.classIds.filter((id) => id !== draggedId);
       const at = ids.indexOf(targetId);
-      ids.splice(at < 0 ? ids.length : at, 0, draggedId);
+      ids.splice(at < 0 ? ids.length : at + (after ? 1 : 0), 0, draggedId);
       await reorderGroupClasses(container, ids);
     } else {
       // 미분류: users.classIds 전체를 (재배치된 미분류 + 폴더소속) 으로 덮어씀
@@ -189,11 +191,37 @@ export default function DashboardPage() {
         .map((c) => c.id)
         .filter((id) => !groupedSet.has(id) && id !== draggedId);
       const at = ungroupedIds.indexOf(targetId);
-      ungroupedIds.splice(at < 0 ? ungroupedIds.length : at, 0, draggedId);
+      ungroupedIds.splice(
+        at < 0 ? ungroupedIds.length : at + (after ? 1 : 0),
+        0,
+        draggedId
+      );
       if (user)
         await reorderMyClasses(user.uid, [...ungroupedIds, ...groupedSet]);
     }
     await refresh();
+  }
+
+  /** 카드 사이 빈 곳에 놓았을 때: 포인터에서 가장 가까운 카드와 그 앞/뒤를 구한다 */
+  function nearestCard(
+    root: HTMLElement,
+    x: number,
+    y: number
+  ): { id: string; after: boolean } | null {
+    let best: { id: string; after: boolean; d: number } | null = null;
+    root.querySelectorAll<HTMLElement>("[data-class-card]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const cx = Math.max(r.left, Math.min(x, r.right));
+      const cy = Math.max(r.top, Math.min(y, r.bottom));
+      const d = (x - cx) ** 2 + (y - cy) ** 2;
+      if (!best || d < best.d)
+        best = {
+          id: el.dataset.classCard!,
+          after: x > r.left + r.width / 2,
+          d,
+        };
+    });
+    return best;
   }
 
   useEffect(() => {
@@ -300,6 +328,7 @@ export default function DashboardPage() {
     return (
       <GlassCard
         key={c.id}
+        data-class-card={c.id}
         interactive
         draggable={isTeacher}
         onDragStart={(e: React.DragEvent) => {
@@ -315,7 +344,9 @@ export default function DashboardPage() {
           if (!isTeacher || !dragId || dragId === c.id) return;
           e.preventDefault();
           e.stopPropagation();
+          const r = e.currentTarget.getBoundingClientRect();
           setOverCardId(c.id);
+          setOverAfter(e.clientX > r.left + r.width / 2);
         }}
         onDragLeave={() =>
           setOverCardId((v) => (v === c.id ? null : v))
@@ -330,7 +361,13 @@ export default function DashboardPage() {
             groups.find((g) => g.classIds.includes(id))?.id ?? null;
           if (fromGroup === container) {
             // 같은 컨테이너 → 순서 재배치
-            reorderWithin(container, id, c.id);
+            const r = e.currentTarget.getBoundingClientRect();
+            reorderWithin(
+              container,
+              id,
+              c.id,
+              e.clientX > r.left + r.width / 2
+            );
           } else {
             // 다른 컨테이너 → 이 컨테이너로 이동
             dropClass(id, container);
@@ -338,11 +375,19 @@ export default function DashboardPage() {
         }}
         className={`relative overflow-hidden p-0 transition ${
           dragId === c.id ? "opacity-50" : ""
-        } ${overCardId === c.id ? "ring-2 ring-[var(--md-sys-color-primary)]" : ""} ${
+        } ${
           isTeacher ? "cursor-grab active:cursor-grabbing" : ""
         }`}
         onClick={() => router.push(`/class/?id=${c.id}`)}
       >
+        {/* 삽입 위치 막대: 카드의 앞(왼쪽)/뒤(오른쪽) */}
+        {overCardId === c.id && dragId && dragId !== c.id && (
+          <div
+            className={`pointer-events-none absolute inset-y-0 z-30 w-1.5 bg-[var(--md-sys-color-primary)] ${
+              overAfter ? "right-0" : "left-0"
+            }`}
+          />
+        )}
         <div
           className={`h-24 ${
             SUBJECT_GRADIENTS[c.colorIndex % SUBJECT_GRADIENTS.length]
@@ -610,8 +655,23 @@ export default function DashboardPage() {
                   e.preventDefault();
                   const id = e.dataTransfer.getData("text/plain");
                   setDragOver(null);
-                  if (id)
-                    dropClass(id, target === "__ungrouped__" ? null : target);
+                  if (!id) return;
+                  const container = target === "__ungrouped__" ? null : target;
+                  const from =
+                    groups.find((g) => g.classIds.includes(id))?.id ?? null;
+                  // 같은 폴더 안 카드 사이 빈 곳 → 가장 가까운 카드 기준으로 재배치
+                  if (from === container && container) {
+                    const near = nearestCard(
+                      e.currentTarget as HTMLElement,
+                      e.clientX,
+                      e.clientY
+                    );
+                    if (near && near.id !== id)
+                      reorderWithin(container, id, near.id, near.after);
+                    else setDragId(null);
+                    return;
+                  }
+                  dropClass(id, container);
                 },
               });
               return (

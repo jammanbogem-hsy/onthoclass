@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.3.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.3.1",
+    date: "2026-09-27",
+    kind: "patch",
+    title: "순서 바꾸기가 더 쉬워졌어요",
+    items: [
+      "학급 카드를 맨 앞·맨 뒤로도 옮길 수 있어요. 들어갈 자리에 막대가 보여요.",
+      "활동 순서를 끌면 다른 활동이 비켜서서 들어갈 자리가 바로 보여요.",
+      "활동을 한 번에 맨 위·맨 아래로 보내는 버튼이 생겼어요.",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-08-31",
