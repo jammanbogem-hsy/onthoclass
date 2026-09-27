@@ -1,6 +1,6 @@
 export type Run = { score?: number; lost?: boolean; at?: { toMillis(): number } };
 export type Match = { id: string; a: string; b: string; seed: number; result: Result | null };
-export type Result = { winner: string | null; reason: "topout" | "time" | "disconnect" | "teacher"; scores: Record<string, number>; at: number };
+export type Result = { winner: string | null; reason: "topout" | "time" | "disconnect" | "teacher"; scores: Record<string, number>; at: number; reward?: { uid: string; xp: number } };
 export function pairPlayers(students: string[], teacher: string, random: () => number): string[][] {
   const all = [...new Set(students)];
   if (all.length === 0 || all.length > 40 || all.includes(teacher)) throw new Error("학생을 1~40명 선택해 주세요.");

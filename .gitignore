@@ -51,3 +51,4 @@ next-env.d.ts
 /work/
 firebase-debug.log
 firestore-debug.log
+database-debug.log

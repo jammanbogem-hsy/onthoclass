@@ -1,4 +1,5 @@
 {
+  "database": { "rules": "database.puyo.rules.json" },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

@@ -1,8 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { Timestamp, FieldValue, getFirestore } from "firebase-admin/firestore";
+import { getDatabaseWithUrl } from "firebase-admin/database";
 import { randomInt } from "node:crypto";
 import { decide, pairPlayers, type Match, type Run } from "./puyoLogic";
 
+const liveDb = () => getDatabaseWithUrl(process.env.FIREBASE_DATABASE_EMULATOR_HOST ? "https://demo-puyo-default-rtdb.firebaseio.com" : "https://jammanboeng-default-rtdb.asia-southeast1.firebasedatabase.app");
 const options = { region: "asia-northeast3", maxInstances: 10, timeoutSeconds: 30 };
 function ids(data: unknown) {
   const { cid, gid } = (data || {}) as { cid?: string; gid?: string };
@@ -25,7 +27,7 @@ export const puyoStart = onCall(options, async request => {
   try { pairs = pairPlayers(students, uid, () => randomInt(0, 1000000) / 1000000); }
   catch (e) { throw new HttpsError("invalid-argument", (e as Error).message); }
   const roster = pairs.flat(); const db = getFirestore(); const ref = db.doc(`classes/${cid}/games/${gid}`);
-  return db.runTransaction(async tx => {
+  const outcome = await db.runTransaction(async tx => {
     const teacher = await tx.get(db.doc(`classes/${cid}/members/${uid}`));
     if (teacher.data()?.role !== "teacher") throw new HttpsError("permission-denied", "선생님만 경기를 시작할 수 있습니다.");
     const game = await tx.get(ref); const data = game.data();
@@ -45,12 +47,18 @@ export const puyoStart = onCall(options, async request => {
     tx.update(ref, { status: "play", "puyo.players": players, "puyo.rosterIds": roster, "puyo.matches": matches, "puyo.startsAt": startsAt, "puyo.endsAt": endsAt, playStartedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     return { startsAt, endsAt, matches };
   });
+  try {
+    const pairs = Object.fromEntries(outcome.matches.flatMap(m => [[m.a, m.id], [m.b, m.id]]));
+    await liveDb().ref(`puyo/${cid}/${gid}`).set({ meta: { teacher: uid, players: pairs, startsAt: outcome.startsAt, endsAt: outcome.endsAt } });
+    await ref.update({ "puyo.realtime": true });
+  } catch (e) { console.warn("Puyo realtime unavailable; using durable fallback", (e as Error).message); }
+  return outcome;
 });
 export const puyoFinish = onCall(options, async request => {
   if (!request.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
   const { cid, gid } = ids(request.data); const uid = request.auth.uid;
   const db = getFirestore(); const ref = db.doc(`classes/${cid}/games/${gid}`);
-  return db.runTransaction(async tx => {
+  const outcome = await db.runTransaction(async tx => {
     const member = await tx.get(db.doc(`classes/${cid}/members/${uid}`));
     if (!member.exists) throw new HttpsError("permission-denied", "학급 구성원만 결과를 볼 수 있습니다.");
     const manual = request.data.manual === true;
@@ -60,15 +68,55 @@ export const puyoFinish = onCall(options, async request => {
     if (g.status !== "play") return { done: g.status === "done" };
     const matches = g.puyo.matches as Match[]; const roster = g.puyo.rosterIds as string[];
     const docs = await tx.getAll(...roster.map(id => ref.collection("puyoStates").doc(id)));
-    const runs = new Map(docs.map(d => [d.id, d.data() as Run]));
+    // The fast channel is also the final score source; a slow checkpoint ACK
+    // must not erase the last second of play. Writes expire before time judging.
+    const frames = g.puyo.realtime ? await liveDb().ref(`puyo/${cid}/${gid}/boards`).get().then(s => s.val() as Record<string, { score: number; sent: number; lost: boolean; maxChain: number; state: string; at: number }> | null).catch(() => null) : null;
+    const runs = new Map(docs.map(d => {
+      const saved = d.data() as Run; const live = frames?.[d.id];
+      return [d.id, live ? { ...saved, score: Math.max(saved.score ?? 0, live.score), lost: !!saved.lost || !!live.lost, at: Timestamp.fromMillis(Math.max(saved.at?.toMillis() ?? 0, live.at)) } : saved];
+    }));
     const now = Date.now(); let changed = false;
     const next = matches.map(m => {
       if (m.result) return m;
       const result = decide(m, runs.get(m.a) ?? {}, runs.get(m.b) ?? {}, now, g.puyo.startsAt, g.puyo.endsAt, manual);
       if (result) { changed = true; return { ...m, result }; } return m;
     });
+    // Resolve and pay in one transaction. Deterministic logs also guard retries
+    // if a teacher later restores a game document from an older snapshot.
+    const winners = next.filter((m, i) => !matches[i].result && m.result?.winner);
+    const rewardDocs = winners.length ? await tx.getAll(
+      ...winners.map(m => db.doc(`classes/${cid}/members/${m.result!.winner}`)),
+      ...winners.map(m => db.doc(`classes/${cid}/xp/${m.result!.winner}/log/puyo_${gid}_${m.id}`)),
+    ) : [];
+    winners.forEach((m, i) => {
+      const winner = m.result!.winner!;
+      const player = (g.puyo.players as { uid: string; teacher: boolean }[]).find(p => p.uid === winner);
+      if (!player || player.teacher || rewardDocs[i].data()?.role !== "student") return;
+      m.result!.reward = { uid: winner, xp: 10 };
+      if (rewardDocs[i + winners.length].exists) return;
+      const xp = db.doc(`classes/${cid}/xp/${winner}`);
+      const wallet = db.doc(`classes/${cid}/manbo/${winner}`);
+      const logId = `puyo_${gid}_${m.id}`;
+      const log = { amount: 10, reason: "뿌요뿌요 승리", by: "system:puyo", gameId: gid, matchId: m.id, at: FieldValue.serverTimestamp() };
+      tx.set(xp, { uid: winner, xp: FieldValue.increment(10), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      tx.create(xp.collection("log").doc(logId), log);
+      // Existing positive-XP rewards also credit the parallel 만보 wallet.
+      tx.set(wallet, { uid: winner, balance: FieldValue.increment(10), earned: FieldValue.increment(10), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      tx.set(wallet.collection("log").doc(logId), { ...log, type: "earn" });
+    });
+    for (const m of next) {
+      if (!m.result || matches.find(old => old.id === m.id)?.result) continue;
+      for (const id of [m.a, m.b]) {
+        const live = frames?.[id]; const saved = docs.find(d => d.id === id)?.data();
+        if (live && live.at >= (saved?.at?.toMillis() ?? 0)) tx.update(ref.collection("puyoStates").doc(id), {
+          score: live.score, sent: live.sent, lost: live.lost ?? false, maxChain: live.maxChain ?? 0, state: live.state, at: Timestamp.fromMillis(live.at),
+        });
+      }
+    }
     const done = next.every(m => !!m.result);
     if (changed) tx.update(ref, { "puyo.matches": next, status: done ? "done" : "play", updatedAt: FieldValue.serverTimestamp() });
     return { done, matches: next };
   });
+  if (outcome.done) await liveDb().ref(`puyo/${cid}/${gid}`).remove().catch(() => {});
+  return outcome;
 });

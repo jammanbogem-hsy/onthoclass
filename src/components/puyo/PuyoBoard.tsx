@@ -39,7 +39,7 @@ export function PuyoBoard({ state, name, opponent = false, status }: PuyoBoardPr
   const height = state.board.slice(COLS).filter(Boolean).length;
 
   return (
-    <section className={`${styles.frame} ${opponent ? styles.opponent : ""}`} aria-label={`${name}의 뿌요 보드`}>
+    <section className={`${styles.frame} ${opponent ? styles.opponent : ""}`} aria-label={`${name}의 뿌요 보드`} data-puyo-position={state.active ? `${state.active.x},${state.active.y},${state.active.r}` : "none"} data-puyo-score={state.score} data-puyo-attacks={state.sent} data-puyo-pending={state.pending}>
       <header className={styles.header}>
         <div className={styles.player}>
           <span className={styles.avatar} aria-hidden="true">{name.trim().slice(0, 1) || "?"}</span>

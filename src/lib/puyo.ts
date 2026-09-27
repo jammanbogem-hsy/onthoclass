@@ -5,9 +5,9 @@ import type { GameLink } from "@/lib/games";
 import { parseState, type PuyoState } from "@/lib/puyo-engine";
 
 export type PuyoPlayer = { uid: string; name: string; teacher: boolean };
-export type PuyoResult = { winner: string | null; reason: "topout" | "time" | "disconnect" | "teacher"; scores: Record<string, number>; at: number };
+export type PuyoResult = { winner: string | null; reason: "topout" | "time" | "disconnect" | "teacher"; scores: Record<string, number>; at: number; reward?: { uid: string; xp: number } };
 export type PuyoMatch = { id: string; a: string; b: string; seed: number; result: PuyoResult | null };
-export type PuyoConfig = { durationSec: number; startsAt?: number; endsAt?: number; players?: PuyoPlayer[]; rosterIds?: string[]; matches?: PuyoMatch[] };
+export type PuyoConfig = { durationSec: number; realtime?: boolean; startsAt?: number; endsAt?: number; players?: PuyoPlayer[]; rosterIds?: string[]; matches?: PuyoMatch[] };
 export type PuyoPresence = { uid: string; name: string; online: boolean; at: number };
 export type PuyoRun = { uid: string; score: number; sent: number; maxChain: number; lost: boolean; seq: number; at: number; state: PuyoState | null };
 const path = (cid: string, gid: string) => `classes/${cid}/games/${gid}`;

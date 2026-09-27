@@ -9,6 +9,7 @@ export function PuyoHistory({ cid, game }: { cid: string; game: Game }) {
     {p?.matches?.map(m => <div key={m.id} className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-violet-950">
       <strong>{name(m.a)} vs {name(m.b)}</strong>
       <p className="mt-2">{m.result ? `${m.result.scores[m.a].toLocaleString()} : ${m.result.scores[m.b].toLocaleString()} · ${m.result.winner ? `${name(m.result.winner)} 승리` : "무승부"}` : "진행 중"}</p>
+      {m.result?.reward && <p className="mt-1 text-sm font-bold text-violet-700">승리 보상 +{m.result.reward.xp} XP 지급 완료</p>}
     </div>)}
     <a href={puyoUrl(cid, game.id)} className="self-start rounded-full bg-violet-600 px-5 py-2 font-bold text-white">경기 화면 보기</a>
   </section>;
