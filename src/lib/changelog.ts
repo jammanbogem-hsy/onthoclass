@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.9.0";
+export const APP_VERSION = "1.9.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.9.1",
+    date: "2026-10-01",
+    kind: "patch",
+    title: "방해 뿌요 옆에도 잘 놓여요",
+    items: [
+      "눈에 안 보이는 맨 위 줄에 방해 뿌요가 쌓여 뿌요를 옮기거나 놓지 못하던 문제를 고쳤어요.",
+      "양옆이 막힌 좁은 틈에서는 돌리면 위아래가 뒤집혀요(퀵턴).",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-10-01",

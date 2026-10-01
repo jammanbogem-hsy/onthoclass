@@ -113,8 +113,10 @@ function resolve(s: PuyoState) {
     const garbageDrops: number[] = [];
     for (let n = 0; n < amount; n++) {
       const x = columns[n % COLS]; let y = ROWS - 1;
-      while (y >= 0 && s.board[y * COLS + x]) y--;
-      if (y < 0) { s.phase = "over"; s.active = null; return; }
+      // 방해 뿌요는 보이는 줄(1~12)에만 쌓는다. 그 줄이 꽉 찼으면 넘치는 방해는 버린다(실제 뿌요뿌요 규칙).
+      // 예전에는 숨은 줄(0)까지 쌓여 보이지 않는 방해가 이동을 막거나, 넘치면 판이 끝났다.
+      while (y >= 1 && s.board[y * COLS + x]) y--;
+      if (y < 1) continue;
       s.board[y * COLS + x] = 5; garbageDrops.push(y * COLS + x, y + 1);
     }
     s.drops = garbageDrops; effect(s, "garbage");
@@ -138,6 +140,11 @@ export function input(s: PuyoState, action: Action) {
     for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1]]) {
       const candidate = { ...p, r, x: p.x + dx, y: p.y + dy };
       if (fits(s, candidate)) { s.active = candidate; if (s.resets++ < 8) s.lock = 0; return; }
+    }
+    // 퀵턴: 양옆이 막힌 좁은 틈에서는 위아래를 뒤집는다(실제 뿌요뿌요처럼)
+    for (const dy of [0, -1]) {
+      const flip = { ...p, r: (p.r + 2) % 4, y: p.y + dy };
+      if (fits(s, flip)) { s.active = flip; if (s.resets++ < 8) s.lock = 0; return; }
     }
     return;
   }

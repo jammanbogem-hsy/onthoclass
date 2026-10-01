@@ -32,3 +32,13 @@ test('drops record how far cells fell: garbage from above, chain falls, and the 
   assert.equal(t.effect,'fall');assert.deepEqual(Array.from(t.drops),[72,1]);
   const u=E.createState(1);E.input(u,'drop');E.tick(u,1);assert.equal(u.effect,'land');assert.equal(u.drops.length,4);assert.ok(E.parseState(JSON.stringify(u)));
 });
+test('garbage never fills the hidden row and overflow is discarded instead of ending the board',()=>{
+  const s=E.createState(3);s.active=null;s.phase='settle';s.timer=1;
+  for(let y=1;y<13;y++){s.board[y*6]=5;s.board[y*6+1]=5;}
+  s.pending=12;E.tick(s,20);
+  assert.notEqual(s.phase,'over');for(let x=0;x<6;x++)assert.equal(s.board[x],0,'hidden row stays empty');
+});
+test('quick turn flips a vertical pair stuck in a one-wide well',()=>{
+  const s=E.createState(3);for(let y=3;y<13;y++){s.board[y*6+1]=5;s.board[y*6+3]=5;}s.active={x:2,y:5,r:0,a:1,b:2};
+  E.input(s,'cw');assert.equal(s.active.r,2);assert.equal(s.active.x,2);
+});
