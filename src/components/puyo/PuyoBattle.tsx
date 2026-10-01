@@ -519,6 +519,6 @@ export function PuyoPractice() {
   return <div className={styles.practice}>
     <PuyoBoard state={view} name="나의 연습 보드" status="연습 점수는 학급 경기에 반영되지 않아요" />
     <Controls action={action} disabled={!running || view.phase === "over"} unlock={sound.unlock} layout="row" />
-    <button type="button" className={styles.primaryBtn} onClick={() => { sound.unlock(); state.current = createState(Math.floor(Math.random() * 2147483646) + 1); setView(cloneState(state.current)); setRunning(true); }}><Icon name={running ? "restart_alt" : "play_arrow"} size={18} />{!running ? "연습 시작" : "새로 연습하기"}</button>
+    <button type="button" className={styles.primaryBtn} onClick={e => { e.currentTarget.blur(); sound.unlock(); state.current = createState(Math.floor(Math.random() * 2147483646) + 1); setView(cloneState(state.current)); setRunning(true); }}><Icon name={running ? "restart_alt" : "play_arrow"} size={18} />{!running ? "연습 시작" : "새로 연습하기"}</button>
   </div>;
 }
