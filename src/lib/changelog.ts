@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.4.2";
+export const APP_VERSION = "1.5.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.5.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "쉬는 시간 뿌요 자유 대전",
+    items: [
+      "선생님이 열어 두면 학급 화면에 [뿌요 자유 대전] 버튼이 생겨요.",
+      "방을 만들면 친구가 [같이 하기]로 들어와 2분 동안 1:1로 겨뤄요. 경험치 보상은 없어요.",
+      "선생님은 학급 게임 창에서 스위치로 자유 대전을 열고 잠글 수 있어요.",
+    ],
+  },
   {
     version: "1.4.2",
     date: "2026-10-01",

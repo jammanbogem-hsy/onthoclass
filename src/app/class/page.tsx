@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
 import { QuizRunRecentCard } from "@/components/quizrun/QuizRunRecentCard";
+import { FreePlayButton } from "@/components/puyo/PuyoFree";
 import { TopBar } from "@/components/TopBar";
 import { ClassBuilder } from "@/components/ClassBuilder";
 import { GroupBuilder } from "@/components/GroupBuilder";
@@ -320,6 +321,7 @@ function ClassDetail() {
                 발표 승인 요청
               </button>
             )}
+            {!isTeacher && <FreePlayButton cid={room.id} />}
             {!isTeacher && (
               <button
                 onClick={() => router.push(`/level/?id=${room.id}`)}

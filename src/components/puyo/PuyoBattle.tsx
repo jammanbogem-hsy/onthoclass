@@ -6,13 +6,13 @@ import { cloneState, createState, input, receive, revive, tick, type Action, typ
 import { finishPuyo, readPuyoSeq, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
 import { getPuyoLive, watchPuyoConnection, watchPuyoLive, savePuyoLive, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
 import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS } from "@/lib/puyo-sync";
-import { normalizeRules } from "@/lib/puyo-rules";
+import { normalizeRules, type FlowStage, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
 import { PuyoBoard, Sprite } from "./PuyoBoard";
 import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
 
-function useSound() {
+export function useSound() {
   const [muted, setMuted] = useState(false);
   const ctx = useRef<AudioContext | null>(null);
   const unlock = useCallback(() => {
@@ -179,6 +179,109 @@ function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds,
   </div>;
 }
 
+export type StageResult = { title: string; headline: string; score: string; reward?: string };
+type Sound = ReturnType<typeof useSound>;
+
+/**
+ * 전체 화면 경기장 — 학급 대전·자유 대전이 함께 쓰는 화면(동기화·저장은 부르는 쪽이 맡는다).
+ * 아케이드 배치/좁은 화면 배치, 공격 구슬, 준비·종료 카드까지 그린다.
+ */
+export function BattleStage({ view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction }: {
+  view: PuyoState; oppState: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
+  seconds: number; countdown: number; result: StageResult | null; away?: boolean; notice?: string;
+  rules?: PuyoRules; flow?: FlowStage; mineIndex: number; action: (a: Action) => void; sound: Sound;
+  onBack: () => void; backLabel: string; resultAction: { label: string; icon: string; onClick: () => void };
+}) {
+  const arena = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const mineRef = useRef<HTMLDivElement>(null);
+  const theirsRef = useRef<HTMLDivElement>(null);
+  const coarse = useCoarsePointer();
+  const orbs = useAttackOrbs(stageRef, mineRef, theirsRef);
+  const fit = useArenaFit(arena, true);
+  const paused = countdown > 0 || seconds <= 0 || !!result;
+
+  // 공격 구슬: 내 연쇄 공격 / 상대 연쇄 공격 이벤트가 새로 생길 때
+  const lastMine = useRef(-1); const lastTheirs = useRef(-1);
+  const fireOrbs = orbs.fire;
+  useEffect(() => {
+    if (lastMine.current !== -1 && view.event !== lastMine.current && view.effect === "attack") fireOrbs(true, view.chain);
+    lastMine.current = view.event;
+  }, [view, fireOrbs]);
+  useEffect(() => {
+    if (lastTheirs.current !== -1 && oppState.event !== lastTheirs.current && oppState.effect === "attack") fireOrbs(false, oppState.chain);
+    lastTheirs.current = oppState.event;
+  }, [oppState, fireOrbs]);
+  // 전체 화면일 때 뒤 페이지가 스크롤되지 않게
+  useEffect(() => {
+    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+  const showPad = !fit.arcade || coarse;
+
+  return createPortal(<div ref={stageRef} className={styles.stage} role="region" aria-label="1대1 뿌요뿌요 경기">
+    <header className={styles.bar}>
+      <button type="button" className={styles.iconBtn} onClick={onBack} aria-label={backLabel}><Icon name="arrow_back" size={22} /><span className={styles.hideSm}>{backLabel}</span></button>
+      {fit.arcade ? <div className={styles.barTitle}><strong>{meName}</strong><span>VS</span><strong>{oppName}</strong>{away && <em>상대 연결 확인 중</em>}</div>
+        : <div className={styles.scoreLine} aria-live="polite">
+          <span className={styles.who}><b>{meName}</b><em>{myScore.toLocaleString("ko-KR")}</em></span>
+          <span className={`${styles.clock} ${seconds <= 20 && !result ? styles.urgent : ""}`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>
+          <span className={`${styles.who} ${styles.whoThem}`}><em>{theirScore.toLocaleString("ko-KR")}</em><b>{oppName}</b></span>
+        </div>}
+      <div className={styles.barActions}>
+        {rules && <PuyoRulesButton rules={rules} current={flow} label="규칙" className={styles.chipBtn} />}
+        <button type="button" className={styles.chipBtn} onClick={() => { sound.unlock(); sound.setMuted(!sound.muted); }} aria-label={sound.muted ? "소리 켜기" : "소리 끄기"}><Icon name={sound.muted ? "volume_off" : "volume_up"} size={20} /></button>
+      </div>
+    </header>
+    {notice && <p className={styles.notice} role="status">{notice}</p>}
+
+    {fit.arcade ? <main ref={arena} className={`${styles.arena} ${styles.arenaArcade}`}>
+      <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
+        <PuyoBoard state={view} name={meName} arcade />
+      </div>
+      <div style={{ width: fit.center }} className={styles.centerWrap}>
+        <CenterPanel view={view} opp={oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} />
+      </div>
+      <div ref={theirsRef} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
+        <PuyoBoard state={oppState} name={oppName} opponent arcade />
+      </div>
+    </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow}`}>
+      <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
+        <PuyoBoard state={view} name={meName} fill />
+      </div>
+      <aside className={styles.side}>
+        <div ref={theirsRef} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
+          <span className={styles.sideLabel}>{oppName}{away ? " · 연결 확인 중" : ""}</span>
+          <PuyoBoard state={oppState} name={oppName} opponent fill />
+        </div>
+      </aside>
+    </main>}
+    {showPad && <footer className={styles.padBar}><Controls action={action} disabled={paused} unlock={sound.unlock} layout="row" /></footer>}
+
+    {orbs.orbs.map(o => <i key={o.id} className={`${styles.orb} ${o.big ? styles.orbBig : ""} ${o.theirs ? styles.orbTheirs : ""}`} style={{ "--x1": `${o.x1}px`, "--y1": `${o.y1}px`, "--x2": `${o.x2}px`, "--y2": `${o.y2}px` } as CSSProperties} aria-hidden="true" />)}
+
+    {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>짝꿍과 똑같은 순서로 뿌요가 나와요</small></div></div>}
+    {!result && countdown <= 0 && seconds <= 0 && <div className={styles.overlay} role="status"><div className={styles.card}><strong>TIME UP!</strong><small>최종 점수를 확인하고 있어요…</small></div></div>}
+    {result && <div className={styles.overlay} role="status"><div className={styles.card}>
+      <span>{result.title}</span>
+      <strong>{result.headline}</strong>
+      <p className={styles.final}>{result.score}</p>
+      {result.reward && <span className={styles.reward}>{result.reward}</span>}
+      <button type="button" className={styles.primaryBtn} onClick={resultAction.onClick}><Icon name={resultAction.icon} size={18} />{resultAction.label}</button>
+    </div></div>}
+  </div>, document.body);
+}
+
+/** 결과 카드 문구 — 이긴 쪽/진 쪽/무승부. */
+export function stageResult(winner: string | null, uid: string, mine: number, theirs: number, reward?: string): StageResult {
+  return {
+    title: winner === null ? "멋진 승부였어요" : winner === uid ? "연쇄의 주인공!" : "끝까지 잘했어요",
+    headline: winner === null ? "DRAW" : winner === uid ? "YOU WIN!" : "GOOD GAME",
+    score: `${mine.toLocaleString("ko-KR")} : ${theirs.toLocaleString("ko-KR")}`,
+    reward,
+  };
+}
+
 export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: string; gid: string; uid: string; config: PuyoConfig; runs: PuyoRun[]; clockOffset: number }) {
   const match = config.matches?.find(m => m.a === uid || m.b === uid);
   const me = config.players?.find(p => p.uid === uid);
@@ -194,18 +297,11 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const state = useRef<PuyoState | null>(null);
   const initialSeq = useRef(0); const started = useRef(false); const savedLost = useRef(false);
   const publisher = useRef<PuyoPublisher | null>(null);
-  const arena = useRef<HTMLElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const mineRef = useRef<HTMLDivElement>(null);
-  const theirsRef = useRef<HTMLDivElement>(null);
-  const coarse = useCoarsePointer();
-  const orbs = useAttackOrbs(stageRef, mineRef, theirsRef);
   const [view, setView] = useState<PuyoState | null>(null);
   const [error, setError] = useState("");
   const [now, setNow] = useState(0);
   // 경기 중에는 전체 화면. '대진표 보기'로 잠시 내려 두고 다시 열 수 있다.
   const [full, setFull] = useState(true);
-  const fit = useArenaFit(arena, full && !!view);
   const opponent = liveOpponent && now - liveOpponent.at < 2000 && !match?.result ? liveOpponent : durableOpponent;
   const sound = useSound(); const soundRef = useRef(sound);
   useEffect(() => { soundRef.current = sound; }, [sound]);
@@ -315,31 +411,11 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     const t = Date.now() + offset;
     if (state.current && !m?.result && t >= (c.startsAt ?? Infinity) && t < (c.endsAt ?? 0)) { input(state.current, a); setView(cloneState(state.current)); livePublisher.current?.request(a === "drop"); if (!options.current.config.realtime || a === "drop") publisher.current?.request(a === "drop"); }
   }, []);
-  const lastMine = useRef(-1); const lastTheirs = useRef(-1);
-  const fireOrbs = orbs.fire;
-  useEffect(() => {
-    if (!view) return;
-    if (lastMine.current !== -1 && view.event !== lastMine.current && view.effect === "attack") fireOrbs(true, view.chain);
-    lastMine.current = view.event;
-  }, [view, fireOrbs]);
-  const oppLive = opponent?.state;
-  useEffect(() => {
-    if (!oppLive) return;
-    if (lastTheirs.current !== -1 && oppLive.event !== lastTheirs.current && oppLive.effect === "attack") fireOrbs(false, oppLive.chain);
-    lastTheirs.current = oppLive.event;
-  }, [oppLive, fireOrbs]);
-  // 전체 화면일 때 뒤 페이지가 스크롤되지 않게
-  useEffect(() => {
-    if (!full) return;
-    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [full]);
 
   if (!match || !view) return <p className={styles.loading}>경기 보드를 준비하고 있어요…</p>;
   const seconds = Math.max(0, Math.ceil(((config.endsAt ?? 0) - now) / 1000));
   const countdown = now ? Math.ceil(((config.startsAt ?? 0) - now) / 1000) : 6;
   const result = match.result;
-  const paused = countdown > 0 || seconds <= 0 || !!result;
   const oppState = opponent?.state ?? createState(match.seed);
   const myScore = result?.scores[uid] ?? view.score;
   const theirScore = result?.scores[opponentId!] ?? oppState.score;
@@ -351,60 +427,11 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     <button type="button" className={styles.primaryBtn} onClick={() => setFull(true)}><Icon name="open_in_full" size={18} />경기 화면 열기</button>
   </div>;
 
-  const mineIndex = match.a === uid ? 0 : 1;
-  const showPad = !fit.arcade || coarse;
-
-  return createPortal(<div ref={stageRef} className={styles.stage} role="region" aria-label="1대1 뿌요뿌요 경기">
-    <header className={styles.bar}>
-      <button type="button" className={styles.iconBtn} onClick={() => setFull(false)} aria-label="대진표 보기"><Icon name="arrow_back" size={22} /><span className={styles.hideSm}>대진표</span></button>
-      {fit.arcade ? <div className={styles.barTitle}><strong>{me?.name ?? "나"}</strong><span>VS</span><strong>{other?.name ?? "상대"}</strong>{away && <em>상대 연결 확인 중</em>}</div>
-        : <div className={styles.scoreLine} aria-live="polite">
-          <span className={styles.who}><b>{me?.name ?? "나"}</b><em>{myScore.toLocaleString("ko-KR")}</em></span>
-          <span className={`${styles.clock} ${seconds <= 20 && !result ? styles.urgent : ""}`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>
-          <span className={`${styles.who} ${styles.whoThem}`}><em>{theirScore.toLocaleString("ko-KR")}</em><b>{other?.name ?? "상대"}</b></span>
-        </div>}
-      <div className={styles.barActions}>
-        <PuyoRulesButton rules={normalizeRules(config)} current={stage} label="규칙" className={styles.chipBtn} />
-        <button type="button" className={styles.chipBtn} onClick={() => { sound.unlock(); sound.setMuted(!sound.muted); }} aria-label={sound.muted ? "소리 켜기" : "소리 끄기"}><Icon name={sound.muted ? "volume_off" : "volume_up"} size={20} /></button>
-      </div>
-    </header>
-    {(error || (config.realtime && !liveHealthy && !result)) && <p className={styles.notice} role="status">{error || "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요."}</p>}
-
-    {fit.arcade ? <main ref={arena} className={`${styles.arena} ${styles.arenaArcade}`}>
-      <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
-        <PuyoBoard state={view} name={me?.name ?? "나"} arcade />
-      </div>
-      <div style={{ width: fit.center }} className={styles.centerWrap}>
-        <CenterPanel view={view} opp={oppState} meName={me?.name ?? "나"} oppName={other?.name ?? "상대"} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} />
-      </div>
-      <div ref={theirsRef} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
-        <PuyoBoard state={oppState} name={other?.name ?? "상대"} opponent arcade />
-      </div>
-    </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow}`}>
-      <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
-        <PuyoBoard state={view} name={me?.name ?? "나"} fill />
-      </div>
-      <aside className={styles.side}>
-        <div ref={theirsRef} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
-          <span className={styles.sideLabel}>{other?.name ?? "상대"}{away ? " · 연결 확인 중" : ""}</span>
-          <PuyoBoard state={oppState} name={other?.name ?? "상대"} opponent fill />
-        </div>
-      </aside>
-    </main>}
-    {showPad && <footer className={styles.padBar}><Controls action={action} disabled={paused} unlock={sound.unlock} layout="row" /></footer>}
-
-    {orbs.orbs.map(o => <i key={o.id} className={`${styles.orb} ${o.big ? styles.orbBig : ""} ${o.theirs ? styles.orbTheirs : ""}`} style={{ "--x1": `${o.x1}px`, "--y1": `${o.y1}px`, "--x2": `${o.x2}px`, "--y2": `${o.y2}px` } as CSSProperties} aria-hidden="true" />)}
-
-    {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>짝꿍과 똑같은 순서로 뿌요가 나와요</small></div></div>}
-    {!result && countdown <= 0 && seconds <= 0 && <div className={styles.overlay} role="status"><div className={styles.card}><strong>TIME UP!</strong><small>최종 점수를 확인하고 있어요…</small></div></div>}
-    {result && <div className={styles.overlay} role="status"><div className={styles.card}>
-      <span>{result.winner === null ? "멋진 승부였어요" : result.winner === uid ? "연쇄의 주인공!" : "끝까지 잘했어요"}</span>
-      <strong>{result.winner === null ? "DRAW" : result.winner === uid ? "YOU WIN!" : "GOOD GAME"}</strong>
-      <p className={styles.final}>{(result.scores[uid] ?? 0).toLocaleString("ko-KR")} : {(result.scores[opponentId!] ?? 0).toLocaleString("ko-KR")}</p>
-      {result.reward?.uid === uid && <span className={styles.reward}>승리 보상 +{result.reward.xp} XP 받았어요!</span>}
-      <button type="button" className={styles.primaryBtn} onClick={() => setFull(false)}><Icon name="leaderboard" size={18} />대진표 보기</button>
-    </div></div>}
-  </div>, document.body);
+  return <BattleStage view={view} oppState={oppState} meName={me?.name ?? "나"} oppName={other?.name ?? "상대"} myScore={myScore} theirScore={theirScore}
+    seconds={seconds} countdown={countdown} away={!!away} rules={normalizeRules(config)} flow={stage} mineIndex={match.a === uid ? 0 : 1}
+    notice={error || (config.realtime && !liveHealthy && !result ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined)}
+    result={result ? stageResult(result.winner, uid, result.scores[uid] ?? 0, result.scores[opponentId!] ?? 0, result.reward?.uid === uid ? `승리 보상 +${result.reward.xp} XP 받았어요!` : undefined) : null}
+    action={action} sound={sound} onBack={() => setFull(false)} backLabel="대진표" resultAction={{ label: "대진표 보기", icon: "leaderboard", onClick: () => setFull(false) }} />;
 }
 
 export function PuyoPractice() {

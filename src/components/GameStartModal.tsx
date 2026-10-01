@@ -359,7 +359,7 @@ export function GameStartModal({
             </Section>
 
             {kind === "puyo" ? (
-              <PuyoRulesForm value={puyoRules} onChange={setPuyoRules} />
+              <PuyoRulesForm value={puyoRules} onChange={setPuyoRules} cid={cid} />
             ) : kind === "quiz-run" ? (
               <>
                 <Section title="문제 세트">

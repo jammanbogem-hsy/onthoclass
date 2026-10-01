@@ -10,13 +10,59 @@
               ".read": "auth != null && now <= data.parent().parent().child('meta/endsAt').val() + 60000 && (auth.uid == data.parent().parent().child('meta/teacher').val() || (data.parent().parent().child('meta/players').child(auth.uid).exists() && data.parent().parent().child('meta/players').child(auth.uid).val() == data.parent().parent().child('meta/players').child($uid).val()))",
               ".write": "auth != null && auth.uid == $uid && data.parent().parent().child('meta/players').child($uid).exists() && now >= data.parent().parent().child('meta/startsAt').val() && now <= data.parent().parent().child('meta/endsAt').val() + 1500 && newData.exists()",
               ".validate": "newData.hasChildren(['state', 'score', 'sent', 'at'])",
-              "state": { ".validate": "newData.isString() && newData.val().length <= 16000" },
-              "score": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
-              "sent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= newData.parent().child('score').val() / 70" },
-              "lost": { ".validate": "newData.isBoolean()" },
-              "maxChain": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 19" },
-              "at": { ".validate": "newData.isNumber() && newData.val() == now" },
-              "$other": { ".validate": false }
+              "state": {
+                ".validate": "newData.isString() && newData.val().length <= 16000"
+              },
+              "score": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000"
+              },
+              "sent": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= newData.parent().child('score').val() / 70"
+              },
+              "lost": {
+                ".validate": "newData.isBoolean()"
+              },
+              "maxChain": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 19"
+              },
+              "at": {
+                ".validate": "newData.isNumber() && newData.val() == now"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "puyoFree": {
+      "$class": {
+        "$room": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid == $uid",
+            ".validate": "newData.hasChildren(['state', 'score', 'sent', 'at'])",
+            "state": {
+              ".validate": "newData.isString() && newData.val().length <= 16000"
+            },
+            "score": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000"
+            },
+            "sent": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "lost": {
+              ".validate": "newData.isBoolean()"
+            },
+            "maxChain": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 19"
+            },
+            "at": {
+              ".validate": "newData.isNumber() && newData.val() == now"
+            },
+            "$other": {
+              ".validate": false
             }
           }
         }

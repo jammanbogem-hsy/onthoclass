@@ -649,6 +649,39 @@ service cloud.firestore {
         allow write: if isTeacher(classId);
       }
 
+      // --- 뿌요뿌요 자유 대전(쉬는 시간, 보상 없음) ---
+      // 교사가 control/puyoFree.enabled 로 열고 닫는다. 학생이 방을 만들고 다른 학생이 들어오면
+      // 시작 시각(startedAt)은 서버 시각으로만 기록된다. 끝내기(done)는 경기 시간이 지난 뒤 두 선수만.
+      match /puyoFree/{roomId} {
+        function freeOpen() {
+          return get(/databases/$(database)/documents/classes/$(classId)/control/puyoFree).data.enabled == true;
+        }
+        allow read: if isMember(classId);
+        allow create: if isMember(classId) && freeOpen()
+          && request.resource.data.keys().hasOnly(["host", "hostName", "status", "seed", "createdAt"])
+          && request.resource.data.host == uid()
+          && request.resource.data.hostName is string && request.resource.data.hostName.size() <= 100
+          && request.resource.data.status == "wait"
+          && request.resource.data.seed is int && request.resource.data.seed > 0
+          && request.resource.data.createdAt == request.time;
+        allow update: if isMember(classId) && (
+          // 참가: 기다리는 방에 다른 학생이 들어오며 시작
+          (freeOpen() && resource.data.status == "wait" && resource.data.host != uid()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["guest", "guestName", "status", "startedAt"])
+            && request.resource.data.guest == uid()
+            && request.resource.data.guestName is string && request.resource.data.guestName.size() <= 100
+            && request.resource.data.status == "play"
+            && request.resource.data.startedAt == request.time)
+          // 끝내기: 경기 시간(준비 6초 + 2분)이 지난 뒤 두 선수 중 한 명이 점수와 함께 기록
+          || (resource.data.status == "play" && (resource.data.host == uid() || resource.data.guest == uid())
+            && request.time > resource.data.startedAt + duration.value(126, "s")
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "scores", "winner"])
+            && request.resource.data.status == "done")
+        );
+        allow delete: if isTeacher(classId)
+          || (isMember(classId) && resource.data.host == uid() && resource.data.status == "wait");
+      }
+
       // --- 학생 오류 신고 / 피드백 ---
       // 읽기: 교사(목록 검토) + 작성 본인. 생성: 멤버 본인(byUid==uid).
       // 수정: 교사(상태 처리). 삭제: 교사.

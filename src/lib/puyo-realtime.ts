@@ -31,3 +31,12 @@ export async function savePuyoLive(cid: string, gid: string, uid: string, state:
 export function watchPuyoConnection(cb: (connected: boolean) => void) {
   return onValue(ref(getPuyoDatabase(), ".info/connected"), snap => cb(snap.val() === true));
 }
+
+// ── 자유 대전 보드(puyoFree/{cid}/{roomId}/{uid}) ─────────────────────────────
+const freeBoard = (cid: string, room: string, uid: string) => ref(getPuyoDatabase(), `puyoFree/${cid}/${room}/${uid}`);
+export function watchFreeLive(cid: string, room: string, uid: string, cb: (run: PuyoRun | null) => void) {
+  return onValue(freeBoard(cid, room, uid), snap => cb(run(uid, snap.val())), () => cb(null));
+}
+export async function saveFreeLive(cid: string, room: string, uid: string, state: PuyoState) {
+  await set(freeBoard(cid, room, uid), { state: JSON.stringify(state), score: state.score, sent: state.sent, lost: false, maxChain: state.maxChain, at: serverTimestamp() });
+}

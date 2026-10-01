@@ -2,13 +2,13 @@
 
 import type { ReactNode } from "react";
 import { minutesLabel, PUYO_MINUTE_OPTIONS, PUYO_XP_OPTIONS, type PuyoRules } from "@/lib/puyo-rules";
-import { PuyoRulebook } from "./PuyoRulebook";
+import { FreeToggleRow } from "./PuyoFree";
 
 /** 게임 열기(학급 게임 모달) — 교사가 정하는 뿌요뿌요 규칙. 아래에 이 규칙대로의 진행 흐름을 바로 보여 준다. */
-export function PuyoRulesForm({ value, onChange }: { value: PuyoRules; onChange: (next: PuyoRules) => void }) {
+export function PuyoRulesForm({ value, onChange, cid }: { value: PuyoRules; onChange: (next: PuyoRules) => void; cid?: string }) {
   const set = <K extends keyof PuyoRules>(k: K, v: PuyoRules[K]) => onChange({ ...value, [k]: v });
   const minutes = Math.round(value.durationSec / 60);
-  return <div className="grid grid-cols-1 gap-5 @3xl:grid-cols-[minmax(300px,1fr)_minmax(340px,1.15fr)] @3xl:items-start">
+  return <div className="grid grid-cols-1 gap-5 @3xl:grid-cols-[minmax(320px,1.3fr)_minmax(260px,1fr)] @3xl:items-start">
     <div className="flex min-w-0 flex-col gap-4">
     <div className="flex justify-center gap-2 rounded-2xl bg-[var(--md-sys-color-surface-container-high)] p-3">
       {["gengar", "snorlax", "charmander", "squirtle"].map(name => (
@@ -35,16 +35,19 @@ export function PuyoRulesForm({ value, onChange }: { value: PuyoRules; onChange:
     </Field>
 
     <Field title="이긴 학생 보상">
-      <div className="flex flex-wrap gap-1.5 @md:flex-nowrap">
+      <div className="flex flex-wrap gap-1.5">
         {PUYO_XP_OPTIONS.map(x => <Chip key={x} on={value.winXp === x} onClick={() => set("winXp", x)}>{x === 0 ? "없음" : `+${x} XP`}</Chip>)}
       </div>
     </Field>
 
     <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">프로젝트·차시 연결은 선택 사항이에요. 연결하면 게임 이력에서 함께 찾을 수 있어요.</p>
     </div>
-    <div className="min-w-0 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] p-4 @3xl:sticky @3xl:top-0">
-      <p className="mb-2 text-sm font-bold text-[var(--md-sys-color-on-surface)]">이 규칙으로 이렇게 진행돼요</p>
-      <PuyoRulebook rules={value} current="open" compact />
+    <div className="flex min-w-0 flex-col gap-3">
+      {cid && <FreeToggleRow cid={cid} />}
+      <div className="rounded-2xl bg-[var(--md-sys-color-surface-container-high)] p-4 text-sm leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
+        <p className="mb-1 font-bold text-[var(--md-sys-color-on-surface)]">이렇게 시작해요</p>
+        게임을 열면 학생 화면이 대기실로 이동해요. 대기실에서 참가 학생을 고르고 1:1 짝을 만든 뒤 시작해요. 보드가 꽉 차도 끝나지 않고, 시간이 끝나면 점수로 승부를 정해요.
+      </div>
     </div>
   </div>;
 }
