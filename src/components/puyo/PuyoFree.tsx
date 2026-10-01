@@ -26,7 +26,9 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
   const [boards, setBoards] = useState<Record<string, PuyoRun | null>>({});
   const sentMax = useRef<Record<string, number>>({});
   const [now, setNow] = useState(0);
-  const [healthy, setHealthy] = useState(true);
+  // 연결 안내는 5초 넘게 끊겼을 때만(첫 연결 지연·순간 끊김은 숨김)
+  const [badAt, setBadAt] = useState<number | null>(null);
+  const markLive = useCallback((ok: boolean) => setBadAt(at => ok ? null : at ?? Date.now()), []);
   const live = useRef<PuyoPublisher | null>(null);
   const times = useRef({ startsAt, endsAt, offset: clockOffset });
   useEffect(() => { times.current = { startsAt, endsAt, offset: clockOffset }; }, [startsAt, endsAt, clockOffset]);
@@ -37,9 +39,9 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
   useEffect(() => {
     const ids = othersKey ? othersKey.split(",") : [];
     const offs = ids.map(id => watchFreeLive(cid, room.id, id, run => setBoards(b => ({ ...b, [id]: run ?? b[id] ?? null }))));
-    const conn = watchPuyoConnection(setHealthy);
+    const conn = watchPuyoConnection(markLive);
     return () => { offs.forEach(f => f()); conn(); };
-  }, [cid, room.id, othersKey]);
+  }, [cid, room.id, othersKey, markLive]);
   // 친구가 나가도 이미 보낸 공격이 줄지 않게, 친구별 최댓값을 더한다
   useEffect(() => {
     for (const [id, run] of Object.entries(boards)) if (run) sentMax.current[id] = Math.max(sentMax.current[id] ?? 0, run.sent);
@@ -71,13 +73,13 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
       seq: 0,
       snapshot: () => { const { startsAt: s0, endsAt: s1, offset } = times.current; const t = Date.now() + offset; return t >= s0 && t <= s1 + 1400 ? state.current : null; },
       write: s => saveFreeLive(cid, room.id, uid, s),
-      saved: () => setHealthy(true),
-      error: () => setHealthy(false),
+      saved: () => markLive(true),
+      error: () => markLive(false),
     });
     live.current = pub;
     const timer = setInterval(() => pub.request(), PUYO_LIVE_INTERVAL_MS);
     return () => { clearInterval(timer); pub.dispose(); live.current = null; };
-  }, [cid, room.id, uid]);
+  }, [cid, room.id, uid, markLive]);
   const action = useCallback((a: Action) => {
     const { startsAt: s0, endsAt: s1, offset } = times.current; const t = Date.now() + offset;
     if (t >= s0 && t < s1) { input(state.current, a); setView(cloneState(state.current)); live.current?.request(a === "drop"); }
@@ -120,7 +122,7 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
   return <BattleStage view={view} oppState={rivals[0]?.state ?? createState(room.seed)} meName={meName} oppName={rivals[0]?.name ?? "친구"}
     myScore={scores[uid] ?? view.score} theirScore={scores[others[0]] ?? 0} others={multi ? rivals : undefined}
     seconds={seconds} countdown={countdown} away={rivals[0]?.away} mineIndex={Math.max(0, order.indexOf(uid))}
-    notice={!healthy && !over ? "실시간 연결을 다시 잇는 중이에요." : undefined}
+    notice={!over && countdown <= 0 && badAt !== null && now - clockOffset - badAt > 5000 ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined}
     result={result} action={action} sound={sound} onBack={onExit} backLabel="나가기" resultAction={{ label: "대기실로", icon: "replay", onClick: onExit }} />;
 }
 

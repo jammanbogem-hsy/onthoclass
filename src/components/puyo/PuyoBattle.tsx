@@ -304,7 +304,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
     {orbs.orbs.map(o => <i key={o.id} className={`${styles.orb} ${o.big ? styles.orbBig : ""} ${o.theirs ? styles.orbTheirs : ""}`} style={{ "--x1": `${o.x1}px`, "--y1": `${o.y1}px`, "--x2": `${o.x2}px`, "--y2": `${o.y2}px` } as CSSProperties} aria-hidden="true" />)}
 
     {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>{multi ? "모두 똑같은 순서로 뿌요가 나와요" : "짝꿍과 똑같은 순서로 뿌요가 나와요"}</small></div></div>}
-    {!result && countdown <= 0 && seconds <= 0 && <div className={styles.overlay} role="status"><div className={styles.card}><strong>TIME UP!</strong><small>최종 점수를 확인하고 있어요…</small></div></div>}
+    {!result && countdown <= 0 && seconds <= 0 && <div className={styles.overlay} role="status"><div className={styles.card}><strong>TIME UP!</strong><p className={styles.final}>{multi ? `내 점수 ${myScore.toLocaleString("ko-KR")}` : `${myScore.toLocaleString("ko-KR")} : ${theirScore.toLocaleString("ko-KR")}`}</p><small>결과를 정리하고 있어요…</small></div></div>}
     {result && <div className={styles.overlay} role="status"><div className={styles.card}>
       <span>{result.title}</span>
       <strong>{result.headline}</strong>
@@ -335,6 +335,10 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const [liveOwn, setLiveOwn] = useState<PuyoRun | null | undefined>(undefined);
   const [liveOpponent, setLiveOpponent] = useState<PuyoRun | null>(null);
   const [liveHealthy, setLiveHealthy] = useState(true);
+  // 안내 문구는 문제가 5초 넘게 이어질 때만 — 시작·끝 순간의 한두 번 거절이나 첫 연결 지연은 숨긴다
+  const [saveBadAt, setSaveBadAt] = useState<number | null>(null);
+  const [liveBadAt, setLiveBadAt] = useState<number | null>(null);
+  const markLive = useCallback((ok: boolean) => { setLiveHealthy(ok); setLiveBadAt(at => ok ? null : at ?? Date.now()); }, []);
   const livePublisher = useRef<PuyoPublisher | null>(null);
 
   const state = useRef<PuyoState | null>(null);
@@ -359,9 +363,9 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     const timeout = setTimeout(() => { if (active) setLiveOwn(v => v === undefined ? null : v); }, 1500);
     void getPuyoLive(cid, gid, uid).then(r => { if (active) setLiveOwn(r); }).catch(() => { if (active) setLiveOwn(null); });
     const off = watchPuyoLive(cid, gid, opponentId, setLiveOpponent);
-    const connection = watchPuyoConnection(setLiveHealthy);
+    const connection = watchPuyoConnection(markLive);
     return () => { active = false; clearTimeout(timeout); off(); connection(); };
-  }, [cid, gid, uid, opponentId, config.realtime, match?.result]);
+  }, [cid, gid, uid, opponentId, config.realtime, match?.result, markLive]);
   // Restore the latest acknowledged state on a reload; never respawn a fresh board.
   useEffect(() => {
     if (started.current || !myRun || !match || (config.realtime && !match.result && liveOwn === undefined)) return;
@@ -408,17 +412,18 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
       snapshot: () => {
         const s = state.current; const { config: c, match: m, clockOffset: offset } = options.current;
         const time = Date.now() + offset;
-        if (!s || m?.result || time < (c.startsAt ?? Infinity) || time > (c.endsAt ?? 0) + 1400 || savedLost.current) return null;
+        if (!s || m?.result || time < (c.startsAt ?? Infinity) + 400 || time > (c.endsAt ?? 0) + 900 || savedLost.current) return null;
         return s;
       },
       write: (s, seq) => savePuyoRun(cid, gid, uid, s, seq),
       saved: s => {
         if (s.phase === "over") { savedLost.current = true; void finishPuyo(cid, gid).catch(() => {}); }
-        setError("");
+        setError(""); setSaveBadAt(null);
       },
       error: () => {
         // 저장 순번이 어긋나면(다른 탭·재접속) 서버 값으로 맞춰 다음 저장부터 다시 통과시킨다.
         void readPuyoSeq(cid, gid, uid).then(seq => queue.resync(seq)).catch(() => {});
+        setSaveBadAt(at => at ?? Date.now());
         setError("연결을 확인하고 있어요. 같은 경기를 여러 탭에서 열었다면 하나만 남겨 주세요.");
       },
     });
@@ -428,11 +433,11 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
       snapshot: () => {
         const s = state.current; const { config: c, match: m, clockOffset: offset } = options.current;
         const t = Date.now() + offset;
-        return s && !m?.result && t >= (c.startsAt ?? Infinity) && t <= (c.endsAt ?? 0) + 1400 ? s : null;
+        return s && !m?.result && t >= (c.startsAt ?? Infinity) + 300 && t <= (c.endsAt ?? 0) + 900 ? s : null;
       },
       write: s => savePuyoLive(cid, gid, uid, s),
-      saved: () => setLiveHealthy(true),
-      error: () => setLiveHealthy(false),
+      saved: () => markLive(true),
+      error: () => markLive(false),
     }) : null;
     livePublisher.current = live;
     const liveTimer = live ? setInterval(() => live.request(), PUYO_LIVE_INTERVAL_MS) : null;
@@ -448,7 +453,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     const hide = () => { backup(); queue.request(true); };
     window.addEventListener("pagehide", hide);
     return () => { live?.dispose(); livePublisher.current = null; if (liveTimer) clearInterval(liveTimer); queue.dispose(); publisher.current = null; clearInterval(interval); window.removeEventListener("pagehide", hide); };
-  }, [cid, gid, uid, ready, config.realtime]);
+  }, [cid, gid, uid, ready, config.realtime, markLive]);
   const action = useCallback((a: Action) => {
     const { config: c, match: m, clockOffset: offset } = options.current;
     const t = Date.now() + offset;
@@ -472,7 +477,9 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
 
   return <BattleStage view={view} oppState={oppState} meName={me?.name ?? "나"} oppName={other?.name ?? "상대"} myScore={myScore} theirScore={theirScore}
     seconds={seconds} countdown={countdown} away={!!away} rules={normalizeRules(config)} flow={stage} mineIndex={match.a === uid ? 0 : 1}
-    notice={error || (config.realtime && !liveHealthy && !result ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined)}
+    notice={result || countdown > 0 || seconds <= 0 ? undefined
+      : saveBadAt !== null && now - clockOffset - saveBadAt > 5000 ? error
+      : config.realtime && liveBadAt !== null && now - clockOffset - liveBadAt > 5000 ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined}
     result={result ? stageResult(result.winner, uid, result.scores[uid] ?? 0, result.scores[opponentId!] ?? 0, result.reward?.uid === uid ? `승리 보상 +${result.reward.xp} XP 받았어요!` : undefined) : null}
     action={action} sound={sound} onBack={() => setFull(false)} backLabel="대진표" resultAction={{ label: "대진표 보기", icon: "leaderboard", onClick: () => setFull(false) }} />;
 }

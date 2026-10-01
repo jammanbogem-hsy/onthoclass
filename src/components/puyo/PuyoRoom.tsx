@@ -241,8 +241,15 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
       finishing.current = true;
       try { await finishPuyo(cid, gid); } catch (e) { setError(message(e)); } finally { finishing.current = false; }
     };
-    const timer = setInterval(() => void settle(), 3000);
-    return () => clearInterval(timer);
+    // 끝나면 1초마다 확인한다(예전 3초 간격은 결과 확정을 늦췄다)
+    const timer = setInterval(() => void settle(), 1000);
+    // 판정 함수 미리 깨우기 — 수업 중 한 번만 쓰여 잠들어 있으면 첫 호출이 몇 초 걸린다.
+    // 끝나기 20초 전에 한 번 불러 두면(아직 끝 전이라 아무것도 바꾸지 않음) 끝날 때 바로 응답한다.
+    const { config: c, clockOffset: off, uid: me, teacher: isT } = settleContext.current;
+    const myMatchNow = c?.matches?.find(m => m.a === me || m.b === me);
+    const warmAt = (c?.endsAt ?? 0) - 20000 - (Date.now() + off);
+    const warm = (isT || myMatchNow?.a === me) && warmAt > 0 ? setTimeout(() => { void finishPuyo(cid, gid).catch(() => {}); }, warmAt) : null;
+    return () => { clearInterval(timer); if (warm) clearTimeout(warm); };
   }, [cid, gid, game?.status]);
 
   const students = useMemo(() => members.filter(m => m.role === "student"), [members]);
