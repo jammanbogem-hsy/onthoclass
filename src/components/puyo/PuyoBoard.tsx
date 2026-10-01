@@ -4,6 +4,8 @@ import styles from "./PuyoBoard.module.css";
 
 const SPRITES = ["", "gengar", "snorlax", "charmander", "squirtle", "nuisance"];
 const COLORS = ["transparent", "#9a5cf0", "#38c48c", "#ff6a4e", "#55c2f5", "#b4bdd3"];
+const LIGHT = ["transparent", "#e2c8ff", "#b9f7d6", "#ffd2a6", "#d4f6ff", "#f7f9ff"];
+const DEEP = ["transparent", "#5b26b4", "#178462", "#d8343c", "#2380d4", "#7a84a2"];
 const VISIBLE_ROWS = ROWS - 1;
 
 type PuyoBoardProps = {
@@ -23,6 +25,17 @@ export function Sprite({ color, className = "", alt = false }: { color: Cell; cl
   // Original local SVG artwork is already sized to a board cell; no remote image loader is needed.
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={`/puyo/assets/${SPRITES[color]}${alt ? "-b" : ""}.svg`} alt="" draggable={false} width={96} height={96} className={`${styles.sprite} ${className}`} />;
+}
+
+/** 떨어지는·예고·터지는 뿌요 — 젤리 몸통 + 얼굴(쌓인 뿌요는 몸통을 젤리 층이 그린다). */
+export function Puyo({ color, alt = false, className = "", body = true }: { color: Cell; alt?: boolean; className?: string; body?: boolean }) {
+  if (!color) return null;
+  if (color === 5) return <Sprite color={5} className={className} />;
+  return <span className={`${styles.puyo} ${className}`} style={{ "--c": COLORS[color], "--l": LIGHT[color], "--d": DEEP[color] } as CSSProperties}>
+    {body && <span className={styles.blob} />}
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={`/puyo/assets/${SPRITES[color]}-face${alt ? "-b" : ""}.svg`} alt="" draggable={false} width={96} height={96} className={styles.face} />
+  </span>;
 }
 
 function position(x: number, y: number, color: Cell, index = 0): CSSProperties {
@@ -57,18 +70,20 @@ const GooLayer = memo(function GooLayer({ cells }: { cells: string }) {
   const groups: string[][] = [[], [], [], [], []];
   for (let k = 0; k < cells.length; k++) {
     const c = Number(cells[k]); if (c < 1 || c > 4) continue;
-    groups[c].push(`${(k % COLS) * 100 + 50},${Math.floor(k / COLS) * 100 + 56}`);
+    groups[c].push(`${(k % COLS) * 100 + 50},${Math.floor(k / COLS) * 100 + 54}`);
   }
   return <svg className={styles.goo} viewBox={`0 0 ${COLS * 100} ${VISIBLE_ROWS * 100}`} preserveAspectRatio="none" aria-hidden="true">
     <defs><filter id={id} x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="b" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="b" />
       <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10" result="goo" />
-      <feGaussianBlur in="goo" stdDeviation="7" result="gb" />
-      <feSpecularLighting in="gb" surfaceScale="7" specularConstant="1.25" specularExponent="24" lightingColor="#ffffff" result="spec"><fePointLight x="-300" y="-400" z="500" /></feSpecularLighting>
+      <feGaussianBlur in="goo" stdDeviation="9" result="gb" />
+      <feDiffuseLighting in="gb" surfaceScale="6" diffuseConstant="1.15" lightingColor="#ffffff" result="diff"><feDistantLight azimuth="225" elevation="50" /></feDiffuseLighting>
+      <feComposite in="goo" in2="diff" operator="arithmetic" k1="1.1" k2="0" k3="0" k4="0" result="shaded" />
+      <feSpecularLighting in="gb" surfaceScale="7" specularConstant="1.2" specularExponent="26" lightingColor="#ffffff" result="spec"><fePointLight x="-300" y="-400" z="500" /></feSpecularLighting>
       <feComposite in="spec" in2="goo" operator="in" result="shine" />
-      <feComposite in="goo" in2="shine" operator="arithmetic" k1="0" k2="1" k3="0.6" k4="0" />
+      <feComposite in="shaded" in2="shine" operator="arithmetic" k1="0" k2="1" k3="0.75" k4="0" />
     </filter></defs>
-    {groups.map((pts, c) => pts.length ? <g key={c} filter={`url(#${id})`} fill={COLORS[c]}>{pts.map(pt => { const [x, y] = pt.split(","); return <circle key={pt} cx={x} cy={y} r="44" />; })}</g> : null)}
+    {groups.map((pts, c) => pts.length ? <g key={c} filter={`url(#${id})`} fill={COLORS[c]}>{pts.map(pt => { const [x, y] = pt.split(","); return <circle key={pt} cx={x} cy={y} r="47" />; })}</g> : null)}
   </svg>;
 });
 
@@ -78,6 +93,12 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
   const isBurst = state.effect === "clear" || state.effect === "attack";
   const isAllClear = state.effect === "allclear";
   const isOver = state.phase === "over";
+  // 방금 떨어진 칸: [칸 → 떨어진 줄 수]. 착지(land)·연쇄 뒤 낙하(fall)·방해 뿌요(garbage) 순간에만 쓴다.
+  const dropping = state.effect === "land" || state.effect === "fall" || state.effect === "garbage";
+  const drops = new Map<number, number>();
+  if (dropping && state.drops) for (let k = 0; k + 1 < state.drops.length; k += 2) drops.set(state.drops[k], state.drops[k + 1]);
+  // 떨어지는 중인 뿌요는 젤리 층에서 빼고 자기 몸통을 달고 떨어진다(다 내려앉으면 이웃과 이어진다)
+  const inFlight = dropping && state.phase !== "fall";
   const downs = state.downs ?? 0;
   const height = state.board.slice(COLS).filter(Boolean).length;
 
@@ -99,20 +120,27 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
             <span className={styles.boardStar} aria-hidden="true">✦</span>
             <span className={styles.boardStarSmall} aria-hidden="true">✧</span>
             <div className={`${styles.cells} ${isBurst && state.chain >= 2 ? (state.event % 2 ? styles.shakeA : styles.shakeB) : ""}`} style={{ "--shake": `${Math.min(2 + state.chain, 9)}px` } as CSSProperties} aria-hidden="true">
-              <GooLayer cells={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) || c === 5 ? 0 : c).join("")} />
+              <GooLayer cells={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) || c === 5 || (inFlight && (drops.get(k + COLS) ?? 0) > 0) ? 0 : c).join("")} />
               {landing && !opponent && pairCells(landing).filter(({ y }) => y > 0).map(({ x, y, c }, i) => (
-                <div key={`ghost-${i}`} className={`${styles.cell} ${styles.ghost}`} style={position(x, y, c)}><Sprite color={c} /></div>
+                <div key={`ghost-${i}`} className={`${styles.cell} ${styles.ghost}`} style={position(x, y, c)}><Puyo color={c} /></div>
               ))}
               {state.board.map((c, i) => c && i >= COLS ? (
                 <div key={`${i}-${c}`} className={`${styles.cell} ${clearing.has(i) ? styles.clearing : ""}`} style={position(i % COLS, Math.floor(i / COLS), c, i)}>
-                  <div key={state.effect === "land" || state.effect === "garbage" ? state.event : "rest"} className={state.effect === "land" ? styles.landed : state.effect === "garbage" && c === 5 ? styles.garbageDrop : undefined}>
-                    <Sprite color={c} alt={(i + Math.floor(i / COLS)) % 2 === 1} className={c === 5 ? styles.grayWobble : styles.wobble} />
-                  </div>
+                  {(() => {
+                    // 중력 낙하: 거리의 제곱근에 비례한 시간으로 점점 빨라지며 떨어지고, 닿으면 납작했다가 통 튄다
+                    const d = drops.get(i);
+                    const fallMs = d ? Math.round(70 * Math.sqrt(d) + 80) : 0;
+                    return <div key={d !== undefined ? `e${state.event}` : "rest"} className={d ? styles.fall : undefined} style={d ? { "--fall": `${-d * 100}%`, "--fall-t": `${fallMs}ms` } as CSSProperties : undefined}>
+                      <span className={d !== undefined ? styles.bounce : styles.still} style={d !== undefined ? { animationDelay: `${fallMs}ms` } : undefined}>
+                        <Puyo color={c} alt={(i + Math.floor(i / COLS)) % 2 === 1} body={clearing.has(i) || (inFlight && !!d)} className={c === 5 ? styles.grayWobble : styles.wobble} />
+                      </span>
+                    </div>;
+                  })()}
                   {clearing.has(i) && <><span className={styles.popRing} /><span className={styles.popSpark}>✦</span>{Array.from({ length: 8 }, (_, k) => <i key={k} className={styles.shard} style={{ "--a": `${k * 45 + (i % 3) * 15}deg`, "--d": `${-380 - ((i * 7 + k * 13) % 5) * 90 - Math.min(state.chain, 6) * 40}%`, "--s": `${.7 + ((i + k) % 3) * .25}` } as CSSProperties} />)}</>}
                 </div>
               ) : null)}
               {state.active && pairCells(state.active).filter(({ y }) => y > 0).map(({ x, y, c }, i) => (
-                <div key={`active-${i}`} className={`${styles.cell} ${styles.active}`} style={position(x, y, c, i)}><Sprite color={c} className={styles.activeWobble} /></div>
+                <div key={`active-${i}`} className={`${styles.cell} ${styles.active}`} style={position(x, y, c, i)}><Puyo color={c} className={styles.activeWobble} /></div>
               ))}
             </div>
             <div key={`event-${state.event}`} className={styles.effects} aria-hidden="true">
@@ -139,7 +167,7 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
 
         {!arcade && <aside className={styles.rail} aria-label="다음 뿌요와 공격 정보">
           <div className={styles.nextBox}><span className={styles.railLabel}>NEXT</span>
-            {[0, 1].map(pair => <div key={pair} className={`${styles.nextPair} ${pair === 1 ? styles.laterPair : ""}`}><Sprite color={state.next[pair * 2 + 1] || 0} /><Sprite color={state.next[pair * 2] || 0} /></div>)}
+            {[0, 1].map(pair => <div key={pair} className={`${styles.nextPair} ${pair === 1 ? styles.laterPair : ""}`}><Puyo color={state.next[pair * 2 + 1] || 0} /><Puyo color={state.next[pair * 2] || 0} /></div>)}
           </div>
           <div className={`${styles.pending} ${state.pending > 0 ? styles.pendingHot : ""}`} title="다음에 떨어질 방해 뿌요">
             <Sprite color={5} /><strong>{state.pending}</strong><span>방해</span>

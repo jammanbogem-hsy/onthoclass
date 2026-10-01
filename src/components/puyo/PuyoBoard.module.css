@@ -93,3 +93,23 @@
   filter:drop-shadow(0 0 4px var(--gem,#26c46a))}
 .arcade .board,.arcade.opponent .board{background:var(--board-bg,linear-gradient(#1d1838,#1d1838)) 0 0/16.6667% 8.3333%;box-shadow:inset 0 0 0 2px #0008,inset 0 12px 26px #000a;border-radius:10px}
 .arcade .nuisanceRow{border-radius:8px;background:#0005;margin:0 0 6px}
+
+/* ── 뿌요 = 젤리 몸통 + 얼굴 (쌓인 뿌요의 몸통은 젤리 층이 그려 이웃끼리 이어진다) ───────── */
+.puyo{position:relative;display:block;width:100%;height:100%;pointer-events:none}
+.blob{position:absolute;left:3%;top:6%;width:94%;height:94%;border-radius:50%;
+  background:radial-gradient(circle at 32% 26%,#fffe 0 6%,transparent 7%),radial-gradient(circle at 40% 34%,var(--l) 0,var(--c) 52%,var(--d) 100%);
+  box-shadow:inset -3px -6px 10px #0004,inset 2px 3px 6px #fff6,0 2px 2px #0003}
+.face{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 1px 1px #0004)}
+.clearing .puyo{animation:pop 430ms ease-in forwards}
+.nextPair .puyo{width:100%;height:auto;aspect-ratio:1;margin-top:-5px}
+.nextPair .puyo .blob{top:4%}
+
+/* ── 중력 낙하 + 착지 튕김 ─────────────────────────────────────────── */
+.still,.bounce{display:block;width:100%;height:100%;transform-origin:50% 92%}
+/* 떨어지기: 위에서 점점 빨라지며(ease-in) 제자리로 */
+.fall{animation:gravityFall var(--fall-t,200ms) cubic-bezier(.55,0,1,.45) both}
+@keyframes gravityFall{from{transform:translateY(var(--fall,-100%))}to{transform:translateY(0)}}
+/* 닿는 순간: 납작 → 통 → 출렁 (낙하 시간만큼 기다렸다가, 기다리는 동안엔 모양 그대로) */
+.bounce{animation:landBounce 380ms cubic-bezier(.3,.7,.4,1) forwards}
+@keyframes landBounce{0%{transform:scale(1.26,.7)}30%{transform:scale(.88,1.14) translateY(-12%)}55%{transform:scale(1.07,.94) translateY(0)}75%{transform:scale(.97,1.03)}100%{transform:none}}
+@media(prefers-reduced-motion:reduce){.fall,.bounce{animation:none}}

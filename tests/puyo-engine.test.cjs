@@ -24,3 +24,11 @@ test('peer snapshots reject malformed boards without crashing a receiver', () =>
 
 test('class battle revive clears a topped-out board and keeps score, attacks and the shared sequence',()=>{const s=E.createState(5);const twin=E.createState(5);s.score=900;s.sent=7;s.seen=3;s.pending=12;s.board.fill(2);s.phase='over';s.active=null;const next=[...s.next],rng=s.rng;E.revive(s);assert.equal(s.downs,1);assert.equal(s.board.filter(Boolean).length,0);assert.equal(s.pending,0);assert.equal(s.score,900);assert.equal(s.sent,7);assert.equal(s.seen,3);assert.equal(s.effect,'revive');assert.ok(E.parseState(JSON.stringify(s)));E.tick(s,1000);assert.equal(s.phase,'fall');assert.ok(s.active);assert.equal(s.active.a,next[0]);assert.equal(s.active.b,next[1]);assert.notEqual(s.rng,undefined);void rng;void twin;});
 test('revive does nothing unless the board is over',()=>{const s=E.createState(5);const before=JSON.stringify(s);E.revive(s);assert.equal(JSON.stringify(s),before);});
+test('drops record how far cells fell: garbage from above, chain falls, and the landed pair',()=>{
+  const s=E.createState(1);s.active=null;s.phase='settle';s.timer=1;s.pending=6;E.tick(s,20);
+  assert.equal(s.effect,'garbage');const g=[];for(let k=0;k<s.drops.length;k+=2)g.push([s.drops[k],s.drops[k+1]]);
+  assert.equal(g.length,6);for(const [i,d] of g){assert.equal(s.board[i],5);assert.equal(d,Math.floor(i/6)+1);}
+  const t=E.createState(1);t.active=null;t.phase='settle';t.timer=1;[72,73,74,75].forEach(i=>t.board[i]=1);t.board[66]=2;E.tick(t,20);E.tick(t,500);
+  assert.equal(t.effect,'fall');assert.deepEqual(Array.from(t.drops),[72,1]);
+  const u=E.createState(1);E.input(u,'drop');E.tick(u,1);assert.equal(u.effect,'land');assert.equal(u.drops.length,4);assert.ok(E.parseState(JSON.stringify(u)));
+});

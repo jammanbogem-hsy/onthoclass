@@ -146,3 +146,5 @@
 .stage[data-theme] .label,.stage[data-theme] .nextCard .label{color:var(--label);text-shadow:0 2px 0 #000a,0 0 10px color-mix(in srgb,var(--label) 60%,transparent)}
 .stageName{text-align:center;font-weight:950;font-size:clamp(16px,1.8vw,24px);letter-spacing:1px;color:var(--label,#8ff0c4);text-shadow:0 3px 0 #000b,0 0 14px color-mix(in srgb,var(--label,#8ff0c4) 60%,transparent);padding:4px 6px;border-radius:12px;background:#0006;border:2px solid var(--panel-line,#ffffff33)}
 .stage[data-theme] .arenaNarrow .sideLabel{color:#fff;text-shadow:0 1px 2px #000}
+.nextPair>span{display:block;width:100%;aspect-ratio:1;margin-top:-6%}
+.nextPair>span img{margin-top:0}

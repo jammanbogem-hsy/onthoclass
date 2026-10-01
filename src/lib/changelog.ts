@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.8.0";
+export const APP_VERSION = "1.9.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.9.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "진짜 뿌요처럼 이어지고, 무겁게 떨어져요",
+    items: [
+      "같은 색 뿌요가 몸통째 땅콩처럼 이어져요. 캐릭터 얼굴은 그대로 보여요.",
+      "뿌요와 방해 뿌요가 점점 빨라지며 떨어지고, 바닥에 닿으면 통 튀어요.",
+    ],
+  },
   {
     version: "1.8.0",
     date: "2026-10-01",

@@ -8,7 +8,7 @@ import { getPuyoLive, watchPuyoConnection, watchPuyoLive, savePuyoLive, PUYO_LIV
 import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS, startLiveTicker } from "@/lib/puyo-sync";
 import { normalizeRules, type FlowStage, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
-import { PuyoBoard, Sprite } from "./PuyoBoard";
+import { PuyoBoard, Puyo } from "./PuyoBoard";
 import { pickTheme } from "@/lib/puyo-themes";
 import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
@@ -185,7 +185,7 @@ function CenterPanel({ stageName, view, opp, meName, oppName, myScore, theirScor
 }) {
   const reacting = view.effect === "attack" || view.effect === "clear" || view.effect === "allclear" ? "cheer" : view.effect === "garbage" ? "hit" : view.effect === "revive" ? "hit" : "";
   const pair = (cells: number[], at: number, small = false) => <div className={`${styles.nextPair} ${small ? styles.nextSmall : ""}`}>
-    <Sprite color={(cells[at + 1] || 0) as Cell} /><Sprite color={(cells[at] || 0) as Cell} />
+    <Puyo color={(cells[at + 1] || 0) as Cell} /><Puyo color={(cells[at] || 0) as Cell} />
   </div>;
   return <div className={styles.center}>
     {stageName && <div className={styles.stageName}>{stageName}</div>}

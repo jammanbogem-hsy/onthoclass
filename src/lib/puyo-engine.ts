@@ -10,7 +10,9 @@ export type PuyoState = {
   sent: number; pending: number; seen: number; remainder: number;
   phase: "fall" | "clear" | "settle" | "over";
   timer: number; fall: number; lock: number; resets: number;
-  clearing: number[]; event: number; effect: "none" | "land" | "clear" | "attack" | "allclear" | "garbage" | "revive";
+  clearing: number[]; event: number; effect: "none" | "land" | "clear" | "attack" | "allclear" | "garbage" | "revive" | "fall";
+  /** 방금 떨어진 칸 [칸 번호, 떨어진 줄 수] 쌍을 이어 붙인 배열 — 화면의 중력·튕김 연출용(게임 규칙과 무관). */
+  drops?: number[];
   /** 학급 대전에서 보드가 꽉 차 다시 시작한 횟수(연습·예전 상태에는 없음). */
   downs?: number;
 };
@@ -46,13 +48,21 @@ export function ghost(s: PuyoState): Pair | null {
 }
 function effect(s: PuyoState, kind: PuyoState["effect"]) { s.event++; s.effect = kind; }
 function settle(s: PuyoState) {
+  const moved = new Map<number, number>(); const drops: number[] = [];
   for (let x = 0; x < COLS; x++) {
     let dest = ROWS - 1;
     for (let y = ROWS - 1; y >= 0; y--) {
       const v = s.board[y * COLS + x];
-      if (v) { s.board[y * COLS + x] = 0; s.board[dest-- * COLS + x] = v; }
+      if (v) {
+        s.board[y * COLS + x] = 0; s.board[dest * COLS + x] = v;
+        moved.set(y * COLS + x, dest * COLS + x);
+        if (dest > y) drops.push(dest * COLS + x, dest - y);
+        dest--;
+      }
     }
   }
+  s.drops = drops;
+  return moved;
 }
 export function groups(board: Cell[]): number[][] {
   const visited = new Set<number>(); const out: number[][] = [];
@@ -100,20 +110,24 @@ function resolve(s: PuyoState) {
     // Independent garbage shuffle: receiving garbage must not change the common piece sequence.
     const columns = [0, 1, 2, 3, 4, 5];
     for (let i = 5; i > 0; i--) { const j = ((s.seen + s.score + i * 17) >>> 0) % (i + 1); [columns[i], columns[j]] = [columns[j], columns[i]]; }
+    const garbageDrops: number[] = [];
     for (let n = 0; n < amount; n++) {
       const x = columns[n % COLS]; let y = ROWS - 1;
       while (y >= 0 && s.board[y * COLS + x]) y--;
       if (y < 0) { s.phase = "over"; s.active = null; return; }
-      s.board[y * COLS + x] = 5;
+      s.board[y * COLS + x] = 5; garbageDrops.push(y * COLS + x, y + 1);
     }
-    effect(s, "garbage");
+    s.drops = garbageDrops; effect(s, "garbage");
   }
   spawn(s);
 }
 function lockPair(s: PuyoState) {
   if (!s.active) return;
-  for (const { x, y, c } of pairCells(s.active)) s.board[y * COLS + x] = c;
-  s.active = null; settle(s); s.phase = "settle"; s.timer = 170; effect(s, "land");
+  const placed = pairCells(s.active).map(({ x, y, c }) => { s.board[y * COLS + x] = c; return y * COLS + x; });
+  s.active = null;
+  const moved = settle(s); const drops = s.drops ?? [];
+  for (const at of placed) { const to = moved.get(at) ?? at; if (!drops.some((v, k) => k % 2 === 0 && v === to)) drops.push(to, 0); }
+  s.drops = drops; s.phase = "settle"; s.timer = 170; effect(s, "land");
 }
 export function input(s: PuyoState, action: Action) {
   if (s.phase !== "fall" || !s.active) return;
@@ -144,7 +158,7 @@ export function tick(s: PuyoState, elapsed: number) {
     if (s.phase !== "fall") {
       s.timer -= dt;
       if (s.timer <= 0) {
-        if (s.phase === "clear") { for (const i of s.clearing) s.board[i] = 0; s.clearing = []; settle(s); s.phase = "settle"; s.timer = 220; }
+        if (s.phase === "clear") { for (const i of s.clearing) s.board[i] = 0; s.clearing = []; settle(s); s.phase = "settle"; s.timer = 220; if (s.drops?.length) effect(s, "fall"); }
         else resolve(s);
       }
       continue;
@@ -176,8 +190,8 @@ export function parseState(json: unknown): PuyoState | null {
     const integer = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!s || !Array.isArray(s.board) || s.board.length !== COLS * ROWS || !s.board.every(v => integer(v, 0, 5))) return null;
     if (!Array.isArray(s.next) || s.next.length !== 6 || !s.next.every(v => integer(v, 1, 4))) return null;
-    if ((s.downs !== undefined && !integer(s.downs, 0, 9999)) || !Array.isArray(s.clearing) || s.clearing.length > COLS * ROWS || !s.clearing.every(v => integer(v, 0, COLS * ROWS - 1))) return null;
-    if (!["fall", "clear", "settle", "over"].includes(s.phase) || !["none", "land", "clear", "attack", "allclear", "garbage", "revive"].includes(s.effect)) return null;
+    if ((s.downs !== undefined && !integer(s.downs, 0, 9999)) || (s.drops !== undefined && (!Array.isArray(s.drops) || s.drops.length > COLS * ROWS * 2 || !s.drops.every(v => integer(v, 0, COLS * ROWS)))) || !Array.isArray(s.clearing) || s.clearing.length > COLS * ROWS || !s.clearing.every(v => integer(v, 0, COLS * ROWS - 1))) return null;
+    if (!["fall", "clear", "settle", "over"].includes(s.phase) || !["none", "land", "clear", "attack", "allclear", "garbage", "revive", "fall"].includes(s.effect)) return null;
     for (const key of ["rng", "score", "cleared", "maxChain", "chain", "sent", "pending", "seen", "remainder", "resets", "event"] as const) if (!integer(s[key], 0, 4294967295)) return null;
     for (const key of ["timer", "fall", "lock"] as const) if (!Number.isFinite(s[key]) || Math.abs(s[key]) > 100000) return null;
     if (s.active !== null) {

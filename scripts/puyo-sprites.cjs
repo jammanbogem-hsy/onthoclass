@@ -76,6 +76,7 @@ ${c.face}
 
 const chars = {
   gengar: {
+    accent: `<path d="M20 22 18 6 32 16M76 22 78 6 64 16M40 10 47 0 54 10" fill="#8A4FE0" stroke="#34106F" stroke-width="1.6" stroke-linejoin="round"/>`,
     title: "보라 팬텀 뿌요",
     light: "#E2C8FF", base: "#9A5CF0", deep: "#5B26B4", core: "#34106F", bounce: "#D59CFF",
     body: "M17 44 13 23 30 29 36 13 47 24 61 11 66 28 83 21 78 43C89 61 83 80 66 84 53 88 32 87 22 80 9 72 9 56 17 44Z",
@@ -92,6 +93,8 @@ const chars = {
       <path d="m22 39 20 8m32-8-20 8" stroke="#34106F" stroke-width="3.6" stroke-linecap="round"/>`,
   },
   snorlax: {
+    accent: `<path d="M22 22 26 8q2-3 5 0l7 10M74 22 70 8q-2-3-5 0l-7 10" fill="#2EAF7C" stroke="#0E6A4C" stroke-width="1.6" stroke-linejoin="round"/>`,
+    faceInside: `<ellipse cx="48" cy="58" rx="24" ry="18" fill="#F6E7BC" opacity=".95"/><ellipse cx="44" cy="50" rx="10" ry="4" fill="#fff" opacity=".5"/>`,
     title: "초록 잠만보 뿌요",
     light: "#B9F7D6", base: "#38C48C", deep: "#178462", core: "#09503A", bounce: "#8FF0C4",
     body: "M20 35 22 13q2-5 6 0l12 12q8-2 16 0l12-12q4-5 6 0l2 22C88 45 88 68 78 79c-11 12-49 12-60 0C8 68 8 45 20 35Z",
@@ -108,6 +111,7 @@ const chars = {
       <ellipse cx="25" cy="58" rx="5.5" ry="3" fill="#F29C93" opacity=".55" filter="url(#blur1)"/><ellipse cx="71" cy="58" rx="5.5" ry="3" fill="#F29C93" opacity=".55" filter="url(#blur1)"/>`,
   },
   charmander: {
+    accent: `<path d="M80 30c-7-4-6-10-2-14q0 5 3 4c3-4 2-9 1-12 10 10 10 19-2 22Z" fill="url(#flame)"/><path d="M80 28q-4-3 1-8 0 4 3 3 1 3-4 5" fill="#FFFBD0"/>`,
     title: "빨강 파이리 뿌요",
     light: "#FFD2A6", base: "#FF6A4E", deep: "#D8343C", core: "#7E1420", bounce: "#FFB07A",
     body: "M15 50C15 28 27 17 44 17c19 0 30 14 30 34 0 6 5 10 5 17 0 13-15 18-34 18S10 79 10 67c0-7 5-11 5-17Z",
@@ -131,6 +135,7 @@ const chars = {
       <ellipse cx="21" cy="55" rx="4.5" ry="2.4" fill="#FFB892" opacity=".8" filter="url(#blur1)"/><ellipse cx="67" cy="55" rx="4.5" ry="2.4" fill="#FFB892" opacity=".8" filter="url(#blur1)"/>`,
   },
   squirtle: {
+    accent: `<path d="M80 70c10 2 13-6 8-10-4-2-7 1-5 4" stroke="#2D8FD8" stroke-width="4" stroke-linecap="round"/>`,
     title: "파랑 꼬부기 뿌요",
     light: "#D4F6FF", base: "#55C2F5", deep: "#2380D4", core: "#0E3F7C", bounce: "#9BE7FF",
     body: "M17 42C17 25 31 15 48 15s31 10 31 27c0 12-8 18-13 23 7 5 8 13 3 17-8 5-36 5-43 0-5-4-4-12 3-17-5-5-12-11-12-23Z",
@@ -167,6 +172,14 @@ const chars = {
       <path d="M41 68q7-4 14 0" stroke="#4D5674" stroke-width="2.8" stroke-linecap="round"/>`,
   },
 };
+/**
+ * 얼굴만(젤리 몸통 위에 얹는 용) — 보드에서는 몸통을 젤리 층이 그리고, 이웃한 같은 색끼리 녹아 이어진다.
+ * 캐릭터를 알아보도록 작은 특징(accent: 팬텀 가시·잠만보 귀·파이리 불꽃·꼬부기 꼬리)을 함께 그린다.
+ */
+function faceSvg(c, variant) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"><title>${c.title} 얼굴</title><defs>${common(c)}${c.defs || ""}</defs>${variant === "a" ? blinkCss(4.6, -1.2) : blinkCss(6.1, -3.7)}${c.accent || ""}${c.faceInside || ""}${c.face}</svg>`;
+}
 for (const [name, c] of Object.entries(chars)) {
+  for (const v of ["a", "b"]) fs.writeFileSync(path.join(out, name + "-face" + (v === "a" ? "" : "-b") + ".svg"), faceSvg(c, v).replace(/\n\s*/g, ""));
   for (const v of ["a", "b"]) fs.writeFileSync(path.join(out, name + (v === "a" ? "" : "-b") + ".svg"), svg(c, v).replace(/\n\s*/g, ""));
 }
