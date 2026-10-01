@@ -49,10 +49,9 @@ export function decide(match: Match, a: Run, b: Run, now: number, startsAt: numb
     reason = manual ? "teacher" : "time";
     winner = scores[match.a] === scores[match.b] ? null : scores[match.a] > scores[match.b] ? match.a : match.b;
   } else {
-    const aAway = now - Math.max(startsAt, a.at?.toMillis() ?? startsAt) > 25000;
-    const bAway = now - Math.max(startsAt, b.at?.toMillis() ?? startsAt) > 25000;
-    if (!aAway && !bAway) return null;
-    reason = "disconnect"; winner = aAway && bAway ? null : aAway ? match.b : match.a;
+    // 접속이 끊겨도 경기를 일찍 끝내지 않는다(화면 꺼짐·탭 전환으로 상대 경기까지 끝나던 문제).
+    // 끊긴 학생의 점수는 마지막 저장값으로 남고, 승부는 시간 종료·선생님 종료 때 점수로 정한다.
+    return null;
   }
   return { winner, reason, scores, at: now };
 }

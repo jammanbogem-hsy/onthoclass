@@ -10,7 +10,9 @@ export type PuyoState = {
   sent: number; pending: number; seen: number; remainder: number;
   phase: "fall" | "clear" | "settle" | "over";
   timer: number; fall: number; lock: number; resets: number;
-  clearing: number[]; event: number; effect: "none" | "land" | "clear" | "attack" | "allclear" | "garbage";
+  clearing: number[]; event: number; effect: "none" | "land" | "clear" | "attack" | "allclear" | "garbage" | "revive";
+  /** 학급 대전에서 보드가 꽉 차 다시 시작한 횟수(연습·예전 상태에는 없음). */
+  downs?: number;
 };
 const OFFSETS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const CHAIN = [0, 0, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512];
@@ -153,6 +155,17 @@ export function tick(s: PuyoState, elapsed: number) {
     else { s.lock = 0; s.fall += dt; if (s.fall >= 780) { s.active = below; s.fall = 0; } }
   }
 }
+/**
+ * 학급 대전용 재시작 — 보드가 꽉 차도 경기를 끝내지 않고 판을 비운 뒤 이어서 한다.
+ * 점수·보낸 공격·뿌요 순서(next·rng)는 그대로 두고, 받을 방해 뿌요만 비운다.
+ * 잠깐(900ms) 숨을 돌린 뒤 다음 뿌요가 나온다.
+ */
+export function revive(s: PuyoState) {
+  if (s.phase !== "over") return;
+  s.board.fill(0); s.pending = 0; s.clearing = []; s.chain = 0; s.active = null;
+  s.downs = (s.downs ?? 0) + 1;
+  s.phase = "settle"; s.timer = 900; effect(s, "revive");
+}
 export function cloneState(s: PuyoState): PuyoState { return JSON.parse(JSON.stringify(s)) as PuyoState; }
 
 /** Ignore malformed peer snapshots instead of allowing one client to crash another board. */
@@ -163,8 +176,8 @@ export function parseState(json: unknown): PuyoState | null {
     const integer = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!s || !Array.isArray(s.board) || s.board.length !== COLS * ROWS || !s.board.every(v => integer(v, 0, 5))) return null;
     if (!Array.isArray(s.next) || s.next.length !== 6 || !s.next.every(v => integer(v, 1, 4))) return null;
-    if (!Array.isArray(s.clearing) || s.clearing.length > COLS * ROWS || !s.clearing.every(v => integer(v, 0, COLS * ROWS - 1))) return null;
-    if (!["fall", "clear", "settle", "over"].includes(s.phase) || !["none", "land", "clear", "attack", "allclear", "garbage"].includes(s.effect)) return null;
+    if ((s.downs !== undefined && !integer(s.downs, 0, 9999)) || !Array.isArray(s.clearing) || s.clearing.length > COLS * ROWS || !s.clearing.every(v => integer(v, 0, COLS * ROWS - 1))) return null;
+    if (!["fall", "clear", "settle", "over"].includes(s.phase) || !["none", "land", "clear", "attack", "allclear", "garbage", "revive"].includes(s.effect)) return null;
     for (const key of ["rng", "score", "cleared", "maxChain", "chain", "sent", "pending", "seen", "remainder", "resets", "event"] as const) if (!integer(s[key], 0, 4294967295)) return null;
     for (const key of ["timer", "fall", "lock"] as const) if (!Number.isFinite(s[key]) || Math.abs(s[key]) > 100000) return null;
     if (s.active !== null) {

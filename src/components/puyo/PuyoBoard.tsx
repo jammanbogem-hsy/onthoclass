@@ -11,6 +11,8 @@ type PuyoBoardProps = {
   name: string;
   opponent?: boolean;
   status?: string;
+  /** 전체 화면 경기용: 부모가 준 --bh(보드 높이)에 맞추고, 이름·점수 줄은 위 막대가 대신 보여 준다. */
+  fill?: boolean;
 };
 
 function Sprite({ color, className = "" }: { color: Cell; className?: string }) {
@@ -30,23 +32,24 @@ function position(x: number, y: number, color: Cell, index = 0): CSSProperties {
   } as CSSProperties;
 }
 
-export function PuyoBoard({ state, name, opponent = false, status }: PuyoBoardProps) {
+export function PuyoBoard({ state, name, opponent = false, status, fill = false }: PuyoBoardProps) {
   const landing = ghost(state);
   const clearing = new Set(state.clearing);
   const isBurst = state.effect === "clear" || state.effect === "attack";
   const isAllClear = state.effect === "allclear";
   const isOver = state.phase === "over";
+  const downs = state.downs ?? 0;
   const height = state.board.slice(COLS).filter(Boolean).length;
 
   return (
-    <section className={`${styles.frame} ${opponent ? styles.opponent : ""}`} aria-label={`${name}의 뿌요 보드`} data-puyo-position={state.active ? `${state.active.x},${state.active.y},${state.active.r}` : "none"} data-puyo-score={state.score} data-puyo-attacks={state.sent} data-puyo-pending={state.pending}>
-      <header className={styles.header}>
+    <section className={`${styles.frame} ${opponent ? styles.opponent : ""} ${fill ? styles.fill : ""}`} aria-label={`${name}의 뿌요 보드`} data-puyo-position={state.active ? `${state.active.x},${state.active.y},${state.active.r}` : "none"} data-puyo-score={state.score} data-puyo-attacks={state.sent} data-puyo-pending={state.pending}>
+      {!fill && <header className={styles.header}>
         <div className={styles.player}>
           <span className={styles.avatar} aria-hidden="true">{name.trim().slice(0, 1) || "?"}</span>
           <div className={styles.identity}><span className={styles.playerLabel}>{opponent ? "OPPONENT" : "PLAYER"}</span><strong title={name}>{name}</strong></div>
         </div>
         <div className={styles.score}><span>SCORE</span><strong>{state.score.toLocaleString("ko-KR")}</strong></div>
-      </header>
+      </header>}
 
       <div className={styles.playArea}>
         <div className={styles.boardShell}>
@@ -79,10 +82,11 @@ export function PuyoBoard({ state, name, opponent = false, status }: PuyoBoardPr
               ))}
               {state.effect === "garbage" && <div className={styles.garbageNotice}>방해 뿌요 도착!</div>}
               {state.effect === "land" && <span className={styles.landingWave} />}
+              {state.effect === "revive" && <div className={styles.reviveNotice}><strong>다시 시작!</strong><span>점수는 그대로예요</span></div>}
             </div>
             {isOver && <div className={styles.gameOver}><span>수고했어요!</span><strong>FINISH</strong><small>{state.score.toLocaleString("ko-KR")}점</small></div>}
           </div>
-          <div className={styles.boardFoot} aria-hidden="true"><i /><span>POCKET PUYO</span><i /></div>
+          {!fill && <div className={styles.boardFoot} aria-hidden="true"><i /><span>POCKET PUYO</span><i /></div>}
         </div>
 
         <aside className={styles.rail} aria-label="다음 뿌요와 공격 정보">
@@ -93,9 +97,10 @@ export function PuyoBoard({ state, name, opponent = false, status }: PuyoBoardPr
             <Sprite color={5} /><strong>{state.pending}</strong><span>방해</span>
           </div>
           <div className={styles.best}><span>BEST</span><strong>{state.maxChain}<small>연쇄</small></strong></div>
+          {downs > 0 && <div className={styles.downs} title="보드가 꽉 차 다시 시작한 횟수"><span>다시</span><strong>{downs}</strong></div>}
         </aside>
       </div>
-      <footer className={styles.footer}><span className={`${styles.statusDot} ${isOver ? styles.finishedDot : ""}`} /><span>{status || (isOver ? "경기 종료" : opponent ? "상대가 플레이 중이에요" : "같은 색 4개를 연결해요!")}</span><span className={styles.sent}>공격 {state.sent}</span></footer>
+      {!fill && <footer className={styles.footer}><span className={`${styles.statusDot} ${isOver ? styles.finishedDot : ""}`} /><span>{status || (isOver ? "경기 종료" : opponent ? "상대가 플레이 중이에요" : "같은 색 4개를 연결해요!")}</span><span className={styles.sent}>공격 {state.sent}</span></footer>}
     </section>
   );
 }

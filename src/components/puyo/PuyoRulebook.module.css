@@ -40,10 +40,10 @@
 .compact .flow p { font-size: 12px; }
 
 .scrim { position: fixed; inset: 0; z-index: 120; background: rgb(20 14 36 / .45); display: grid; place-items: center; padding: 16px; }
-.dialog { width: min(640px, 100%); max-height: min(86vh, 820px); overflow: auto; border-radius: 24px; background: var(--puyo-surface, var(--md-sys-color-surface, #fffbfe)); padding: 20px; box-shadow: 0 24px 60px rgb(20 10 40 / .3); --puyo-accent: #8251c8; --puyo-ink: #302642; --puyo-muted: #6f6380; }
+.dialog { width: min(680px, 100%); max-height: min(86vh, 820px); overflow: auto; border-radius: 28px; background: var(--md-sys-color-surface-container-high, #fff); color: var(--md-sys-color-on-surface); padding: 22px; box-shadow: var(--md-sys-elevation-3, 0 24px 60px rgb(0 0 0 / .3)); }
 .dialog header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.dialog h2 { margin: 0; font-size: 20px; font-weight: 800; color: #302642; }
-.dialog header button { border: 1px solid #e4d9ec; background: #fff; border-radius: 999px; padding: 8px 14px; font-weight: 700; color: #6f4f9a; cursor: pointer; }
+.dialog h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.dialog header button { min-height: 40px; border: 1px solid var(--md-sys-color-outline); background: transparent; border-radius: 999px; padding: 0 16px; font-weight: 700; color: var(--md-sys-color-primary); cursor: pointer; }
 
 @media (max-width: 520px) {
   .tabs button { padding: 7px 10px; }

@@ -3,10 +3,10 @@ import type { Metadata } from "next";
 import PuyoRoom from "@/components/puyo/PuyoRoom";
 
 export const metadata: Metadata = {
-  title: "뿌요뿌요 · 우리 반 포켓 배틀",
-  description: "꼬물꼬물 포켓 친구들과 함께하는 우리 반 1:1 뿌요뿌요!",
+  title: "뿌요뿌요 · 러닝크루",
+  description: "같은 색 4개를 이어 터뜨리는 우리 반 1:1 뿌요뿌요",
 };
 
 export default function PuyoPage() {
-  return <Suspense fallback={<main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f8f5ff", color: "#68429d" }}>포켓 친구들이 모이고 있어요…</main>}><PuyoRoom /></Suspense>;
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center text-[var(--md-sys-color-on-surface-variant)]">게임방을 여는 중…</main>}><PuyoRoom /></Suspense>;
 }

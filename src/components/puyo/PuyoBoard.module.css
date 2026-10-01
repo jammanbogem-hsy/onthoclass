@@ -4,3 +4,21 @@
 @container (max-width:240px){.header{gap:5px;padding-bottom:9px}.avatar{width:26px;height:26px;font-size:13px;border-radius:9px}.player{gap:5px}.playerLabel{font-size:6px;letter-spacing:1px}.identity strong{font-size:11px;max-width:95px}.score span{font-size:6px}.score strong{font-size:17px}.playArea{gap:6px}.boardShell{border-width:3px;border-bottom-width:0}.rail{min-width:32px;gap:7px}.railLabel{font-size:6px}.nextBox{padding:6px 2px 4px;border-radius:9px}.pending strong{font-size:13px}.pending span{font-size:7px}.best strong{font-size:15px}.best small{font-size:7px}.footer{font-size:7px;gap:4px;margin-top:10px}.sent{display:none}.boardFoot{height:14px;font-size:5px;letter-spacing:1.1px;gap:6px}}
 @media(prefers-reduced-motion:reduce){.wobble,.grayWobble,.activeWobble,.pendingHot .sprite{animation:none}.cell,.active{transition:none}.landed,.garbageDrop{animation:none}.combo,.allClear,.garbageNotice{animation-name:reducedNotice}.sparkle{display:none}.clearing .sprite{animation-name:reducedPop}.flash,.landingWave{display:none}.popRing,.popSpark{animation:none;display:none}}@keyframes reducedNotice{0%,80%{opacity:1;transform:none}100%{opacity:0;visibility:hidden}}@keyframes reducedPop{0%,60%{opacity:1}100%{opacity:0}}
 @media(max-width:620px){.opponent{padding:10px 8px 8px;border-radius:19px}.opponent .rail,.opponent .avatar,.opponent .playerLabel{display:none}.opponent .playArea{gap:0}.opponent .header{display:flex;flex-direction:column;align-items:stretch;gap:5px}.opponent .identity strong{font-size:11px;max-width:100%}.opponent .score{flex-direction:row;align-items:center;justify-content:space-between}.opponent .score span{font-size:6px;letter-spacing:1px}.opponent .score strong{font-size:16px}.opponent .boardFoot{font-size:0;gap:8px;height:12px}.opponent .footer{font-size:7px;line-height:1.5;margin-top:9px}.opponent .boardShell{border-width:3px;border-bottom-width:0;border-radius:9px}}
+
+/* ── 전체 화면 경기(fill) — 부모의 --bh(보드 높이)로 크기를 정한다 ───────────── */
+.fill{--rail-w:clamp(58px,calc(var(--bh) * .17),112px);max-width:none;width:calc(var(--bh) / 2 + var(--rail-w) + 32px);padding:8px;border-radius:24px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-lowest);box-shadow:var(--md-sys-elevation-1)}
+.fill .playArea{gap:8px}
+.fill .boardShell{flex:none;border:4px solid var(--md-sys-color-primary);border-radius:18px;background:var(--md-sys-color-primary);box-shadow:none}
+.fill .board{height:var(--bh);width:calc(var(--bh) / 2);aspect-ratio:auto;border-radius:13px}
+.fill .rail{width:var(--rail-w);min-width:0;max-width:none;gap:10px}
+.fill .nextBox,.fill .pending{background:var(--md-sys-color-surface-container);border-color:var(--md-sys-color-outline-variant);box-shadow:none}
+.fill .railLabel{font-size:12px;letter-spacing:.5px;color:var(--md-sys-color-on-surface-variant)}
+.fill .pending strong{font-size:20px}.fill .pending span{font-size:12px}
+.fill .best{color:var(--md-sys-color-on-surface-variant)}.fill .best>span{font-size:12px}.fill .best strong{font-size:24px;color:var(--md-sys-color-primary)}.fill .best small{font-size:12px}
+.fill.opponent{width:calc(var(--bh) / 2 + 20px);padding:6px;background:var(--md-sys-color-surface-container-low)}
+.fill.opponent .rail{display:none}
+.fill.opponent .boardShell{border-color:var(--md-sys-color-outline);background:var(--md-sys-color-outline)}
+.downs{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:12px;background:var(--md-sys-color-secondary-container,#ffe3d3);color:var(--md-sys-color-on-secondary-container,#5a2d17)}
+.downs span{font-size:12px;font-weight:700}.downs strong{font-size:20px;line-height:1;font-weight:900}
+.reviveNotice{position:absolute;left:8%;right:8%;top:36%;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;border-radius:20px;background:#ffffffeb;color:#3a2f55;box-shadow:0 6px 24px #0004;animation:garbageNotice 1300ms ease-out forwards;text-align:center}
+.reviveNotice strong{font-size:clamp(18px,9cqi,34px);font-weight:950}.reviveNotice span{font-size:clamp(12px,4cqi,15px);font-weight:700}

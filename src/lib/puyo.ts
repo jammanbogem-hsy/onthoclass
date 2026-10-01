@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, onSnapshot, runTransaction, query, where, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
+import { collection, deleteField, doc, getDocFromServer, onSnapshot, runTransaction, query, where, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { getDbClient, getFunctionsClient } from "@/lib/firebase";
 import type { GameLink } from "@/lib/games";
@@ -49,6 +49,11 @@ export async function savePuyoRun(cid: string, gid: string, uid: string, state: 
   });
 }
 /** 대기실에서 확정한 대진표로 시작한다. 서버가 규칙(홀수 처리·인원)과 접속 상태를 다시 확인한다. */
+/** 서버에 저장된 내 경기 상태의 순번(저장 순번 재동기화용). */
+export async function readPuyoSeq(cid: string, gid: string, uid: string) {
+  const snap = await getDocFromServer(doc(getDbClient(), path(cid, gid), "puyoStates", uid));
+  return Number(snap.data()?.seq ?? 0);
+}
 export async function startPuyo(cid: string, gid: string, plan: PuyoPlan) {
   return (await httpsCallable(getFunctionsClient(), "puyoStart")({ cid, gid, pairs: plan.pairs, resting: plan.resting })).data;
 }

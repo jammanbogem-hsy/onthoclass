@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.4.0";
+export const APP_VERSION = "1.4.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.4.1",
+    date: "2026-10-01",
+    kind: "patch",
+    title: "뿌요뿌요가 크고 편해졌어요",
+    items: [
+      "경기 화면이 화면 가득 커지고, 조작 버튼도 크게 바뀌었어요.",
+      "보드가 꽉 차도 경기가 끝나지 않아요. 판을 비우고 다시 시작해요.",
+      "친구 화면이 잠깐 꺼져도 내 경기는 끝까지 계속돼요.",
+    ],
+  },
   {
     version: "1.4.0",
     date: "2026-10-01",

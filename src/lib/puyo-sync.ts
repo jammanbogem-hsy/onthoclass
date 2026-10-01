@@ -56,5 +56,7 @@ export class PuyoPublisher {
       if (this.wanted && !this.disposed) this.request(this.urgent);
     }
   }
+  /** 서버에 저장된 순번으로 맞춘다 — 다른 탭·재접속으로 순번이 어긋나 저장이 계속 거부될 때. */
+  resync(seq: number) { if (Number.isInteger(seq) && seq >= 0) this.seq = seq; }
   dispose() { this.disposed = true; if (this.timer) clearTimeout(this.timer); }
 }

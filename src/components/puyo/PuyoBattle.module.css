@@ -1,8 +1,72 @@
-.battle{width:100%;max-width:clamp(440px,calc(110svh - 280px),870px);scroll-margin-top:16px;margin:0 auto;color:#40335d}.topbar{display:flex;align-items:center;justify-content:space-between;margin:0 auto 18px;max-width:790px;gap:12px}.round{font-size:12px;font-weight:900;letter-spacing:2px;color:#9783ac}.timer,.urgent{font-variant-numeric:tabular-nums;font-size:34px;letter-spacing:2px;background:white;padding:3px 24px;border-radius:20px;box-shadow:0 4px 0 #e0d6ed}.urgent{color:#db426b;animation:pulse .7s infinite alternate}.topbar button{background:#eee7f7;border:1px solid #ded1ee;border-radius:20px;padding:8px 13px;font-size:11px;font-weight:800;color:#7d669a}.boards{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 44px minmax(0,.8fr);align-items:start;gap:12px}.mine,.theirs{min-width:0}.theirs{padding-top:30px}.vs{padding-top:200px;text-align:center;font-size:24px;font-weight:950;font-style:italic;color:#ad8cd2;transform:rotate(-8deg)}.vs span{display:block;font-size:14px;margin-top:10px;color:#e9c468}.controls{display:grid;grid-template-columns:repeat(3,1fr) repeat(2,1fr) 1.35fr;gap:5px;margin:18px 0 12px;touch-action:none;user-select:none}.controls button{touch-action:none;border:1px solid #e3d8f1;border-bottom:4px solid #d9c7ed;background:white;color:#6b429c;border-radius:13px;min-height:52px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:0;cursor:pointer}.controls button:active{transform:translateY(2px);border-bottom-width:2px;background:#f0e5ff}.controls button:disabled{opacity:.45;cursor:default}.controls button strong{font-size:25px;line-height:1.1}.controls button small{font-size:8px;font-weight:800}.controls .drop{background:#8960cc;color:white;border-color:#7244b5}.tip{text-align:center;font-size:11px;color:#a18eae;line-height:1.8;margin:22px 0}.countdown,.result{position:absolute;inset:18% 1% auto;z-index:22;background:#fff4ffeF;backdrop-filter:blur(10px);border:3px solid white;border-radius:28px;box-shadow:0 18px 60px #47237830;text-align:center;padding:30px 15px;display:flex;align-items:center;flex-direction:column;color:#7850af;pointer-events:none}.countdown span,.result span{font-size:14px;font-weight:700}.countdown strong{font-size:72px;line-height:1.3;font-weight:950;font-style:italic;text-shadow:0 4px 0 #decff0}.countdown small{font-size:12px;color:#9b82ae}.result strong{font-size:clamp(30px,6vw,58px);font-style:italic;font-weight:950;color:#9261c5;text-shadow:0 4px 0 #e4d0f3}.result p{font-size:20px;font-weight:800}.error{background:#fff2dd;padding:10px 16px;border-radius:14px;font-size:12px;margin:10px 0}.loading{text-align:center;padding:60px}.practice{width:100%;max-width:clamp(220px,calc(55svh - 110px),375px);margin:0 auto}.practiceStart{display:block;margin:14px auto;border:0;border-radius:18px;padding:12px 35px;background:#895bcb;color:white;font-weight:850;box-shadow:0 4px 0 #6840a1}.practiceStart:active{transform:translateY(2px)}@keyframes pulse{to{transform:scale(1.05)}}@media(max-width:620px){.boards{grid-template-columns:minmax(0,1fr) minmax(0,.48fr);gap:8px}.vs{display:none}.theirs{padding-top:12px}.topbar{margin-bottom:12px}.timer,.urgent{font-size:24px;padding:3px 18px}.round{font-size:9px}.topbar button{font-size:9px;padding:7px 10px}.controls{gap:3px}.controls button{min-height:46px;border-radius:9px}.controls button strong{font-size:21px}.controls button small{font-size:6px}.tip{font-size:9px}.countdown,.result{padding:22px 10px;top:20%;border-radius:20px}.countdown strong{font-size:56px}}@media(prefers-reduced-motion:reduce){.urgent{animation:none}}
+/* 전체 화면 경기 — 러닝크루 M3 토큰. 보드 크기는 useArenaFit 이 정한 --bh 로 맞춘다. */
+.stage{position:fixed;inset:0;z-index:90;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);font-family:var(--md-sys-font-plain,inherit);overscroll-behavior:contain;padding-bottom:env(safe-area-inset-bottom)}
 
-.result .reward{background:#f8e9af;color:#795d19;padding:8px 15px;border-radius:14px;font-size:14px;font-weight:800}
+.bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 16px;background:var(--md-sys-color-surface-container);border-bottom:1px solid var(--md-sys-color-outline-variant)}
+.iconBtn,.chipBtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;min-width:44px;padding:0 14px;border-radius:999px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-lowest);color:var(--md-sys-color-on-surface);font-size:14px;font-weight:700;cursor:pointer}
+.iconBtn:hover,.chipBtn:hover{background:var(--md-sys-color-surface-container-high)}
+.barActions{display:flex;gap:8px}
+.scoreLine{display:flex;align-items:center;justify-content:center;gap:clamp(10px,3vw,28px);min-width:0}
+.who{display:flex;align-items:baseline;gap:10px;min-width:0}
+.who b{font-size:15px;font-weight:700;color:var(--md-sys-color-on-surface-variant);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:14ch}
+.who em{font-style:normal;font-size:clamp(20px,2.6vw,30px);font-weight:900;font-variant-numeric:tabular-nums;color:var(--md-sys-color-primary)}
+.whoThem em{color:var(--md-sys-color-on-surface-variant)}
+.clock{font-variant-numeric:tabular-nums;font-size:clamp(26px,3.4vw,40px);font-weight:900;letter-spacing:1px;padding:2px 18px;border-radius:999px;background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
+.urgent{background:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container);animation:pulse .7s infinite alternate}
+.notice{margin:0;padding:8px 16px;text-align:center;font-size:14px;font-weight:600;background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container)}
 
-/* 규칙 보기 + 소리 버튼 묶음. 학생 화면 글자는 12px 이상(M3 label-small)으로. */
-.topActions{display:flex;gap:6px;align-items:center}
-.topbar button{font-size:12px}
-@media(max-width:700px){.topbar button{font-size:12px;padding:7px 10px}}
+.arena{min-height:0;display:flex;justify-content:center;align-items:center;gap:32px;padding:14px 16px;overflow:hidden}
+.arenaNarrow{gap:10px;padding:10px 8px}
+.mine,.theirs{display:flex;flex-direction:column;align-items:center}
+.side{display:flex;flex-direction:column;align-items:stretch;gap:16px;width:300px;min-width:0}
+.arenaNarrow .side{width:auto;align-self:flex-start}
+.sideLabel{font-size:13px;font-weight:700;color:var(--md-sys-color-on-surface-variant);margin-bottom:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.keys{margin:0;text-align:center;font-size:13px;line-height:1.6;color:var(--md-sys-color-on-surface-variant)}
+
+/* 조작판 — 크게, 양손 묶음(이동 | 회전·낙하) */
+.controls{display:grid;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none}
+.controlsPad{grid-template-columns:repeat(3,1fr)}
+.controlsRow{grid-template-columns:repeat(3,1fr) 10px repeat(3,1fr)}
+.controlsRow .control:nth-child(4){grid-column:5}
+.control{touch-action:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:72px;border-radius:20px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-high);color:var(--md-sys-color-on-surface);cursor:pointer;box-shadow:0 3px 0 var(--md-sys-color-outline-variant);transition:transform 60ms,box-shadow 60ms}
+.control span{font-size:12px;font-weight:700;color:var(--md-sys-color-on-surface-variant);white-space:nowrap}
+.control:active{transform:translateY(2px);box-shadow:0 1px 0 var(--md-sys-color-outline-variant)}
+.control:disabled{opacity:.45;cursor:default}
+.rotate{background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container)}
+.rotate span{color:inherit}
+.drop{background:var(--md-sys-color-primary);color:var(--md-sys-color-on-primary);border-color:transparent}
+.drop span{color:inherit}
+.padBar{padding:10px 10px calc(10px + env(safe-area-inset-bottom));background:var(--md-sys-color-surface-container);border-top:1px solid var(--md-sys-color-outline-variant)}
+
+/* 준비·종료 카드 */
+.overlay{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--md-sys-color-scrim,#000) 28%,transparent);pointer-events:none}
+.card{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:min(360px,100%);padding:28px 28px 24px;border-radius:28px;background:var(--md-sys-color-surface-container-high);box-shadow:var(--md-sys-elevation-3);text-align:center}
+.card>span{font-size:16px;font-weight:700;color:var(--md-sys-color-on-surface-variant)}
+.card strong{font-size:clamp(44px,8vw,76px);line-height:1.1;font-weight:950;font-style:italic;color:var(--md-sys-color-primary)}
+.card small{font-size:14px;color:var(--md-sys-color-on-surface-variant)}
+.final{margin:0;font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
+.reward{padding:8px 16px;border-radius:999px;background:var(--md-sys-color-tertiary-container);color:var(--md-sys-color-on-tertiary-container);font-size:15px;font-weight:800}
+.primaryBtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:0 22px;margin-top:6px;border:0;border-radius:999px;background:var(--md-sys-color-primary);color:var(--md-sys-color-on-primary);font-size:15px;font-weight:700;cursor:pointer}
+
+/* 잠시 내려 둔 경기(대진표 보는 중) */
+.minimized{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 20px;padding:16px 20px;border-radius:24px;background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
+.minimized>div{display:flex;flex-direction:column;gap:4px}
+.minimized strong{font-size:17px}.minimized span{font-size:15px;font-variant-numeric:tabular-nums}
+.minimized .primaryBtn{margin:0}
+
+.loading{text-align:center;padding:60px;color:var(--md-sys-color-on-surface-variant)}
+.practice{width:100%;max-width:420px;margin:0 auto;display:flex;flex-direction:column;align-items:stretch;gap:14px}
+.practice .primaryBtn{align-self:center}
+
+@keyframes pulse{to{transform:scale(1.06)}}
+@media(max-width:640px){
+  .bar{grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:8px 10px}
+  .hideSm{display:none}
+  .who b{display:none}
+  .chipBtn,.iconBtn{padding:0 10px}
+  .control{min-height:64px;border-radius:16px}
+  .controlsRow{gap:6px;grid-template-columns:repeat(3,1fr) 4px repeat(3,1fr)}
+}
+@media(prefers-reduced-motion:reduce){.urgent{animation:none}}
+
+/* 안내 줄이 없어도 경기장이 늘 1fr 줄을 차지하도록 줄 번호 고정 */
+.bar{grid-row:1}.notice{grid-row:2}.arena{grid-row:3}.padBar{grid-row:4}

@@ -20,7 +20,6 @@ export const PUYO_MIN_SEC = 60;
 export const PUYO_MAX_SEC = 900;
 export const PUYO_MAX_STUDENTS = 40;
 export const PUYO_COUNTDOWN_SEC = 6;
-export const PUYO_AWAY_SEC = 25;
 export const PUYO_XP_OPTIONS = [0, 5, 10, 15, 20] as const;
 export const PUYO_MINUTE_OPTIONS = [2, 3, 5, 7, 10] as const;
 
@@ -70,7 +69,7 @@ export function puyoFlow(r: PuyoRules): FlowStep[] {
     { stage: "battle", who: "학생", title: "대결", body: "같은 색 4개를 이어 터뜨려요. 연쇄로 터뜨릴수록 상대에게 방해 뿌요를 많이 보내요." },
     {
       stage: "judge", who: "자동", title: "승부 결정",
-      body: `먼저 보드가 꽉 차면 져요. 시간이 끝나거나 선생님이 끝내면 점수가 높은 쪽이 이겨요. 동점은 무승부, ${PUYO_AWAY_SEC}초 넘게 연결이 끊기면 져요.`,
+      body: "보드가 꽉 차도 끝나지 않아요. 판을 비우고 바로 다시 시작해요(다시 시작한 횟수가 기록돼요). 시간이 끝나거나 선생님이 끝내면 점수가 높은 쪽이 이기고, 동점은 무승부예요. 잠깐 연결이 끊겨도 경기는 계속돼요.",
     },
     {
       stage: "reward", who: "자동", title: "결과와 보상",
@@ -86,6 +85,7 @@ export function puyoFlow(r: PuyoRules): FlowStep[] {
 export const PUYO_HOW_TO: { title: string; body: string }[] = [
   { title: "같은 색 4개", body: "위·아래·옆으로 같은 색이 4개 이상 이어지면 팡! 사라져요. 대각선은 안 돼요." },
   { title: "연쇄 공격", body: "터진 뒤 떨어진 뿌요가 또 터지면 연쇄예요. 연쇄가 길수록 점수와 공격이 커져요." },
+  { title: "꽉 차도 괜찮아", body: "가운데 위가 막히면 판이 비워지고 다시 시작해요. 점수는 그대로라 끝까지 포기하지 마세요!" },
   { title: "방해 뿌요", body: "회색 방해 뿌요는 옆에서 다른 뿌요가 터질 때만 함께 사라져요. 내가 공격하면 받을 방해 뿌요가 먼저 줄어요." },
   { title: "조작", body: "← → 이동, ↓ 빨리 내리기, Z·X(또는 ↑) 회전, Space 바로 떨어뜨리기. 화면 버튼도 돼요." },
 ];
