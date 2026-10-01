@@ -49,12 +49,21 @@ ${c.behind || ""}
   <ellipse cx="50" cy="${c.bounceY ?? 93}" rx="34" ry="12" fill="${c.bounce}" opacity=".8" filter="url(#blur3)"/>
   <rect width="96" height="96" fill="${c.bounce}" opacity=".85" mask="url(#kick)"/>
   <rect width="96" height="96" fill="#fff" opacity=".55" mask="url(#rim)"/>
+  <ellipse cx="48" cy="${c.glowY ?? 68}" rx="25" ry="15" fill="${c.light}" opacity=".6" filter="url(#blur3)"/>
+  <ellipse cx="48" cy="${(c.glowY ?? 68) + 4}" rx="14" ry="7" fill="#fff" opacity=".22" filter="url(#blur2)"/>
+  <g fill="#fff" stroke="#fff" stroke-width=".6">
+    <circle cx="${c.bub?.[0] ?? 22}" cy="${c.bub?.[1] ?? 68}" r="2.3" fill-opacity=".18" stroke-opacity=".7"/>
+    <circle cx="${(c.bub?.[0] ?? 22) + 4}" cy="${(c.bub?.[1] ?? 68) + 6}" r="1.3" fill-opacity=".25" stroke-opacity=".6"/>
+    <circle cx="${c.bub?.[2] ?? 74}" cy="${c.bub?.[3] ?? 62}" r="1.7" fill-opacity=".2" stroke-opacity=".65"/>
+  </g>
   ${c.inside || ""}
 </g>
-<path d="${c.body}" stroke="${c.core}" stroke-width="2.2" stroke-linejoin="round" opacity=".7"/>
+<path d="${c.body}" stroke="${c.deep}" stroke-width="1.6" stroke-linejoin="round" opacity=".6"/>
+<path d="${c.body}" stroke="#fff" stroke-width=".8" stroke-linejoin="round" opacity=".35" transform="translate(.6 .8)"/>
 ${c.front || ""}
 <g clip-path="url(#clip)">
   <ellipse cx="${sx}" cy="${sy}" rx="${c.srx ?? 13}" ry="${c.sry ?? 7.5}" transform="rotate(${sr} ${sx} ${sy})" fill="url(#spec)" opacity=".7" filter="url(#blur2)"/>
+  <path d="M${sx - 16} ${sy + 10}Q${sx + 12} ${sy - 14} ${sx + 44} ${sy + 2}Q${sx + 14} ${sy - 6} ${sx - 16} ${sy + 10}Z" fill="#fff" opacity=".38" filter="url(#blur05)"/>
 </g>
 <g transform="rotate(${sr} ${sx - 3} ${sy - 1.5})" fill="#fff">
   <rect x="${sx - 8.5}" y="${sy - 4.5}" width="6.2" height="5.4" rx="2.2" opacity=".95"/>

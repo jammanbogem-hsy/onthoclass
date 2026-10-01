@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.7.0";
+export const APP_VERSION = "1.7.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,15 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.7.1",
+    date: "2026-10-01",
+    kind: "patch",
+    title: "캐릭터도 젤리처럼",
+    items: [
+      "뿌요 캐릭터 몸속이 은은하게 빛나고, 작은 공기방울과 반짝이는 광택이 생겼어요.",
+    ],
+  },
   {
     version: "1.7.0",
     date: "2026-10-01",
