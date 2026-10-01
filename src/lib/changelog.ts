@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.6.0";
+export const APP_VERSION = "1.6.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,15 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.6.1",
+    date: "2026-10-01",
+    kind: "patch",
+    title: "뿌요뿌요 방향키 조작",
+    items: [
+      "노트북에서도 방향키로 조작할 수 있어요. ← → 이동, ↓ 빨리 내리기, ↑ 돌리기, Space 바로 내리기.",
+    ],
+  },
   {
     version: "1.6.0",
     date: "2026-10-01",

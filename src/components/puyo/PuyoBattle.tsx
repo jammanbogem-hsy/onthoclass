@@ -45,22 +45,32 @@ const BUTTONS: { a: Action; icon: string; label: string; key: string }[] = [
 ];
 
 /** 조작판 — 이동(← ↓ →)과 회전·낙하를 양손 묶음으로. 키보드도 그대로 쓴다. */
-function Controls({ action, disabled, unlock, layout }: { action: (a: Action) => void; disabled: boolean; unlock: () => void; layout: "row" | "pad" }) {
-  const repeat = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stop = useCallback(() => { if (repeat.current) clearInterval(repeat.current); repeat.current = null; }, []);
+/**
+ * 키보드 조작 — 방향키 ← → 이동, ↓ 빨리, ↑ 돌리기, Z/X 돌리기, Space 바로 내리기.
+ * 화면 조작판이 숨겨진 노트북 화면에서도 동작하도록 경기 화면 쪽에 붙인다(조작판과 따로).
+ */
+function useKeyboard(action: (a: Action) => void, disabled: boolean, unlock: () => void) {
   useEffect(() => {
     const keys: Record<string, Action> = { ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down", ArrowUp: "cw", KeyX: "cw", KeyZ: "ccw", Space: "drop" };
     const keydown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && (e.target.isContentEditable || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) return;
       // 규칙 보기 대화상자가 열려 있으면 뒤의 보드를 움직이지 않는다.
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      const a = keys[e.code]; if (!a) return; e.preventDefault();
-      if (disabled || (e.repeat && ["cw", "ccw", "drop"].includes(a))) return;
+      const a = keys[e.code]; if (!a || disabled) return;
+      // 페이지 스크롤·포커스된 버튼 눌림(Space)을 막는다
+      e.preventDefault();
+      if (e.repeat && ["cw", "ccw", "drop"].includes(a)) return;
       unlock(); action(a);
     };
-    window.addEventListener("keydown", keydown); window.addEventListener("blur", stop);
-    return () => { window.removeEventListener("keydown", keydown); window.removeEventListener("blur", stop); stop(); };
-  }, [action, disabled, unlock, stop]);
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [action, disabled, unlock]);
+}
+
+function Controls({ action, disabled, unlock, layout }: { action: (a: Action) => void; disabled: boolean; unlock: () => void; layout: "row" | "pad" }) {
+  const repeat = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stop = useCallback(() => { if (repeat.current) clearInterval(repeat.current); repeat.current = null; }, []);
+  useEffect(() => { window.addEventListener("blur", stop); return () => { window.removeEventListener("blur", stop); stop(); }; }, [stop]);
   return <div className={`${styles.controls} ${layout === "pad" ? styles.controlsPad : styles.controlsRow}`} aria-label="뿌요 조작">
     {BUTTONS.map(({ a, icon, label, key }) => <button key={a} type="button" aria-label={`${label} (${key})`} title={`${label} · ${key}`} disabled={disabled}
       className={`${styles.control} ${a === "drop" ? styles.drop : ["ccw", "cw"].includes(a) ? styles.rotate : ""}`}
@@ -249,6 +259,8 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
     const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, []);
+  useKeyboard(action, paused, sound.unlock);
+  useEffect(() => { (document.activeElement as HTMLElement | null)?.blur?.(); }, []);
   const showPad = !fit.arcade || coarse;
   const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true }, ...rivals.map(r => ({ name: r.name, score: r.state.score, me: false }))].sort((a, b) => b.score - a.score) : undefined;
   const miniBoards = rivals.map((r, i) => <div key={i} ref={el => { rivalRefs.current[i] = el; }} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
@@ -482,6 +494,7 @@ export function PuyoPractice() {
     frame = requestAnimationFrame(loop); return () => cancelAnimationFrame(frame);
   }, [running]);
   const action = useCallback((a: Action) => { if (running) { input(state.current, a); setView(cloneState(state.current)); } }, [running]);
+  useKeyboard(action, !running || view.phase === "over", sound.unlock);
   return <div className={styles.practice}>
     <PuyoBoard state={view} name="나의 연습 보드" status="연습 점수는 학급 경기에 반영되지 않아요" />
     <Controls action={action} disabled={!running || view.phase === "over"} unlock={sound.unlock} layout="row" />
