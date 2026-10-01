@@ -1,46 +1,65 @@
-// 뿌요 캐릭터 SVG 생성기 — 같은 조명(좌상단 키라이트·하단 반사광·접지 그림자)을 5종에 일관 적용.
+// 뿌요 캐릭터 SVG 생성기 — 피규어 조명을 5종에 일관 적용:
+// 좌상단 키라이트 + 우하단 형태 그림자(터미네이터) + 좌상단 림라이트 + 하단 색 반사광 + 창문 반사 + 접지 그림자.
 const fs = require("fs"), path = require("path");
 const out = process.argv[2] || path.join(__dirname, "../public/puyo/assets");
 
+// 몸통에서 몸통을 (dx,dy)만큼 민 모양을 뺀 초승달 — 가장자리 빛/그림자를 만드는 마스크
+const crescent = (id, body, dx, dy, blur) => `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96"><rect width="96" height="96" fill="#fff"/><path d="${body}" transform="translate(${dx} ${dy})" fill="#000" filter="url(#${blur})"/></mask>`;
+
 const common = (c) => `
+  <filter id="blur05" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation=".6"/></filter>
   <filter id="blur1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.1"/></filter>
   <filter id="blur2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter>
   <filter id="blur3" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.4"/></filter>
   <radialGradient id="body" cx="${c.lx ?? .38}" cy="${c.ly ?? .3}" r=".82" fx="${(c.lx ?? .38) - .06}" fy="${(c.ly ?? .3) - .08}">
-    <stop offset="0" stop-color="${c.light}"/><stop offset=".45" stop-color="${c.base}"/><stop offset=".86" stop-color="${c.deep}"/><stop offset="1" stop-color="${c.core}"/>
+    <stop offset="0" stop-color="${c.light}"/><stop offset=".42" stop-color="${c.base}"/><stop offset=".84" stop-color="${c.deep}"/><stop offset="1" stop-color="${c.core}"/>
   </radialGradient>
-  <radialGradient id="ao" cx=".44" cy=".4" r=".68"><stop offset=".62" stop-color="${c.core}" stop-opacity="0"/><stop offset="1" stop-color="${c.core}" stop-opacity=".55"/></radialGradient>
+  <radialGradient id="ao" cx=".44" cy=".4" r=".68"><stop offset=".6" stop-color="${c.core}" stop-opacity="0"/><stop offset="1" stop-color="${c.core}" stop-opacity=".5"/></radialGradient>
   <linearGradient id="spec" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity=".05"/></linearGradient>
-  <radialGradient id="shadow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="${c.core}" stop-opacity=".5"/><stop offset="1" stop-color="${c.core}" stop-opacity="0"/></radialGradient>
-  <clipPath id="clip"><path d="${c.body}"/></clipPath>`;
+  <radialGradient id="shadow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="${c.core}" stop-opacity=".55"/><stop offset="1" stop-color="${c.core}" stop-opacity="0"/></radialGradient>
+  <clipPath id="clip"><path d="${c.body}"/></clipPath>
+  ${crescent("term", c.body, -6, -7, "blur2")}
+  ${crescent("rim", c.body, 2.4, 2.8, "blur05")}
+  ${crescent("kick", c.body, -2.2, -2.6, "blur05")}`;
 
-const eye = (cx, cy, rx, ry, iris, id) => `
-  <ellipse cx="${cx}" cy="${cy + .8}" rx="${rx + 1.2}" ry="${ry + 1.2}" fill="#000" opacity=".16" filter="url(#blur1)"/>
+const eye = (cx, cy, rx, ry, _iris, id) => `
+  <ellipse cx="${cx}" cy="${cy + 1}" rx="${rx + 1.4}" ry="${ry + 1.4}" fill="#000" opacity=".2" filter="url(#blur1)"/>
   <ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="url(#sclera)"/>
-  <ellipse cx="${cx + .6}" cy="${cy + 1}" rx="${rx * .68}" ry="${ry * .8}" fill="url(#${id})"/>
-  <ellipse cx="${cx - rx * .18}" cy="${cy - ry * .36}" rx="${rx * .32}" ry="${ry * .22}" fill="#fff"/>
-  <circle cx="${cx + rx * .32}" cy="${cy + ry * .38}" r="${rx * .14}" fill="#fff" opacity=".8"/>`;
-const irisDef = (id, a, b) => `<radialGradient id="${id}" cx=".45" cy=".35" r=".7"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></radialGradient>`;
-const sclera = `<radialGradient id="sclera" cx=".42" cy=".32" r=".75"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#dfe4f0"/></radialGradient>`;
+  <ellipse cx="${cx + .5}" cy="${cy + .9}" rx="${rx * .76}" ry="${ry * .84}" fill="url(#${id})"/>
+  <ellipse cx="${cx + .5}" cy="${cy + .9}" rx="${rx * .76}" ry="${ry * .84}" stroke="#000" stroke-opacity=".35" stroke-width=".8"/>
+  <ellipse cx="${cx + .6}" cy="${cy + 1.6}" rx="${rx * .36}" ry="${ry * .46}" fill="#0b0b14" opacity=".85"/>
+  <ellipse cx="${cx + .6}" cy="${cy + ry * .5}" rx="${rx * .5}" ry="${ry * .22}" fill="#fff" opacity=".28" filter="url(#blur05)"/>
+  <ellipse cx="${cx - rx * .22}" cy="${cy - ry * .32}" rx="${rx * .36}" ry="${ry * .26}" fill="#fff"/>
+  <circle cx="${cx + rx * .34}" cy="${cy + ry * .36}" r="${rx * .15}" fill="#fff" opacity=".9"/>
+  <circle cx="${cx + rx * .1}" cy="${cy - ry * .55}" r="${rx * .08}" fill="#fff" opacity=".8"/>`;
+const irisDef = (id, a, b) => `<radialGradient id="${id}" cx=".45" cy=".7" r=".8"><stop offset="0" stop-color="${a}"/><stop offset=".55" stop-color="${b}"/><stop offset="1" stop-color="#000" stop-opacity=".9"/></radialGradient>`;
+const sclera = `<radialGradient id="sclera" cx=".42" cy=".32" r=".75"><stop offset="0" stop-color="#fff"/><stop offset=".8" stop-color="#eef1f8"/><stop offset="1" stop-color="#c9cfdf"/></radialGradient>`;
 
 function svg(c) {
+  const sx = c.sx ?? 33, sy = c.sy ?? 30, sr = c.sr ?? -24;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"><title>${c.title}</title><defs>${common(c)}${c.defs || ""}</defs>
-<ellipse cx="48" cy="87" rx="31" ry="5.5" fill="url(#shadow)"/>
-<ellipse cx="48" cy="86.5" rx="19" ry="2.6" fill="${c.core}" opacity=".32" filter="url(#blur1)"/>
+<ellipse cx="48" cy="87.5" rx="32" ry="5.5" fill="url(#shadow)"/>
+<ellipse cx="48" cy="86.8" rx="20" ry="2.4" fill="${c.core}" opacity=".4" filter="url(#blur1)"/>
 ${c.behind || ""}
 <path d="${c.body}" fill="url(#body)"/>
 <path d="${c.body}" fill="url(#ao)"/>
 <g clip-path="url(#clip)">
-  <ellipse cx="50" cy="${c.bounceY ?? 92}" rx="34" ry="12" fill="${c.bounce}" opacity=".75" filter="url(#blur3)"/>
+  <rect width="96" height="96" fill="${c.core}" opacity=".42" mask="url(#term)"/>
+  <ellipse cx="50" cy="${c.bounceY ?? 93}" rx="34" ry="12" fill="${c.bounce}" opacity=".8" filter="url(#blur3)"/>
+  <rect width="96" height="96" fill="${c.bounce}" opacity=".85" mask="url(#kick)"/>
+  <rect width="96" height="96" fill="#fff" opacity=".55" mask="url(#rim)"/>
   ${c.inside || ""}
 </g>
-<path d="${c.body}" stroke="${c.core}" stroke-width="1.8" stroke-linejoin="round" opacity=".55"/>
+<path d="${c.body}" stroke="${c.core}" stroke-width="2.2" stroke-linejoin="round" opacity=".7"/>
 ${c.front || ""}
 <g clip-path="url(#clip)">
-  <ellipse cx="${c.sx ?? 33}" cy="${c.sy ?? 30}" rx="${c.srx ?? 13}" ry="${c.sry ?? 7.5}" transform="rotate(${c.sr ?? -24} ${c.sx ?? 33} ${c.sy ?? 30})" fill="url(#spec)" opacity=".82" filter="url(#blur2)"/>
+  <ellipse cx="${sx}" cy="${sy}" rx="${c.srx ?? 13}" ry="${c.sry ?? 7.5}" transform="rotate(${sr} ${sx} ${sy})" fill="url(#spec)" opacity=".7" filter="url(#blur2)"/>
 </g>
-<ellipse cx="${(c.sx ?? 33) - 3}" cy="${(c.sy ?? 30) - 1.5}" rx="4.6" ry="2.5" transform="rotate(${c.sr ?? -24} ${(c.sx ?? 33) - 3} ${(c.sy ?? 30) - 1.5})" fill="#fff" opacity=".92"/>
-<circle cx="${(c.sx ?? 33) + 6}" cy="${(c.sy ?? 30) - 4}" r="1.3" fill="#fff" opacity=".85"/>
+<g transform="rotate(${sr} ${sx - 3} ${sy - 1.5})" fill="#fff">
+  <rect x="${sx - 8.5}" y="${sy - 4.5}" width="6.2" height="5.4" rx="2.2" opacity=".95"/>
+  <rect x="${sx - 1.3}" y="${sy - 4.5}" width="3.6" height="5.4" rx="1.6" opacity=".8"/>
+</g>
+<circle cx="${sx + 7}" cy="${sy - 5}" r="1.2" fill="#fff" opacity=".85"/>
 ${c.face}
 </svg>`;
 }

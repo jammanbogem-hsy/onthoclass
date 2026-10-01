@@ -49,3 +49,9 @@
   .tabs button { padding: 7px 10px; }
   .dialog { padding: 16px; border-radius: 20px; }
 }
+
+/* 탭은 한 줄 유지 — 좁으면 가로 스크롤(줄바꿈으로 알약이 깨지지 않게) */
+.tabs { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { white-space: nowrap; flex-shrink: 0; }
+.head strong, .who, .nowTag { white-space: nowrap; }

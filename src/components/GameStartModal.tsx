@@ -169,7 +169,7 @@ export function GameStartModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex h-[88vh] max-h-[820px] w-full max-w-3xl animate-float-in flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-3)]"
+        className={`flex w-full animate-float-in ${kind === "puyo" ? "h-[92vh] max-h-[920px] max-w-6xl" : "h-[88vh] max-h-[820px] max-w-3xl"} flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-3)]`}
       >
         {/* 헤더 */}
         <div className="flex items-center justify-between border-b border-[var(--md-sys-color-outline-variant)] px-6 py-4">
@@ -190,7 +190,7 @@ export function GameStartModal({
         </div>
 
         {/* 본문: 좌 HDD 트리 / 우 설정 */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_320px]">
+        <div className={`grid min-h-0 flex-1 grid-cols-1 ${kind === "puyo" ? "md:grid-cols-[minmax(220px,300px)_1fr]" : "md:grid-cols-[1fr_320px]"}`}>
           {/* HDD 트리 */}
           <div className="flex min-h-0 flex-col border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] md:border-b-0 md:border-r">
             <p className="border-b border-[var(--md-sys-color-outline-variant)] px-4 py-2.5 text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">
@@ -326,7 +326,7 @@ export function GameStartModal({
           </div>
 
           {/* 설정 */}
-          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
+          <div className="@container flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
             <Section title="게임 종류">
               <div className="grid grid-cols-3 gap-1.5">
                 {(
