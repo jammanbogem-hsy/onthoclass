@@ -75,18 +75,34 @@ function Controls({ action, disabled, unlock, layout }: { action: (a: Action) =>
 
 /**
  * 경기장 크기 맞추기 — 화면 높이를 최대한 보드에 쓴다.
- * arcade(가로 640 이상): [내 보드 | 가운데 칸 | 상대 보드] 두 보드 같은 크기(실제 뿌요뿌요 배치).
- * narrow(휴대폰 세로): [내 보드 | 상대 미니] + 아래 큰 조작판.
+ * 1:1 arcade(가로 640 이상): [내 보드 | 가운데 칸 | 상대 보드] 두 보드 같은 크기(실제 뿌요뿌요 배치).
+ * 3~4명(minis ≥ 2): [내 보드 | 가운데 칸 | 친구 보드 세로로 작게].
+ * narrow(휴대폰 세로): [내 보드 | 상대(들) 작게] + 아래 큰 조작판.
  */
-function useArenaFit(ref: RefObject<HTMLElement | null>, mounted: boolean) {
+function useArenaFit(ref: RefObject<HTMLElement | null>, mounted: boolean, minis = 1) {
   const [fit, setFit] = useState({ arcade: true, mine: 420, theirs: 420, center: 200 });
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return;
     const measure = () => {
       const W = el.clientWidth; const H = el.clientHeight;
       const arcade = W >= 640;
+      // 보드 묶음 폭 = bh/2 + 16, 높이 ≈ bh*1.06 + 방해 예고 줄
+      if (minis >= 2) {
+        const label = 22;
+        const theirs = Math.max(120, Math.floor(((H - 16) / minis - label - 10) / 1.06));
+        const miniW = theirs / 2 + 16;
+        if (arcade) {
+          const center = Math.round(Math.max(150, Math.min(220, W * .18)));
+          const byW = 2 * (W - center - miniW - 2 * 14 - 24 - 16);
+          const mine = Math.max(240, Math.floor(Math.min((H - 30) / 1.06, byW)));
+          setFit({ arcade, mine, theirs, center });
+        } else {
+          const mine = Math.max(200, Math.floor(Math.min(H - 28, (W - miniW - 10 - 16 - 32) / .67)));
+          setFit({ arcade, mine, theirs, center: 0 });
+        }
+        return;
+      }
       if (arcade) {
-        // 보드 묶음 폭 = bh/2 + 16, 위 방해 예고 줄 ≈ bh/12*0.7 + 4
         const center = Math.round(Math.max(150, Math.min(240, W * .2)));
         const byH = (H - 30) / 1.06;
         const byW = W - center - 2 * 32 - 2 * 14 - 24;
@@ -101,7 +117,7 @@ function useArenaFit(ref: RefObject<HTMLElement | null>, mounted: boolean) {
     measure();
     const ro = new ResizeObserver(measure); ro.observe(el);
     return () => ro.disconnect();
-  }, [ref, mounted]);
+  }, [ref, mounted, minis]);
   return fit;
 }
 
@@ -118,32 +134,36 @@ function useCoarsePointer() {
 }
 
 type Orb = { id: number; x1: number; y1: number; x2: number; y2: number; big: boolean; theirs: boolean };
-/** 공격 구슬 — 연쇄 공격이 상대 보드로 날아가는 연출. 화면 좌표로 그려서 두 보드 사이를 가로지른다. */
-function useAttackOrbs(stage: RefObject<HTMLElement | null>, mine: RefObject<HTMLElement | null>, theirs: RefObject<HTMLElement | null>) {
+/** 공격 구슬 — 연쇄 공격이 받는 보드로 날아가는 연출. 화면 좌표로 그려서 보드 사이를 가로지른다. */
+function useAttackOrbs(stage: RefObject<HTMLElement | null>) {
   const [orbs, setOrbs] = useState<Orb[]>([]);
   const seq = useRef(0);
-  const fire = useCallback((fromMine: boolean, chain: number) => {
-    const s = stage.current?.getBoundingClientRect(); const a = mine.current?.getBoundingClientRect(); const b = theirs.current?.getBoundingClientRect();
-    if (!s || !a || !b) return;
-    const [from, to] = fromMine ? [a, b] : [b, a];
+  const fire = useCallback((from: Element | null | undefined, targets: (Element | null | undefined)[], chain: number, theirs: boolean) => {
+    const s = stage.current?.getBoundingClientRect(); const a = from?.getBoundingClientRect();
+    if (!s || !a) return;
     const count = Math.min(5, Math.max(1, chain - 1));
-    const made: Orb[] = Array.from({ length: count }, (_, k) => ({
-      id: ++seq.current,
-      x1: from.left + from.width / 2 - s.left + (k - count / 2) * 14, y1: from.top + from.height * .45 - s.top,
-      x2: to.left + to.width / 2 - s.left, y2: to.top + 18 - s.top, big: chain >= 4, theirs: !fromMine,
-    }));
+    const made: Orb[] = targets.flatMap(t => {
+      const b = t?.getBoundingClientRect(); if (!b) return [];
+      return Array.from({ length: count }, (_, k) => ({
+        id: ++seq.current,
+        x1: a.left + a.width / 2 - s.left + (k - count / 2) * 14, y1: a.top + a.height * .45 - s.top,
+        x2: b.left + b.width / 2 - s.left, y2: b.top + 18 - s.top, big: chain >= 4, theirs,
+      }));
+    });
+    if (!made.length) return;
     setOrbs(o => [...o, ...made]);
     setTimeout(() => setOrbs(o => o.filter(x => !made.includes(x))), 900);
-  }, [stage, mine, theirs]);
+  }, [stage]);
   return { orbs, fire };
 }
 
 const PORTRAITS = ["charmander", "squirtle", "gengar", "snorlax"];
+export type Ranked = { name: string; score: number; me: boolean };
 
-/** 가운데 칸 — NEXT·시간·점수·내 캐릭터(연쇄하면 뛰고, 방해 받으면 흔들린다). */
-function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds, done, mineIndex, keysHint }: {
-  view: PuyoState; opp: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
-  seconds: number; done: boolean; mineIndex: number; keysHint: boolean;
+/** 가운데 칸 — NEXT·시간·점수(또는 순위)·내 캐릭터(연쇄하면 뛰고, 방해 받으면 흔들린다). */
+function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds, done, mineIndex, keysHint, ranking }: {
+  view: PuyoState; opp?: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
+  seconds: number; done: boolean; mineIndex: number; keysHint: boolean; ranking?: Ranked[];
 }) {
   const reacting = view.effect === "attack" || view.effect === "clear" || view.effect === "allclear" ? "cheer" : view.effect === "garbage" ? "hit" : view.effect === "revive" ? "hit" : "";
   const pair = (cells: number[], at: number, small = false) => <div className={`${styles.nextPair} ${small ? styles.nextSmall : ""}`}>
@@ -154,7 +174,7 @@ function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds,
       <span className={styles.label}>NEXT</span>
       <div className={styles.nextRow}>
         <div className={styles.nextMine}>{pair(view.next, 0)}{pair(view.next, 2, true)}</div>
-        <div className={styles.nextTheirs}>{pair(opp.next, 0, true)}</div>
+        {opp && !ranking && <div className={styles.nextTheirs}>{pair(opp.next, 0, true)}</div>}
       </div>
     </div>
     <div className={`${styles.timeCard} ${seconds <= 20 && !done ? styles.urgent : ""}`}><span className={styles.label}>TIME</span><strong>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</strong></div>
@@ -167,10 +187,12 @@ function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds,
       {reacting === "cheer" && view.chain >= 2 && <span key={`b${view.event}`} className={styles.bubble}>{view.chain}연쇄!</span>}
       {reacting === "hit" && view.effect === "garbage" && <span key={`h${view.event}`} className={`${styles.bubble} ${styles.bubbleHit}`}>으앗!</span>}
     </div>
-    <div className={styles.scores}>
+    {ranking ? <ol className={styles.ranking}>{ranking.map((r, i) => <li key={i} className={r.me ? styles.rankMe : ""}>
+      <b>{1 + ranking.filter(o => o.score > r.score).length}</b><span>{r.name}</span><strong>{r.score.toLocaleString("ko-KR")}</strong>
+    </li>)}</ol> : <div className={styles.scores}>
       <div className={styles.scoreMine}><span>{meName}</span><strong>{myScore.toLocaleString("ko-KR")}</strong></div>
       <div className={styles.scoreTheirs}><span>{oppName}</span><strong>{theirScore.toLocaleString("ko-KR")}</strong></div>
-    </div>
+    </div>}
     <dl className={styles.stats}>
       <div><dt>최고 연쇄</dt><dd>{view.maxChain}</dd></div>
       <div><dt>다시 시작</dt><dd>{view.downs ?? 0}</dd></div>
@@ -180,49 +202,65 @@ function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds,
 }
 
 export type StageResult = { title: string; headline: string; score: string; reward?: string };
+export type StageOther = { name: string; state: PuyoState; away?: boolean };
 type Sound = ReturnType<typeof useSound>;
 
 /**
  * 전체 화면 경기장 — 학급 대전·자유 대전이 함께 쓰는 화면(동기화·저장은 부르는 쪽이 맡는다).
- * 아케이드 배치/좁은 화면 배치, 공격 구슬, 준비·종료 카드까지 그린다.
+ * others 에 2명 이상을 주면 3~4인 배치(친구 보드를 옆에 세로로)로 그린다.
  */
-export function BattleStage({ view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction }: {
+export function BattleStage({ view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction, others }: {
   view: PuyoState; oppState: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
   seconds: number; countdown: number; result: StageResult | null; away?: boolean; notice?: string;
   rules?: PuyoRules; flow?: FlowStage; mineIndex: number; action: (a: Action) => void; sound: Sound;
   onBack: () => void; backLabel: string; resultAction: { label: string; icon: string; onClick: () => void };
+  others?: StageOther[];
 }) {
+  const multi = (others?.length ?? 0) >= 2;
+  const rivals: StageOther[] = multi ? others! : [{ name: oppName, state: oppState, away }];
   const arena = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const mineRef = useRef<HTMLDivElement>(null);
-  const theirsRef = useRef<HTMLDivElement>(null);
+  const rivalRefs = useRef<(HTMLDivElement | null)[]>([]);
   const coarse = useCoarsePointer();
-  const orbs = useAttackOrbs(stageRef, mineRef, theirsRef);
-  const fit = useArenaFit(arena, true);
+  const orbs = useAttackOrbs(stageRef);
+  const fit = useArenaFit(arena, true, multi ? rivals.length : 1);
   const paused = countdown > 0 || seconds <= 0 || !!result;
 
-  // 공격 구슬: 내 연쇄 공격 / 상대 연쇄 공격 이벤트가 새로 생길 때
-  const lastMine = useRef(-1); const lastTheirs = useRef(-1);
+  // 공격 구슬: 내 연쇄 → 모든 친구에게, 친구 연쇄 → 나에게(모두에게 똑같이 보내는 규칙과 같은 모양)
+  const lastMine = useRef(-1); const lastRivals = useRef<number[]>([]);
   const fireOrbs = orbs.fire;
   useEffect(() => {
-    if (lastMine.current !== -1 && view.event !== lastMine.current && view.effect === "attack") fireOrbs(true, view.chain);
+    if (lastMine.current !== -1 && view.event !== lastMine.current && view.effect === "attack") fireOrbs(mineRef.current, rivalRefs.current, view.chain, false);
     lastMine.current = view.event;
   }, [view, fireOrbs]);
+  const rivalEvents = rivals.map(r => `${r.state.event}:${r.state.effect}:${r.state.chain}`).join("|");
   useEffect(() => {
-    if (lastTheirs.current !== -1 && oppState.event !== lastTheirs.current && oppState.effect === "attack") fireOrbs(false, oppState.chain);
-    lastTheirs.current = oppState.event;
-  }, [oppState, fireOrbs]);
+    rivals.forEach((r, i) => {
+      const last = lastRivals.current[i];
+      if (last !== undefined && last !== -1 && r.state.event !== last && r.state.effect === "attack") fireOrbs(rivalRefs.current[i], [mineRef.current], r.state.chain, true);
+      lastRivals.current[i] = r.state.event;
+    });
+    // rivalEvents 가 바뀔 때만 확인하면 된다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rivalEvents, fireOrbs]);
   // 전체 화면일 때 뒤 페이지가 스크롤되지 않게
   useEffect(() => {
     const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, []);
   const showPad = !fit.arcade || coarse;
+  const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true }, ...rivals.map(r => ({ name: r.name, score: r.state.score, me: false }))].sort((a, b) => b.score - a.score) : undefined;
+  const miniBoards = rivals.map((r, i) => <div key={i} ref={el => { rivalRefs.current[i] = el; }} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
+    {(multi || !fit.arcade) && <span className={styles.sideLabel}>{r.name}{r.away ? " · 연결 확인 중" : ""}</span>}
+    <PuyoBoard state={r.state} name={r.name} opponent {...(fit.arcade ? { arcade: true } : { fill: true })} />
+  </div>);
 
-  return createPortal(<div ref={stageRef} className={styles.stage} role="region" aria-label="1대1 뿌요뿌요 경기">
+  return createPortal(<div ref={stageRef} className={styles.stage} role="region" aria-label={multi ? `${rivals.length + 1}인 뿌요뿌요 경기` : "1대1 뿌요뿌요 경기"}>
     <header className={styles.bar}>
       <button type="button" className={styles.iconBtn} onClick={onBack} aria-label={backLabel}><Icon name="arrow_back" size={22} /><span className={styles.hideSm}>{backLabel}</span></button>
-      {fit.arcade ? <div className={styles.barTitle}><strong>{meName}</strong><span>VS</span><strong>{oppName}</strong>{away && <em>상대 연결 확인 중</em>}</div>
+      {multi ? <div className={styles.barTitle}><strong>{rivals.length + 1}명 자유 대전</strong>{!fit.arcade && <span className={`${styles.clock} ${seconds <= 20 && !result ? styles.urgent : ""}`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>}</div>
+        : fit.arcade ? <div className={styles.barTitle}><strong>{meName}</strong><span>VS</span><strong>{oppName}</strong>{away && <em>상대 연결 확인 중</em>}</div>
         : <div className={styles.scoreLine} aria-live="polite">
           <span className={styles.who}><b>{meName}</b><em>{myScore.toLocaleString("ko-KR")}</em></span>
           <span className={`${styles.clock} ${seconds <= 20 && !result ? styles.urgent : ""}`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>
@@ -240,27 +278,20 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
         <PuyoBoard state={view} name={meName} arcade />
       </div>
       <div style={{ width: fit.center }} className={styles.centerWrap}>
-        <CenterPanel view={view} opp={oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} />
+        <CenterPanel view={view} opp={multi ? undefined : oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} ranking={ranking} />
       </div>
-      <div ref={theirsRef} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
-        <PuyoBoard state={oppState} name={oppName} opponent arcade />
-      </div>
+      {multi ? <div className={styles.miniColumn}>{miniBoards}</div> : miniBoards}
     </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow}`}>
       <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
         <PuyoBoard state={view} name={meName} fill />
       </div>
-      <aside className={styles.side}>
-        <div ref={theirsRef} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
-          <span className={styles.sideLabel}>{oppName}{away ? " · 연결 확인 중" : ""}</span>
-          <PuyoBoard state={oppState} name={oppName} opponent fill />
-        </div>
-      </aside>
+      <aside className={`${styles.side} ${multi ? styles.miniColumn : ""}`}>{miniBoards}</aside>
     </main>}
     {showPad && <footer className={styles.padBar}><Controls action={action} disabled={paused} unlock={sound.unlock} layout="row" /></footer>}
 
     {orbs.orbs.map(o => <i key={o.id} className={`${styles.orb} ${o.big ? styles.orbBig : ""} ${o.theirs ? styles.orbTheirs : ""}`} style={{ "--x1": `${o.x1}px`, "--y1": `${o.y1}px`, "--x2": `${o.x2}px`, "--y2": `${o.y2}px` } as CSSProperties} aria-hidden="true" />)}
 
-    {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>짝꿍과 똑같은 순서로 뿌요가 나와요</small></div></div>}
+    {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>{multi ? "모두 똑같은 순서로 뿌요가 나와요" : "짝꿍과 똑같은 순서로 뿌요가 나와요"}</small></div></div>}
     {!result && countdown <= 0 && seconds <= 0 && <div className={styles.overlay} role="status"><div className={styles.card}><strong>TIME UP!</strong><small>최종 점수를 확인하고 있어요…</small></div></div>}
     {result && <div className={styles.overlay} role="status"><div className={styles.card}>
       <span>{result.title}</span>

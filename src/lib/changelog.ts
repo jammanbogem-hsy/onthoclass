@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.5.0";
+export const APP_VERSION = "1.6.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.6.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "자유 대전을 4명까지 함께해요",
+    items: [
+      "자유 대전 방에 최대 4명까지 들어올 수 있어요. 2명 이상 모이면 방장이 시작해요.",
+      "연쇄로 공격하면 다른 친구 모두에게 똑같이 방해 뿌요가 가요.",
+      "끝나면 점수 순서로 1등부터 보여 줘요.",
+    ],
+  },
   {
     version: "1.5.0",
     date: "2026-10-01",

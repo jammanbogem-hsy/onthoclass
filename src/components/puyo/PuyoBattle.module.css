@@ -119,3 +119,14 @@
 @keyframes heroHit{0%,100%{transform:none}15%{transform:translateX(-10%) rotate(-8deg)}35%{transform:translateX(9%) rotate(6deg)}55%{transform:translateX(-6%) rotate(-4deg)}75%{transform:translateX(3%)}}
 @keyframes bubble{0%{opacity:0;transform:scale(.4) translateY(10px)}15%{opacity:1;transform:scale(1.1)}25%,75%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translateY(-14px);visibility:hidden}}
 @media(prefers-reduced-motion:reduce){.hero,.heroCheer,.heroHit,.orb{animation:none}.orb{display:none}}
+
+/* ── 3~4인 자유 대전 ─────────────────────────────────────────────── */
+.miniColumn{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;align-self:stretch}
+.arenaArcade .sideLabel{color:#e9e2ff}
+.ranking{list-style:none;margin:0;padding:8px;display:flex;flex-direction:column;gap:4px;border-radius:18px;background:#ffffff10;border:1px solid #ffffff1f}
+.ranking li{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:6px;padding:6px 8px;border-radius:12px;font-size:14px}
+.ranking b{display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:#ffffff1f;font-size:13px}
+.ranking span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e9e2ff}
+.ranking strong{font-variant-numeric:tabular-nums;font-weight:900}
+.rankMe{background:color-mix(in srgb,var(--md-sys-color-primary) 45%,transparent)}
+.rankMe b{background:#ffd166;color:#3b1d6e}

@@ -649,33 +649,43 @@ service cloud.firestore {
         allow write: if isTeacher(classId);
       }
 
-      // --- 뿌요뿌요 자유 대전(쉬는 시간, 보상 없음) ---
-      // 교사가 control/puyoFree.enabled 로 열고 닫는다. 학생이 방을 만들고 다른 학생이 들어오면
-      // 시작 시각(startedAt)은 서버 시각으로만 기록된다. 끝내기(done)는 경기 시간이 지난 뒤 두 선수만.
+      // --- 뿌요뿌요 자유 대전(쉬는 시간, 2~4명, 보상 없음) ---
+      // 교사가 control/puyoFree.enabled 로 열고 닫는다. members = { uid: 이름 } 최대 4명.
+      // 시작 시각(startedAt)은 서버 시각으로만 기록된다. 끝내기(done)는 경기 시간이 지난 뒤 참가자만.
       match /puyoFree/{roomId} {
         function freeOpen() {
           return get(/databases/$(database)/documents/classes/$(classId)/control/puyoFree).data.enabled == true;
         }
+        function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+        function memberDiff() { return request.resource.data.members.diff(resource.data.members); }
         allow read: if isMember(classId);
         allow create: if isMember(classId) && freeOpen()
-          && request.resource.data.keys().hasOnly(["host", "hostName", "status", "seed", "createdAt"])
+          && request.resource.data.keys().hasOnly(["host", "hostName", "status", "seed", "members", "createdAt"])
           && request.resource.data.host == uid()
           && request.resource.data.hostName is string && request.resource.data.hostName.size() <= 100
           && request.resource.data.status == "wait"
           && request.resource.data.seed is int && request.resource.data.seed > 0
+          && request.resource.data.members.keys().hasOnly([uid()]) && request.resource.data.members.size() == 1
           && request.resource.data.createdAt == request.time;
         allow update: if isMember(classId) && (
-          // 참가: 기다리는 방에 다른 학생이 들어오며 시작
-          (freeOpen() && resource.data.status == "wait" && resource.data.host != uid()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["guest", "guestName", "status", "startedAt"])
-            && request.resource.data.guest == uid()
-            && request.resource.data.guestName is string && request.resource.data.guestName.size() <= 100
-            && request.resource.data.status == "play"
-            && request.resource.data.startedAt == request.time)
-          // 끝내기: 경기 시간(준비 6초 + 2분)이 지난 뒤 두 선수 중 한 명이 점수와 함께 기록
-          || (resource.data.status == "play" && (resource.data.host == uid() || resource.data.guest == uid())
+          // 참가: 기다리는 방에 내 이름만 더한다(최대 4명)
+          (freeOpen() && resource.data.status == "wait" && changed().hasOnly(["members"])
+            && memberDiff().addedKeys().hasOnly([uid()]) && memberDiff().removedKeys().size() == 0
+            && memberDiff().changedKeys().size() == 0
+            && request.resource.data.members.size() <= 4
+            && request.resource.data.members[uid()] is string && request.resource.data.members[uid()].size() <= 100)
+          // 나가기: 기다리는 방에서 내 이름만 뺀다(방장은 방을 지운다)
+          || (resource.data.status == "wait" && resource.data.host != uid() && changed().hasOnly(["members"])
+            && memberDiff().removedKeys().hasOnly([uid()]) && memberDiff().addedKeys().size() == 0)
+          // 시작: 방장이, 2명 이상일 때
+          || (freeOpen() && resource.data.status == "wait" && resource.data.host == uid()
+            && changed().hasOnly(["status", "startedAt"])
+            && request.resource.data.status == "play" && request.resource.data.startedAt == request.time
+            && resource.data.members.size() >= 2)
+          // 끝내기: 경기 시간(준비 6초 + 2분)이 지난 뒤 참가자 중 한 명이 점수와 함께 기록
+          || (resource.data.status == "play" && uid() in resource.data.members.keys()
             && request.time > resource.data.startedAt + duration.value(126, "s")
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "scores", "winner"])
+            && changed().hasOnly(["status", "scores", "winner"])
             && request.resource.data.status == "done")
         );
         allow delete: if isTeacher(classId)
