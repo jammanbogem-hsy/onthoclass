@@ -167,6 +167,13 @@ function useAttackOrbs(stage: RefObject<HTMLElement | null>) {
   return { orbs, fire };
 }
 
+/** 화면 흔들림·번쩍임 — 3연쇄 이상(내 공격), 큰 공격을 맞을 때. n 이 바뀔 때마다 다시 재생한다. */
+function useQuake() {
+  const [quake, setQuake] = useState({ n: 0, tier: 0 });
+  const bump = useCallback((tier: number) => { requestAnimationFrame(() => setQuake(q => ({ n: q.n + 1, tier: Math.min(tier, 7) }))); }, []);
+  return { quake, bump };
+}
+
 const PORTRAITS = ["charmander", "squirtle", "gengar", "snorlax"];
 export type Ranked = { name: string; score: number; me: boolean };
 
@@ -234,6 +241,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
   const rivalRefs = useRef<(HTMLDivElement | null)[]>([]);
   const coarse = useCoarsePointer();
   const orbs = useAttackOrbs(stageRef);
+  const { quake, bump } = useQuake();
   const fit = useArenaFit(arena, true, multi ? rivals.length : 1);
   const paused = countdown > 0 || seconds <= 0 || !!result;
 
@@ -241,19 +249,19 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
   const lastMine = useRef(-1); const lastRivals = useRef<number[]>([]);
   const fireOrbs = orbs.fire;
   useEffect(() => {
-    if (lastMine.current !== -1 && view.event !== lastMine.current && view.effect === "attack") fireOrbs(mineRef.current, rivalRefs.current, view.chain, false);
+    if (lastMine.current !== -1 && view.event !== lastMine.current && view.effect === "attack") { fireOrbs(mineRef.current, rivalRefs.current, view.chain, false); if (view.chain >= 3) bump(view.chain); }
     lastMine.current = view.event;
-  }, [view, fireOrbs]);
+  }, [view, fireOrbs, bump]);
   const rivalEvents = rivals.map(r => `${r.state.event}:${r.state.effect}:${r.state.chain}`).join("|");
   useEffect(() => {
     rivals.forEach((r, i) => {
       const last = lastRivals.current[i];
-      if (last !== undefined && last !== -1 && r.state.event !== last && r.state.effect === "attack") fireOrbs(rivalRefs.current[i], [mineRef.current], r.state.chain, true);
+      if (last !== undefined && last !== -1 && r.state.event !== last && r.state.effect === "attack") { fireOrbs(rivalRefs.current[i], [mineRef.current], r.state.chain, true); if (r.state.chain >= 4) bump(r.state.chain - 2); }
       lastRivals.current[i] = r.state.event;
     });
     // rivalEvents 가 바뀔 때만 확인하면 된다
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rivalEvents, fireOrbs]);
+  }, [rivalEvents, fireOrbs, bump]);
   // 전체 화면일 때 뒤 페이지가 스크롤되지 않게
   useEffect(() => {
     const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
@@ -285,7 +293,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
     </header>
     {notice && <p className={styles.notice} role="status">{notice}</p>}
 
-    {fit.arcade ? <main ref={arena} className={`${styles.arena} ${styles.arenaArcade}`}>
+    {fit.arcade ? <main ref={arena} className={`${styles.arena} ${styles.arenaArcade} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
       <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
         <PuyoBoard state={view} name={meName} arcade />
       </div>
@@ -293,7 +301,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
         <CenterPanel view={view} opp={multi ? undefined : oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} ranking={ranking} />
       </div>
       {multi ? <div className={styles.miniColumn}>{miniBoards}</div> : miniBoards}
-    </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow}`}>
+    </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
       <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
         <PuyoBoard state={view} name={meName} fill />
       </div>
@@ -301,6 +309,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
     </main>}
     {showPad && <footer className={styles.padBar}><Controls action={action} disabled={paused} unlock={sound.unlock} layout="row" /></footer>}
 
+    {quake.n > 0 && <div key={`flash${quake.n}`} className={styles.screenFlash} data-tier={quake.tier} aria-hidden="true" />}
     {orbs.orbs.map(o => <i key={o.id} className={`${styles.orb} ${o.big ? styles.orbBig : ""} ${o.theirs ? styles.orbTheirs : ""}`} style={{ "--x1": `${o.x1}px`, "--y1": `${o.y1}px`, "--x2": `${o.x2}px`, "--y2": `${o.y2}px` } as CSSProperties} aria-hidden="true" />)}
 
     {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>{multi ? "모두 똑같은 순서로 뿌요가 나와요" : "짝꿍과 똑같은 순서로 뿌요가 나와요"}</small></div></div>}

@@ -130,3 +130,12 @@
 .ranking strong{font-variant-numeric:tabular-nums;font-weight:900}
 .rankMe{background:color-mix(in srgb,var(--md-sys-color-primary) 45%,transparent)}
 .rankMe b{background:#ffd166;color:#3b1d6e}
+
+/* 화면 흔들림·번쩍임(연쇄가 길수록 세게) */
+.quakeA{animation:quakeA 520ms cubic-bezier(.3,.7,.4,1)}.quakeB{animation:quakeB 520ms cubic-bezier(.3,.7,.4,1)}
+@keyframes quakeA{0%,100%{transform:none}10%{transform:translate(calc(var(--q) * -1),var(--q)) rotate(-.4deg)}25%{transform:translate(var(--q),calc(var(--q) * -1)) rotate(.4deg)}40%{transform:translate(calc(var(--q) * -.7),calc(var(--q) * .5))}60%{transform:translate(calc(var(--q) * .4),0)}80%{transform:translate(calc(var(--q) * -.2),0)}}
+@keyframes quakeB{0%,100%{transform:none}10%{transform:translate(calc(var(--q) * -1),var(--q)) rotate(-.4deg)}25%{transform:translate(var(--q),calc(var(--q) * -1)) rotate(.4deg)}40%{transform:translate(calc(var(--q) * -.7),calc(var(--q) * .5))}60%{transform:translate(calc(var(--q) * .4),0)}80%{transform:translate(calc(var(--q) * -.2),0)}}
+.screenFlash{position:absolute;inset:0;z-index:3;pointer-events:none;background:radial-gradient(circle at 50% 55%,#ffffffaa,#ffd16655 35%,transparent 70%);animation:screenFlash 520ms ease-out forwards}
+.screenFlash[data-tier="5"],.screenFlash[data-tier="6"],.screenFlash[data-tier="7"]{background:radial-gradient(circle at 50% 55%,#ffffffcc,#ff6fb166 30%,#60a5fa44 55%,transparent 75%)}
+@keyframes screenFlash{0%{opacity:0}15%{opacity:1}100%{opacity:0;visibility:hidden}}
+@media(prefers-reduced-motion:reduce){.quakeA,.quakeB{animation:none}.screenFlash{display:none}}

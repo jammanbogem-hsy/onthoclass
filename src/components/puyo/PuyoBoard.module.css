@@ -59,3 +59,26 @@
 .combo[data-tier="4"] strong{color:#ff6fb1;font-size:clamp(44px,26cqi,96px)}
 .combo[data-tier="5"] strong,.combo[data-tier="6"] strong{font-size:clamp(48px,29cqi,104px);background:linear-gradient(90deg,#ff6b6b,#ffd166,#6ee7b7,#60a5fa,#c084fc);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 4px 0 #3b1d6e)}
 @media(prefers-reduced-motion:reduce){.shakeA,.shakeB{animation:none}.shard{display:none}}
+
+/* ── 젤리 층(goo) — 같은 색 이웃이 녹아 붙는 윤기 있는 연결 ─────────────── */
+.goo{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;overflow:visible}
+
+/* ── 꼬물꼬물: 찌그러짐·늘어남·기울임을 섞은 유기적인 움직임(칸마다 박자가 다르다) ── */
+@keyframes wobble{0%,100%{transform:scale(1.045,.955) skewX(0)}18%{transform:scale(.965,1.045) skewX(2.5deg) translateY(-1.5%)}38%{transform:scale(1.03,.97) skewX(-2deg)}58%{transform:scale(.975,1.035) skewX(1.5deg) translateY(-1%)}78%{transform:scale(1.035,.965) skewX(-1deg)}}
+@keyframes floatPair{0%,100%{transform:scale(1.04,.96) rotate(-2deg)}50%{transform:scale(.96,1.05) rotate(2deg) translateY(-3%)}}
+@keyframes squash{0%{transform:scale(1.32,.66)}30%{transform:scale(.86,1.18)}52%{transform:scale(1.1,.92)}72%{transform:scale(.97,1.04)}100%{transform:scale(1)}}
+
+/* ── 콤보 이펙트 ─────────────────────────────────────────────────── */
+.shard{width:calc(20% * var(--s,1));height:calc(20% * var(--s,1))}
+@keyframes shard{0%{opacity:1;transform:translate(-50%,-50%) rotate(var(--a)) translateY(0) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) rotate(var(--a)) translateY(var(--d,-520%)) scale(.2)}}
+.punchA{animation:punchA 420ms cubic-bezier(.2,.9,.3,1.4)}.punchB{animation:punchB 420ms cubic-bezier(.2,.9,.3,1.4)}
+@keyframes punchA{0%{transform:scale(1)}18%{transform:scale(.955) rotate(-.6deg)}45%{transform:scale(1.03) rotate(.4deg)}100%{transform:scale(1)}}
+@keyframes punchB{0%{transform:scale(1)}18%{transform:scale(.955) rotate(.6deg)}45%{transform:scale(1.03) rotate(-.4deg)}100%{transform:scale(1)}}
+.shock{position:absolute;width:30%;aspect-ratio:1;border-radius:50%;transform:translate(-50%,-50%) scale(.2);border:4px solid var(--puyo-color);box-shadow:0 0 18px var(--puyo-color),inset 0 0 18px var(--puyo-color);opacity:0;animation:shock 620ms ease-out forwards}
+@keyframes shock{0%{opacity:1;transform:translate(-50%,-50%) scale(.2);border-width:8px}100%{opacity:0;transform:translate(-50%,-50%) scale(3.6);border-width:1px}}
+.bolt{position:absolute;top:-4%;width:9%;height:108%;background:linear-gradient(180deg,#fff,#fff6b0 40%,#ffd166);clip-path:polygon(55% 0,20% 42%,50% 42%,25% 100%,80% 52%,50% 52%,75% 0);filter:drop-shadow(0 0 10px #fff3a0) drop-shadow(0 0 22px #ffd166);opacity:0;animation:bolt 420ms steps(1,end) forwards}
+@keyframes bolt{0%{opacity:1}20%{opacity:.2}35%{opacity:1}55%{opacity:0}70%{opacity:.8}100%{opacity:0}}
+.combo strong{animation:comboSlam 700ms cubic-bezier(.2,1.4,.3,1) both}
+.combo[data-tier="1"] strong{animation:none}
+@keyframes comboSlam{0%{transform:scale(3.2) rotate(-18deg);filter:blur(6px);opacity:0}35%{transform:scale(.88) rotate(4deg);filter:blur(0);opacity:1}55%{transform:scale(1.12) rotate(-3deg)}75%{transform:scale(.97) rotate(1deg)}100%{transform:scale(1) rotate(0)}}
+@media(prefers-reduced-motion:reduce){.punchA,.punchB,.shock,.bolt{animation:none;display:none}.combo strong{animation:none}}

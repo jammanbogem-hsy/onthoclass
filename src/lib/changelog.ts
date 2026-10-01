@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.6.3";
+export const APP_VERSION = "1.7.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.7.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "말랑말랑 젤리 뿌요",
+    items: [
+      "같은 색 뿌요가 젤리처럼 녹아 붙고 반짝여요.",
+      "뿌요들이 꼬물꼬물 움직이고, 떨어질 때 더 통통 튀어요.",
+      "연쇄하면 충격파와 번개가 터지고 화면이 크게 흔들려요.",
+    ],
+  },
   {
     version: "1.6.3",
     date: "2026-10-01",
