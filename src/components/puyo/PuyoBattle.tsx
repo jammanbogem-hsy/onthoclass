@@ -5,7 +5,9 @@ import { cloneState, createState, input, receive, tick, type Action, type PuyoSt
 import { finishPuyo, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
 import { getPuyoLive, watchPuyoConnection, watchPuyoLive, savePuyoLive, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
 import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS } from "@/lib/puyo-sync";
+import { normalizeRules } from "@/lib/puyo-rules";
 import { PuyoBoard } from "./PuyoBoard";
+import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
 
 function useSound() {
@@ -38,6 +40,8 @@ function Controls({ action, disabled, unlock }: { action: (a: Action) => void; d
     const keys: Record<string, Action> = { ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down", ArrowUp: "cw", KeyX: "cw", KeyZ: "ccw", Space: "drop" };
     const keydown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && (e.target.isContentEditable || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) return;
+      // 규칙 보기 대화상자가 열려 있으면 뒤의 보드를 움직이지 않는다.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       const a = keys[e.code]; if (!a) return; e.preventDefault();
       if (disabled || (e.repeat && ["cw", "ccw", "drop"].includes(a))) return;
       unlock(); action(a);
@@ -182,7 +186,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const paused = countdown > 0 || seconds <= 0 || !!match.result || view.phase === "over";
   const result = match.result;
   return <section ref={section} className={styles.battle} aria-label="1대1 뿌요뿌요 경기">
-    <div className={styles.topbar}><span className={styles.round}>MATCH {match.id.slice(1)}</span><strong className={seconds <= 20 ? styles.urgent : styles.timer}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</strong><button onClick={() => { sound.unlock(); sound.setMuted(!sound.muted); }} aria-label={sound.muted ? "소리 켜기" : "소리 끄기"}>{sound.muted ? "소리 꺼짐" : "♪ 소리 켜짐"}</button></div>
+    <div className={styles.topbar}><span className={styles.round}>MATCH {match.id.slice(1)}</span><strong className={seconds <= 20 ? styles.urgent : styles.timer}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</strong><span className={styles.topActions}><PuyoRulesButton rules={normalizeRules(config)} current={countdown > 0 ? "ready" : result ? "reward" : "battle"} label="규칙" /><button onClick={() => { sound.unlock(); sound.setMuted(!sound.muted); }} aria-label={sound.muted ? "소리 켜기" : "소리 끄기"}>{sound.muted ? "소리 꺼짐" : "♪ 소리 켜짐"}</button></span></div>
     {config.realtime && !liveHealthy && !match.result && <p className={styles.error} role="status">실시간 연결을 확인하고 있어요. 저장된 경기 상태로 연결을 유지합니다.</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
     <div className={styles.boards}>

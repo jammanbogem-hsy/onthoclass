@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.3.1";
+export const APP_VERSION = "1.4.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.4.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "학급 게임에 뿌요뿌요가 들어왔어요",
+    items: [
+      "친구와 1:1로 겨루는 뿌요뿌요를 학급 게임에서 할 수 있어요.",
+      "말랑말랑하고 입체적인 캐릭터 뿌요로 같은 색 4개를 이어 터뜨려요.",
+      "게임 중에도 [규칙] 버튼으로 진행 순서와 게임 방법을 다시 볼 수 있어요.",
+      "선생님이 한 판 더를 누르면 모두 새 대기실로 함께 이동해요.",
+    ],
+  },
   {
     version: "1.3.1",
     date: "2026-09-27",

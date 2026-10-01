@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPuyoGame, puyoUrl } from "@/lib/puyo";
+import { DEFAULT_PUYO_RULES, type PuyoRules } from "@/lib/puyo-rules";
+import { PuyoRulesForm } from "@/components/puyo/PuyoRulesForm";
 import { Icon } from "@/components/Icon";
 import { listLessons, type Lesson } from "@/lib/lessons";
 import { listProjects, type Project } from "@/lib/projects";
@@ -42,7 +44,7 @@ export function GameStartModal({
   onStarted: (gameId: string) => void;
 }) {
   const router = useRouter();
-  const [puyoMinutes, setPuyoMinutes] = useState(3);
+  const [puyoRules, setPuyoRules] = useState<PuyoRules>(DEFAULT_PUYO_RULES);
   const [projects, setProjects] = useState<Project[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +121,7 @@ export function GameStartModal({
     setBusy(true);
     try {
       if (kind === "puyo") {
-        const gid = await createPuyoGame(cid, by, puyoMinutes * 60, pick ?? { name: "학급 뿌요뿌요" });
+        const gid = await createPuyoGame(cid, by, puyoRules, pick ?? { name: "학급 뿌요뿌요" });
         onClose();
         router.push(puyoUrl(cid, gid));
         return;
@@ -326,7 +328,7 @@ export function GameStartModal({
           {/* 설정 */}
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
             <Section title="게임 종류">
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 {(
                   [
                     ["bingo-concept", "개념 빙고", "grid_view"],
@@ -357,25 +359,7 @@ export function GameStartModal({
             </Section>
 
             {kind === "puyo" ? (
-              <>
-                <div className="flex justify-center gap-1 rounded-2xl bg-violet-100 p-4">
-                  {["gengar", "snorlax", "charmander", "squirtle"].map(name => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={name} src={`/puyo/assets/${name}.svg`} alt={name} width={52} height={52} />
-                  ))}
-                </div>
-                <Section title="경기 제한 시간">
-                  <label className="flex items-center gap-2">
-                    <input aria-label="뿌요뿌요 제한 시간(분)" type="number" min={1} max={15} value={puyoMinutes} onChange={e => setPuyoMinutes(Math.max(1, Math.min(15, Number(e.target.value) || 1)))} className="m3-field w-24" />
-                    <span>분</span>
-                  </label>
-                </Section>
-                <p className="rounded-2xl bg-[var(--md-sys-color-surface)] p-4 text-sm leading-7">
-                  대기실에서 <b>접속 학생을 체크</b>한 뒤 시작해요. 선택한 학생이 홀수면 선생님이 함께 참여해 랜덤으로 1:1 대진을 만들어요.
-                </p>
-                <p className="text-xs leading-6 text-[var(--md-sys-color-on-surface-variant)]">같은 색 4개를 연결해 지우고 연쇄로 상대에게 회색 방해뿌요를 보내세요. 보드가 차면 패배, 시간이 끝나면 높은 점수가 승리해요. 동점은 무승부예요.</p>
-                <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">프로젝트·차시 연결은 선택 사항이에요.</p>
-              </>
+              <PuyoRulesForm value={puyoRules} onChange={setPuyoRules} />
             ) : kind === "quiz-run" ? (
               <>
                 <Section title="문제 세트">
