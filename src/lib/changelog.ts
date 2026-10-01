@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.9.1";
+export const APP_VERSION = "1.10.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,19 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.10.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "퀴즈런 새 맵 — 달그늘 탐험숲",
+    items: [
+      "두 번째 맵이 달빛 연못, 나무집과 흔들다리, 빛나는 버섯 숲이 있는 탐험숲으로 바뀌었어요",
+      "보물 레이더로 찾는 보물이 왕관, 보물상자, 황금 부엉이상 같은 진짜 보물 모양이 됐어요",
+      "게임이 더 빨리 열리고, 레벨이 오를 때 화면이 까맣게 되지 않아요",
+      "공이 더 빨리 굴러가고, 돌아다니는 러닝크루도 더 빠르게 움직여요",
+      "물과 풀이 더 진짜처럼 보여요",
+    ],
+  },
   {
     version: "1.9.1",
     date: "2026-10-01",

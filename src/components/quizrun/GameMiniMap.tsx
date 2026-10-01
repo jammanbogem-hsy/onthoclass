@@ -52,7 +52,7 @@ export function GameMiniMap({
             ? '2층·승강기·터널 표시'
             : hasSlickZones
               ? '빙판 약 60%·승강기'
-              : '2층·승강기 표시'}
+              : '연결 다리·공원·2층'}
         </small>
       </header>
       <svg
@@ -137,14 +137,14 @@ export function GameMiniMap({
             ))}
         </g>
         <g className="minimap-upper-levels">
-          {layout.elevatedPlatforms.map((platform) => (
+          {[...layout.elevatedPlatforms, ...layout.elevatedWalkways].map((platform) => (
             <rect
               key={platform.id}
               x={toMapX(platform.x) - toMapSize(platform.halfWidth)}
               y={toMapY(platform.z) - toMapSize(platform.halfDepth)}
               width={toMapSize(platform.halfWidth * 2)}
               height={toMapSize(platform.halfDepth * 2)}
-              rx="1.6"
+              rx="0.4"
             />
           ))}
           {layout.terrainRamps.map((ramp) => {
@@ -170,6 +170,21 @@ export function GameMiniMap({
             </g>
           ))}
         </g>
+        {layout.landmarks.length > 0 && (
+          <g className="minimap-landmarks">
+            {layout.landmarks
+              .filter((landmark) => landmark.kind !== 'lantern' && landmark.kind !== 'mushroom-cluster')
+              .map((landmark) => (
+                <circle
+                  key={landmark.id}
+                  cx={toMapX(landmark.x)}
+                  cy={toMapY(landmark.z)}
+                  r={landmark.kind === 'treehouse' ? 3.2 : landmark.kind === 'glow-mushroom' ? 1.6 : 2.2}
+                  className={`is-${landmark.kind}`}
+                />
+              ))}
+          </g>
+        )}
         <g className="minimap-items">
           {objects.map((item) => {
             if (collectedSet.has(item.id)) return null
@@ -210,8 +225,12 @@ export function GameMiniMap({
       <footer>
         <i className="is-upper" />
         2층
-        <i className="is-elevator" />
-        승강기
+        {layout.elevators.length > 0 && (
+          <>
+            <i className="is-elevator" />
+            승강기
+          </>
+        )}
         {hasTunnels && (
           <>
             <i className="is-tunnel" />

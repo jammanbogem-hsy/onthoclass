@@ -991,6 +991,54 @@
   cursor: grabbing;
 }
 
+.quizrun-root .game-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 40%, #eaf7ff, #bfe3f7);
+  pointer-events: none;
+}
+
+.quizrun-root .game-loading-card {
+  display: grid;
+  gap: 10px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 20px 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 32px rgba(39, 53, 72, 0.14);
+  color: #273548;
+  text-align: center;
+}
+
+.quizrun-root .game-loading-card strong {
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.quizrun-root .game-loading-card small {
+  color: #5b6b80;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.quizrun-root .game-loading-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbe8f3;
+}
+
+.quizrun-root .game-loading-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #4169d8;
+  transition: width 0.25s ease;
+}
+
 .quizrun-root .world-hazard-marker-wrap {
   pointer-events: none !important;
 }
@@ -3272,4 +3320,22 @@
     height: 22px;
     font-size: 11px;
   }
+}
+
+.quizrun-root .minimap-landmarks circle {
+  fill: #b58b5a;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 0.5;
+}
+
+.quizrun-root .minimap-landmarks .is-glow-mushroom {
+  fill: #5fe3ff;
+}
+
+.quizrun-root .minimap-landmarks .is-moon-altar {
+  fill: #dcecff;
+}
+
+.quizrun-root .minimap-landmarks .is-stone-arch {
+  fill: #9aa39c;
 }

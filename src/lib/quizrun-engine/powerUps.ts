@@ -1,3 +1,4 @@
+import { getTreasureModel } from './treasureModels'
 import type { GameStage, LearningObject } from './types'
 import { canCollect, getSizeTier } from './mechanics'
 import {
@@ -239,7 +240,7 @@ function isSafePowerUpPosition(
           1.8,
         ),
     ) ||
-    layout.elevatedPlatforms.some(
+    [...layout.elevatedPlatforms, ...layout.elevatedWalkways].some(
       (platform) =>
         !isOutsideRotatedFootprint(
           x,
@@ -433,11 +434,12 @@ export function createRadarTreasures(
     const radius =
       stage.mapSize * (0.16 + slotIndex * 0.045 + tierIndex * 0.008)
 
+    const id = `${stage.id}-radar-treasure-${tierIndex + 1}-${slotIndex + 1}`
     return {
-      id: `${stage.id}-radar-treasure-${tierIndex + 1}-${slotIndex + 1}`,
+      id,
       modelId: 'radar-treasure',
       stageId: stage.id,
-      label: `${tierIndex + 1}단계 무지개 보물`,
+      label: getTreasureModel(id).label,
       fact: '보물 레이더가 찾아낸 한정 보물이에요.',
       subject: '생활',
       size: TREASURE_SIZES[tierIndex],

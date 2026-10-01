@@ -27,25 +27,88 @@ export interface RoamingPolarBearSpec extends RoamingRunnerState {
 
 export const ROAMING_RUNNER_RADIUS = 0.42
 export const ROAMING_POLAR_BEAR_RADIUS = 0.78
+/**
+ * Radius of the red danger ring drawn under each hazard. Contact is judged
+ * against this ring, so touching what the player sees always counts.
+ */
+export const ROAMING_RUNNER_DANGER_RADIUS = 0.72
+export const ROAMING_POLAR_BEAR_DANGER_RADIUS = 1.1
 export const ROAMING_RUNNER_SPEEDS = [
-  0.78,
-  0.75,
-  0.72,
-  0.69,
-  0.66,
-  0.63,
-  0.6,
-  0.57,
-  0.55,
-  0.53,
-  0.51,
-  0.5,
+  2.2,
+  2.12,
+  2.05,
+  1.98,
+  1.92,
+  1.86,
+  1.8,
+  1.74,
+  1.68,
+  1.62,
+  1.56,
+  1.5,
 ] as const
-export const ROAMING_POLAR_BEAR_SPEED = 0.44
+export const ROAMING_POLAR_BEAR_SPEED = 0.95
 const MAP_EDGE_CLEARANCE = 1.65
 const OBSTACLE_CLEARANCE = 0.52
 const LOOK_AHEAD_DISTANCE = 1.15
 const TURN_OFFSETS = [Math.PI / 3, Math.PI / 2, (Math.PI * 2) / 3, Math.PI]
+
+/**
+ * Erratic wandering: each mover keeps a hidden target heading that it
+ * re-rolls every 0.7–2.6 s, sometimes doubling back or cutting sideways, and
+ * occasionally breaks into a short sprint. Seeded, so tests stay stable.
+ */
+export interface RoamingWander {
+  targetHeading: number
+  nextTurnIn: number
+  sprintLeft: number
+  random: () => number
+}
+
+export const WANDER_TURN_RATE = 4.2
+export const WANDER_SPRINT_MULTIPLIER = 1.65
+
+export function createRoamingWander(seed: number, heading: number): RoamingWander {
+  let state = (seed * 2654435761) >>> 0
+  const random = () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let value = state
+    value = Math.imul(value ^ (value >>> 15), value | 1)
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61)
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+  return { targetHeading: heading, nextTurnIn: 0.4 + random() * 1.2, sprintLeft: 0, random }
+}
+
+/** Advance the wander and return the heading and speed multiplier to use. */
+export function stepRoamingWander(
+  wander: RoamingWander,
+  heading: number,
+  delta: number,
+): { heading: number; speedMultiplier: number } {
+  const step = Math.min(Math.max(delta, 0), 0.1)
+  wander.nextTurnIn -= step
+  wander.sprintLeft = Math.max(0, wander.sprintLeft - step)
+  if (wander.nextTurnIn <= 0) {
+    const roll = wander.random()
+    const swing =
+      roll < 0.16
+        ? Math.PI // sudden reversal
+        : roll < 0.42
+          ? (wander.random() < 0.5 ? -1 : 1) * (Math.PI / 2 + wander.random() * 0.5) // sharp side cut
+          : (wander.random() * 2 - 1) * 1.2 // drift
+    wander.targetHeading = heading + swing
+    wander.nextTurnIn = 0.7 + wander.random() * 1.9
+    if (wander.random() < 0.3) wander.sprintLeft = 0.6 + wander.random() * 0.8
+  }
+  const difference = normalizeAngle(wander.targetHeading - heading)
+  const maxTurn = WANDER_TURN_RATE * step
+  const nextHeading = heading + Math.max(-maxTurn, Math.min(maxTurn, difference))
+  return {
+    heading: nextHeading,
+    speedMultiplier: wander.sprintLeft > 0 ? WANDER_SPRINT_MULTIPLIER : 1,
+  }
+}
 
 export function getRoamingHazardCounts(theme: StageTheme): {
   runnerCount: number
@@ -333,7 +396,7 @@ export function createRoamingPolarBearSpecs(
       index === 0 ? 'scary-polar-bear' : `scary-polar-bear-${index + 1}`
     bears.push({
       id,
-      speed: Math.max(0.36, ROAMING_POLAR_BEAR_SPEED - index * 0.04),
+      speed: Math.max(0.8, ROAMING_POLAR_BEAR_SPEED - index * 0.06),
       turnSign: index % 2 === 0 ? -1 : 1,
       heading: Math.PI * (1.12 + index * 0.46),
       ...findClearSpawn(

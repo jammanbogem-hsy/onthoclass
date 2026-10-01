@@ -11,7 +11,7 @@
 // MODEL_VERSION 을 올려야 한다 — hosting 에서 1년 immutable 캐시가 걸려 있어
 // URL 이 그대로면 학생 기기가 옛 파일을 계속 쓴다.
 
-const MODEL_VERSION = 'v1'
+export const MODEL_VERSION = 'v2'
 const BASE = '/quizrun/models/'
 const suffix = `?${MODEL_VERSION}`
 

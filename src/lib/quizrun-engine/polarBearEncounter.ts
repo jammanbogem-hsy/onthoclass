@@ -100,7 +100,7 @@ function isDropPositionSafe(
           1.2,
         ),
     ) ||
-    layout.elevatedPlatforms.some(
+    [...layout.elevatedPlatforms, ...layout.elevatedWalkways].some(
       (platform) =>
         !isOutsideRotatedFootprint(
           x,

@@ -23,6 +23,7 @@ import {
   createWorldPhysicsLayout,
   getElevatedPlatformSurfacePosition,
   getTerrainRampSurfacePosition,
+  getWalkwayClearances,
 } from '../worldPhysics'
 import {
   createInterleavedTierSequence,
@@ -598,8 +599,8 @@ const objectTemplates: LearningObject[] = [
 export { ASSET_BACKED_LEVEL_UP_MODEL_IDS }
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
-export const OBJECTS_PER_STAGE = 360
-export const ICE_RIVER_OBJECTS_PER_STAGE = 440
+export const OBJECTS_PER_STAGE = STAGE_OBJECT_TIER_TOTALS.reduce((sum, count) => sum + count, 0)
+export const ICE_RIVER_OBJECTS_PER_STAGE = ICE_RIVER_OBJECT_TIER_TOTALS.reduce((sum, count) => sum + count, 0)
 const HILL_SLOT_RATIOS = [
   [-0.58, -0.56],
   [0.32, -0.48],
@@ -615,7 +616,14 @@ const PLATFORM_SLOT_RATIOS = [
   [0.58, 0.04],
   [-0.42, 0.58],
   [0.42, 0.58],
+  [-0.62, 0.3],
+  [0.62, -0.3],
+  [-0.3, -0.32],
+  [0.3, 0.32],
 ] as const
+const APPROACH_SLOT_RATIOS = Array.from({ length: 8 }, (_, index) => [
+  index % 2 ? 0.4 : -0.4, -0.77 + index * 0.22,
+])
 export const SCORE_GOAL_SCALE = 0.5
 
 function scaleScoreGoal(score: number): number {
@@ -624,6 +632,7 @@ function scaleScoreGoal(score: number): number {
 
 interface SpecialObjectSlot {
   position: [number, number, number]
+  maxTier?: number
 }
 
 interface StageBlueprint {
@@ -777,7 +786,8 @@ function createStageObjects(
     }))
   const rampSlots: SpecialObjectSlot[] =
     physicsLayout.terrainRamps.flatMap((ramp) =>
-      HILL_SLOT_RATIOS.map(([localXRatio, localZRatio]) => ({
+      (ramp.id.startsWith('upper-deck') ? APPROACH_SLOT_RATIOS : HILL_SLOT_RATIOS).map(([localXRatio, localZRatio]) => ({
+        maxTier: ramp.id.startsWith('upper-deck') ? 2 : undefined,
         position: getTerrainRampSurfacePosition(
           ramp,
           localXRatio,
@@ -790,6 +800,7 @@ function createStageObjects(
   const platformSlots: SpecialObjectSlot[] =
     physicsLayout.elevatedPlatforms.flatMap((platform) =>
       PLATFORM_SLOT_RATIOS.map(([localXRatio, localZRatio]) => ({
+        maxTier: 2,
         position: getElevatedPlatformSurfacePosition(
           platform,
           localXRatio,
@@ -798,16 +809,31 @@ function createStageObjects(
           (coordinate) => Number(coordinate.toFixed(2)),
         ) as [number, number, number],
       })),
+    ).filter((slot) =>
+      // Forest decks wrap a giant tree trunk at their centre.
+      isCollectionPositionClear({ position: slot.position, size: 0.5 }, physicsLayout.obstacles),
     )
   const specialSlots = [
     ...pushRewardSlots,
     ...rampSlots,
     ...platformSlots,
+    ...physicsLayout.elevatedWalkways.flatMap((walkway): SpecialObjectSlot[] => {
+      const alongX = walkway.halfWidth > walkway.halfDepth
+      const count = Math.max(2, Math.floor(Math.max(walkway.halfWidth, walkway.halfDepth) * 2 / 3.5))
+      return Array.from({ length: count }, (_, index) => {
+        const longRatio = -0.7 + index / Math.max(1, count - 1) * 1.4
+        const sideRatio = index % 2 ? 0.42 : -0.42
+        return { maxTier: 2, position: getElevatedPlatformSurfacePosition(
+          walkway, alongX ? longRatio : sideRatio, alongX ? sideRatio : longRatio,
+        ) }
+      })
+    }),
   ]
   const placementObstacles = [
     ...physicsLayout.obstacles,
+    ...getWalkwayClearances(physicsLayout.elevatedWalkways),
     ...physicsLayout.surfaceZones
-      .filter((zone) => zone.kind === 'mud')
+      .filter((zone) => zone.kind === 'mud' || zone.id === 'central-park-pond')
       .map((zone) => ({
         x: zone.x,
         z: zone.z,
@@ -834,6 +860,18 @@ function createStageObjects(
       radius: prop.kind === 'block' ? 0.42 : 0.34,
     })),
   ]
+  const pond = physicsLayout.surfaceZones.find((zone) => zone.id === 'central-park-pond')!
+  const parkSlots: SpecialObjectSlot[] = []
+  for (let index = 0; index < 96 && parkSlots.length < 18; index += 1) {
+    const angle = index * GOLDEN_ANGLE
+    const radius = pond.halfWidth + 2.7 + (index % 3) * 2.8
+    const position: [number, number, number] = [pond.x + Math.cos(angle) * radius, 0, pond.z + Math.sin(angle) * radius]
+    if (isCollectionPositionClear({ position, size: 0.8 }, placementObstacles) &&
+      parkSlots.every((slot) => Math.hypot(slot.position[0] - position[0], slot.position[2] - position[2]) > 1.9)) {
+      parkSlots.push({ position, maxTier: 2 })
+    }
+  }
+  specialSlots.push(...parkSlots)
   const tierSequence = createInterleavedTierSequence([
     tierTotals[0] - 8,
     tierTotals[1],
@@ -846,6 +884,12 @@ function createStageObjects(
     const starter = index < 8
     const mixedIndex = Math.max(0, index - 8)
     const specialSlot = starter ? undefined : specialSlots[mixedIndex]
+    // Small/medium assets line the approaches, leaving bulky buildings on
+    // the open ground. Swap future entries rather than changing tier totals.
+    if (specialSlot?.maxTier && tierSequence[mixedIndex] >= specialSlot.maxTier) {
+      const next = tierSequence.findIndex((tier, slot) => slot > mixedIndex && tier < specialSlot.maxTier!)
+      if (next >= 0) [tierSequence[mixedIndex], tierSequence[next]] = [tierSequence[next], tierSequence[mixedIndex]]
+    }
     const mixedTierIndex = starter ? 0 : tierSequence[mixedIndex]
     const mixedTierTemplates = templatesByTier[mixedTierIndex]
     const templateCycle = tierUseCounts[mixedTierIndex]
@@ -872,12 +916,13 @@ function createStageObjects(
     const size = Math.max(0.2, template.size + sizeVariation)
     const position =
       specialSlot?.position ??
-      Array.from({ length: 48 }, (_, attempt) => {
+      Array.from({ length: 160 }, (_, attempt) => {
         const angle = baseAngle + attempt * 0.37
+        const trialRadius = starter ? radius : Math.max(8, Math.min(maxRadius, radius + Math.floor(attempt / 32) * (attempt % 2 ? 3 : -3)))
         return [
-          Number((Math.cos(angle) * radius).toFixed(2)),
+          Number((Math.cos(angle) * trialRadius).toFixed(2)),
           0,
-          Number((Math.sin(angle) * radius).toFixed(2)),
+          Number((Math.sin(angle) * trialRadius).toFixed(2)),
         ] as [number, number, number]
       }).find((candidate) =>
         isCollectionPositionClear(
@@ -928,7 +973,7 @@ const stages: GameStage[] = stageBlueprints.map((blueprint, index) => ({
 }))
 
 export const fallbackLearningPack: LearningPack = {
-  version: 22,
+  version: 23,
   title: '러닝크루 월드 투어',
   stages,
   objects: stages.flatMap((stage) => stage.objects),

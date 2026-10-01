@@ -16,9 +16,9 @@ const damp = (current: number, target: number, smoothing: number, delta: number)
 
 const MIN_GROWTH_RADIUS = 0.42
 const MAX_GROWTH_RADIUS = 2.08
-const MIN_ROLLING_TOP_SPEED = 4.85
-const MAX_ROLLING_TOP_SPEED = 5.65
-export const MAX_COMPOSITE_ROLLING_SPEED = 7.8
+const MIN_ROLLING_TOP_SPEED = 5.85
+const MAX_ROLLING_TOP_SPEED = 6.8
+export const MAX_COMPOSITE_ROLLING_SPEED = 9.4
 const ICE_TRACTION_THRESHOLD = 0.5
 
 function getGrowthProgress(ballRadius: number): number {

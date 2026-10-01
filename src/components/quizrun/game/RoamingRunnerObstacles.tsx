@@ -6,7 +6,7 @@ import {
   type CollisionEnterPayload,
   type RapierRigidBody,
 } from '@react-three/rapier'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import {
   type AnimationAction,
   Box3,
@@ -36,12 +36,17 @@ import {
   ROAMING_RUNNER_RADIUS,
   shouldRoamingRunnerTurnOnCollision,
   stepRoamingRunner,
+  ROAMING_POLAR_BEAR_DANGER_RADIUS,
+  ROAMING_RUNNER_DANGER_RADIUS,
+  createRoamingWander,
+  stepRoamingWander,
   type RoamingObstacle,
   type RoamingPolarBearSpec,
   type RoamingRunnerSpec,
   type RoamingRunnerState,
 } from '@/lib/quizrun-engine/roamingRunners'
 import type { StageTheme } from '@/lib/quizrun-engine/types'
+import { isHazardTouchingPlayer, type PlayerContactProbe } from '@/lib/quizrun-engine/hazardContact'
 
 // Vite 의 import.meta.env.DEV 대체 (러닝크루는 Next)
 const IS_DEV = process.env.NODE_ENV !== "production"
@@ -52,12 +57,17 @@ interface RoamingRunnerObstaclesProps {
   obstacles: readonly RoamingObstacle[]
   paused: boolean
   reducedMotion: boolean
+  playerProbe: MutableRefObject<PlayerContactProbe>
+  /** Returns false while the player is still immune from a previous hit. */
   onRunnerHit: (
     position: { x: number; z: number },
     runnerId: string,
-  ) => void
-  onPolarBearHit: (position: { x: number; z: number }) => void
+  ) => boolean
+  onPolarBearHit: (position: { x: number; z: number }) => boolean
 }
+
+/** While immune, keep re-checking contact briefly instead of a full cooldown. */
+const HIT_RETRY_MS = 200
 
 interface CollisionPhysicsData {
   kind?: string
@@ -69,6 +79,10 @@ const MODEL_FORWARD_OFFSET = 0
 const POLAR_BEAR_HEIGHT = 1.42
 const POLAR_BEAR_COLLIDER_HALF_HEIGHT = 0.62
 const UP = new Vector3(0, 1, 0)
+
+function hashId(id: string): number {
+  return Array.from(id).reduce((hash, character) => Math.imul(hash ^ character.charCodeAt(0), 16777619), 2166136261) >>> 0
+}
 
 function DangerMarker({
   radius,
@@ -124,6 +138,7 @@ function RoamingRunner({
   obstacles,
   paused,
   reducedMotion,
+  playerProbe,
   onPlayerHit,
 }: {
   spec: RoamingRunnerSpec
@@ -132,10 +147,11 @@ function RoamingRunner({
   obstacles: readonly RoamingObstacle[]
   paused: boolean
   reducedMotion: boolean
+  playerProbe: MutableRefObject<PlayerContactProbe>
   onPlayerHit: (
     position: { x: number; z: number },
     runnerId: string,
-  ) => void
+  ) => boolean
 }) {
   const body = useRef<RapierRigidBody>(null)
   const runAction = useRef<AnimationAction | null>(null)
@@ -146,6 +162,7 @@ function RoamingRunner({
     z: spec.z,
     heading: spec.heading,
   })
+  const wander = useRef(createRoamingWander(hashId(spec.id), spec.heading))
   const { scene, animations } = useGLTF(url)
   const model = useMemo(() => clone(scene), [scene])
   const inPlaceAnimations = useMemo(
@@ -186,19 +203,23 @@ function RoamingRunner({
     const action = runAction.current
     if (!action) return
     action.paused = paused
-    action.setEffectiveTimeScale(reducedMotion ? 0.55 : 0.9)
+    // Faster wandering needs a quicker stride so feet do not slide.
+    action.setEffectiveTimeScale(reducedMotion ? 0.7 : 1.55)
   }, [actions, names, paused, reducedMotion])
+
+  const tryHitPlayer = () => {
+    const now = performance.now()
+    if (paused || now < nextHitAt.current) return
+    const accepted = onPlayerHit(
+      { x: state.current.x, z: state.current.z },
+      spec.id,
+    )
+    nextHitAt.current = now + (accepted ? RUNNER_HIT_COOLDOWN_MS : HIT_RETRY_MS)
+  }
 
   const requestTurn = ({ other }: CollisionEnterPayload) => {
     if (other.rigidBodyObject?.name === 'rolling-player') {
-      const now = performance.now()
-      if (!paused && now >= nextHitAt.current) {
-        nextHitAt.current = now + RUNNER_HIT_COOLDOWN_MS
-        onPlayerHit(
-          { x: state.current.x, z: state.current.z },
-          spec.id,
-        )
-      }
+      tryHitPlayer()
       return
     }
     const physics = (
@@ -216,11 +237,14 @@ function RoamingRunner({
 
     if (turnRequested.current) {
       state.current.heading += (Math.PI / 2) * spec.turnSign
+      wander.current.targetHeading = state.current.heading
       turnRequested.current = false
     }
+    const wandering = stepRoamingWander(wander.current, state.current.heading, delta)
+    state.current.heading = wandering.heading
     state.current = stepRoamingRunner(
       state.current,
-      spec.speed,
+      spec.speed * wandering.speedMultiplier,
       spec.turnSign,
       delta,
       mapSize,
@@ -237,6 +261,15 @@ function RoamingRunner({
       state.current.heading + MODEL_FORWARD_OFFSET,
     )
     runnerBody.setNextKinematicRotation(rotation)
+
+    if (isHazardTouchingPlayer({
+      x: state.current.x,
+      z: state.current.z,
+      radius: ROAMING_RUNNER_DANGER_RADIUS,
+      height: COLLIDER_HALF_HEIGHT * 2,
+    }, playerProbe.current)) {
+      tryHitPlayer()
+    }
   })
 
   return (
@@ -280,7 +313,7 @@ function RoamingRunner({
         />
       </mesh>
       <DangerMarker
-        radius={0.72}
+        radius={ROAMING_RUNNER_DANGER_RADIUS}
         labelHeight={2.05}
         reducedMotion={reducedMotion}
       />
@@ -294,6 +327,7 @@ function RoamingPolarBear({
   obstacles,
   paused,
   reducedMotion,
+  playerProbe,
   onPlayerHit,
 }: {
   spec: RoamingPolarBearSpec
@@ -301,7 +335,8 @@ function RoamingPolarBear({
   obstacles: readonly RoamingObstacle[]
   paused: boolean
   reducedMotion: boolean
-  onPlayerHit: (position: { x: number; z: number }) => void
+  playerProbe: MutableRefObject<PlayerContactProbe>
+  onPlayerHit: (position: { x: number; z: number }) => boolean
 }) {
   const body = useRef<RapierRigidBody>(null)
   const actionRef = useRef<AnimationAction | null>(null)
@@ -312,6 +347,7 @@ function RoamingPolarBear({
     z: spec.z,
     heading: spec.heading,
   })
+  const wander = useRef(createRoamingWander(hashId(spec.id), spec.heading))
   const { scene, animations } = useGLTF(polarBearUrl)
   const model = useMemo(() => clone(scene), [scene])
   const inPlaceAnimations = useMemo(
@@ -352,16 +388,19 @@ function RoamingPolarBear({
     const action = actionRef.current
     if (!action) return
     action.paused = paused
-    action.setEffectiveTimeScale(reducedMotion ? 0.45 : 0.72)
+    action.setEffectiveTimeScale(reducedMotion ? 0.6 : 1.15)
   }, [paused, reducedMotion])
+
+  const tryHitPlayer = () => {
+    const now = performance.now()
+    if (paused || now < nextHitAt.current) return
+    const accepted = onPlayerHit({ x: state.current.x, z: state.current.z })
+    nextHitAt.current = now + (accepted ? POLAR_BEAR_HIT_COOLDOWN_MS : HIT_RETRY_MS)
+  }
 
   const handleCollision = ({ other }: CollisionEnterPayload) => {
     if (other.rigidBodyObject?.name === 'rolling-player') {
-      const now = performance.now()
-      if (!paused && now >= nextHitAt.current) {
-        nextHitAt.current = now + POLAR_BEAR_HIT_COOLDOWN_MS
-        onPlayerHit({ x: state.current.x, z: state.current.z })
-      }
+      tryHitPlayer()
       return
     }
 
@@ -380,11 +419,14 @@ function RoamingPolarBear({
 
     if (turnRequested.current) {
       state.current.heading += (Math.PI / 2) * spec.turnSign
+      wander.current.targetHeading = state.current.heading
       turnRequested.current = false
     }
+    const wandering = stepRoamingWander(wander.current, state.current.heading, delta)
+    state.current.heading = wandering.heading
     state.current = stepRoamingRunner(
       state.current,
-      spec.speed,
+      spec.speed * wandering.speedMultiplier * 0.8,
       spec.turnSign,
       delta,
       mapSize,
@@ -402,6 +444,15 @@ function RoamingPolarBear({
         state.current.heading + MODEL_FORWARD_OFFSET,
       ),
     )
+
+    if (isHazardTouchingPlayer({
+      x: state.current.x,
+      z: state.current.z,
+      radius: ROAMING_POLAR_BEAR_DANGER_RADIUS,
+      height: POLAR_BEAR_COLLIDER_HALF_HEIGHT * 2,
+    }, playerProbe.current)) {
+      tryHitPlayer()
+    }
   })
 
   return (
@@ -446,7 +497,7 @@ function RoamingPolarBear({
         />
       </mesh>
       <DangerMarker
-        radius={1.1}
+        radius={ROAMING_POLAR_BEAR_DANGER_RADIUS}
         labelHeight={1.82}
         reducedMotion={reducedMotion}
       />
@@ -455,6 +506,8 @@ function RoamingPolarBear({
 }
 
 useGLTF.preload(polarBearUrl)
+useGLTF.preload(maleRunnerUrl)
+useGLTF.preload(femaleRunnerUrl)
 
 export function RoamingRunnerObstacles({
   mapSize,
@@ -462,6 +515,7 @@ export function RoamingRunnerObstacles({
   obstacles,
   paused,
   reducedMotion,
+  playerProbe,
   onRunnerHit,
   onPolarBearHit,
 }: RoamingRunnerObstaclesProps) {
@@ -523,6 +577,7 @@ export function RoamingRunnerObstacles({
           obstacles={obstacles}
           paused={paused}
           reducedMotion={reducedMotion}
+          playerProbe={playerProbe}
           onPlayerHit={onRunnerHit}
         />
       ))}
@@ -534,6 +589,7 @@ export function RoamingRunnerObstacles({
           obstacles={obstacles}
           paused={paused}
           reducedMotion={reducedMotion}
+          playerProbe={playerProbe}
           onPlayerHit={onPolarBearHit}
         />
       ))}

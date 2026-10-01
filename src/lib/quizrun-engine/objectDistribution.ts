@@ -1,16 +1,16 @@
 import type { LearningObject, SizeTierLevel } from './types'
 import { getSizeTier } from './mechanics'
 
-export const STAGE_OBJECT_TIER_TOTALS = [150, 105, 70, 35] as const
-export const ICE_RIVER_OBJECT_TIER_TOTALS = [200, 140, 65, 35] as const
+export const STAGE_OBJECT_TIER_TOTALS = [200, 135, 95, 50] as const
+export const ICE_RIVER_OBJECT_TIER_TOTALS = [230, 165, 100, 55] as const
 
 export const ACTIVE_OBJECT_TIER_COUNTS: Record<
   SizeTierLevel,
   readonly [number, number, number, number]
 > = {
-  1: [120, 30, 8, 1],
-  2: [135, 70, 24, 5],
-  3: [145, 90, 52, 14],
+  1: [160, 45, 12, 2],
+  2: [180, 95, 34, 8],
+  3: [195, 120, 72, 25],
   4: STAGE_OBJECT_TIER_TOTALS,
 }
 
@@ -18,9 +18,9 @@ export const ICE_RIVER_ACTIVE_OBJECT_TIER_COUNTS: Record<
   SizeTierLevel,
   readonly [number, number, number, number]
 > = {
-  1: [190, 80, 14, 2],
-  2: [200, 120, 32, 7],
-  3: [200, 140, 60, 16],
+  1: [210, 100, 22, 3],
+  2: [225, 145, 45, 10],
+  3: [230, 160, 85, 26],
   4: ICE_RIVER_OBJECT_TIER_TOTALS,
 }
 
@@ -83,6 +83,7 @@ export function selectActiveStageObjects(
       .filter((item) => getSizeTier(item.size).level === tier)
       .sort(
         (left, right) =>
+          Number(right.position[1] > 0.03) - Number(left.position[1] > 0.03) ||
           stableHash(`${left.stageId ?? ''}:${left.id}`) -
           stableHash(`${right.stageId ?? ''}:${right.id}`),
       )

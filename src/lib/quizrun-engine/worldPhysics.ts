@@ -104,6 +104,13 @@ export interface ElevatedPlatform {
   halfHeight: number
   halfDepth: number
   rotationY: number
+  bridgeSide?: 'west' | 'east'
+  elevatorSide?: 'west' | 'east'
+}
+
+export type TerraceSide = 'north' | 'south' | 'east' | 'west'
+export interface ElevatedWalkway extends Omit<ElevatedPlatform, 'bridgeSide' | 'elevatorSide'> {
+  railSides: TerraceSide[]
 }
 
 export interface WorldElevator {
@@ -203,7 +210,29 @@ export function getElevatedPlatformSurfacePosition(
   ]
 }
 
+export type ForestLandmarkKind =
+  | 'treehouse'
+  | 'glow-mushroom'
+  | 'mushroom-cluster'
+  | 'stone-arch'
+  | 'moon-altar'
+  | 'explorer-camp'
+  | 'lantern'
+
+/** Visual-only moonshade forest structures; their colliders live in obstacles. */
+export interface ForestLandmark {
+  id: string
+  label: string
+  kind: ForestLandmarkKind
+  x: number
+  z: number
+  rotationY: number
+  /** Target model height in world units. */
+  height: number
+}
+
 export interface WorldPhysicsLayout {
+  landmarks: ForestLandmark[]
   obstacles: WorldObstacle[]
   rideableObstacles: RideableObstacle[]
   tunnels: WorldTunnel[]
@@ -211,6 +240,7 @@ export interface WorldPhysicsLayout {
   surfaceZones: SurfaceZone[]
   terrainRamps: TerrainRamp[]
   elevatedPlatforms: ElevatedPlatform[]
+  elevatedWalkways: ElevatedWalkway[]
   elevators: WorldElevator[]
   pushableProps: PushableProp[]
   pushRewardSlots: [number, number, number][]
@@ -396,9 +426,9 @@ function createSpeedZones(
       {
         id: 'forest-sprint-east',
         label: '바람 오솔길',
-        x: 0,
-        z: 0,
-        halfWidth: mapSize * 0.34,
+        x: mapSize * 0.02,
+        z: mapSize * 0.035,
+        halfWidth: mapSize * 0.3,
         halfDepth: 1.05,
         rotationY: 0.18,
         multiplier: 1.28,
@@ -406,11 +436,11 @@ function createSpeedZones(
       {
         id: 'forest-sprint-north',
         label: '솔잎 지름길',
-        x: 0,
-        z: 0,
+        x: -mapSize * 0.12,
+        z: mapSize * 0.05,
         halfWidth: 0.92,
-        halfDepth: mapSize * 0.34,
-        rotationY: -0.34,
+        halfDepth: mapSize * 0.2,
+        rotationY: 0.08,
         multiplier: 1.24,
       },
     ]
@@ -495,19 +525,212 @@ function createTunnels(
   return [
     {
       id: 'moon-water-tunnel',
-      label: '달빛 수로 터널',
-      x: mapSize * 0.35,
-      z: -mapSize * 0.04,
-      halfWidth: 4.4,
-      halfDepth: 9,
-      clearanceHeight: 5.4,
-      wallThickness: 0.5,
-      roofThickness: 0.42,
-      rotationY: 0.18,
-      color: '#263A35',
-      accentColor: '#6ED7C8',
+      label: '속 빈 통나무 터널',
+      x: -mapSize * 0.34,
+      z: -mapSize * 0.02,
+      halfWidth: 3.9,
+      halfDepth: 9.2,
+      clearanceHeight: 5.6,
+      wallThickness: 0.6,
+      roofThickness: 0.5,
+      rotationY: 0.12,
+      color: '#4A3526',
+      accentColor: '#9BE3C4',
     },
   ]
+}
+
+export const MOON_LAKE = { xRatio: 0, zRatio: -0.13, halfWidth: 14, halfDepth: 10 } as const
+const MOON_ALTAR_RADIUS = 3.1
+
+function createMoonLakeSteppingStones(mapSize: number): RideableObstacle[] {
+  const lakeZ = mapSize * MOON_LAKE.zRatio
+  const start = lakeZ - MOON_LAKE.halfDepth - 0.6
+  const end = lakeZ - MOON_ALTAR_RADIUS - 0.9
+  const count = 6
+  // Two stepping-stone paths reach the altar islet from both shores.
+  return [-1, 1].flatMap((shore) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `moon-stepping-stone-${shore < 0 ? 'south' : 'north'}-${index}`,
+      label: '달빛 징검다리',
+      x: Math.sin(index * 1.3 + shore) * 0.7,
+      y: 0.09,
+      z: lakeZ + shore * (lakeZ - start - ((end - start) * index) / (count - 1)),
+      halfWidth: 0.78,
+      halfHeight: 0.09,
+      halfDepth: 0.62,
+      rotationY: index * 0.47 + shore,
+    })),
+  )
+}
+
+/** Normalized GLB proportions (tripo exports fit a unit cube). */
+const STONE_ARCH_HEIGHT_RATIO = 0.8535
+const STONE_ARCH_PILLAR_OFFSET = 0.385
+const STONE_ARCH_PILLAR_RADIUS = 0.12
+
+interface ForestLandmarkSet {
+  landmarks: ForestLandmark[]
+  obstacles: WorldObstacle[]
+  clearances: { x: number; z: number; radius: number }[]
+}
+
+function createForestLandmarks(mapSize: number): ForestLandmarkSet {
+  const landmarks: ForestLandmark[] = []
+  const obstacles: WorldObstacle[] = []
+  const add = (
+    landmark: ForestLandmark,
+    colliderRadius?: number,
+    response: ObstacleResponse = 'stop',
+  ) => {
+    landmarks.push(landmark)
+    if (colliderRadius) {
+      obstacles.push({
+        id: `landmark-${landmark.id}`,
+        label: landmark.label,
+        x: landmark.x,
+        z: landmark.z,
+        radius: colliderRadius,
+        response,
+      })
+    }
+  }
+
+  // North: two giant hollow trees, each wrapped by a walkable deck.
+  for (const side of [-1, 1]) {
+    add({
+      id: `moon-lodge-${side < 0 ? 'west' : 'east'}`,
+      label: '거대 고목 나무집',
+      kind: 'treehouse',
+      x: side * mapSize * 0.19,
+      z: -mapSize * 0.265,
+      rotationY: side < 0 ? 0.4 : -2.6,
+      height: 14,
+    }, 1.7)
+  }
+
+  // Center: the moon altar stands on an islet in the middle of the lake.
+  add({
+    id: 'moon-altar',
+    label: '초승달 돌 제단',
+    kind: 'moon-altar',
+    x: mapSize * MOON_LAKE.xRatio,
+    z: mapSize * MOON_LAKE.zRatio,
+    rotationY: Math.PI,
+    height: 4.8,
+  }, MOON_ALTAR_RADIUS)
+
+  // East: a bouncy grove of giant glowing mushrooms.
+  const groveX = mapSize * 0.3
+  const groveZ = -mapSize * 0.03
+  const giantMushrooms = [
+    [0, 0, 8.5, 0.2],
+    [7.5, -5.5, 6.4, 1.4],
+    [-6.5, 6, 7.2, 2.6],
+    [6.5, 8, 5.4, 3.3],
+    [-5.5, -7, 6, 4.4],
+  ] as const
+  giantMushrooms.forEach(([dx, dz, height, rotationY], index) => {
+    add({
+      id: `glow-mushroom-${index}`,
+      label: '거대 발광 버섯',
+      kind: 'glow-mushroom',
+      x: groveX + dx,
+      z: groveZ + dz,
+      rotationY,
+      height,
+    }, height * 0.13, 'bounce')
+  })
+  const clusterSpots = [
+    [groveX + 12, groveZ - 1],
+    [groveX - 1, groveZ + 13],
+    [groveX - 11, groveZ - 2],
+    [groveX + 2, groveZ - 13],
+    [-mapSize * 0.07, -mapSize * 0.2],
+    [mapSize * 0.1, -mapSize * 0.06],
+    [-mapSize * 0.26, mapSize * 0.06],
+    [mapSize * 0.2, mapSize * 0.33],
+  ] as const
+  clusterSpots.forEach(([x, z], index) => {
+    add({
+      id: `mushroom-cluster-${index}`,
+      label: '반딧불 버섯 무리',
+      kind: 'mushroom-cluster',
+      x,
+      z,
+      rotationY: index * 1.7,
+      height: 2.3,
+    }, 0.85, 'bounce')
+  })
+
+  // West: mossy stone arches that the ball can roll straight through.
+  const arches = [
+    [-mapSize * 0.24, mapSize * 0.13, -0.5, 9.4],
+    [-mapSize * 0.3, -mapSize * 0.2, 0.4, 9.4],
+    [-mapSize * 0.1, mapSize * 0.34, -1.2, 8.6],
+  ] as const
+  arches.forEach(([x, z, rotationY, height], index) => {
+    const id = `stone-arch-${index}`
+    landmarks.push({ id, label: '이끼 낀 돌 아치 유적', kind: 'stone-arch', x, z, rotationY, height })
+    const scale = height / STONE_ARCH_HEIGHT_RATIO
+    for (const side of [-1, 1]) {
+      const offset = side * STONE_ARCH_PILLAR_OFFSET * scale
+      obstacles.push({
+        id: `landmark-${id}-pillar-${side < 0 ? 'a' : 'b'}`,
+        label: '이끼 낀 돌 아치 기둥',
+        x: x + offset * Math.sin(rotationY),
+        z: z + offset * Math.cos(rotationY),
+        radius: STONE_ARCH_PILLAR_RADIUS * scale,
+        response: 'stop',
+      })
+    }
+  })
+
+  // South, beside the start: the explorer camp.
+  add({
+    id: 'explorer-camp',
+    label: '탐험가 캠프',
+    kind: 'explorer-camp',
+    x: -mapSize * 0.06,
+    z: mapSize * 0.1,
+    rotationY: Math.PI - 0.6,
+    height: 5.5,
+  }, 3.9)
+
+  // Lanterns light the trails between the zones (visual only).
+  const lanterns = [
+    [-6, -8], [6, -9], [-4, 8.5], [5, 9], [-15, 16], [15, 16],
+    [-24, 30], [24, 30], [30, -3], [-30, -8], [-44, -3], [-18, -34],
+    [12, -30], [40, 18], [-8, 38], [8, 38],
+  ] as const
+  lanterns.forEach(([x, z], index) => {
+    landmarks.push({
+      id: `lantern-${index}`,
+      label: '반딧불 랜턴',
+      kind: 'lantern',
+      x: x * (mapSize / 168),
+      z: -z * (mapSize / 168),
+      rotationY: index * 0.9,
+      height: 2.7,
+    })
+  })
+
+  const clearances = [
+    ...obstacles.map((obstacle) => ({
+      x: obstacle.x,
+      z: obstacle.z,
+      radius: obstacle.radius + 1.6,
+    })),
+    ...landmarks
+      .filter((landmark) => landmark.kind === 'stone-arch')
+      .map((landmark) => ({ x: landmark.x, z: landmark.z, radius: 3.2 })),
+    {
+      x: mapSize * MOON_LAKE.xRatio,
+      z: mapSize * MOON_LAKE.zRatio,
+      radius: Math.max(MOON_LAKE.halfWidth, MOON_LAKE.halfDepth) + 1.5,
+    },
+  ]
+  return { landmarks, obstacles, clearances }
 }
 
 function createRideableObstacles(
@@ -532,7 +755,7 @@ function createRideableObstacles(
   )
 
   return theme === 'forest-trail'
-    ? [...steppingBlocks, ...createForestRidges(mapSize)]
+    ? [...createMoonLakeSteppingStones(mapSize), ...createForestRidges(mapSize)]
     : steppingBlocks
 }
 
@@ -547,10 +770,10 @@ function createSurfaceZones(
         label: '달그늘 이끼 잔디',
         kind: 'grass',
         color: '#78B86D',
-        x: -mapSize * 0.19,
-        z: mapSize * 0.17,
-        halfWidth: mapSize * 0.14,
-        halfDepth: mapSize * 0.09,
+        x: -mapSize * 0.2,
+        z: mapSize * 0.26,
+        halfWidth: mapSize * 0.1,
+        halfDepth: mapSize * 0.07,
         rotationY: 0.32,
         multiplier: 0.68,
       },
@@ -558,71 +781,59 @@ function createSurfaceZones(
         id: 'forest-creek',
         label: '달빛 얕은 물길',
         kind: 'water',
-        color: '#67BFD0',
-        x: mapSize * 0.2,
-        z: -mapSize * 0.14,
-        halfWidth: mapSize * 0.075,
-        halfDepth: mapSize * 0.1,
+        color: '#4FA6BE',
+        x: mapSize * 0.22,
+        z: mapSize * 0.22,
+        halfWidth: mapSize * 0.06,
+        halfDepth: mapSize * 0.085,
         rotationY: -0.48,
         multiplier: 0.55,
       },
       {
         id: 'forest-clearing',
-        label: '반딧불 잔디터',
+        label: '반딧불 버섯 이끼터',
         kind: 'grass',
         color: '#86C77A',
-        x: mapSize * 0.24,
-        z: mapSize * 0.22,
-        halfWidth: mapSize * 0.07,
-        halfDepth: mapSize * 0.045,
+        x: mapSize * 0.3,
+        z: -mapSize * 0.03,
+        halfWidth: mapSize * 0.075,
+        halfDepth: mapSize * 0.06,
         rotationY: -0.21,
         multiplier: 0.74,
+      },
+      {
+        id: 'forest-fern-glade',
+        label: '고사리 달빛 풀밭',
+        kind: 'grass',
+        color: '#6FAE68',
+        x: -mapSize * 0.33,
+        z: -mapSize * 0.36,
+        halfWidth: mapSize * 0.07,
+        halfDepth: mapSize * 0.05,
+        rotationY: 0.5,
+        multiplier: 0.72,
       },
       {
         id: 'forest-rain-puddle',
         label: '어두운 빗물 웅덩이',
         kind: 'water',
-        color: '#72C9D7',
-        x: -mapSize * 0.26,
-        z: -mapSize * 0.22,
-        halfWidth: mapSize * 0.055,
-        halfDepth: mapSize * 0.038,
+        color: '#5FB8CB',
+        x: mapSize * 0.06,
+        z: mapSize * 0.36,
+        halfWidth: mapSize * 0.045,
+        halfDepth: mapSize * 0.032,
         rotationY: 0.38,
         multiplier: 0.6,
-      },
-      {
-        id: 'forest-moon-pool',
-        label: '달빛 굽이 물길',
-        kind: 'water',
-        color: '#3A8299',
-        x: -mapSize * 0.35,
-        z: mapSize * 0.28,
-        halfWidth: mapSize * 0.052,
-        halfDepth: mapSize * 0.075,
-        rotationY: -0.62,
-        multiplier: 0.5,
-      },
-      {
-        id: 'forest-tunnel-runoff',
-        label: '터널 속 얕은 수로',
-        kind: 'water',
-        color: '#2D8296',
-        x: mapSize * 0.35,
-        z: -mapSize * 0.04,
-        halfWidth: 3.5,
-        halfDepth: 11.2,
-        rotationY: 0.18,
-        multiplier: 0.58,
       },
       {
         id: 'forest-north-shallows',
         label: '북쪽 반딧불 여울',
         kind: 'water',
-        color: '#4AA9B5',
-        x: mapSize * 0.06,
-        z: mapSize * 0.4,
+        color: '#3E9AAE',
+        x: mapSize * 0.02,
+        z: -mapSize * 0.41,
         halfWidth: mapSize * 0.055,
-        halfDepth: mapSize * 0.034,
+        halfDepth: mapSize * 0.03,
         rotationY: 0.72,
         multiplier: 0.64,
       },
@@ -863,7 +1074,19 @@ function createTerrainRamps(
         ? ['#779D61', '#8BAC68']
         : ['#9BCB78', '#D6B77C']
 
+  if (theme === 'forest-trail') {
+    return [
+      ...createHill('west-hill', '이끼 덮인 서쪽 언덕', '#2F4D37', -mapSize * 0.34, mapSize * 0.2, 0.58, mapSize),
+      ...createHill('moon-hill', '달그늘 동쪽 언덕', '#36573E', mapSize * 0.33, -mapSize * 0.2, -1.04, mapSize),
+      ...createUpperDeckRamps(mapSize, theme),
+    ]
+  }
+
   return [
+    ...createHill(
+      'central-park-hill', '공원 산책 언덕', colors[0],
+      mapSize * 0.21, mapSize * 0.055, Math.PI / 2, mapSize,
+    ),
     ...createHill(
       'east-hill',
       '완만한 동쪽 언덕',
@@ -882,18 +1105,7 @@ function createTerrainRamps(
       -0.58,
       mapSize,
     ),
-    ...(theme === 'forest-trail'
-      ? createHill(
-          'moon-hill',
-          '달그늘 북쪽 언덕',
-          '#435A4B',
-          -mapSize * 0.1,
-          mapSize * 0.31,
-          1.04,
-          mapSize,
-        )
-      : []),
-    createUpperDeckRamp(mapSize, theme),
+    ...createUpperDeckRamps(mapSize, theme),
   ]
 }
 
@@ -909,8 +1121,8 @@ function getUpperDeckColors(theme: StageTheme) {
   }
   if (theme === 'forest-trail') {
     return {
-      ramp: '#7E9D62',
-      platform: '#89AA6D',
+      ramp: '#6E4A31',
+      platform: '#7A5234',
       elevator: '#4F8B69',
     }
   }
@@ -927,6 +1139,23 @@ function createElevatedPlatforms(
 ): ElevatedPlatform[] {
   const colors = getUpperDeckColors(theme)
   const halfHeight = 0.28
+  if (theme === 'forest-trail') {
+    // Two treehouse decks wrap the giant hollow trees north of the moon lake.
+    return (['west', 'east'] as const).map((side, index) => ({
+      id: index === 0 ? 'ramp-upper-deck' : 'elevator-upper-deck',
+      label: index === 0 ? '서쪽 고목 나무집 데크' : '동쪽 고목 나무집 데크',
+      color: colors.platform,
+      x: (side === 'west' ? -1 : 1) * mapSize * 0.19,
+      y: UPPER_DECK_SURFACE_Y - halfHeight,
+      z: -mapSize * 0.265,
+      halfWidth: 7.4,
+      halfHeight,
+      halfDepth: 6.6,
+      rotationY: 0,
+      bridgeSide: side === 'west' ? 'east' : 'west',
+      elevatorSide: side === 'west' ? 'east' : 'west',
+    }))
+  }
   const towerPlatform: ElevatedPlatform = {
     id: 'ramp-upper-deck',
     label: '경사로 2층 전망대',
@@ -934,10 +1163,12 @@ function createElevatedPlatforms(
     x: mapSize * 0.1,
     y: UPPER_DECK_SURFACE_Y - halfHeight,
     z: -mapSize * 0.19,
-    halfWidth: 5.5,
+    halfWidth: 7.4,
     halfHeight,
-    halfDepth: 5.5,
+    halfDepth: 6.6,
     rotationY: 0,
+    bridgeSide: 'west',
+    elevatorSide: 'east',
   }
   const elevatorPlatform: ElevatedPlatform = {
     id: 'elevator-upper-deck',
@@ -946,43 +1177,129 @@ function createElevatedPlatforms(
     x: -mapSize * 0.14,
     y: UPPER_DECK_SURFACE_Y - halfHeight,
     z: mapSize * 0.2,
-    halfWidth: 5.2,
+    halfWidth: 7.4,
     halfHeight,
-    halfDepth: 5.2,
+    halfDepth: 6.6,
     rotationY: 0,
+    bridgeSide: 'east',
+    elevatorSide: 'west',
   }
 
   return [towerPlatform, elevatorPlatform]
 }
 
-function createUpperDeckRamp(
+function createElevatedWalkways(mapSize: number, theme: StageTheme): ElevatedWalkway[] {
+  const [north, south] = createElevatedPlatforms(mapSize, theme)
+  if (theme === 'forest-trail') {
+    const halfWidth = (south.x - south.halfWidth - (north.x + north.halfWidth)) / 2
+    return [{
+      id: 'forest-rope-bridge',
+      label: '고목 사이 밧줄 흔들다리',
+      color: '#7A5234',
+      x: (north.x + south.x) / 2,
+      y: UPPER_DECK_SURFACE_Y - 0.22,
+      z: north.z,
+      halfWidth,
+      halfHeight: 0.22,
+      halfDepth: 3.3,
+      rotationY: 0,
+      railSides: ['north', 'south'],
+    }]
+  }
+  const width = 3.7
+  const spineX = -mapSize * 0.035
+  const color = getUpperDeckColors(theme).platform
+  const part = (id: string, minX: number, maxX: number, minZ: number, maxZ: number, railSides: TerraceSide[]): ElevatedWalkway => ({
+    id, label: '공원 연결 다리', color,
+    x: (minX + maxX) / 2, z: (minZ + maxZ) / 2,
+    y: UPPER_DECK_SURFACE_Y - 0.22, halfHeight: 0.22,
+    halfWidth: (maxX - minX) / 2, halfDepth: (maxZ - minZ) / 2,
+    rotationY: 0, railSides,
+  })
+  // Five flush sections form a continuous route without covering either
+  // ground ramp. The west-side lift leaves the second bridge landing free.
+  return [
+    part('bridge-north-arm', spineX + width, north.x - north.halfWidth, north.z - width, north.z + width, ['north', 'south']),
+    part('bridge-north-corner', spineX - width, spineX + width, north.z - width, north.z + width, ['north', 'west']),
+    part('bridge-park-spine', spineX - width, spineX + width, north.z + width, south.z - width, ['east', 'west']),
+    part('bridge-south-corner', spineX - width, spineX + width, south.z - width, south.z + width, ['south', 'east']),
+    part('bridge-south-arm', south.x + south.halfWidth, spineX - width, south.z - width, south.z + width, ['north', 'south']),
+  ]
+}
+
+export function getWalkwayClearances(walkways: readonly ElevatedWalkway[]) {
+  return walkways.flatMap((walkway) => {
+    const alongX = walkway.halfWidth > walkway.halfDepth
+    const longHalf = Math.max(walkway.halfWidth, walkway.halfDepth)
+    const segments = Math.ceil(longHalf * 2 / 4)
+    return Array.from({ length: segments + 1 }, (_, index) => {
+      const offset = (index / segments * 2 - 1) * longHalf
+      return {
+        x: walkway.x + (alongX ? offset : 0),
+        z: walkway.z + (alongX ? 0 : offset),
+        radius: Math.min(walkway.halfWidth, walkway.halfDepth) + 0.8,
+      }
+    })
+  })
+}
+
+export function getCentralParkZones(mapSize: number, theme: StageTheme): SurfaceZone[] {
+  if (theme === 'forest-trail') {
+    // Keeps the shared pond id so shoreline, lily pads and item rings follow it.
+    return [
+      { id: 'central-park-pond', label: '달빛 연못', kind: 'water',
+        x: mapSize * MOON_LAKE.xRatio, z: mapSize * MOON_LAKE.zRatio,
+        halfWidth: MOON_LAKE.halfWidth, halfDepth: MOON_LAKE.halfDepth,
+        rotationY: 0, multiplier: 0.55, color: '#2F7FA0' },
+    ]
+  }
+  return [
+    { id: 'central-park-lawn', label: '중앙 공원 잔디', kind: 'grass',
+      x: mapSize * (theme === 'starlight-river' ? 0.09 : 0.06), z: mapSize * (theme === 'starlight-river' ? 0.08 : 0.055),
+      halfWidth: mapSize * (theme === 'starlight-river' ? 0.085 : 0.12), halfDepth: mapSize * (theme === 'starlight-river' ? 0.08 : 0.115),
+      rotationY: -0.22, multiplier: 0.94, color: theme === 'starlight-river' ? '#A4C4B0' : '#8BBE74' },
+    { id: 'central-park-pond', label: '중앙 공원 연못', kind: 'water',
+      x: mapSize * 0.075, z: mapSize * 0.11, halfWidth: mapSize * 0.042, halfDepth: mapSize * 0.029,
+      rotationY: -0.28, multiplier: 0.58, color: '#69BED0' },
+  ]
+}
+
+function createUpperDeckRamps(
   mapSize: number,
   theme: StageTheme,
-): TerrainRamp {
-  const platform = createElevatedPlatforms(mapSize, theme)[0]
+): TerrainRamp[] {
   const halfDepth = Math.min(14, mapSize * 0.085)
-  const halfWidth = 3.15
+  const halfWidth = 3.7
   const halfHeight = 0.18
-  const baseSurfaceY = 0.04
+  const baseSurfaceY = 0.02
   const rotationMagnitude = Math.asin(
     (UPPER_DECK_SURFACE_Y - baseSurfaceY) / (halfDepth * 2),
   )
   const rotationX = -rotationMagnitude
   const centerSurfaceY = (UPPER_DECK_SURFACE_Y + baseSurfaceY) / 2
 
-  return {
-    id: 'upper-deck-ramp',
-    label: '2층 연결 경사로',
-    color: getUpperDeckColors(theme).ramp,
-    x: platform.x,
-    y: centerSurfaceY - halfHeight * Math.cos(rotationX),
-    z: platform.z + platform.halfDepth + halfDepth,
-    halfWidth,
-    halfHeight,
-    halfDepth,
-    rotationX,
-    rotationY: Math.PI,
-  }
+  // Match the pitched top surface, not the unrotated box extent. This keeps
+  // the ramp flush with the landing without a step or a gap at either end.
+  const topOffsetZ =
+    halfDepth * Math.cos(rotationX) + halfHeight * Math.sin(rotationX)
+  const sides = theme === 'forest-trail' ? [1] : [1, -1]
+  return createElevatedPlatforms(mapSize, theme).flatMap((platform, index) =>
+    sides.map((side) => ({
+      id: index === 0 && side === 1
+        ? 'upper-deck-ramp'
+        : `upper-deck-${index}-${side === 1 ? 'south' : 'north'}-ramp`,
+      label: `${index === 0 ? '전망대' : '보물마당'} ${side === 1 ? '남쪽' : '북쪽'} 경사로`,
+      color: getUpperDeckColors(theme).ramp,
+      x: platform.x,
+      y: centerSurfaceY - halfHeight * Math.cos(rotationX),
+      z: platform.z + side * (platform.halfDepth + topOffsetZ),
+      halfWidth,
+      halfHeight,
+      halfDepth,
+      rotationX,
+      rotationY: side === 1 ? Math.PI : 0,
+    })),
+  )
 }
 
 function createElevators(
@@ -990,6 +1307,7 @@ function createElevators(
   theme: StageTheme,
 ): WorldElevator[] {
   const halfHeight = 0.18
+  if (theme === 'forest-trail') return []
   const platforms = createElevatedPlatforms(mapSize, theme)
 
   return platforms.map((landing, index) => ({
@@ -999,7 +1317,7 @@ function createElevators(
         ? '전망대 연결 승강 발판'
         : '보물마당 연결 승강 발판',
     color: getUpperDeckColors(theme).elevator,
-    x: landing.x + landing.halfWidth + 2.05,
+    x: landing.x + (landing.elevatorSide === 'west' ? -1 : 1) * (landing.halfWidth + 2.05),
     z: landing.z,
     bottomY: halfHeight,
     topY: UPPER_DECK_SURFACE_Y - halfHeight,
@@ -1033,7 +1351,14 @@ function createPushableProps(
     { id: 'trash-f', kind: 'trash-can', x: mapSize * -0.14, y: 0.43, z: mapSize * 0.32, color: '#2F6FB5' },
     { id: 'trash-g', kind: 'trash-can', x: mapSize * 0.33, y: 0.43, z: mapSize * 0.19, color: '#2F6FB5' },
   ] as const
-  const labeledPracticeProps: PushableProp[] = practiceProps.map((prop, index) => ({
+  const labeledPracticeProps: PushableProp[] = practiceProps.map((prop, index) => theme === 'forest-trail' ? {
+    ...prop,
+    kind: 'block',
+    y: 0.36,
+    color: '#A8744A',
+    label: '탐험 보급 상자',
+    rotationY: index * 0.41,
+  } : ({
     ...prop,
     label:
       prop.kind === 'block'
@@ -1043,8 +1368,7 @@ function createPushableProps(
           : '빨간 장애물 콘',
     rotationY: index * 0.41,
   }))
-  const centerX = mapSize * 0.18
-  const centerZ = mapSize * 0.08
+  const [centerX, centerZ] = getPushPuzzleCenter(mapSize, theme)
   const puzzleColors =
     theme === 'starlight-river'
       ? ['#60A5FA', '#A78BFA', '#FBBF24']
@@ -1055,7 +1379,7 @@ function createPushableProps(
     const angle = (index / 9) * Math.PI * 2
     return {
       id: `treasure-cone-${index}`,
-      label: '보물 지킴 콘',
+      label: theme === 'forest-trail' ? '보물 지킴 버섯' : '보물 지킴 콘',
       kind: 'cone' as const,
       color: puzzleColors[index % puzzleColors.length],
       x: centerX + Math.cos(angle) * 1.32,
@@ -1068,17 +1392,72 @@ function createPushableProps(
   return [...labeledPracticeProps, ...treasureCones]
 }
 
+function getPushPuzzleCenter(mapSize: number, theme?: StageTheme): [number, number] {
+  return theme === 'forest-trail'
+    ? [mapSize * 0.12, mapSize * 0.18]
+    : [mapSize * 0.18, mapSize * 0.08]
+}
+
 function createPushRewardSlots(
   mapSize: number,
+  theme?: StageTheme,
 ): [number, number, number][] {
-  const centerX = mapSize * 0.18
-  const centerZ = mapSize * 0.08
+  const [centerX, centerZ] = getPushPuzzleCenter(mapSize, theme)
 
   return [
     [centerX, 0, centerZ],
     [centerX - 0.42, 0, centerZ + 0.28],
     [centerX + 0.42, 0, centerZ + 0.28],
   ]
+}
+
+// Keep the walking routes open while spreading a modest number of sleeping
+// rigid bodies through every quadrant. No per-frame placement or mesh colliders.
+function distributePushableProps(
+  props: PushableProp[],
+  mapSize: number,
+  obstacles: readonly WorldObstacle[],
+  structures: readonly Pick<SpeedZone, 'x' | 'z' | 'halfWidth' | 'halfDepth' | 'rotationY'>[],
+  theme?: StageTheme,
+): PushableProp[] {
+  const forest = theme === 'forest-trail'
+  const additions: PushableProp[] = Array.from({ length: 20 }, (_, index) => {
+    const cone = index < 12
+    return {
+      id: `scattered-${cone ? 'cone' : 'trash'}-${index}`,
+      kind: cone ? 'cone' : forest ? 'block' : 'trash-can',
+      label: cone
+        ? forest ? '반딧불 버섯' : '빨간 장애물 콘'
+        : forest ? '탐험 보급 상자' : '파란 쓰레기통',
+      color: cone ? '#FF8A3D' : forest ? '#A8744A' : '#2F6FB5',
+      x: 0, z: 0, y: cone ? 0.38 : forest ? 0.36 : 0.43, rotationY: index * 0.83,
+    }
+  })
+  const placed = props.filter((prop) => prop.id.startsWith('treasure-cone'))
+  const isClear = (x: number, z: number) =>
+    structures.every((structure) => isCircleClearOfSpeedZone(
+      { x, z, radius: 0.65 }, structure, 1.5,
+    )) &&
+    obstacles.every((obstacle) => Math.hypot(x - obstacle.x, z - obstacle.z) > obstacle.radius + 1.1) &&
+    placed.every((other) => Math.hypot(x - other.x, z - other.z) > 2.4)
+  const scattered = [...props.filter((prop) => !prop.id.startsWith('treasure-cone')), ...additions]
+  scattered.forEach((prop, index) => {
+    if (Math.hypot(prop.x, prop.z) > 5 && isClear(prop.x, prop.z)) {
+      placed.push(prop)
+      return
+    }
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      const step = index * 31 + attempt
+      const angle = step * Math.PI * (3 - Math.sqrt(5)) + 0.35
+      const radius = mapSize * (0.1 + ((step * 7) % 23) / 22 * 0.29)
+      const x = Math.cos(angle) * radius
+      const z = Math.sin(angle) * radius
+      if (!isClear(x, z)) continue
+      placed.push({ ...prop, x, z })
+      break
+    }
+  })
+  return placed
 }
 
 interface NaturalAssetConfig {
@@ -1328,7 +1707,7 @@ function createNaturalAssetPlacements(
 
 function isCircleClearOfSpeedZone(
   tree: Pick<WorldObstacle, 'x' | 'z' | 'radius'>,
-  zone: SpeedZone,
+  zone: Pick<SpeedZone, 'x' | 'z' | 'halfWidth' | 'halfDepth' | 'rotationY'>,
   extraClearance = 1.15,
 ): boolean {
   const offsetX = tree.x - zone.x
@@ -1353,21 +1732,45 @@ export function createWorldPhysicsLayout(
     stage.mapSize,
     stage.theme,
   )
+  const elevatedWalkways = createElevatedWalkways(stage.mapSize, stage.theme)
   const elevators = createElevators(stage.mapSize, stage.theme)
-  const pushableProps = createPushableProps(stage.mapSize, stage.theme)
-  const pushRewardSlots = createPushRewardSlots(stage.mapSize)
+  let pushableProps = createPushableProps(stage.mapSize, stage.theme)
+  const pushRewardSlots = createPushRewardSlots(stage.mapSize, stage.theme)
   const speedZones = createSpeedZones(stage.mapSize, stage.theme)
   const rideableObstacles = createRideableObstacles(
     stage.mapSize,
     stage.theme,
+  ).filter((obstacle) =>
+    // Low ridges never cut through forest landmarks or the log tunnel.
+    !obstacle.id.startsWith('forest-ridge-') ||
+    (createForestLandmarks(stage.mapSize).clearances.every(
+      (clearance) =>
+        Math.hypot(obstacle.x - clearance.x, obstacle.z - clearance.z) >
+        clearance.radius + obstacle.halfWidth,
+    ) &&
+      createTunnels(stage.mapSize, stage.theme).every(
+        (tunnel) =>
+          Math.hypot(obstacle.x - tunnel.x, obstacle.z - tunnel.z) >
+          tunnel.halfDepth + obstacle.halfWidth + 1,
+      )),
   )
   const tunnels = createTunnels(stage.mapSize, stage.theme)
+  const isForest = stage.theme === 'forest-trail'
+  const forest = isForest
+    ? createForestLandmarks(stage.mapSize)
+    : { landmarks: [], obstacles: [], clearances: [] }
   const structureClearances = [
-    ...terrainRamps.map((ramp) => ({
-      x: ramp.x,
-      z: ramp.z,
-      radius: Math.hypot(ramp.halfWidth, ramp.halfDepth) + 0.7,
-    })),
+    ...forest.clearances,
+    ...getWalkwayClearances(elevatedWalkways),
+    ...terrainRamps.flatMap((ramp) => {
+      // A chain of small bounds reserves the actual approach, not a huge
+      // circular clearing around long, narrow ramps.
+      const segments = Math.ceil(ramp.halfDepth * 2 / 4)
+      return Array.from({ length: segments + 1 }, (_, index) => {
+        const [x, , z] = getTerrainRampSurfacePosition(ramp, 0, index / segments * 2 - 1)
+        return { x, z, radius: ramp.halfWidth + 1 }
+      })
+    }),
     ...elevatedPlatforms.map((platform) => ({
       x: platform.x,
       z: platform.z,
@@ -1399,11 +1802,13 @@ export function createWorldPhysicsLayout(
       radius: 2.7,
     },
   ]
-  const fixedSceneryObstacles = [
-    ...createBenches(stage.mapSize),
-    ...createGearRacks(stage.mapSize),
-    ...createKiosks(stage.mapSize),
-  ]
+  const fixedSceneryObstacles = isForest
+    ? forest.obstacles
+    : [
+        ...createBenches(stage.mapSize),
+        ...createGearRacks(stage.mapSize),
+        ...createKiosks(stage.mapSize),
+      ]
   const treeObstacles = [
     ...createTreeRing(stage.mapSize, stage.theme),
     ...createInteriorTrees(stage.mapSize, stage.theme),
@@ -1420,8 +1825,14 @@ export function createWorldPhysicsLayout(
       speedZones.every((zone) => isCircleClearOfSpeedZone(tree, zone)),
   )
   const baseObstacles = [
-    ...treeObstacles,
-    ...fixedSceneryObstacles,
+    ...treeObstacles.filter((tree) =>
+      forest.clearances.every(
+        (clearance) =>
+          Math.hypot(tree.x - clearance.x, tree.z - clearance.z) >
+          tree.radius + clearance.radius,
+      ),
+    ),
+    ...fixedSceneryObstacles.filter((obstacle) => !obstacle.id.startsWith('landmark-')),
   ].filter((obstacle) =>
     structureClearances.every(
       (clearance) =>
@@ -1429,7 +1840,29 @@ export function createWorldPhysicsLayout(
         obstacle.radius + clearance.radius,
       ),
   )
-  const baseSurfaceZones = createSurfaceZones(stage.mapSize, stage.theme)
+  baseObstacles.push(...forest.obstacles)
+  const baseSurfaceZones = [...createSurfaceZones(stage.mapSize, stage.theme), ...getCentralParkZones(stage.mapSize, stage.theme)]
+  // More asset-backed trees in the interior and around the park, with the
+  // central spawn, bridge columns, pond and ramp entrances kept clear.
+  for (let attempt = 0, added = 0; attempt < 800 && added < 26; attempt += 1) {
+    const parkTree = added < 10 && attempt < 240
+    const angle = attempt * NATURAL_GOLDEN_ANGLE + 0.61
+    const distance = stage.mapSize * (parkTree ? 0.07 + (attempt % 4) * 0.017 : added < 10 ? 0.17 + (attempt % 9) * 0.01 : 0.19 + (attempt % 9) * 0.023)
+    const x = (parkTree ? stage.mapSize * 0.06 : 0) + Math.cos(angle) * distance
+    const z = (parkTree ? stage.mapSize * 0.055 : 0) + Math.sin(angle) * distance
+    const tree: WorldObstacle = { id: `park-tree-${added}`, label: isForest ? '달그늘 나무' : '공원 산책 나무', x, z, radius: 0.48, response: 'stop' }
+    if (Math.hypot(x, z) < 8 ||
+      baseObstacles.some((other) => Math.hypot(x - other.x, z - other.z) < other.radius + 3.3) ||
+      structureClearances.some((other) => Math.hypot(x - other.x, z - other.z) < other.radius + 1.4) ||
+      speedZones.some((zone) => !isCircleClearOfSpeedZone(tree, zone, 1.4)) ||
+      baseSurfaceZones.some((zone) => zone.kind === 'water' && !isCircleClearOfSurfaceZone(x, z, 0.6, zone))) continue
+    baseObstacles.push(tree)
+    added += 1
+  }
+  pushableProps = distributePushableProps(pushableProps, stage.mapSize, baseObstacles, [
+    ...terrainRamps, ...elevatedPlatforms, ...elevatedWalkways, ...rideableObstacles, ...tunnels,
+    ...elevators.map((elevator) => ({ ...elevator, rotationY: 0 })),
+  ], stage.theme)
   const naturalPlacementObstacles = [
     ...baseObstacles,
     ...pushableProps.map((prop) => ({
@@ -1484,6 +1917,7 @@ export function createWorldPhysicsLayout(
   const obstacles = [...baseObstacles, ...naturalBlockers]
 
   return {
+    landmarks: forest.landmarks,
     obstacles,
     rideableObstacles,
     tunnels,
@@ -1491,6 +1925,7 @@ export function createWorldPhysicsLayout(
     surfaceZones: [...baseSurfaceZones, ...mudZones],
     terrainRamps,
     elevatedPlatforms,
+    elevatedWalkways,
     elevators,
     pushableProps,
     pushRewardSlots,
@@ -1549,6 +1984,7 @@ export function getActiveSurfaceZone(
     isInsideSurfaceZone(x, z, zone),
   )
   return (
+    matchingZones.find((zone) => zone.id === 'central-park-pond') ??
     matchingZones.find((zone) => zone.kind !== 'slick') ??
     matchingZones[0]
   )

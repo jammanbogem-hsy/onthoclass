@@ -1,12 +1,14 @@
 import { Clone, useAnimations, useGLTF } from '@react-three/drei'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo } from 'react'
+import { useThree } from '@react-three/fiber'
 import {
   AnimationMixer,
-  DoubleSide,
-  InstancedMesh,
+  Group,
+  Material,
   Mesh,
   Object3D,
   Quaternion,
+  Texture,
   Vector3,
 } from 'three'
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
@@ -21,7 +23,11 @@ import {
 } from '@/lib/quizrun-engine/collectibleScale'
 import { getSizeTier } from '@/lib/quizrun-engine/mechanics'
 import { getAssetBackedLevelUpModelId } from '@/lib/quizrun-engine/levelUpAssets'
-import { getStructuredCollectibleAsset } from '@/lib/quizrun-engine/structuredCollectibleAssets'
+import { getTreasureModel, TREASURE_MODEL_URLS } from '@/lib/quizrun-engine/treasureModels'
+import {
+  getStructuredCollectibleAsset,
+  STRUCTURED_COLLECTIBLE_ASSETS,
+} from '@/lib/quizrun-engine/structuredCollectibleAssets'
 import {
   getLevelOneAssetVariant,
   type LevelOneAssetVariant,
@@ -1150,6 +1156,91 @@ useGLTF.preload(luxuryCar2Url)
 useGLTF.preload(drinkVendingMachineUrl)
 
 /**
+ * Every collectible GLB the world can mount. They are all preloaded up front:
+ * a model first requested mid-game used to suspend the whole scene (black
+ * frame), and chained requests created a slow loading waterfall.
+ */
+const COLLECTIBLE_MODEL_URLS: readonly string[] = [
+  ...Object.values(LEVEL_ONE_ASSET_URLS),
+  stopwatchModelUrl,
+  jumpingWaterBottleUrl,
+  runningSunglassesUrl,
+  level2HeadsetUrl,
+  level2NoteUrl,
+  level2RunningShoeUrl,
+  level2DigitalWatchUrl,
+  shimmeringRunningBagUrl,
+  catDollUrl,
+  beraIceCreamUrl,
+  energyDrinkUrl,
+  taekwondoUniformUrl,
+  athleteRunningShoeUrl,
+  raccoonUrl,
+  inlineSkatesUrl,
+  runningVestUrl,
+  runningMedalUrl,
+  sodaCoolerUrl,
+  catUrl,
+  shibaInuUrl,
+  carUrl,
+  noiseCancelingHeadsetUrl,
+  luxuryCarUrl,
+  luxuryCar2Url,
+  drinkVendingMachineUrl,
+  lotteTowerUrl,
+  ...TREASURE_MODEL_URLS,
+  ...STRUCTURED_COLLECTIBLE_ASSETS.map((asset) => asset.url),
+]
+
+COLLECTIBLE_MODEL_URLS.forEach((url) => useGLTF.preload(url))
+
+/**
+ * Compiles every collectible's shaders and uploads its textures once, right
+ * after the world appears, so the first level-up item on screen does not
+ * stall the frame while the GPU program is built.
+ */
+export function CollectibleGpuWarmup({ extraUrls = [] }: { extraUrls?: readonly string[] }) {
+  const gltfs = useGLTF([...COLLECTIBLE_MODEL_URLS, ...extraUrls])
+  const { gl, scene, camera } = useThree()
+
+  useEffect(() => {
+    let cancelled = false
+    const holder = new Group()
+    holder.name = 'gpu-warmup'
+    const textures = new Set<Texture>()
+    gltfs.forEach(({ scene: model }) => {
+      const copy = model.clone(true)
+      copy.traverse((child: Object3D) => {
+        const material = (child as Mesh).material as Material | Material[] | undefined
+        if (!material) return
+        ;(Array.isArray(material) ? material : [material]).forEach((entry) => {
+          Object.values(entry).forEach((value) => {
+            if (value instanceof Texture) textures.add(value)
+          })
+        })
+      })
+      holder.add(copy)
+    })
+    // Parked under the floor; compile() ignores frustum culling.
+    holder.position.set(0, -500, 0)
+    scene.add(holder)
+    textures.forEach((texture) => gl.initTexture(texture))
+    gl.compileAsync(scene, camera)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) scene.remove(holder)
+      })
+    return () => {
+      cancelled = true
+      scene.remove(holder)
+    }
+  }, [camera, gl, gltfs, scene])
+
+  return null
+}
+
+
+/**
  * Every generated level-up collectible is backed by an imported GLB. The
  * procedural cases below remain only as compatibility fallbacks for old data.
  */
@@ -1157,6 +1248,15 @@ export function LearningObjectMesh({
   item,
   detail = 'world',
 }: LearningObjectMeshProps) {
+  if (item.modelId === 'radar-treasure') {
+    return (
+      <ImportedCollectibleMesh
+        url={getTreasureModel(item.id).url}
+        detail={detail}
+      />
+    )
+  }
+
   const structuredAsset = getStructuredCollectibleAsset(item.modelId)
   if (structuredAsset) {
     return (
@@ -1394,160 +1494,12 @@ export function AttachedObjectMesh({
       position={transform.position}
       quaternion={transform.orientation}
       scale={transform.scale}
+      name={`attached-${item.id}`}
+      userData={{ sightOccluder: true, sightMinOpacity: 0.82 }}
     >
       <LearningObjectMesh item={item} detail="attached" />
     </group>
   )
-}
-
-interface InstanceSpec {
-  color: string
-  position: VectorTuple
-  scale: VectorTuple
-  rotationY?: number
-}
-
-function setInstances(mesh: InstancedMesh, specs: InstanceSpec[]) {
-  const dummy = new Object3D()
-
-  specs.forEach((spec, index) => {
-    dummy.position.set(...spec.position)
-    dummy.rotation.set(0, spec.rotationY ?? 0, 0)
-    dummy.scale.set(...spec.scale)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(index, dummy.matrix)
-  })
-  mesh.instanceMatrix.needsUpdate = true
-}
-
-function InstancedBoxBatch({
-  specs,
-  color,
-  castShadow = true,
-  receiveShadow = false,
-}: {
-  specs: InstanceSpec[]
-  color: string
-  castShadow?: boolean
-  receiveShadow?: boolean
-}) {
-  const mesh = useRef<InstancedMesh>(null)
-
-  useLayoutEffect(() => {
-    if (mesh.current) setInstances(mesh.current, specs)
-  }, [specs])
-
-  return (
-    <instancedMesh
-      ref={mesh}
-      args={[undefined, undefined, specs.length]}
-      castShadow={castShadow}
-      receiveShadow={receiveShadow}
-    >
-      <boxGeometry />
-      <meshStandardMaterial color={color} roughness={0.84} metalness={0.01} />
-    </instancedMesh>
-  )
-}
-
-function InstancedBoxes({
-  specs,
-  castShadow = true,
-  receiveShadow = false,
-}: {
-  specs: InstanceSpec[]
-  castShadow?: boolean
-  receiveShadow?: boolean
-}) {
-  const colorGroups = useMemo(
-    () =>
-      Array.from(new Set(specs.map((spec) => spec.color))).map((color) => ({
-        color,
-        specs: specs.filter((spec) => spec.color === color),
-      })),
-    [specs],
-  )
-
-  return (
-    <>
-      {colorGroups.map((group) => (
-        <InstancedBoxBatch
-          key={group.color}
-          specs={group.specs}
-          color={group.color}
-          castShadow={castShadow}
-          receiveShadow={receiveShadow}
-        />
-      ))}
-    </>
-  )
-}
-
-function InstancedPolyhedraBatch({
-  specs,
-  color,
-  castShadow = true,
-}: {
-  specs: InstanceSpec[]
-  color: string
-  castShadow?: boolean
-}) {
-  const mesh = useRef<InstancedMesh>(null)
-
-  useLayoutEffect(() => {
-    if (mesh.current) setInstances(mesh.current, specs)
-  }, [specs])
-
-  return (
-    <instancedMesh
-      ref={mesh}
-      args={[undefined, undefined, specs.length]}
-      castShadow={castShadow}
-    >
-      <dodecahedronGeometry args={[0.5, 0]} />
-      <meshStandardMaterial color={color} roughness={0.92} metalness={0} />
-    </instancedMesh>
-  )
-}
-
-function InstancedPolyhedra({
-  specs,
-  castShadow = true,
-}: {
-  specs: InstanceSpec[]
-  castShadow?: boolean
-}) {
-  const colorGroups = useMemo(
-    () =>
-      Array.from(new Set(specs.map((spec) => spec.color))).map((color) => ({
-        color,
-        specs: specs.filter((spec) => spec.color === color),
-      })),
-    [specs],
-  )
-
-  return (
-    <>
-      {colorGroups.map((group) => (
-        <InstancedPolyhedraBatch
-          key={group.color}
-          specs={group.specs}
-          color={group.color}
-          castShadow={castShadow}
-        />
-      ))}
-    </>
-  )
-}
-
-function rotateOffset(
-  x: number,
-  z: number,
-  rotationY: number,
-): [number, number] {
-  const cosine = Math.cos(rotationY)
-  const sine = Math.sin(rotationY)
-  return [x * cosine + z * sine, -x * sine + z * cosine]
 }
 
 interface ImportedTreeSpec {
@@ -1565,6 +1517,7 @@ function ImportedTree({ spec }: { spec: ImportedTreeSpec }) {
   return (
     <Clone
       name={`imported-tree-${spec.variant}`}
+      userData={{ sightOccluder: true }}
       object={scene}
       position={spec.position}
       rotation={[0, spec.rotationY, 0]}
@@ -1597,6 +1550,7 @@ function ImportedBench({ spec }: { spec: ImportedBenchSpec }) {
   return (
     <Clone
       name="imported-bench-chair"
+      userData={{ sightOccluder: true }}
       object={scene}
       position={spec.position}
       rotation={[0, spec.rotationY, 0]}
@@ -1631,6 +1585,7 @@ function NaturalBlockModel({
   return (
     <Clone
       name={`natural-obstacle-${obstacle.assetVariant}`}
+      userData={{ sightOccluder: true }}
       object={scene}
       position={[obstacle.x, 0.01, obstacle.z]}
       rotation={[0, obstacle.rotationY ?? 0, 0]}
@@ -1707,18 +1662,15 @@ useGLTF.preload(mudAObstacleUrl)
 useGLTF.preload(mudBObstacleUrl)
 
 /**
- * Deterministic stage scenery. Tree models preserve their complete imported
- * scenes while the simpler markers, bushes, racks, and blocks stay instanced
- * for mobile rendering.
+ * Deterministic stage landmarks: imported trees, benches and crew kiosks.
+ * Ground, trails, grass and rocks come from NaturalTerrain.
  */
 export function GardenSetDressing({
   floorSize = 60,
-  receiveShadow = true,
   theme = 'sunny-plaza',
   treeObstacles = [],
 }: GardenSetDressingProps) {
   const parkSize = Math.max(88, Math.min(220, floorSize))
-  const mapScale = parkSize / 60
   const themeColors = SCENERY_THEMES[theme]
   const treeSpecs = useMemo<ImportedTreeSpec[]>(
     () =>
@@ -1758,304 +1710,13 @@ export function GardenSetDressing({
         }),
     [treeObstacles],
   )
-  const scenery = useMemo(() => {
-    const edgeRadius = parkSize * 0.468
-    const treeCount = Math.round(22 * mapScale)
-    const bushes: InstanceSpec[] = []
-
-    Array.from({ length: treeCount }, (_, index) => {
-      const angle = (index / treeCount) * Math.PI * 2
-      if (index % 2 === 0) {
-        const bushAngle = angle + Math.PI / treeCount
-        const bushRadius = edgeRadius - 2.2
-        bushes.push({
-          color:
-            themeColors.leaves[(index + 1) % themeColors.leaves.length],
-          position: [
-            Math.cos(bushAngle) * bushRadius,
-            0.42,
-            Math.sin(bushAngle) * bushRadius,
-          ],
-          scale: [1.15, 0.75, 1.05],
-          rotationY: bushAngle,
-        })
-      }
-    })
-
-    const routeMarkers: InstanceSpec[] = Array.from(
-      { length: Math.round(48 * mapScale) },
-      (_, index) => {
-        const count = Math.round(48 * mapScale)
-        const angle = (index / count) * Math.PI * 2
-        const routeRadius = parkSize * 0.35
-        const forestProgress = index / Math.max(1, count - 1)
-        const forestX = -routeRadius + forestProgress * routeRadius * 2
-        const riverX = -routeRadius + forestProgress * routeRadius * 2
-        const position =
-          theme === 'forest-trail'
-            ? [
-                forestX,
-                0.05,
-                Math.sin(forestProgress * Math.PI * 4) * parkSize * 0.1,
-              ]
-            : theme === 'starlight-river'
-              ? [
-                  riverX,
-                  0.05,
-                  parkSize * 0.27 +
-                    Math.sin(forestProgress * Math.PI * 3) * 1.8,
-                ]
-              : [
-                  Math.cos(angle) * routeRadius * 1.08,
-                  0.05,
-                  Math.sin(angle) * routeRadius * 0.88,
-                ]
-        return {
-          color:
-            themeColors.markers[index % themeColors.markers.length],
-          position: position as VectorTuple,
-          scale: [0.38, 0.05, 0.72],
-          rotationY:
-            theme === 'sunny-plaza'
-              ? -angle
-              : Math.sin(index * 0.41) * 0.18,
-        }
-      },
-    )
-
-    const rackParts: InstanceSpec[] = []
-    const gear: InstanceSpec[] = []
-    const racks = [
-      { x: -parkSize * 0.36, z: -4.5 * mapScale, yaw: Math.PI / 2 },
-      { x: parkSize * 0.36, z: 4.5 * mapScale, yaw: -Math.PI / 2 },
-      { x: -5 * mapScale, z: parkSize * 0.36, yaw: 0 },
-      { x: 5 * mapScale, z: -parkSize * 0.36, yaw: Math.PI },
-    ]
-
-    racks.forEach((rack, rackIndex) => {
-      const frame = [
-        { x: -0.95, y: 0.92, z: 0, scale: [0.14, 1.84, 0.52] },
-        { x: 0.95, y: 0.92, z: 0, scale: [0.14, 1.84, 0.52] },
-        { x: 0, y: 0.18, z: 0, scale: [1.9, 0.14, 0.52] },
-        { x: 0, y: 0.98, z: 0, scale: [1.9, 0.12, 0.52] },
-        { x: 0, y: 1.72, z: 0, scale: [1.9, 0.14, 0.52] },
-      ]
-      frame.forEach((part) => {
-        const [offsetX, offsetZ] = rotateOffset(part.x, part.z, rack.yaw)
-        rackParts.push({
-          color: rackIndex % 2 ? '#DFAE70' : WOOD,
-          position: [rack.x + offsetX, part.y, rack.z + offsetZ],
-          scale: part.scale as VectorTuple,
-          rotationY: rack.yaw,
-        })
-      })
-      Array.from({ length: 8 }, (_, index) => {
-        const row = index < 4 ? 0 : 1
-        const localX = -0.64 + (index % 4) * 0.43
-        const [offsetX, offsetZ] = rotateOffset(localX, -0.02, rack.yaw)
-        gear.push({
-          color: PALETTE[(index + rackIndex) % PALETTE.length],
-          position: [
-            rack.x + offsetX,
-            0.52 + row * 0.78,
-            rack.z + offsetZ,
-          ],
-          scale: [0.28, 0.52, 0.34],
-          rotationY: rack.yaw,
-        })
-      })
-    })
-
-    const steppingBlocks: InstanceSpec[] = Array.from(
-      { length: Math.round(18 * mapScale) },
-      (_, index) => ({
-        color:
-          themeColors.markers[index % themeColors.markers.length],
-        position: [
-          -8.5 * mapScale + index,
-          0.13 + (index % 3) * 0.04,
-          -12.3 * mapScale + Math.sin(index * 0.8) * 0.8,
-        ],
-        scale: [0.58, 0.24, 0.58],
-        rotationY: index * 0.22,
-      }),
-    )
-
-    const plazaDots: InstanceSpec[] = Array.from(
-      { length: 20 },
-      (_, index) => {
-        const angle = (index / 20) * Math.PI * 2
-        const radius = (index % 2 ? 4.8 : 7.1) * mapScale
-        return {
-          color:
-            index % 2 ? themeColors.plaza : themeColors.trail,
-          position: [Math.cos(angle) * radius, 0.028, Math.sin(angle) * radius],
-          scale: [0.72, 0.03, 0.72],
-          rotationY: angle,
-        }
-      },
-    )
-
-    return {
-      bushes,
-      gear,
-      plazaDots,
-      rackParts,
-      routeMarkers,
-      steppingBlocks,
-    }
-  }, [mapScale, parkSize, theme, themeColors])
-
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={receiveShadow}>
-        <planeGeometry args={[parkSize, parkSize]} />
-        <Paint color={themeColors.ground} roughness={0.98} />
-      </mesh>
-
-      {theme === 'sunny-plaza' && (
-        <>
-          <mesh
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, 0.016, 0]}
-            scale={[1.24, 1, 1]}
-            receiveShadow={receiveShadow}
-          >
-            <ringGeometry
-              args={[18.15 * mapScale, 20.2 * mapScale, 96]}
-            />
-            <meshStandardMaterial
-              color={themeColors.track}
-              roughness={0.96}
-              side={DoubleSide}
-            />
-          </mesh>
-          <mesh
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, 0.02, 0]}
-            receiveShadow={receiveShadow}
-          >
-            <ringGeometry args={[8.1 * mapScale, 9.35 * mapScale, 64]} />
-            <meshStandardMaterial
-              color={themeColors.trail}
-              roughness={0.96}
-              side={DoubleSide}
-            />
-          </mesh>
-          <mesh
-            position={[0, 0.018, 0]}
-            scale={[0.9 * mapScale, 0.035, 23.5 * mapScale]}
-          >
-            <boxGeometry />
-            <Paint color={themeColors.track} roughness={0.96} />
-          </mesh>
-          <mesh
-            position={[0, 0.02, 0]}
-            scale={[23.5 * mapScale, 0.035, 0.9 * mapScale]}
-          >
-            <boxGeometry />
-            <Paint color={themeColors.track} roughness={0.96} />
-          </mesh>
-        </>
-      )}
-
-      {theme === 'forest-trail' && (
-        <>
-          <mesh
-            position={[0, 0.018, 0]}
-            scale={[parkSize * 0.43, 0.035, 1.35]}
-            rotation={[0, 0.18, 0]}
-          >
-            <boxGeometry />
-            <Paint color={themeColors.trail} roughness={0.98} />
-          </mesh>
-          <mesh
-            position={[0, 0.02, 0]}
-            scale={[1.2, 0.035, parkSize * 0.42]}
-            rotation={[0, -0.34, 0]}
-          >
-            <boxGeometry />
-            <Paint color={themeColors.track} roughness={0.98} />
-          </mesh>
-          <mesh
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, 0.024, 0]}
-          >
-            <ringGeometry
-              args={[parkSize * 0.19, parkSize * 0.215, 72]}
-            />
-            <meshStandardMaterial
-              color={themeColors.trail}
-              roughness={0.98}
-              side={DoubleSide}
-            />
-          </mesh>
-        </>
-      )}
-
-      {theme === 'starlight-river' && (
-        <>
-          <mesh
-            position={[0, 0.012, parkSize * 0.27]}
-            scale={[parkSize / 2, 0.025, 5.2]}
-          >
-            <boxGeometry />
-            <Paint color="#345F83" roughness={0.4} />
-          </mesh>
-          <mesh
-            position={[0, 0.045, parkSize * 0.27]}
-            scale={[2.8, 0.07, 6.8]}
-          >
-            <boxGeometry />
-            <Paint color={themeColors.trail} roughness={0.76} />
-          </mesh>
-          <mesh
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, 0.028, 0]}
-          >
-            <ringGeometry
-              args={[parkSize * 0.23, parkSize * 0.255, 88]}
-            />
-            <meshStandardMaterial
-              color={themeColors.track}
-              roughness={0.82}
-              side={DoubleSide}
-            />
-          </mesh>
-        </>
-      )}
-
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0.028, 0]}
-        receiveShadow={receiveShadow}
-      >
-        <circleGeometry args={[3.4 * mapScale, 40]} />
-        <meshStandardMaterial
-          color={themeColors.plaza}
-          roughness={0.92}
-          side={DoubleSide}
-        />
-      </mesh>
-
-      <InstancedBoxes
-        specs={scenery.routeMarkers}
-        castShadow={false}
-        receiveShadow={receiveShadow}
-      />
-      <InstancedBoxes
-        specs={scenery.plazaDots}
-        castShadow={false}
-        receiveShadow={receiveShadow}
-      />
       <ImportedTrees specs={treeSpecs} />
       <ImportedBenches specs={benchSpecs} />
-      <InstancedPolyhedra specs={scenery.bushes} />
-      <InstancedBoxes specs={scenery.rackParts} />
-      <InstancedBoxes specs={scenery.gear} />
-      <InstancedBoxes specs={scenery.steppingBlocks} />
 
-      <group position={[-parkSize * 0.35, 0, parkSize * 0.24]}>
+      {theme !== 'forest-trail' && (<>
+      <group position={[-parkSize * 0.35, 0, parkSize * 0.24]} userData={{ sightOccluder: true }}>
         <CrewKiosk
           color={themeColors.markers[0]}
           compact={theme !== 'sunny-plaza'}
@@ -2064,12 +1725,14 @@ export function GardenSetDressing({
       <group
         position={[parkSize * 0.35, 0, -parkSize * 0.24]}
         rotation={[0, Math.PI, 0]}
+        userData={{ sightOccluder: true }}
       >
         <CrewKiosk
           color={themeColors.markers[1]}
           compact={theme !== 'sunny-plaza'}
         />
       </group>
+      </>)}
     </group>
   )
 }
