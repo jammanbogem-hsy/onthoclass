@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { cloneState, createState, input, receive, revive, tick, type Action, type Cell, type PuyoState } from "@/lib/puyo-engine";
 import { finishPuyo, readPuyoSeq, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
 import { getPuyoLive, watchPuyoConnection, watchPuyoLive, savePuyoLive, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
-import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS } from "@/lib/puyo-sync";
+import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS, startLiveTicker } from "@/lib/puyo-sync";
 import { normalizeRules, type FlowStage, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
 import { PuyoBoard, Sprite } from "./PuyoBoard";
@@ -349,7 +349,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const [now, setNow] = useState(0);
   // 경기 중에는 전체 화면. '대진표 보기'로 잠시 내려 두고 다시 열 수 있다.
   const [full, setFull] = useState(true);
-  const opponent = liveOpponent && now - liveOpponent.at < 2000 && !match?.result ? liveOpponent : durableOpponent;
+  const opponent = liveOpponent && now - liveOpponent.at < 5000 && !match?.result ? liveOpponent : durableOpponent;
   const sound = useSound(); const soundRef = useRef(sound);
   useEffect(() => { soundRef.current = sound; }, [sound]);
   const healthyRef = useRef(liveHealthy);
@@ -395,7 +395,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
         setNow(time); if (s) setView(cloneState(s)); draw = at;
         if (s && s.event !== lastEvent) {
           lastEvent = s.event;
-          if (["clear", "attack", "allclear", "garbage", "revive"].includes(s.effect)) { publisher.current?.request(true); livePublisher.current?.request(true); }
+          if (["clear", "attack", "allclear", "garbage", "revive"].includes(s.effect)) { if (!options.current.config.realtime || !healthyRef.current) publisher.current?.request(true); livePublisher.current?.request(true); }
           if (["clear", "attack", "allclear", "garbage"].includes(s.effect)) soundRef.current.play(s.chain, s.effect === "garbage");
         }
       }
@@ -440,7 +440,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
       error: () => markLive(false),
     }) : null;
     livePublisher.current = live;
-    const liveTimer = live ? setInterval(() => live.request(), PUYO_LIVE_INTERVAL_MS) : null;
+    const stopLive = live ? startLiveTicker(() => state.current, () => live.request(), PUYO_LIVE_INTERVAL_MS) : null;
     const backup = () => {
       const s = state.current; const { config: c, match: m, clockOffset: offset } = options.current;
       const at = Date.now() + offset;
@@ -449,15 +449,15 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
       }
     };
     let lastCheckpoint = 0;
-    const interval = setInterval(() => { backup(); const time = performance.now(); if (!config.realtime || !healthyRef.current || time - lastCheckpoint >= 1000) { lastCheckpoint = time; queue.request(); } }, PUYO_SYNC_INTERVAL_MS);
+    const interval = setInterval(() => { backup(); const time = performance.now(); if (time - lastCheckpoint >= (!config.realtime || !healthyRef.current ? 1000 : 3000)) { lastCheckpoint = time; queue.request(); } }, PUYO_SYNC_INTERVAL_MS);
     const hide = () => { backup(); queue.request(true); };
     window.addEventListener("pagehide", hide);
-    return () => { live?.dispose(); livePublisher.current = null; if (liveTimer) clearInterval(liveTimer); queue.dispose(); publisher.current = null; clearInterval(interval); window.removeEventListener("pagehide", hide); };
+    return () => { live?.dispose(); livePublisher.current = null; stopLive?.(); queue.dispose(); publisher.current = null; clearInterval(interval); window.removeEventListener("pagehide", hide); };
   }, [cid, gid, uid, ready, config.realtime, markLive]);
   const action = useCallback((a: Action) => {
     const { config: c, match: m, clockOffset: offset } = options.current;
     const t = Date.now() + offset;
-    if (state.current && !m?.result && t >= (c.startsAt ?? Infinity) && t < (c.endsAt ?? 0)) { input(state.current, a); setView(cloneState(state.current)); livePublisher.current?.request(a === "drop"); if (!options.current.config.realtime || a === "drop") publisher.current?.request(a === "drop"); }
+    if (state.current && !m?.result && t >= (c.startsAt ?? Infinity) && t < (c.endsAt ?? 0)) { input(state.current, a); setView(cloneState(state.current)); livePublisher.current?.request(a === "drop"); if (!options.current.config.realtime || !healthyRef.current) publisher.current?.request(a === "drop"); }
   }, []);
 
   if (!match || !view) return <p className={styles.loading}>경기 보드를 준비하고 있어요…</p>;

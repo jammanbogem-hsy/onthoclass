@@ -60,3 +60,24 @@ export class PuyoPublisher {
   resync(seq: number) { if (Number.isInteger(seq) && seq >= 0) this.seq = seq; }
   dispose() { this.disposed = true; if (this.timer) clearTimeout(this.timer); }
 }
+
+/** 실시간 보드 '심장박동' 간격 — 보드가 그대로여도 이 간격마다 한 번은 보내 접속 중임을 알린다. */
+export const PUYO_HEARTBEAT_MS = 2000;
+/** 상대 화면에 보이는 것이 바뀌었는지 가늠하는 요약(이벤트·떨어지는 뿌요 위치·방해·점수·단계). */
+export function liveSignature(s: PuyoState) {
+  const a = s.active;
+  return `${s.event}|${a ? `${a.x},${a.y},${a.r}` : "-"}|${s.pending}|${s.score}|${s.phase}`;
+}
+/**
+ * 바뀐 순간에만 보내는 타이머 — everyMs 마다 살펴보고, 요약이 달라졌거나 심장박동 때가 됐을 때만 send.
+ * (예전에는 0.1초마다 무조건 보내 실시간 데이터 사용량이 컸다)
+ */
+export function startLiveTicker(getState: () => PuyoState | null, send: () => void, everyMs: number) {
+  let last = ""; let at = -Infinity;
+  const timer = setInterval(() => {
+    const s = getState(); if (!s) return;
+    const sig = liveSignature(s); const now = performance.now();
+    if (sig !== last || now - at >= PUYO_HEARTBEAT_MS) { last = sig; at = now; send(); }
+  }, everyMs);
+  return () => clearInterval(timer);
+}

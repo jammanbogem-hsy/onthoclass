@@ -8,7 +8,7 @@ import { getMemberProfile } from "@/lib/classes";
 import { cloneState, createState, input, receive, revive, tick, type Action, type PuyoState } from "@/lib/puyo-engine";
 import { puyoClock, puyoUrl, type PuyoRun } from "@/lib/puyo";
 import { saveFreeLive, watchFreeLive, watchPuyoConnection, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
-import { PuyoPublisher } from "@/lib/puyo-sync";
+import { PuyoPublisher, startLiveTicker } from "@/lib/puyo-sync";
 import { cancelFreeRoom, createFreeRoom, finishFreeRoom, FREE_MAX, FREE_SEC, FREE_WAIT_TTL_MS, freeTimes, joinFreeRoom, leaveFreeRoom, seats, setFreeOpen, standings, startFreeRoom, watchFreeOpen, watchFreeRooms, type FreeRoom } from "@/lib/puyo-free";
 import { Icon } from "@/components/Icon";
 import { BattleStage, stageResult, useSound } from "./PuyoBattle";
@@ -77,8 +77,8 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
       error: () => markLive(false),
     });
     live.current = pub;
-    const timer = setInterval(() => pub.request(), PUYO_LIVE_INTERVAL_MS);
-    return () => { clearInterval(timer); pub.dispose(); live.current = null; };
+    const stopLive = startLiveTicker(() => state.current, () => pub.request(), PUYO_LIVE_INTERVAL_MS);
+    return () => { stopLive(); pub.dispose(); live.current = null; };
   }, [cid, room.id, uid, markLive]);
   const action = useCallback((a: Action) => {
     const { startsAt: s0, endsAt: s1, offset } = times.current; const t = Date.now() + offset;
