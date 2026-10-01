@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.7.1";
+export const APP_VERSION = "1.8.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.8.0",
+    date: "2026-10-01",
+    kind: "minor",
+    title: "경기마다 다른 무대",
+    items: [
+      "뿌요뿌요 경기마다 용광로 공장·깊은 바다·마법 숲·별빛 하늘·과자 나라 중 한 무대가 펼쳐져요.",
+      "보드에 보석 박힌 테두리와 무대별 무늬 칸이 생겼어요.",
+    ],
+  },
   {
     version: "1.7.1",
     date: "2026-10-01",

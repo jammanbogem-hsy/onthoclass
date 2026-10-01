@@ -119,7 +119,7 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
     score: table.map(r => `${r.rank}등 ${room.members[r.uid] || "친구"} ${r.score.toLocaleString("ko-KR")}`).join(" · "),
     reward: "자유 대전은 보상 없이 즐겨요",
   } : stageResult(winner, uid, scores[uid] ?? 0, scores[others[0]] ?? 0, "자유 대전은 보상 없이 즐겨요");
-  return <BattleStage view={view} oppState={rivals[0]?.state ?? createState(room.seed)} meName={meName} oppName={rivals[0]?.name ?? "친구"}
+  return <BattleStage themeSeed={room.seed} view={view} oppState={rivals[0]?.state ?? createState(room.seed)} meName={meName} oppName={rivals[0]?.name ?? "친구"}
     myScore={scores[uid] ?? view.score} theirScore={scores[others[0]] ?? 0} others={multi ? rivals : undefined}
     seconds={seconds} countdown={countdown} away={rivals[0]?.away} mineIndex={Math.max(0, order.indexOf(uid))}
     notice={!over && countdown <= 0 && badAt !== null && now - clockOffset - badAt > 5000 ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined}

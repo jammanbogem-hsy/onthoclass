@@ -9,6 +9,7 @@ import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS, startLive
 import { normalizeRules, type FlowStage, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
 import { PuyoBoard, Sprite } from "./PuyoBoard";
+import { pickTheme } from "@/lib/puyo-themes";
 import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
 
@@ -178,15 +179,16 @@ const PORTRAITS = ["charmander", "squirtle", "gengar", "snorlax"];
 export type Ranked = { name: string; score: number; me: boolean };
 
 /** 가운데 칸 — NEXT·시간·점수(또는 순위)·내 캐릭터(연쇄하면 뛰고, 방해 받으면 흔들린다). */
-function CenterPanel({ view, opp, meName, oppName, myScore, theirScore, seconds, done, mineIndex, keysHint, ranking }: {
+function CenterPanel({ stageName, view, opp, meName, oppName, myScore, theirScore, seconds, done, mineIndex, keysHint, ranking }: {
   view: PuyoState; opp?: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
-  seconds: number; done: boolean; mineIndex: number; keysHint: boolean; ranking?: Ranked[];
+  seconds: number; done: boolean; mineIndex: number; keysHint: boolean; ranking?: Ranked[]; stageName?: string;
 }) {
   const reacting = view.effect === "attack" || view.effect === "clear" || view.effect === "allclear" ? "cheer" : view.effect === "garbage" ? "hit" : view.effect === "revive" ? "hit" : "";
   const pair = (cells: number[], at: number, small = false) => <div className={`${styles.nextPair} ${small ? styles.nextSmall : ""}`}>
     <Sprite color={(cells[at + 1] || 0) as Cell} /><Sprite color={(cells[at] || 0) as Cell} />
   </div>;
   return <div className={styles.center}>
+    {stageName && <div className={styles.stageName}>{stageName}</div>}
     <div className={styles.nextCard}>
       <span className={styles.label}>NEXT</span>
       <div className={styles.nextRow}>
@@ -226,13 +228,16 @@ type Sound = ReturnType<typeof useSound>;
  * 전체 화면 경기장 — 학급 대전·자유 대전이 함께 쓰는 화면(동기화·저장은 부르는 쪽이 맡는다).
  * others 에 2명 이상을 주면 3~4인 배치(친구 보드를 옆에 세로로)로 그린다.
  */
-export function BattleStage({ view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction, others }: {
+export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction, others }: {
   view: PuyoState; oppState: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
   seconds: number; countdown: number; result: StageResult | null; away?: boolean; notice?: string;
   rules?: PuyoRules; flow?: FlowStage; mineIndex: number; action: (a: Action) => void; sound: Sound;
   onBack: () => void; backLabel: string; resultAction: { label: string; icon: string; onClick: () => void };
   others?: StageOther[];
+  /** 배경 테마를 고르는 시드 — 같은 경기의 모든 화면이 같은 값을 넘긴다. */
+  themeSeed?: number;
 }) {
+  const theme = pickTheme(themeSeed);
   const multi = (others?.length ?? 0) >= 2;
   const rivals: StageOther[] = multi ? others! : [{ name: oppName, state: oppState, away }];
   const arena = useRef<HTMLElement>(null);
@@ -276,7 +281,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
     <PuyoBoard state={r.state} name={r.name} opponent {...(fit.arcade ? { arcade: true } : { fill: true })} />
   </div>);
 
-  return createPortal(<div ref={stageRef} className={styles.stage} role="region" aria-label={multi ? `${rivals.length + 1}인 뿌요뿌요 경기` : "1대1 뿌요뿌요 경기"}>
+  return createPortal(<div ref={stageRef} className={styles.stage} data-theme={theme.id} style={theme.vars as CSSProperties} role="region" aria-label={multi ? `${rivals.length + 1}인 뿌요뿌요 경기` : "1대1 뿌요뿌요 경기"}>
     <header className={styles.bar}>
       <button type="button" className={styles.iconBtn} onClick={onBack} aria-label={backLabel}><Icon name="arrow_back" size={22} /><span className={styles.hideSm}>{backLabel}</span></button>
       {multi ? <div className={styles.barTitle}><strong>{rivals.length + 1}명 자유 대전</strong>{!fit.arcade && <span className={`${styles.clock} ${seconds <= 20 && !result ? styles.urgent : ""}`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>}</div>
@@ -298,7 +303,7 @@ export function BattleStage({ view, oppState, meName, oppName, myScore, theirSco
         <PuyoBoard state={view} name={meName} arcade />
       </div>
       <div style={{ width: fit.center }} className={styles.centerWrap}>
-        <CenterPanel view={view} opp={multi ? undefined : oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} ranking={ranking} />
+        <CenterPanel stageName={theme.name} view={view} opp={multi ? undefined : oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} ranking={ranking} />
       </div>
       {multi ? <div className={styles.miniColumn}>{miniBoards}</div> : miniBoards}
     </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
@@ -484,7 +489,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     <button type="button" className={styles.primaryBtn} onClick={() => setFull(true)}><Icon name="open_in_full" size={18} />경기 화면 열기</button>
   </div>;
 
-  return <BattleStage view={view} oppState={oppState} meName={me?.name ?? "나"} oppName={other?.name ?? "상대"} myScore={myScore} theirScore={theirScore}
+  return <BattleStage themeSeed={match.seed} view={view} oppState={oppState} meName={me?.name ?? "나"} oppName={other?.name ?? "상대"} myScore={myScore} theirScore={theirScore}
     seconds={seconds} countdown={countdown} away={!!away} rules={normalizeRules(config)} flow={stage} mineIndex={match.a === uid ? 0 : 1}
     notice={result || countdown > 0 || seconds <= 0 ? undefined
       : saveBadAt !== null && now - clockOffset - saveBadAt > 5000 ? error
