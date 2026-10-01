@@ -70,3 +70,52 @@
 
 /* 안내 줄이 없어도 경기장이 늘 1fr 줄을 차지하도록 줄 번호 고정 */
 .bar{grid-row:1}.notice{grid-row:2}.arena{grid-row:3}.padBar{grid-row:4}
+
+/* ── 아케이드 배치: [내 보드 | 가운데 칸 | 상대 보드] ─────────────────── */
+.arenaArcade{gap:14px;padding:12px;align-items:center;background:radial-gradient(ellipse at 20% 0%,color-mix(in srgb,var(--md-sys-color-primary) 35%,transparent),transparent 55%),radial-gradient(ellipse at 80% 100%,#ff8a6a33,transparent 55%),linear-gradient(180deg,#191433,#0d0a1d)}
+.arenaArcade .mine,.arenaArcade .theirs{align-items:center}
+.centerWrap{align-self:stretch;display:flex;align-items:center;min-width:0}
+.center{width:100%;display:flex;flex-direction:column;gap:10px;color:#f4efff}
+.label{display:block;font-size:12px;font-weight:900;letter-spacing:2px;color:#b9a8ff}
+.nextCard,.timeCard,.scores,.stats{border-radius:18px;background:#ffffff10;border:1px solid #ffffff1f;padding:10px 12px;backdrop-filter:blur(4px)}
+.nextCard .label{text-align:center;color:#8ff0c4;font-size:16px;text-shadow:0 0 10px #38c48c88}
+.nextRow{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:6px}
+.nextMine{display:flex;align-items:flex-end;gap:6px}
+.nextTheirs{opacity:.75}
+.nextPair{display:flex;flex-direction:column;width:clamp(30px,3.6vw,52px)}
+.nextPair img{width:100%;height:auto;aspect-ratio:1;margin-top:-6%}
+.nextSmall{width:clamp(20px,2.4vw,34px)}
+.timeCard{text-align:center}
+.timeCard strong{display:block;font-variant-numeric:tabular-nums;font-size:clamp(28px,3.4vw,44px);font-weight:900;letter-spacing:1px;line-height:1.1}
+.timeCard.urgent{background:#ff4d6d33;border-color:#ff8fa3;animation:pulse .7s infinite alternate}
+.portrait{position:relative;display:grid;place-items:center;aspect-ratio:1;border-radius:24px;background:radial-gradient(circle at 50% 45%,#ffffff26,transparent 65%),#ffffff08;border:1px solid #ffffff1a;overflow:visible}
+.hero{width:78%;animation:heroIdle 2.4s ease-in-out infinite}
+.hero img{width:100%;height:auto;display:block;filter:drop-shadow(0 10px 18px #0008)}
+.heroCheer{animation:heroCheer 900ms cubic-bezier(.2,.8,.3,1)}
+.heroCheer img{filter:drop-shadow(0 0 22px #ffe08a) drop-shadow(0 10px 18px #0008)}
+.heroHit{animation:heroHit 600ms ease-out}
+.bubble{position:absolute;top:2%;right:-4%;padding:6px 12px;border-radius:999px 999px 999px 6px;background:#fff;color:#3b1d6e;font-size:clamp(14px,1.6vw,20px);font-weight:950;box-shadow:0 6px 18px #0006;animation:bubble 1100ms ease-out forwards;white-space:nowrap}
+.bubbleHit{background:#e6e9f5;color:#3a4360}
+.scores{display:flex;flex-direction:column;gap:6px}
+.scoreMine,.scoreTheirs{display:flex;flex-direction:column;align-items:flex-end}
+.scoreMine span,.scoreTheirs span{font-size:12px;font-weight:700;color:#cbbfff;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scoreMine strong{font-size:clamp(26px,3vw,40px);font-weight:950;font-variant-numeric:tabular-nums;color:#ffb3c7;text-shadow:0 2px 0 #7a1f3d;line-height:1.05}
+.scoreTheirs strong{font-size:clamp(20px,2.3vw,30px);font-weight:900;font-variant-numeric:tabular-nums;color:#9fd8ff;text-shadow:0 2px 0 #12406b;line-height:1.05}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0}
+.stats div{text-align:center}.stats dt{font-size:12px;color:#cbbfff}.stats dd{margin:0;font-size:20px;font-weight:900}
+.center .keys{color:#cbbfff;font-size:12px}
+.barTitle{display:flex;align-items:center;justify-content:center;gap:10px;min-width:0;font-size:16px}
+.barTitle strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:16ch}
+.barTitle span{font-weight:900;color:var(--md-sys-color-on-surface-variant)}
+.barTitle em{font-style:normal;font-size:13px;padding:2px 10px;border-radius:999px;background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container)}
+
+/* 공격 구슬 */
+.orb{position:absolute;left:0;top:0;z-index:4;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;pointer-events:none;background:radial-gradient(circle at 35% 30%,#fff 0 20%,#ffe08a 40%,#ff8a3d 75%,transparent 76%);box-shadow:0 0 18px 6px #ffb34788;animation:orbFly 720ms cubic-bezier(.5,0,.3,1) forwards}
+.orbBig{width:34px;height:34px;margin:-17px 0 0 -17px;box-shadow:0 0 26px 10px #ff6fb188;background:radial-gradient(circle at 35% 30%,#fff 0 20%,#ffd1f0 40%,#ff4fa3 75%,transparent 76%)}
+.orbTheirs{background:radial-gradient(circle at 35% 30%,#fff 0 20%,#b4e6ff 40%,#3d8bff 75%,transparent 76%);box-shadow:0 0 18px 6px #5aa8ff88}
+@keyframes orbFly{0%{transform:translate(var(--x1),var(--y1)) scale(.4);opacity:0}15%{opacity:1;transform:translate(var(--x1),calc(var(--y1) - 40px)) scale(1.2)}100%{transform:translate(var(--x2),var(--y2)) scale(.7);opacity:.9}}
+@keyframes heroIdle{0%,100%{transform:translateY(0) scale(1,1)}50%{transform:translateY(-4%) scale(.98,1.03)}}
+@keyframes heroCheer{0%{transform:translateY(0) scale(1)}25%{transform:translateY(-18%) scale(1.12,.92) rotate(-6deg)}50%{transform:translateY(-6%) scale(.95,1.08) rotate(5deg)}75%{transform:translateY(-12%) scale(1.06) rotate(-3deg)}100%{transform:none}}
+@keyframes heroHit{0%,100%{transform:none}15%{transform:translateX(-10%) rotate(-8deg)}35%{transform:translateX(9%) rotate(6deg)}55%{transform:translateX(-6%) rotate(-4deg)}75%{transform:translateX(3%)}}
+@keyframes bubble{0%{opacity:0;transform:scale(.4) translateY(10px)}15%{opacity:1;transform:scale(1.1)}25%,75%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translateY(-14px);visibility:hidden}}
+@media(prefers-reduced-motion:reduce){.hero,.heroCheer,.heroHit,.orb{animation:none}.orb{display:none}}

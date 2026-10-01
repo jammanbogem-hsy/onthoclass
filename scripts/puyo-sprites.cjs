@@ -22,7 +22,7 @@ const common = (c) => `
   ${crescent("rim", c.body, 2.4, 2.8, "blur05")}
   ${crescent("kick", c.body, -2.2, -2.6, "blur05")}`;
 
-const eye = (cx, cy, rx, ry, _iris, id) => `
+const eye = (cx, cy, rx, ry, _iris, id) => `<g class="blink">
   <ellipse cx="${cx}" cy="${cy + 1}" rx="${rx + 1.4}" ry="${ry + 1.4}" fill="#000" opacity=".2" filter="url(#blur1)"/>
   <ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="url(#sclera)"/>
   <ellipse cx="${cx + .5}" cy="${cy + .9}" rx="${rx * .76}" ry="${ry * .84}" fill="url(#${id})"/>
@@ -31,13 +31,14 @@ const eye = (cx, cy, rx, ry, _iris, id) => `
   <ellipse cx="${cx + .6}" cy="${cy + ry * .5}" rx="${rx * .5}" ry="${ry * .22}" fill="#fff" opacity=".28" filter="url(#blur05)"/>
   <ellipse cx="${cx - rx * .22}" cy="${cy - ry * .32}" rx="${rx * .36}" ry="${ry * .26}" fill="#fff"/>
   <circle cx="${cx + rx * .34}" cy="${cy + ry * .36}" r="${rx * .15}" fill="#fff" opacity=".9"/>
-  <circle cx="${cx + rx * .1}" cy="${cy - ry * .55}" r="${rx * .08}" fill="#fff" opacity=".8"/>`;
+  <circle cx="${cx + rx * .1}" cy="${cy - ry * .55}" r="${rx * .08}" fill="#fff" opacity=".8"/></g>`;
 const irisDef = (id, a, b) => `<radialGradient id="${id}" cx=".45" cy=".7" r=".8"><stop offset="0" stop-color="${a}"/><stop offset=".55" stop-color="${b}"/><stop offset="1" stop-color="#000" stop-opacity=".9"/></radialGradient>`;
 const sclera = `<radialGradient id="sclera" cx=".42" cy=".32" r=".75"><stop offset="0" stop-color="#fff"/><stop offset=".8" stop-color="#eef1f8"/><stop offset="1" stop-color="#c9cfdf"/></radialGradient>`;
 
-function svg(c) {
+const blinkCss = (dur, delay) => `<style>.blink{transform-box:fill-box;transform-origin:50% 55%;animation:blink ${dur}s ${delay}s infinite}@keyframes blink{0%,91%,100%{transform:scaleY(1)}94%{transform:scaleY(.08)}97%{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){.blink{animation:none}}</style>`;
+function svg(c, variant = "a") {
   const sx = c.sx ?? 33, sy = c.sy ?? 30, sr = c.sr ?? -24;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"><title>${c.title}</title><defs>${common(c)}${c.defs || ""}</defs>
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"><title>${c.title}</title><defs>${common(c)}${c.defs || ""}</defs>${variant === "a" ? blinkCss(4.6, -1.2) : blinkCss(6.1, -3.7)}
 <ellipse cx="48" cy="87.5" rx="32" ry="5.5" fill="url(#shadow)"/>
 <ellipse cx="48" cy="86.8" rx="20" ry="2.4" fill="${c.core}" opacity=".4" filter="url(#blur1)"/>
 ${c.behind || ""}
@@ -73,9 +74,9 @@ const chars = {
     behind: `<path d="m15 57-6 7 9 3m63-10 6 7-9 3" fill="#7F45D6" stroke="#34106F" stroke-width="1.8" stroke-linejoin="round" stroke-opacity=".6"/>`,
     defs: `${sclera}<radialGradient id="redeye" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#FFB3C4"/><stop offset=".6" stop-color="#FF4F7E"/><stop offset="1" stop-color="#C21B4F"/></radialGradient>
       <linearGradient id="teeth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#E4DCEF"/></linearGradient>`,
-    face: `<path d="m24 42 17 6c-1 11-15 12-17-6Zm48 0-17 6c1 11 15 12 17-6Z" fill="url(#redeye)" stroke="#2A0C55" stroke-width="1.6"/>
+    face: `<g class="blink"><path d="m24 42 17 6c-1 11-15 12-17-6Zm48 0-17 6c1 11 15 12 17-6Z" fill="url(#redeye)" stroke="#2A0C55" stroke-width="1.6"/>
       <path d="M27 45c3 2 6 3 9 3" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".75"/><path d="M60 48c3 0 6-1 9-3" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".75"/>
-      <path d="m33 47 1 6m29-6-1 6" stroke="#4A0F2A" stroke-width="3" stroke-linecap="round"/>
+      <path d="m33 47 1 6m29-6-1 6" stroke="#4A0F2A" stroke-width="3" stroke-linecap="round"/></g>
       <path d="M25 62c14 5 32 5 46-1-3 13-15 17-23 17-10 0-20-5-23-16Z" fill="#2A0C55" opacity=".25" transform="translate(0 1.5)" filter="url(#blur1)"/>
       <path d="M25 61c14 5 32 5 46-1-3 13-15 17-23 17-10 0-20-5-23-16Z" fill="url(#teeth)" stroke="#2A0C55" stroke-width="1.8" stroke-linejoin="round"/>
       <path d="m36 65 1 8m11-7v10m12-11-1 8" stroke="#9C87B8" stroke-width="1.4"/>
@@ -157,4 +158,6 @@ const chars = {
       <path d="M41 68q7-4 14 0" stroke="#4D5674" stroke-width="2.8" stroke-linecap="round"/>`,
   },
 };
-for (const [name, c] of Object.entries(chars)) fs.writeFileSync(path.join(out, name + ".svg"), svg(c).replace(/\n\s*/g, ""));
+for (const [name, c] of Object.entries(chars)) {
+  for (const v of ["a", "b"]) fs.writeFileSync(path.join(out, name + (v === "a" ? "" : "-b") + ".svg"), svg(c, v).replace(/\n\s*/g, ""));
+}

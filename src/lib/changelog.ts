@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.4.1";
+export const APP_VERSION = "1.4.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.4.2",
+    date: "2026-10-01",
+    kind: "patch",
+    title: "뿌요뿌요가 오락실처럼 바뀌었어요",
+    items: [
+      "내 보드와 친구 보드가 같은 크기로 화면을 꽉 채워요. 가운데에서 NEXT와 점수를 봐요.",
+      "같은 색 뿌요가 서로 이어지고, 터질 때 조각이 튀어요. 연쇄하면 화면이 흔들리고 공격 구슬이 날아가요.",
+      "내 캐릭터가 연쇄하면 신나서 뛰고, 방해 뿌요를 맞으면 흔들려요. 뿌요들도 눈을 깜빡여요.",
+      "경기 시작 직후 갑자기 멈추던 문제를 고쳤어요.",
+    ],
+  },
   {
     version: "1.4.1",
     date: "2026-10-01",

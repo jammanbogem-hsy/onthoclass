@@ -209,6 +209,9 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
   const [online, setOnline] = useState<PuyoPresence[]>([]);
   const [runs, setRuns] = useState<PuyoRun[]>([]);
   const [clockOffset, setClockOffset] = useState(0);
+  // 서버 시계와의 차이를 받아 오기 전에는 경기 화면을 열지 않는다 — 기기 시계가 틀린 학생은
+  // 보정 전 시간으로 "이미 끝났다"고 보고 시작 몇 초 만에 보드가 멈출 수 있었다.
+  const [clockReady, setClockReady] = useState(false);
   const [now, setNow] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -231,10 +234,20 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
     let active = true;
     const report = (e: Error) => { if (active) setError(message(e)); };
     const off = [watchGame(cid, gid, setGame), watchMembers(cid, setMembers), watchPuyoPresence(cid, gid, setOnline, report)];
-    puyoClock(cid).then(offset => { if (active) setClockOffset(offset); }).catch(report);
-    const sync = setInterval(() => { void puyoClock(cid).then(offset => { if (active) setClockOffset(offset); }).catch(report); }, 60000);
+    let ok = false;
+    const syncClock = () => puyoClock(cid).then(offset => { if (active) { ok = true; setClockOffset(offset); setClockReady(true); } }).catch(e => { if (active && ok) report(e); });
+    void syncClock();
+    // 실패하면 3초마다 다시, 맞춘 뒤에는 1분마다 다시 맞춘다
+    const sync = setInterval(() => { if (!ok || Date.now() % 60000 < 3000) void syncClock(); }, 3000);
     return () => { active = false; off.forEach(fn => fn()); clearInterval(sync); };
   }, [cid, gid, member, user]);
+  // 경기가 시작되는 순간 한 번 더 맞춘다(대기실에 오래 있던 기기의 시계 흐름 보정)
+  useEffect(() => {
+    if (!member || game?.status !== "play") return;
+    let active = true;
+    puyoClock(cid).then(offset => { if (active) { setClockOffset(offset); setClockReady(true); } }).catch(() => {});
+    return () => { active = false; };
+  }, [cid, member, game?.status]);
   useEffect(() => {
     if (!member || !user || game?.kind !== "puyo" || game?.status === "done") return;
     return presence(cid, gid, user.uid, member.displayName || user.displayName || (teacher ? "선생님" : "학생"));
@@ -308,7 +321,7 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
     {error && <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-[var(--md-sys-color-error-container)] px-4 py-3 text-sm text-[var(--md-sys-color-on-error-container)]"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="알림 닫기"><Icon name="close" size={18} /></button></div>}
     {game.status === "draft" && <Lobby cid={cid} gid={gid} uid={user.uid} teacher={teacher} config={config} rules={rules} students={students} onlineStudents={onlineStudents} busy={busy} act={act} />}
     {(game.status === "play" || game.status === "done") && <>
-      {myMatch ? <PuyoBattle cid={cid} gid={gid} uid={user.uid} config={config} runs={runs} clockOffset={clockOffset} />
+      {myMatch ? clockReady ? <PuyoBattle cid={cid} gid={gid} uid={user.uid} config={config} runs={runs} clockOffset={clockOffset} /> : <div className={`${card} p-6 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]`}>경기 시간을 서버와 맞추는 중이에요…</div>
         : <div className={`${card} flex items-center gap-4 p-5`}><Friend index={1} size={64} /><div><strong className="text-lg">{game.status === "done" ? "모두 수고했어요!" : resting ? "이번 판은 쉬어요" : "지금은 응원 시간!"}</strong><p className="mt-1 text-sm text-[var(--md-sys-color-on-surface-variant)]">{game.status === "done" ? "아래에서 우리 반 친구들의 결과를 확인해요." : resting ? "참가 인원이 홀수라 이번 판은 응원해요. 다음 판에는 먼저 짝을 받아요!" : "친구들의 점수가 실시간으로 바뀌어요."}</p></div></div>}
       {game.status === "play" && teacher && <div className="mt-4 flex justify-end"><button type="button" className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-[var(--md-sys-color-error-container)] px-5 text-sm font-bold text-[var(--md-sys-color-on-error-container)] disabled:opacity-40" disabled={busy} onClick={() => void act(async () => { finishing.current = true; try { await finishPuyo(cid, gid, true); } finally { finishing.current = false; } })}><Icon name="stop_circle" size={18} />{busy ? "결과 정리 중…" : "지금 끝내고 점수로 판정"}</button></div>}
       <Scoreboard config={config} runs={runs} uid={user.uid} done={game.status === "done"} />
