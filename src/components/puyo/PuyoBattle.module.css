@@ -151,3 +151,9 @@
 .stage[data-theme] .arenaNarrow .sideLabel{color:#fff;text-shadow:0 1px 2px #000}
 .nextPair>span{display:block;width:100%;aspect-ratio:1;margin-top:-6%}
 .nextPair>span img{margin-top:0}
+
+/* 여러 명 한 줄 배치 — 보드마다 위에 이름·점수 띠(보드 폭에 맞춤) */
+.boardLabel{box-sizing:border-box;width:calc(var(--bh) / 2 + 16px);height:22px;margin-bottom:6px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;gap:6px;border-radius:999px;background:#0007;color:#fff;font-size:13px;line-height:1;box-shadow:inset 0 0 0 1px #fff3}
+.boardLabel b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800}
+.boardLabel em{flex-shrink:0;font-style:normal;font-weight:900;font-variant-numeric:tabular-nums;color:#ffe08a}
+.boardLabelMe{background:color-mix(in srgb,var(--md-sys-color-primary) 75%,#000);box-shadow:inset 0 0 0 1px #fff6,0 0 12px color-mix(in srgb,var(--md-sys-color-primary) 60%,transparent)}

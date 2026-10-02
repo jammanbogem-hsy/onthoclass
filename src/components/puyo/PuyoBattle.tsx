@@ -141,10 +141,15 @@ function useArenaFit(ref: RefObject<HTMLElement | null>, mounted: boolean, minis
         const theirs = Math.max(120, Math.floor(((H - 16) / minis - label - 10) / 1.06));
         const miniW = theirs / 2 + 16;
         if (arcade) {
-          const center = Math.round(Math.max(150, Math.min(220, W * .18)));
-          const byW = 2 * (W - center - miniW - 2 * 14 - 24 - 16);
-          const mine = Math.max(240, Math.floor(Math.min((H - 30) / 1.06, byW)));
-          setFit({ arcade, mine, theirs, center });
+          // 여러 명: 내 보드 · 가운데 정보 · 친구 보드들을 한 줄로, 모두 같은 크기(뿌요 테트리스 4인 화면처럼).
+          // 예전에는 친구 보드를 오른쪽 세로 한 줄에 아주 작게 쌓아서 답답했다.
+          const boards = minis + 1;
+          const center = Math.round(Math.max(140, Math.min(200, W * .13)));
+          const gaps = 14 * boards + 24;
+          const byW = 2 * ((W - center - gaps) / boards - 16);
+          const byH = (H - 24 - label - 6) / 1.06;
+          const bh = Math.max(200, Math.floor(Math.min(byH, byW)));
+          setFit({ arcade, mine: bh, theirs: bh, center });
         } else {
           const mine = Math.max(200, Math.floor(Math.min(H - 28, (W - miniW - 10 - 16 - 32) / .67)));
           setFit({ arcade, mine, theirs, center: 0 });
@@ -315,8 +320,10 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
   useEffect(() => { (document.activeElement as HTMLElement | null)?.blur?.(); }, []);
   const showPad = !fit.arcade || coarse;
   const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true }, ...rivals.map(r => ({ name: r.name, score: r.state.score, me: false }))].sort((a, b) => b.score - a.score) : undefined;
+  const rowLayout = multi && fit.arcade;
   const miniBoards = rivals.map((r, i) => <div key={i} ref={el => { rivalRefs.current[i] = el; }} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
-    {(multi || !fit.arcade) && <span className={styles.sideLabel}>{r.name}{r.away ? " · 연결 확인 중" : ""}</span>}
+    {rowLayout ? <BoardLabel name={r.name} score={r.state.score} note={r.away ? "연결 확인 중" : undefined} />
+      : (multi || !fit.arcade) && <span className={styles.sideLabel}>{r.name}{r.away ? " · 연결 확인 중" : ""}</span>}
     <PuyoBoard state={r.state} name={r.name} opponent {...(fit.arcade ? { arcade: true } : { fill: true })} />
   </div>);
 
@@ -340,12 +347,13 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
 
     {fit.arcade ? <main ref={arena} className={`${styles.arena} ${styles.arenaArcade} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
       <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
+        {rowLayout && <BoardLabel name={meName} score={myScore} me />}
         <PuyoBoard state={view} name={meName} arcade />
       </div>
       <div style={{ width: fit.center }} className={styles.centerWrap}>
         <CenterPanel stageName={theme.name} view={view} opp={multi ? undefined : oppState} meName={meName} oppName={oppName} myScore={myScore} theirScore={theirScore} seconds={seconds} done={!!result} mineIndex={mineIndex} keysHint={!coarse} ranking={ranking} />
       </div>
-      {multi ? <div className={styles.miniColumn}>{miniBoards}</div> : miniBoards}
+      {miniBoards}
     </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
       <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
         <PuyoBoard state={view} name={meName} fill />
@@ -367,6 +375,14 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
       <button type="button" className={styles.primaryBtn} onClick={resultAction.onClick}><Icon name={resultAction.icon} size={18} />{resultAction.label}</button>
     </div></div>}
   </div>, document.body);
+}
+
+/** 한 줄 배치에서 보드 위 이름·점수 띠 */
+function BoardLabel({ name, score, me = false, note }: { name: string; score: number; me?: boolean; note?: string }) {
+  return <div className={`${styles.boardLabel} ${me ? styles.boardLabelMe : ""}`}>
+    <b>{me ? `나 · ${name}` : name}</b>
+    <em>{note ?? score.toLocaleString("ko-KR")}</em>
+  </div>;
 }
 
 /** 결과 카드 문구 — 이긴 쪽/진 쪽/무승부. */

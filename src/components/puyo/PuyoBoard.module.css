@@ -144,3 +144,4 @@
 @keyframes blobSquish{0%,100%{transform:scale(1.06,.94)}35%{transform:scale(.95,1.07)}70%{transform:scale(1.03,.97)}}
 @keyframes landBounce{0%{transform:scale(1.38,.6)}22%{transform:scale(.84,1.2) translateY(-14%)}42%{transform:scale(1.12,.9) translateY(0)}60%{transform:scale(.95,1.06)}78%{transform:scale(1.03,.97)}100%{transform:none}}
 @media(prefers-reduced-motion:reduce){.pile,.pile.jiggleA,.pile.jiggleB,.active .blob,.gooPop{animation:none}.gooPop{opacity:0}.clearing .puyo,.clearing .sprite{animation-name:reducedPop}}
+.arcade,.arcade.opponent{max-width:none}
