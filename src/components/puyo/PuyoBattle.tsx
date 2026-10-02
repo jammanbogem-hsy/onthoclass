@@ -9,7 +9,7 @@ import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS, startLive
 import { normalizeRules, type FlowStage, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
 import { PuyoBoard, Puyo } from "./PuyoBoard";
-import { pickTheme } from "@/lib/puyo-themes";
+import { pickTheme, playerPalette } from "@/lib/puyo-themes";
 import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
 import { PuyoBgm } from "@/lib/puyo-bgm";
@@ -219,7 +219,7 @@ function useQuake() {
 }
 
 const PORTRAITS = ["charmander", "squirtle", "gengar", "snorlax"];
-export type Ranked = { name: string; score: number; me: boolean };
+export type Ranked = { name: string; score: number; me: boolean; playerIndex: number };
 
 /** 가운데 칸 — NEXT·시간·점수(또는 순위)·내 캐릭터(연쇄하면 뛰고, 방해 받으면 흔들린다). */
 function CenterPanel({ stageName, view, opp, meName, oppName, myScore, theirScore, seconds, done, mineIndex, keysHint, ranking }: {
@@ -249,7 +249,7 @@ function CenterPanel({ stageName, view, opp, meName, oppName, myScore, theirScor
       {reacting === "cheer" && view.chain >= 2 && <span key={`b${view.event}`} className={styles.bubble}>{view.chain}연쇄!</span>}
       {reacting === "hit" && view.effect === "garbage" && <span key={`h${view.event}`} className={`${styles.bubble} ${styles.bubbleHit}`}>으앗!</span>}
     </div>
-    {ranking ? <ol className={styles.ranking}>{ranking.map((r, i) => <li key={i} className={r.me ? styles.rankMe : ""}>
+    {ranking ? <ol className={styles.ranking}>{ranking.map((r, i) => <li key={i} className={r.me ? styles.rankMe : ""} style={playerPalette(r.playerIndex) as CSSProperties}>
       <b>{1 + ranking.filter(o => o.score > r.score).length}</b><span>{r.name}</span><strong>{r.score.toLocaleString("ko-KR")}</strong>
     </li>)}</ol> : <div className={styles.scores}>
       <div className={styles.scoreMine}><span>{meName}</span><strong>{myScore.toLocaleString("ko-KR")}</strong></div>
@@ -283,6 +283,8 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
   const theme = pickTheme(themeSeed);
   const multi = (others?.length ?? 0) >= 2;
   const rivals: StageOther[] = multi ? others! : [{ name: oppName, state: oppState, away }];
+  // rivals는 참가 순서에서 나만 제외한 순서다. 게임 데이터와 무관한 표시용 색상.
+  const rivalIndices = Array.from({ length: rivals.length + 1 }, (_, i) => i).filter(i => i !== mineIndex);
   const arena = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const mineRef = useRef<HTMLDivElement>(null);
@@ -319,15 +321,15 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
   useBgm(sound, !paused && view.phase !== "over");
   useEffect(() => { (document.activeElement as HTMLElement | null)?.blur?.(); }, []);
   const showPad = !fit.arcade || coarse;
-  const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true }, ...rivals.map(r => ({ name: r.name, score: r.state.score, me: false }))].sort((a, b) => b.score - a.score) : undefined;
+  const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true, playerIndex: mineIndex }, ...rivals.map((r, i) => ({ name: r.name, score: r.state.score, me: false, playerIndex: rivalIndices[i] }))].sort((a, b) => b.score - a.score) : undefined;
   const rowLayout = multi && fit.arcade;
-  const miniBoards = rivals.map((r, i) => <div key={i} ref={el => { rivalRefs.current[i] = el; }} className={styles.theirs} style={{ "--bh": `${fit.theirs}px` } as CSSProperties}>
+  const miniBoards = rivals.map((r, i) => <div key={i} ref={el => { rivalRefs.current[i] = el; }} className={styles.theirs} data-puyo-player={rivalIndices[i]} style={{ ...playerPalette(rivalIndices[i]), "--bh": `${fit.theirs}px` } as CSSProperties}>
     {rowLayout ? <BoardLabel name={r.name} score={r.state.score} note={r.away ? "연결 확인 중" : undefined} />
       : (multi || !fit.arcade) && <span className={styles.sideLabel}>{r.name}{r.away ? " · 연결 확인 중" : ""}</span>}
     <PuyoBoard state={r.state} name={r.name} opponent {...(fit.arcade ? { arcade: true } : { fill: true })} />
   </div>);
 
-  return createPortal(<div ref={stageRef} className={styles.stage} data-theme={theme.id} style={theme.vars as CSSProperties} role="region" aria-label={multi ? `${rivals.length + 1}인 뿌요뿌요 경기` : "1대1 뿌요뿌요 경기"}>
+  return createPortal(<div ref={stageRef} className={styles.stage} data-theme={theme.id} style={{ ...theme.vars, ...playerPalette(mineIndex), "--rival": playerPalette(rivalIndices[0])["--player"], "--rival-light": playerPalette(rivalIndices[0])["--player-light"] } as CSSProperties} role="region" aria-label={multi ? `${rivals.length + 1}인 뿌요뿌요 경기` : "1대1 뿌요뿌요 경기"}>
     <header className={styles.bar}>
       <button type="button" className={styles.iconBtn} onClick={onBack} aria-label={backLabel}><Icon name="arrow_back" size={22} /><span className={styles.hideSm}>{backLabel}</span></button>
       {multi ? <div className={styles.barTitle}><strong>{rivals.length + 1}명 자유 대전</strong>{!fit.arcade && <span className={`${styles.clock} ${seconds <= 20 && !result ? styles.urgent : ""}`}>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>}</div>
@@ -346,7 +348,7 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
     {notice && <p className={styles.notice} role="status">{notice}</p>}
 
     {fit.arcade ? <main ref={arena} className={`${styles.arena} ${styles.arenaArcade} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
-      <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
+      <div ref={mineRef} className={styles.mine} data-puyo-player={mineIndex} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
         {rowLayout && <BoardLabel name={meName} score={myScore} me />}
         <PuyoBoard state={view} name={meName} arcade />
       </div>
@@ -355,7 +357,7 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
       </div>
       {miniBoards}
     </main> : <main ref={arena} className={`${styles.arena} ${styles.arenaNarrow} ${quake.n ? (quake.n % 2 ? styles.quakeA : styles.quakeB) : ""}`} style={{ "--q": `${2 + quake.tier * 1.6}px` } as CSSProperties}>
-      <div ref={mineRef} className={styles.mine} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
+      <div ref={mineRef} className={styles.mine} data-puyo-player={mineIndex} style={{ "--bh": `${fit.mine}px` } as CSSProperties}>
         <PuyoBoard state={view} name={meName} fill />
       </div>
       <aside className={`${styles.side} ${multi ? styles.miniColumn : ""}`}>{miniBoards}</aside>

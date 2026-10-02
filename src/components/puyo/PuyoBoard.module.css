@@ -145,3 +145,16 @@
 @keyframes landBounce{0%{transform:scale(1.38,.6)}22%{transform:scale(.84,1.2) translateY(-14%)}42%{transform:scale(1.12,.9) translateY(0)}60%{transform:scale(.95,1.06)}78%{transform:scale(1.03,.97)}100%{transform:none}}
 @media(prefers-reduced-motion:reduce){.pile,.pile.jiggleA,.pile.jiggleB,.active .blob,.gooPop{animation:none}.gooPop{opacity:0}.clearing .puyo,.clearing .sprite{animation-name:reducedPop}}
 .arcade,.arcade.opponent{max-width:none}
+
+/* 경기 보드만 참가자 고정 색상으로 마감한다. 연습 화면과 캐릭터는 유지한다. */
+:global([data-puyo-player]) .frame.fill{
+  background:linear-gradient(145deg,#ffffff30,transparent 40%),linear-gradient(180deg,var(--player-light),var(--player) 6%,color-mix(in srgb,var(--player-deep) 80%,var(--frame-b)) 52%,var(--player) 96%,var(--player-light));
+  border-color:var(--player-light);
+  box-shadow:inset 0 0 0 2px #0005,inset 0 0 0 5px #ffffff45,inset 0 0 0 7px color-mix(in srgb,var(--frame-b) 60%,#000),0 0 0 2px #07101cc9,0 10px 26px #0008,0 0 22px color-mix(in srgb,var(--player) 24%,transparent);
+}
+:global([data-puyo-player]) .arcade::before{--gem:var(--player-light)}
+:global([data-puyo-player]) .fill:not(.arcade) .boardShell{border-color:var(--player-deep);background:var(--player-deep)}
+:global([data-puyo-player]) .fill:not(.arcade) .board{background:var(--board-bg) 0 0/16.6667% 8.3333%}
+:global([data-puyo-player]) .fill .nextBox,:global([data-puyo-player]) .fill .pending,:global([data-puyo-player]) .fill .downs{background:var(--panel-bg);border-color:var(--player);color:#f4f7ff}
+:global([data-puyo-player]) .fill .railLabel,:global([data-puyo-player]) .fill .best{color:var(--player-ink)}
+:global([data-puyo-player]) .fill .best strong{color:var(--player-ink)}

@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.11.1";
+export const APP_VERSION = "1.11.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.11.2",
+    date: "2026-10-02",
+    kind: "patch",
+    title: "뿌요뿌요 무대 그림·내 색깔",
+    items: [
+      "경기 무대 배경이 그림으로 바뀌었어요",
+      "참가한 순서대로 파랑·분홍·초록·노랑 내 색깔이 생겨서 보드와 이름표, 순위표가 그 색으로 보여요",
+    ],
+  },
   {
     version: "1.11.1",
     date: "2026-10-02",
