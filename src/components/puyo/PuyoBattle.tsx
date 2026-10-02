@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { cloneState, createState, input, receive, revive, tick, type Action, type Cell, type PuyoState } from "@/lib/puyo-engine";
 import { finishPuyo, readPuyoSeq, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
@@ -12,13 +12,37 @@ import { PuyoBoard, Puyo } from "./PuyoBoard";
 import { pickTheme } from "@/lib/puyo-themes";
 import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
+import { PuyoBgm } from "@/lib/puyo-bgm";
+
+const MUSIC_KEY = "jam:puyo:music";
+// 저장소를 못 쓰는 기기(사생활 보호 창 등)에서도 이번 방문 동안은 선택이 유지되게 메모리에 같이 둔다
+let musicFallback = true;
+const musicListeners = new Set<() => void>();
+function subscribeMusic(f: () => void) { musicListeners.add(f); return () => { musicListeners.delete(f); }; }
+function readMusic() { try { const v = localStorage.getItem(MUSIC_KEY); return v ? v !== "off" : musicFallback; } catch { return musicFallback; } }
 
 export function useSound() {
   const [muted, setMuted] = useState(false);
+  // 배경음악 켬/끔은 기기마다 기억한다(효과음과 따로)
+  const music = useSyncExternalStore(subscribeMusic, readMusic, () => true);
+  const [ready, setReady] = useState(false);
   const ctx = useRef<AudioContext | null>(null);
+  const bgm = useRef<PuyoBgm | null>(null);
+  const setMusic = useCallback((on: boolean) => {
+    try { localStorage.setItem(MUSIC_KEY, on ? "on" : "off"); } catch { /* 기억만 못 할 뿐 */ }
+    musicFallback = on; musicListeners.forEach(f => f());
+  }, []);
   const unlock = useCallback(() => {
     if (!ctx.current) ctx.current = new AudioContext();
-    void ctx.current.resume();
+    void ctx.current.resume().then(() => setReady(true));
+  }, []);
+  /** 경기가 진행 중일 때만 음악을 튼다(카운트다운·결과 화면·연습 대기에서는 멈춤). */
+  const setPlaying = useCallback((on: boolean) => {
+    const audio = ctx.current;
+    if (on && audio && audio.state === "running") {
+      bgm.current ??= new PuyoBgm(audio);
+      bgm.current.start();
+    } else bgm.current?.stop();
   }, []);
   const play = useCallback((chain: number, garbage = false) => {
     const audio = ctx.current;
@@ -32,8 +56,22 @@ export function useSound() {
       osc.connect(gain); gain.connect(audio.destination); osc.start(at); osc.stop(at + .24);
     });
   }, [muted]);
-  useEffect(() => () => { void ctx.current?.close(); ctx.current = null; }, []);
-  return { muted, setMuted, unlock, play };
+  useEffect(() => () => { bgm.current?.stop(); bgm.current = null; void ctx.current?.close(); ctx.current = null; }, []);
+  return { muted, setMuted, music, setMusic, ready, setPlaying, unlock, play };
+}
+
+/** 배경음악 — active(경기 진행 중)이고 음악·소리가 켜져 있을 때만 흐른다. */
+export function useBgm(sound: ReturnType<typeof useSound>, active: boolean) {
+  const { setPlaying, music, muted, ready } = sound;
+  useEffect(() => {
+    setPlaying(active && music && !muted && ready);
+    return () => setPlaying(false);
+  }, [setPlaying, active, music, muted, ready]);
+}
+
+/** 음악 켬/끔 버튼 */
+export function MusicButton({ sound, className }: { sound: ReturnType<typeof useSound>; className?: string }) {
+  return <button type="button" className={className} onClick={() => { sound.unlock(); sound.setMusic(!sound.music); }} aria-pressed={sound.music} aria-label={sound.music ? "배경음악 끄기" : "배경음악 켜기"} title={sound.music ? "배경음악 끄기" : "배경음악 켜기"}><Icon name={sound.music ? "music_note" : "music_off"} size={20} /></button>;
 }
 
 const BUTTONS: { a: Action; icon: string; label: string; key: string }[] = [
@@ -273,6 +311,7 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
     return () => { document.body.style.overflow = prev; };
   }, []);
   useKeyboard(action, paused, sound.unlock);
+  useBgm(sound, !paused && view.phase !== "over");
   useEffect(() => { (document.activeElement as HTMLElement | null)?.blur?.(); }, []);
   const showPad = !fit.arcade || coarse;
   const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true }, ...rivals.map(r => ({ name: r.name, score: r.state.score, me: false }))].sort((a, b) => b.score - a.score) : undefined;
@@ -293,6 +332,7 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
         </div>}
       <div className={styles.barActions}>
         {rules && <PuyoRulesButton rules={rules} current={flow} label="규칙" className={styles.chipBtn} />}
+        <MusicButton sound={sound} className={styles.chipBtn} />
         <button type="button" className={styles.chipBtn} onClick={() => { sound.unlock(); sound.setMuted(!sound.muted); }} aria-label={sound.muted ? "소리 켜기" : "소리 끄기"}><Icon name={sound.muted ? "volume_off" : "volume_up"} size={20} /></button>
       </div>
     </header>
@@ -516,9 +556,11 @@ export function PuyoPractice() {
   }, [running]);
   const action = useCallback((a: Action) => { if (running) { input(state.current, a); setView(cloneState(state.current)); } }, [running]);
   useKeyboard(action, !running || view.phase === "over", sound.unlock);
+  useBgm(sound, running && view.phase !== "over");
   return <div className={styles.practice}>
     <PuyoBoard state={view} name="나의 연습 보드" status="연습 점수는 학급 경기에 반영되지 않아요" />
     <Controls action={action} disabled={!running || view.phase === "over"} unlock={sound.unlock} layout="row" />
     <button type="button" className={styles.primaryBtn} onClick={e => { e.currentTarget.blur(); sound.unlock(); state.current = createState(Math.floor(Math.random() * 2147483646) + 1); setView(cloneState(state.current)); setRunning(true); }}><Icon name={running ? "restart_alt" : "play_arrow"} size={18} />{!running ? "연습 시작" : "새로 연습하기"}</button>
+    <MusicButton sound={sound} className={styles.musicChip} />
   </div>;
 }

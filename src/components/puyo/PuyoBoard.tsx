@@ -1,5 +1,5 @@
 import { memo, useId, type CSSProperties } from "react";
-import { COLS, ROWS, ghost, pairCells, type Cell, type PuyoState } from "@/lib/puyo-engine";
+import { COLS, ROWS, fallMs, ghost, pairCells, type Cell, type PuyoState } from "@/lib/puyo-engine";
 import styles from "./PuyoBoard.module.css";
 
 const SPRITES = ["", "gengar", "snorlax", "charmander", "squirtle", "nuisance"];
@@ -65,13 +65,21 @@ export function NuisanceRow({ count }: { count: number }) {
  * 실제 뿌요뿌요처럼 연결이 통통한 젤리 목으로 보이고, 반사광(스페큘러) 필터로 윤기를 낸다.
  * 보드가 바뀔 때만 다시 그린다(cells 문자열이 같으면 그대로 — 매 프레임 필터 계산을 피한다).
  */
-const GooLayer = memo(function GooLayer({ cells }: { cells: string }) {
+/**
+ * popping: 이번에 터지는 칸(같은 형식). 따로 떼어 내지 않고 젤리 덩어리째로 부풀었다 터지게 한다 —
+ * 예전에는 터지는 순간 이음목이 끊기고 칸마다 하얗게 번쩍인 뒤 작아져서, 깜빡이며 사라지는 것처럼 보였다.
+ */
+const GooLayer = memo(function GooLayer({ cells, popping, popKey }: { cells: string; popping: string; popKey: number }) {
   const id = `goo${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const groups: string[][] = [[], [], [], [], []];
-  for (let k = 0; k < cells.length; k++) {
-    const c = Number(cells[k]); if (c < 1 || c > 4) continue;
-    groups[c].push(`${(k % COLS) * 100 + 50},${Math.floor(k / COLS) * 100 + 54}`);
-  }
+  const collect = (src: string) => {
+    const groups: string[][] = [[], [], [], [], []];
+    for (let k = 0; k < src.length; k++) {
+      const c = Number(src[k]); if (c < 1 || c > 4) continue;
+      groups[c].push(`${(k % COLS) * 100 + 50},${Math.floor(k / COLS) * 100 + 54}`);
+    }
+    return groups;
+  };
+  const groups = collect(cells); const pops = collect(popping);
   return <svg className={styles.goo} viewBox={`0 0 ${COLS * 100} ${VISIBLE_ROWS * 100}`} preserveAspectRatio="none" aria-hidden="true">
     <defs><filter id={id} x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
       <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="b" />
@@ -84,6 +92,7 @@ const GooLayer = memo(function GooLayer({ cells }: { cells: string }) {
       <feComposite in="shaded" in2="shine" operator="arithmetic" k1="0" k2="1" k3="0.75" k4="0" />
     </filter></defs>
     {groups.map((pts, c) => pts.length ? <g key={c} filter={`url(#${id})`} fill={COLORS[c]}>{pts.map(pt => { const [x, y] = pt.split(","); return <circle key={pt} cx={x} cy={y} r="47" />; })}</g> : null)}
+    {pops.map((pts, c) => pts.length ? <g key={`pop${popKey}-${c}`} className={styles.gooPop}><g filter={`url(#${id})`} fill={COLORS[c]}>{pts.map(pt => { const [x, y] = pt.split(","); return <circle key={pt} cx={x} cy={y} r="47" />; })}</g></g> : null)}
   </svg>;
 });
 
@@ -101,6 +110,9 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
   const inFlight = dropping && state.phase !== "fall";
   const downs = state.downs ?? 0;
   const height = state.board.slice(COLS).filter(Boolean).length;
+  // 쌓인 더미가 받는 충격 — 가장 길게 떨어진 줄 수(방해 뿌요는 묵직하게 더 크게)
+  let impact = 0; for (const d of drops.values()) impact = Math.max(impact, d);
+  const jiggle = dropping ? Math.min(1.6, .55 + impact * .1 + (state.effect === "garbage" ? .5 : 0)) : 0;
 
   return (
     <section className={`${styles.frame} ${opponent ? styles.opponent : ""} ${fill || arcade ? styles.fill : ""} ${arcade ? styles.arcade : ""}`} aria-label={`${name}의 뿌요 보드`} data-puyo-position={state.active ? `${state.active.x},${state.active.y},${state.active.r}` : "none"} data-puyo-score={state.score} data-puyo-attacks={state.sent} data-puyo-pending={state.pending}>
@@ -120,7 +132,9 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
             <span className={styles.boardStar} aria-hidden="true">✦</span>
             <span className={styles.boardStarSmall} aria-hidden="true">✧</span>
             <div className={`${styles.cells} ${isBurst && state.chain >= 2 ? (state.event % 2 ? styles.shakeA : styles.shakeB) : ""}`} style={{ "--shake": `${Math.min(2 + state.chain, 9)}px` } as CSSProperties} aria-hidden="true">
-              <GooLayer cells={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) || c === 5 || (inFlight && (drops.get(k + COLS) ?? 0) > 0) ? 0 : c).join("")} />
+              <div className={`${styles.pile} ${jiggle ? (state.event % 2 ? styles.jiggleA : styles.jiggleB) : ""}`} style={{ "--j": jiggle, "--sway": `${Math.min(1, height / 40) + .35}` } as CSSProperties}>
+              <GooLayer cells={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) || c === 5 || (inFlight && (drops.get(k + COLS) ?? 0) > 0) ? 0 : c).join("")}
+                popping={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) && c !== 5 ? c : 0).join("")} popKey={state.event} />
               {landing && !opponent && pairCells(landing).filter(({ y }) => y > 0).map(({ x, y, c }, i) => (
                 <div key={`ghost-${i}`} className={`${styles.cell} ${styles.ghost}`} style={position(x, y, c)}><Puyo color={c} /></div>
               ))}
@@ -129,29 +143,30 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
                   {(() => {
                     // 중력 낙하: 거리의 제곱근에 비례한 시간으로 점점 빨라지며 떨어지고, 닿으면 납작했다가 통 튄다
                     const d = drops.get(i);
-                    const fallMs = d ? Math.round(70 * Math.sqrt(d) + 80) : 0;
-                    return <div key={d !== undefined ? `e${state.event}` : "rest"} className={d ? styles.fall : undefined} style={d ? { "--fall": `${-d * 100}%`, "--fall-t": `${fallMs}ms` } as CSSProperties : undefined}>
-                      <span className={d !== undefined ? styles.bounce : styles.still} style={d !== undefined ? { animationDelay: `${fallMs}ms` } : undefined}>
-                        <Puyo color={c} alt={(i + Math.floor(i / COLS)) % 2 === 1} body={clearing.has(i) || (inFlight && !!d)} className={c === 5 ? styles.grayWobble : styles.wobble} />
+                    const t = d ? fallMs(d) : 0;
+                    return <div key={d !== undefined ? `e${state.event}` : "rest"} className={d ? styles.fall : undefined} style={d ? { "--fall": `${-d * 100}%`, "--fall-t": `${t}ms` } as CSSProperties : undefined}>
+                      <span className={d !== undefined ? styles.bounce : styles.still} style={d !== undefined ? { animationDelay: `${t}ms` } : undefined}>
+                        <Puyo color={c} alt={(i + Math.floor(i / COLS)) % 2 === 1} body={inFlight && !!d} className={c === 5 ? styles.grayWobble : styles.wobble} />
                       </span>
                     </div>;
                   })()}
-                  {clearing.has(i) && <><span className={styles.popRing} /><span className={styles.popSpark}>✦</span>{Array.from({ length: 8 }, (_, k) => <i key={k} className={styles.shard} style={{ "--a": `${k * 45 + (i % 3) * 15}deg`, "--d": `${-380 - ((i * 7 + k * 13) % 5) * 90 - Math.min(state.chain, 6) * 40}%`, "--s": `${.7 + ((i + k) % 3) * .25}` } as CSSProperties} />)}</>}
+                  {clearing.has(i) && <><span className={styles.popRing} />{Array.from({ length: 8 }, (_, k) => <i key={k} className={styles.shard} style={{ "--a": `${k * 45 + (i % 3) * 15}deg`, "--d": `${-380 - ((i * 7 + k * 13) % 5) * 90 - Math.min(state.chain, 6) * 40}%`, "--s": `${.7 + ((i + k) % 3) * .25}` } as CSSProperties} />)}</>}
                 </div>
               ) : null)}
+              </div>
               {state.active && pairCells(state.active).filter(({ y }) => y > 0).map(({ x, y, c }, i) => (
                 <div key={`active-${i}`} className={`${styles.cell} ${styles.active}`} style={position(x, y, c, i)}><Puyo color={c} className={styles.activeWobble} /></div>
               ))}
             </div>
             <div key={`event-${state.event}`} className={styles.effects} aria-hidden="true">
-              {(isBurst || isAllClear) && <div className={`${styles.flash} ${isAllClear ? styles.rainbowFlash : ""}`} />}
+              {((isBurst && state.chain >= 2) || isAllClear) && <div className={`${styles.flash} ${isAllClear ? styles.rainbowFlash : ""}`} />}
               {isBurst && <div className={styles.combo} data-tier={Math.min(state.chain, 6)}><span>{state.chain >= 5 ? "FANTASTIC!" : state.chain >= 3 ? "GREAT!" : state.chain > 1 ? "COMBO!" : "NICE!"}</span><strong>{Math.max(1, state.chain)}<small>연쇄</small></strong>{state.chain > 1 && <em>공격 발사!</em>}</div>}
               {isBurst && clearing.size > 0 && (() => {
                 const cs = [...clearing]; const cx = cs.reduce((n, k) => n + k % COLS + .5, 0) / cs.length / COLS * 100; const cy = cs.reduce((n, k) => n + Math.floor(k / COLS) - .5, 0) / cs.length / VISIBLE_ROWS * 100;
                 const color = COLORS[state.board[cs[0]] || 1];
                 return <>{Array.from({ length: Math.min(1 + state.chain, 4) }, (_, k) => <span key={k} className={styles.shock} style={{ left: `${cx}%`, top: `${cy}%`, "--puyo-color": color, animationDelay: `${k * 90}ms` } as CSSProperties} />)}</>;
               })()}
-              {isBurst && state.chain >= 4 && Array.from({ length: Math.min(state.chain - 1, 5) }, (_, k) => <span key={`bolt${k}`} className={styles.bolt} style={{ left: `${8 + ((state.event * 37 + k * 23) % 80)}%`, animationDelay: `${k * 70}ms` } as CSSProperties} />)}
+              {isBurst && state.chain >= 4 && Array.from({ length: Math.min(state.chain - 2, 3) }, (_, k) => <span key={`bolt${k}`} className={styles.bolt} style={{ left: `${8 + ((state.event * 37 + k * 23) % 80)}%`, animationDelay: `${k * 70}ms` } as CSSProperties} />)}
               {isAllClear && <div className={styles.allClear}><span>✦ PERFECT ✦</span><strong>ALL<br />CLEAR!</strong><em>+2,100</em></div>}
               {(isBurst || isAllClear) && Array.from({ length: 10 }, (_, i) => (
                 <i key={i} className={styles.sparkle} style={{ "--angle": `${i * 36}deg`, "--spark-color": COLORS[i % 4 + 1], "--distance": `${65 + i % 3 * 28}px`, "--spark-delay": `${i % 3 * 30}ms` } as CSSProperties}>✦</i>

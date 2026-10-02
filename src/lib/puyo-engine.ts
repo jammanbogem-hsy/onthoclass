@@ -47,6 +47,12 @@ export function ghost(s: PuyoState): Pair | null {
   return p;
 }
 function effect(s: PuyoState, kind: PuyoState["effect"]) { s.event++; s.effect = kind; }
+/** 화면의 중력 낙하 시간(ms) — d줄 떨어질 때. 다음 연쇄 판정이 낙하가 끝난 뒤에 오도록 엔진도 같은 값을 쓴다. */
+export function fallMs(d: number) { return d > 0 ? Math.round(70 * Math.sqrt(d) + 80) : 0; }
+function longestFall(drops: number[] | undefined) {
+  let most = 0; if (drops) for (let k = 1; k < drops.length; k += 2) most = Math.max(most, drops[k]);
+  return fallMs(most);
+}
 function settle(s: PuyoState) {
   const moved = new Map<number, number>(); const drops: number[] = [];
   for (let x = 0; x < COLS; x++) {
@@ -129,7 +135,7 @@ function lockPair(s: PuyoState) {
   s.active = null;
   const moved = settle(s); const drops = s.drops ?? [];
   for (const at of placed) { const to = moved.get(at) ?? at; if (!drops.some((v, k) => k % 2 === 0 && v === to)) drops.push(to, 0); }
-  s.drops = drops; s.phase = "settle"; s.timer = 170; effect(s, "land");
+  s.drops = drops; s.phase = "settle"; s.timer = Math.max(170, longestFall(drops)); effect(s, "land");
 }
 export function input(s: PuyoState, action: Action) {
   if (s.phase !== "fall" || !s.active) return;
@@ -165,7 +171,7 @@ export function tick(s: PuyoState, elapsed: number) {
     if (s.phase !== "fall") {
       s.timer -= dt;
       if (s.timer <= 0) {
-        if (s.phase === "clear") { for (const i of s.clearing) s.board[i] = 0; s.clearing = []; settle(s); s.phase = "settle"; s.timer = 220; if (s.drops?.length) effect(s, "fall"); }
+        if (s.phase === "clear") { for (const i of s.clearing) s.board[i] = 0; s.clearing = []; settle(s); s.phase = "settle"; s.timer = Math.max(220, longestFall(s.drops) + 140); if (s.drops?.length) effect(s, "fall"); }
         else resolve(s);
       }
       continue;

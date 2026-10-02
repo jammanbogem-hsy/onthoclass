@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.10.0";
+export const APP_VERSION = "1.11.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.11.0",
+    date: "2026-10-02",
+    kind: "minor",
+    title: "뿌요뿌요 — 레트로 배경음악·말랑한 젤리",
+    items: [
+      "경기 중에 옛날 게임기 같은 배경음악이 나와요. 🎵 버튼으로 켜고 끌 수 있어요",
+      "연쇄가 터질 때 화면이 하얗게 깜빡이던 문제를 고쳤어요. 이제 젤리 덩어리가 꿀렁 부풀었다가 톡 터져요",
+      "떨어지던 뿌요가 다 내려앉은 뒤에 다음 연쇄가 터져요",
+      "쌓인 뿌요가 숨 쉬듯 출렁이고, 무언가 떨어지면 젤리처럼 흔들려요",
+    ],
+  },
   {
     version: "1.10.0",
     date: "2026-10-01",

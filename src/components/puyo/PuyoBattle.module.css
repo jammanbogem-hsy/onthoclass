@@ -56,6 +56,9 @@
 .loading{text-align:center;padding:60px;color:var(--md-sys-color-on-surface-variant)}
 .practice{width:100%;max-width:420px;margin:0 auto;display:flex;flex-direction:column;align-items:stretch;gap:14px}
 .practice .primaryBtn{align-self:center}
+.musicChip{align-self:center;display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;border-radius:999px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-lowest);color:var(--md-sys-color-on-surface);cursor:pointer}
+.musicChip:hover{background:var(--md-sys-color-surface-container-high)}
+.musicChip[aria-pressed="true"]{color:var(--md-sys-color-primary);border-color:var(--md-sys-color-primary)}
 
 @keyframes pulse{to{transform:scale(1.06)}}
 @media(max-width:640px){
