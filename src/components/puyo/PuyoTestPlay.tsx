@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { answerQuiz, cloneState, createState, input, quizDue, receive, revive, tick, type Action, type PuyoState } from "@/lib/puyo-engine";
+import { answerQuiz, cloneState, createState, incomingGarbage, input, quizDue, receive, revive, tick, type Action, type PuyoState } from "@/lib/puyo-engine";
 import { planMove, playMove, type BotMove } from "@/lib/puyo-bot";
 import { pickQuestion, type PuyoQuiz } from "@/lib/puyo-quiz";
 import type { PuyoRules } from "@/lib/puyo-rules";
@@ -66,7 +66,7 @@ function TestMatch({ rules, quiz, round, onClose, onAgain }: { rules: PuyoRules;
         // 공격은 모두에게 똑같이: 각자 받을 방해 = 나머지 모두가 보낸 공격의 합
         const all = [s, ...bots.current.map(b => b.state)];
         const total = all.reduce((n, p) => n + p.sent, 0);
-        for (const p of all) receive(p, total - p.sent);
+        for (const p of all) receive(p, incomingGarbage(total - p.sent, all.length - 1));
       }
       if (at - draw > 32) {
         draw = at; setNow(t); setView(cloneState(me.current)); setBotViews(bots.current.map(b => cloneState(b.state)));

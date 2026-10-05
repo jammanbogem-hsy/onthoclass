@@ -27,7 +27,7 @@ export function PuyoRulesForm({ value, onChange, cid }: { value: PuyoRules; onCh
     </Field>
 
     <Field title="경기 방식">
-      <Segment value={String(value.size) as "2" | "4"} onChange={v => set("size", v === "4" ? 4 : 2)} options={[["2", "1:1 대결", "둘이서 겨뤄요"], ["4", "4인 모둠", "3~4명이 한 판, 공격은 모두에게"]]} />
+      <Segment value={String(value.size) as "2" | "4"} onChange={v => set("size", v === "4" ? 4 : 2)} options={[["2", "1:1 대결", "둘이서 겨뤄요"], ["4", "4인 모둠", "3~4명이 한 판, 받는 방해는 절반"]]} />
     </Field>
 
     <Field title={value.size === 4 ? "모둠 정하기" : "1:1 짝 정하기"}>

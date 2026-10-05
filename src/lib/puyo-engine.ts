@@ -185,6 +185,15 @@ export function input(s: PuyoState, action: Action) {
     if (action === "down") { s.score++; s.fall = 0; } else if (s.resets++ < 8) s.lock = 0;
   }
 }
+/**
+ * 여러 명(3명 이상) 경기에서 받을 방해 뿌요 — 친구들이 보낸 공격의 합을 절반으로 줄인다.
+ * 모두에게 똑같이 보내는 방식이라 그대로 받으면 1:1보다 몇 배로 쌓인다(4인이면 3명분).
+ * 누적값에 곱하고 내림하므로 늘 커지기만 해서 receive 의 누적 규칙과 맞는다. 둘이서면 그대로.
+ */
+export const GROUP_GARBAGE_RATE = 0.5;
+export function incomingGarbage(totalSentByOthers: number, rivals: number) {
+  return rivals >= 2 ? Math.floor(totalSentByOthers * GROUP_GARBAGE_RATE) : totalSentByOthers;
+}
 export function receive(s: PuyoState, totalSent: number) {
   if (totalSent > s.seen) { s.pending += totalSent - s.seen; s.seen = totalSent; }
 }

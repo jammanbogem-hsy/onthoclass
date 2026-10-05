@@ -42,3 +42,9 @@ test('quick turn flips a vertical pair stuck in a one-wide well',()=>{
   const s=E.createState(3);for(let y=3;y<13;y++){s.board[y*6+1]=5;s.board[y*6+3]=5;}s.active={x:2,y:5,r:0,a:1,b:2};
   E.input(s,'cw');assert.equal(s.active.r,2);assert.equal(s.active.x,2);
 });
+test('3+ player games halve incoming garbage; 1:1 keeps it; cumulative value never shrinks',()=>{
+  assert.equal(E.incomingGarbage(30,1),30); assert.equal(E.incomingGarbage(30,3),15); assert.equal(E.incomingGarbage(7,2),3);
+  const s=E.createState(1); let last=0;
+  for(const total of [0,1,2,3,5,8,13,13,40]){E.receive(s,E.incomingGarbage(total,3));assert.ok(s.pending>=last);last=s.pending;}
+  assert.equal(s.pending,20);
+});

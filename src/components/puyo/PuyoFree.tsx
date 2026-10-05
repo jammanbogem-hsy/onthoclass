@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { watchActiveGame } from "@/lib/games";
 import { getMemberProfile } from "@/lib/classes";
-import { cloneState, createState, input, receive, revive, tick, type Action, type PuyoState } from "@/lib/puyo-engine";
+import { cloneState, createState, incomingGarbage, input, receive, revive, tick, type Action, type PuyoState } from "@/lib/puyo-engine";
 import { puyoClock, puyoUrl, type PuyoRun } from "@/lib/puyo";
 import { saveFreeLive, watchFreeLive, watchPuyoConnection, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
 import { PuyoPublisher, startLiveTicker } from "@/lib/puyo-sync";
@@ -45,8 +45,8 @@ function FreeBattle({ cid, room, uid, clockOffset, onExit }: { cid: string; room
   // 친구가 나가도 이미 보낸 공격이 줄지 않게, 친구별 최댓값을 더한다
   useEffect(() => {
     for (const [id, run] of Object.entries(boards)) if (run) sentMax.current[id] = Math.max(sentMax.current[id] ?? 0, run.sent);
-    receive(state.current, Object.values(sentMax.current).reduce((a, b) => a + b, 0));
-  }, [boards]);
+    receive(state.current, incomingGarbage(Object.values(sentMax.current).reduce((a, b) => a + b, 0), others.length));
+  }, [boards, others.length]);
 
   useEffect(() => {
     let frame = 0; let prev = performance.now(); let draw = prev; let lastEvent = -1;

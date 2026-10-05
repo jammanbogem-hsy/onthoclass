@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.13.1";
+export const APP_VERSION = "1.13.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,13 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.13.2",
+    date: "2026-10-06",
+    kind: "patch",
+    title: "여러 명 대전 방해 뿌요 절반",
+    items: ["3명 이상이 함께하는 뿌요뿌요(4인 모둠·자유 대전)에서는 받는 방해 뿌요가 절반으로 줄었어요. 여러 친구의 공격이 한꺼번에 쌓여 너무 빨리 꽉 차던 문제를 고쳤어요"],
+  },
   {
     version: "1.13.1",
     date: "2026-10-06",

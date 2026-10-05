@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { answerQuiz, cloneState, createState, input, quizDue, receive, revive, tick, type Action, type Cell, type PuyoState } from "@/lib/puyo-engine";
+import { answerQuiz, cloneState, createState, incomingGarbage, input, quizDue, receive, revive, tick, type Action, type Cell, type PuyoState } from "@/lib/puyo-engine";
 import { normalizeQuiz, pickQuestion } from "@/lib/puyo-quiz";
 import type { QuizItem } from "@/lib/quizrun";
 import { PuyoQuizPrompt, QuizToast, type QuizFeedback } from "./PuyoQuizPrompt";
@@ -469,7 +469,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const sentKey = rivalRuns.map(r => r?.sent ?? 0).join(",");
   useEffect(() => {
     rivalIds.forEach((id, i) => { const sent = rivalRuns[i]?.sent ?? 0; sentMax.current[id] = Math.max(sentMax.current[id] ?? 0, sent); });
-    if (state.current) receive(state.current, Object.values(sentMax.current).reduce((a, b) => a + b, 0));
+    if (state.current) receive(state.current, incomingGarbage(Object.values(sentMax.current).reduce((a, b) => a + b, 0), rivalIds.length));
     // sentKey 가 친구들 공격 값의 요약이다
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentKey, rivalKey]);
