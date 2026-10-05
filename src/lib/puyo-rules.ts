@@ -40,12 +40,13 @@ export function normalizeRules(raw?: Partial<PuyoRules> | null): PuyoRules {
 export const minutesLabel = (sec: number) => (sec % 60 ? `${Math.floor(sec / 60)}분 ${sec % 60}초` : `${sec / 60}분`);
 
 /** 교사가 정한 규칙을 한 줄씩 — 대기실·규칙 보기에서 "이번 판 규칙"으로 보여 준다. */
-export function ruleSummary(r: PuyoRules): { label: string; value: string }[] {
+export function ruleSummary(r: PuyoRules, quiz?: { items: unknown[]; every: number; bonus: number; penalty: number } | null): { label: string; value: string }[] {
   return [
     { label: "제한 시간", value: minutesLabel(r.durationSec) },
     { label: "짝 정하기", value: r.pairing === "manual" ? "선생님이 직접" : "무작위" },
     { label: "홀수일 때", value: r.odd === "teacher" ? "선생님이 함께 대결" : "한 명은 쉬고 다음 판 먼저" },
     { label: "이긴 학생", value: r.winXp > 0 ? `+${r.winXp} XP` : "보상 없음" },
+    ...(quiz ? [{ label: "문제 풀기", value: `뿌요 ${quiz.every}번마다 1문제(${quiz.items.length}문제) · 정답 +${quiz.bonus}점 · 오답 방해 ${quiz.penalty}개` }] : []),
   ];
 }
 

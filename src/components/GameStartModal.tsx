@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createPuyoGame, puyoUrl } from "@/lib/puyo";
 import { DEFAULT_PUYO_RULES, type PuyoRules } from "@/lib/puyo-rules";
 import { PuyoRulesForm } from "@/components/puyo/PuyoRulesForm";
+import { PUYO_QUIZ_DEFAULTS } from "@/lib/puyo-quiz";
 import { Icon } from "@/components/Icon";
 import { listLessons, type Lesson } from "@/lib/lessons";
 import { listProjects, type Project } from "@/lib/projects";
@@ -45,6 +46,8 @@ export function GameStartModal({
 }) {
   const router = useRouter();
   const [puyoRules, setPuyoRules] = useState<PuyoRules>(DEFAULT_PUYO_RULES);
+  // 뿌요뿌요 '문제 풀기' — 켜면 아래 문제 세트(퀴즈런과 같은 items)를 경기에 넣는다
+  const [puyoQuizOn, setPuyoQuizOn] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,7 +124,14 @@ export function GameStartModal({
     setBusy(true);
     try {
       if (kind === "puyo") {
-        const gid = await createPuyoGame(cid, by, puyoRules, pick ?? { name: "학급 뿌요뿌요" });
+        const usable = items.filter((it) => !isIncomplete(it));
+        if (puyoQuizOn && usable.length === 0) {
+          setErr("문제 풀기를 켰다면 완성된 문제가 최소 1개 필요합니다.");
+          setBusy(false);
+          return;
+        }
+        const gid = await createPuyoGame(cid, by, puyoRules, pick ?? { name: "학급 뿌요뿌요" }, undefined,
+          puyoQuizOn ? { items: usable, ...PUYO_QUIZ_DEFAULTS } : null);
         onClose();
         router.push(puyoUrl(cid, gid));
         return;
@@ -359,7 +369,24 @@ export function GameStartModal({
             </Section>
 
             {kind === "puyo" ? (
-              <PuyoRulesForm value={puyoRules} onChange={setPuyoRules} cid={cid} />
+              <>
+                <PuyoRulesForm value={puyoRules} onChange={setPuyoRules} cid={cid} />
+                <Section title="문제 풀기">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] p-3 transition has-[:checked]:border-[var(--md-sys-color-primary)] has-[:checked]:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_6%,var(--md-sys-color-surface))]">
+                    <input type="checkbox" checked={puyoQuizOn} onChange={(e) => setPuyoQuizOn(e.target.checked)} className="mt-0.5 h-5 w-5 accent-[var(--md-sys-color-primary)]" />
+                    <span className="flex flex-col gap-0.5 text-sm">
+                      <b>뿌요를 {PUYO_QUIZ_DEFAULTS.every}번 내려놓을 때마다 4지선다 문제 1개</b>
+                      <span className="text-[var(--md-sys-color-on-surface-variant)]">
+                        맞히면 +{PUYO_QUIZ_DEFAULTS.bonus}점, 틀리면 내 보드에 방해 뿌요 {PUYO_QUIZ_DEFAULTS.penalty}개. 푸는 동안 그 학생의 보드만 멈추고, 문제는 학생마다 섞여서 나와요.
+                      </span>
+                    </span>
+                  </label>
+                  {puyoQuizOn && (
+                    <QuizSetEditor cid={cid} ownerUid={by} items={items} onChange={setItems}
+                      emptyHint="CSV 템플릿을 내려받아 엑셀로 채운 뒤 올리면 4지선다를 한꺼번에 만들 수 있어요." />
+                  )}
+                </Section>
+              </>
             ) : kind === "quiz-run" ? (
               <>
                 <Section title="문제 세트">

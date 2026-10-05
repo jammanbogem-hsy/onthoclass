@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { cloneState, createState, input, receive, revive, tick, type Action, type Cell, type PuyoState } from "@/lib/puyo-engine";
+import { answerQuiz, cloneState, createState, input, quizDue, receive, revive, tick, type Action, type Cell, type PuyoState } from "@/lib/puyo-engine";
+import { normalizeQuiz, pickQuestion } from "@/lib/puyo-quiz";
+import type { QuizItem } from "@/lib/quizrun";
+import { PuyoQuizPrompt, QuizToast, type QuizFeedback } from "./PuyoQuizPrompt";
 import { finishPuyo, readPuyoSeq, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
 import { getPuyoLive, watchPuyoConnection, watchPuyoLive, savePuyoLive, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
 import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS, startLiveTicker } from "@/lib/puyo-sync";
@@ -271,7 +274,7 @@ type Sound = ReturnType<typeof useSound>;
  * 전체 화면 경기장 — 학급 대전·자유 대전이 함께 쓰는 화면(동기화·저장은 부르는 쪽이 맡는다).
  * others 에 2명 이상을 주면 3~4인 배치(친구 보드를 옆에 세로로)로 그린다.
  */
-export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction, others }: {
+export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, myScore, theirScore, seconds, countdown, result, away, notice, rules, flow, mineIndex, action, sound, onBack, backLabel, resultAction, others, quiz }: {
   view: PuyoState; oppState: PuyoState; meName: string; oppName: string; myScore: number; theirScore: number;
   seconds: number; countdown: number; result: StageResult | null; away?: boolean; notice?: string;
   rules?: PuyoRules; flow?: FlowStage; mineIndex: number; action: (a: Action) => void; sound: Sound;
@@ -279,6 +282,8 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
   others?: StageOther[];
   /** 배경 테마를 고르는 시드 — 같은 경기의 모든 화면이 같은 값을 넘긴다. */
   themeSeed?: number;
+  /** 문제 풀기: 지금 낼 문제(없으면 null)·답 고르기·직전 결과, 상대가 푸는 중인지 판단할 주기 */
+  quiz?: { every: number; prompt: { item: QuizItem; number: number } | null; onAnswer: (i: number) => void; feedback: QuizFeedback | null };
 }) {
   const theme = pickTheme(themeSeed);
   const multi = (others?.length ?? 0) >= 2;
@@ -324,6 +329,7 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
   const ranking: Ranked[] | undefined = multi ? [{ name: meName, score: myScore, me: true, playerIndex: mineIndex }, ...rivals.map((r, i) => ({ name: r.name, score: r.state.score, me: false, playerIndex: rivalIndices[i] }))].sort((a, b) => b.score - a.score) : undefined;
   const rowLayout = multi && fit.arcade;
   const miniBoards = rivals.map((r, i) => <div key={i} ref={el => { rivalRefs.current[i] = el; }} className={styles.theirs} data-puyo-player={rivalIndices[i]} style={{ ...playerPalette(rivalIndices[i]), "--bh": `${fit.theirs}px` } as CSSProperties}>
+    {quiz && quizDue(r.state, quiz.every) && <span className={styles.quizBadge}>문제 푸는 중</span>}
     {rowLayout ? <BoardLabel name={r.name} score={r.state.score} note={r.away ? "연결 확인 중" : undefined} />
       : (multi || !fit.arcade) && <span className={styles.sideLabel}>{r.name}{r.away ? " · 연결 확인 중" : ""}</span>}
     <PuyoBoard state={r.state} name={r.name} opponent {...(fit.arcade ? { arcade: true } : { fill: true })} />
@@ -367,6 +373,8 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
     {quake.n > 0 && <div key={`flash${quake.n}`} className={styles.screenFlash} data-tier={quake.tier} aria-hidden="true" />}
     {orbs.orbs.map(o => <i key={o.id} className={`${styles.orb} ${o.big ? styles.orbBig : ""} ${o.theirs ? styles.orbTheirs : ""}`} style={{ "--x1": `${o.x1}px`, "--y1": `${o.y1}px`, "--x2": `${o.x2}px`, "--y2": `${o.y2}px` } as CSSProperties} aria-hidden="true" />)}
 
+    {quiz?.prompt && !paused && <PuyoQuizPrompt item={quiz.prompt.item} number={quiz.prompt.number} every={quiz.every} onAnswer={quiz.onAnswer} />}
+    {quiz?.feedback && <QuizToast fb={quiz.feedback} />}
     {countdown > 0 && <div className={styles.overlay} role="status"><div className={styles.card}><span>준비됐나요?</span><strong>{countdown > 3 ? "READY" : countdown}</strong><small>{multi ? "모두 똑같은 순서로 뿌요가 나와요" : "짝꿍과 똑같은 순서로 뿌요가 나와요"}</small></div></div>}
     {!result && countdown <= 0 && seconds <= 0 && <div className={styles.overlay} role="status"><div className={styles.card}><strong>TIME UP!</strong><p className={styles.final}>{multi ? `내 점수 ${myScore.toLocaleString("ko-KR")}` : `${myScore.toLocaleString("ko-KR")} : ${theirScore.toLocaleString("ko-KR")}`}</p><small>결과를 정리하고 있어요…</small></div></div>}
     {result && <div className={styles.overlay} role="status"><div className={styles.card}>
@@ -426,8 +434,10 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   useEffect(() => { soundRef.current = sound; }, [sound]);
   const healthyRef = useRef(liveHealthy);
   useEffect(() => { healthyRef.current = liveHealthy; }, [liveHealthy]);
-  const options = useRef({ config, match, clockOffset });
-  useEffect(() => { options.current = { config, match, clockOffset }; }, [config, match, clockOffset]);
+  const quiz = useMemo(() => normalizeQuiz(config.quiz), [config.quiz]);
+  const [feedback, setFeedback] = useState<QuizFeedback | null>(null);
+  const options = useRef({ config, match, clockOffset, quiz });
+  useEffect(() => { options.current = { config, match, clockOffset, quiz }; }, [config, match, clockOffset, quiz]);
 
   useEffect(() => {
     if (!config.realtime || match?.result || !opponentId) return;
@@ -456,7 +466,9 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
       const { config: c, match: m, clockOffset: offset } = options.current;
       const time = Date.now() + offset; const s = state.current;
       const live = !!s && !m?.result && time >= (c.startsAt ?? Infinity) && time < (c.endsAt ?? 0);
-      if (s && live) {
+      // 문제 풀기: 문제가 떠 있는 동안 내 보드만 멈춘다(경기 시계·상대 보드는 계속)
+      const asking = !!s && !!options.current.quiz && quizDue(s, options.current.quiz.every);
+      if (s && live && !asking) {
         tick(s, Math.min(100, at - previous));
         // 학급 대전은 보드가 꽉 차도 끝나지 않는다 — 같은 프레임 안에서 판을 비우고 이어 간다
         // (패배 상태가 저장·전송되기 전에 되살리므로 서버는 경기를 끝내지 않는다).
@@ -529,8 +541,24 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const action = useCallback((a: Action) => {
     const { config: c, match: m, clockOffset: offset } = options.current;
     const t = Date.now() + offset;
+    const q = options.current.quiz;
+    if (state.current && q && quizDue(state.current, q.every)) return;
     if (state.current && !m?.result && t >= (c.startsAt ?? Infinity) && t < (c.endsAt ?? 0)) { input(state.current, a); setView(cloneState(state.current)); livePublisher.current?.request(a === "drop"); if (!options.current.config.realtime || !healthyRef.current) publisher.current?.request(a === "drop"); }
   }, []);
+
+  const answer = useCallback((i: number) => {
+    const s = state.current; const q = options.current.quiz;
+    if (!s || !q || !quizDue(s, q.every)) return;
+    const item = pickQuestion(q.items, `${uid}:${gid}`, s.asked ?? 0); if (!item) return;
+    const ok = i === item.answerIndex;
+    answerQuiz(s, ok, q.bonus, q.penalty);
+    setView(cloneState(s));
+    setFeedback({ key: Date.now(), ok, bonus: q.bonus, penalty: q.penalty, answer: `${item.answerIndex + 1}번 ${item.options[item.answerIndex]}` });
+    // 오답 소리는 방해 뿌요 낙하(garbage) 효과음이 대신한다
+    if (ok) soundRef.current.play(3);
+    livePublisher.current?.request(true); if (!options.current.config.realtime || !healthyRef.current) publisher.current?.request(true);
+  }, [uid, gid]);
+  useEffect(() => { if (!feedback) return; const t = setTimeout(() => setFeedback(null), 1600); return () => clearTimeout(t); }, [feedback]);
 
   if (!match || !view) return <p className={styles.loading}>경기 보드를 준비하고 있어요…</p>;
   const seconds = Math.max(0, Math.ceil(((config.endsAt ?? 0) - now) / 1000));
@@ -553,7 +581,11 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
       : saveBadAt !== null && now - clockOffset - saveBadAt > 5000 ? error
       : config.realtime && liveBadAt !== null && now - clockOffset - liveBadAt > 5000 ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined}
     result={result ? stageResult(result.winner, uid, result.scores[uid] ?? 0, result.scores[opponentId!] ?? 0, result.reward?.uid === uid ? `승리 보상 +${result.reward.xp} XP 받았어요!` : undefined) : null}
-    action={action} sound={sound} onBack={() => setFull(false)} backLabel="대진표" resultAction={{ label: "대진표 보기", icon: "leaderboard", onClick: () => setFull(false) }} />;
+    action={action} sound={sound} onBack={() => setFull(false)} backLabel="대진표" resultAction={{ label: "대진표 보기", icon: "leaderboard", onClick: () => setFull(false) }}
+    quiz={quiz ? {
+      every: quiz.every, onAnswer: answer, feedback,
+      prompt: !result && seconds > 0 && quizDue(view, quiz.every) ? (() => { const item = pickQuestion(quiz.items, `${uid}:${gid}`, view.asked ?? 0); return item ? { item, number: (view.asked ?? 0) + 1 } : null; })() : null,
+    } : undefined} />;
 }
 
 export function PuyoPractice() {

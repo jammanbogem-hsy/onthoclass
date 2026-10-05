@@ -4,11 +4,12 @@ import { getDbClient, getFunctionsClient } from "@/lib/firebase";
 import type { GameLink } from "@/lib/games";
 import { parseState, type PuyoState } from "@/lib/puyo-engine";
 import { normalizeRules, type PuyoPlan, type PuyoRules } from "@/lib/puyo-rules";
+import { normalizeQuiz, type PuyoQuiz } from "@/lib/puyo-quiz";
 
 export type PuyoPlayer = { uid: string; name: string; teacher: boolean };
 export type PuyoResult = { winner: string | null; reason: "topout" | "time" | "disconnect" | "teacher"; scores: Record<string, number>; at: number; reward?: { uid: string; xp: number } };
 export type PuyoMatch = { id: string; a: string; b: string; seed: number; result: PuyoResult | null };
-export type PuyoConfig = Partial<Omit<PuyoRules, "durationSec">> & { durationSec: number; round?: number; prevResting?: string[]; carry?: string[]; resting?: { uid: string; name: string }[]; realtime?: boolean; startsAt?: number; endsAt?: number; players?: PuyoPlayer[]; rosterIds?: string[]; matches?: PuyoMatch[] };
+export type PuyoConfig = Partial<Omit<PuyoRules, "durationSec">> & { durationSec: number; round?: number; prevResting?: string[]; carry?: string[]; resting?: { uid: string; name: string }[]; realtime?: boolean; startsAt?: number; endsAt?: number; players?: PuyoPlayer[]; rosterIds?: string[]; matches?: PuyoMatch[]; quiz?: PuyoQuiz };
 export type PuyoPresence = { uid: string; name: string; online: boolean; at: number };
 export type PuyoRun = { uid: string; score: number; sent: number; maxChain: number; lost: boolean; seq: number; at: number; state: PuyoState | null };
 const path = (cid: string, gid: string) => `classes/${cid}/games/${gid}`;
@@ -16,10 +17,12 @@ export const puyoUrl = (cid: string, gid: string) => `/puyo/?class=${encodeURICo
 
 /** 다음 판으로 넘겨 줄 정보: 몇 번째 판인지, 직전에 쉰 친구(먼저 짝 받기), 직전 참가자(대기실 미리 체크). */
 export type PuyoRoundCarry = { round: number; prevResting: string[]; carry: string[] };
-export async function createPuyoGame(cid: string, by: string, rules: Partial<PuyoRules>, link: GameLink = { name: "뿌요뿌요" }, carry?: PuyoRoundCarry) {
+export async function createPuyoGame(cid: string, by: string, rules: Partial<PuyoRules>, link: GameLink = { name: "뿌요뿌요" }, carry?: PuyoRoundCarry, quiz?: PuyoQuiz | null) {
   const ref = doc(collection(getDbClient(), "classes", cid, "games"));
   const batch = writeBatch(getDbClient());
-  batch.set(ref, { kind: "puyo", status: "draft", by, link, puyo: { ...normalizeRules(rules), round: carry?.round ?? 1, prevResting: carry?.prevResting ?? [], carry: carry?.carry ?? [] }, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  // 문제 풀기: 쓸 수 있는 문항이 있을 때만 저장(없으면 일반 대전)
+  const q = normalizeQuiz(quiz);
+  batch.set(ref, { kind: "puyo", status: "draft", by, link, puyo: { ...normalizeRules(rules), round: carry?.round ?? 1, prevResting: carry?.prevResting ?? [], carry: carry?.carry ?? [], ...(q ? { quiz: q } : {}) }, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   batch.set(doc(getDbClient(), "classes", cid, "control", "game"), { gameId: ref.id, at: serverTimestamp() });
   await batch.commit(); return ref.id;
 }
@@ -62,7 +65,7 @@ export async function nextPuyoRound(cid: string, by: string, prev: { link: GameL
   const p = prev.puyo;
   const resting = (p?.resting ?? []).map(r => r.uid);
   const played = (p?.players ?? []).filter(x => !x.teacher).map(x => x.uid);
-  return createPuyoGame(cid, by, normalizeRules(p), prev.link, { round: (p?.round ?? 1) + 1, prevResting: resting, carry: [...played, ...resting] });
+  return createPuyoGame(cid, by, normalizeRules(p), prev.link, { round: (p?.round ?? 1) + 1, prevResting: resting, carry: [...played, ...resting] }, p?.quiz);
 }
 export async function finishPuyo(cid: string, gid: string, manual = false) {
   return (await httpsCallable(getFunctionsClient(), "puyoFinish")({ cid, gid, manual })).data;

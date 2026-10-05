@@ -379,15 +379,17 @@ export async function listPastQuizSets(cid: string): Promise<PastQuizSet[]> {
   const out: PastQuizSet[] = [];
   for (const d of snap.docs) {
     const v = d.data() as Record<string, unknown>;
-    if (v.kind !== "quiz-run") continue;
-    const quiz = v.quiz as QuizRunConfig | undefined;
+    // 퀴즈런 문제 + 뿌요뿌요 '문제 풀기' 문제(같은 문항 모양)
+    const quiz = v.kind === "quiz-run" ? (v.quiz as QuizRunConfig | undefined)
+      : v.kind === "puyo" ? ((v.puyo as { quiz?: { items?: QuizItem[] } } | undefined)?.quiz)
+      : undefined;
     const items = Array.isArray(quiz?.items) ? quiz.items : [];
     if (items.length === 0) continue;
     const link = v.link as { name?: string } | undefined;
     const ts = v.createdAt as { toMillis?: () => number } | undefined;
     out.push({
       gameId: d.id,
-      label: link?.name?.trim() || "이름 없음",
+      label: (v.kind === "puyo" ? "뿌요뿌요 · " : "") + (link?.name?.trim() || "이름 없음"),
       items,
       createdAt: ts?.toMillis ? ts.toMillis() : null,
     });

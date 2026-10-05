@@ -8,12 +8,27 @@
  * 차시 문항 가져오기나 문서 자동 생성(parseSurveyDoc) 결과를 그대로 꽂을 수 있다.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
 import type { QuizItem } from "@/lib/quizrun";
 import { QuizImportModal } from "@/components/quizrun/QuizImportModal";
 import { saveQuizSet } from "@/lib/quizBank";
 import { useDialog } from "@/components/Dialog";
+import { quizCsvTemplate, quizFromCsv, quizToCsv } from "@/lib/puyo-quiz";
+
+/** 엑셀이 저장한 한글 CSV 는 CP949(EUC-KR)인 경우가 많다 — UTF-8 로 안 읽히면 그쪽으로 다시 읽는다. */
+async function readCsvText(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+  catch { return new TextDecoder("euc-kr").decode(buf); }
+}
+
+function saveFile(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 const newItem = (): QuizItem => ({
   id: "q_" + Math.random().toString(36).slice(2, 10),
@@ -36,6 +51,7 @@ export function QuizSetEditor({
   ownerUid,
   items,
   onChange,
+  emptyHint = "학생은 이 문제를 풀어 러닝 에너지를 충전합니다.",
 }: {
   /** 지난 게임·차시에서 문제를 불러오기 위해 필요 */
   cid: string;
@@ -43,7 +59,19 @@ export function QuizSetEditor({
   ownerUid: string;
   items: QuizItem[];
   onChange: (items: QuizItem[]) => void;
+  /** 문제가 없을 때 안내 문구 끝에 붙이는 설명(게임마다 다름) */
+  emptyHint?: string;
 }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [csvNote, setCsvNote] = useState<{ added: number; errors: string[] } | null>(null);
+
+  /** CSV 올리기 — 지금 목록 뒤에 이어 붙인다. 잘못된 줄은 건너뛰고 몇 번째 줄인지 알려 준다. */
+  async function importCsv(file: File) {
+    const text = await readCsvText(file);
+    const { items: got, errors } = quizFromCsv(text, () => newItem().id);
+    if (got.length) onChange([...items, ...got]);
+    setCsvNote({ added: got.length, errors });
+  }
   const [open, setOpen] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -144,10 +172,40 @@ export function QuizSetEditor({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-[var(--md-sys-color-surface-container)] px-3 py-2">
+        <Icon name="table_view" size={16} className="text-[var(--md-sys-color-on-surface-variant)]" />
+        <span className="mr-auto text-xs text-[var(--md-sys-color-on-surface-variant)]">엑셀로 한꺼번에 만들기</span>
+        <button type="button" onClick={() => saveFile("문제_템플릿.csv", quizCsvTemplate())}
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-primary)]">
+          <Icon name="download" size={15} />CSV 템플릿
+        </button>
+        <button type="button" onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-primary)]">
+          <Icon name="upload_file" size={15} />CSV 올리기
+        </button>
+        {items.some((it) => !isIncomplete(it)) && (
+          <button type="button" onClick={() => saveFile("문제.csv", quizToCsv(items.filter((it) => !isIncomplete(it))))}
+            className="inline-flex items-center gap-1 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-1.5 text-xs font-bold text-[var(--md-sys-color-primary)]">
+            <Icon name="ios_share" size={15} />CSV로 저장
+          </button>
+        )}
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void importCsv(f); }} />
+        {csvNote && (
+          <div role="status" className={`basis-full rounded-lg px-2.5 py-2 text-xs ${csvNote.errors.length ? "bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]" : "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"}`}>
+            <b>{csvNote.added}개 문제를 추가했어요.</b>
+            {csvNote.errors.length > 0 && <>
+              {" "}건너뛴 줄 {csvNote.errors.length}개:
+              <ul className="mt-1 list-disc pl-4">{csvNote.errors.slice(0, 5).map((e) => <li key={e}>{e}</li>)}{csvNote.errors.length > 5 && <li>…외 {csvNote.errors.length - 5}개</li>}</ul>
+            </>}
+          </div>
+        )}
+      </div>
+
       {items.length === 0 ? (
         <p className="rounded-xl bg-[var(--md-sys-color-surface-container)] px-3 py-6 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]">
-          문제를 추가하거나 <b>불러오기</b>로 지난 게임·차시 문항을 가져오세요.
-          학생은 이 문제를 풀어 러닝 에너지를 충전합니다.
+          문제를 추가하거나 <b>불러오기</b>·<b>CSV 올리기</b>로 문항을 가져오세요.
+          {" "}{emptyHint}
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">

@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { watchActiveGame, watchGame, type Game } from "@/lib/games";
 import { finishPuyo, leavePuyoRoom, nextPuyoRound, presence, puyoClock, puyoUrl, startPuyo, watchPuyoPresence, watchPuyoRuns, type PuyoConfig, type PuyoPresence, type PuyoRun } from "@/lib/puyo";
+import { normalizeQuiz } from "@/lib/puyo-quiz";
 import { DEFAULT_PUYO_RULES, minutesLabel, normalizeRules, planMatches, planPairs, PUYO_COUNTDOWN_SEC, PUYO_HOW_TO, PUYO_MAX_STUDENTS, ruleSummary, swapInPlan, type FlowStage, type PuyoPlan, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/Avatar";
@@ -57,6 +58,7 @@ function Scoreboard({ config, runs, uid, done }: { config: PuyoConfig; runs: Puy
             <strong className="max-w-full truncate text-sm">{players.get(id)?.name || "참가자"}</strong>
             <span className="text-xl font-black tabular-nums text-[var(--md-sys-color-primary)]">{(m.result?.scores[id] ?? run?.score ?? 0).toLocaleString("ko-KR")}</span>
             {downs > 0 && <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">다시 시작 {downs}번</span>}
+            {config.quiz && (run?.state?.asked ?? 0) > 0 && <span className="text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">문제 {run?.state?.right ?? 0}/{run?.state?.asked}개 맞힘</span>}
           </div>;
         })}<span className="order-2 text-sm font-black text-[var(--md-sys-color-on-surface-variant)]">VS</span></div>
         <footer className="mt-3 border-t border-[var(--md-sys-color-outline-variant)] pt-2 text-center text-sm">
@@ -131,12 +133,12 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
             <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">{rules.pairing === "manual" ? swapFrom ? `${nameOf(swapFrom)}와 자리를 바꿀 친구를 눌러요.` : "두 친구를 차례로 누르면 자리가 바뀌어요." : "무작위로 정한 짝이에요."}</p>
             <button type="button" className={btnOutline} disabled={busy} onClick={shuffle}><Icon name="shuffle" size={18} />다시 섞기</button>
           </div> : <button type="button" className={btnTonal} disabled={busy || selected.length === 0} onClick={shuffle}><Icon name="group" size={18} />1:1 짝 만들기</button>}
-          <RuleChips rules={rules} />
+          <RuleChips rules={rules} quiz={config.quiz} />
           <button type="button" className={btnPrimary} disabled={busy || !ready} onClick={() => ready && void act(() => startPuyo(cid, gid, plan))}><Icon name="play_arrow" size={20} />{busy ? "경기 준비 중…" : "대결 시작"}</button>
           <p className="text-center text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">{ready ? `시작하면 ${PUYO_COUNTDOWN_SEC}초 뒤 모두 함께 출발해요.` : "짝을 만들어야 시작할 수 있어요."} 누가 나가거나 선택이 바뀌면 짝을 다시 만들어요.</p>
         </> : <>
           <p className="rounded-2xl bg-[var(--md-sys-color-surface-container)] p-3 text-sm leading-relaxed">선생님이 참가자를 고르고 짝을 정하고 있어요. 이 화면을 열어 두면 시작할 때 경기 화면이 바로 켜져요.</p>
-          <RuleChips rules={rules} />
+          <RuleChips rules={rules} quiz={config.quiz} />
           <p className="flex items-center justify-center gap-2 py-2 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--md-sys-color-tertiary)]" />곧 시작해요</p>
         </>}
       </aside>
@@ -148,8 +150,8 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
   </>;
 }
 
-function RuleChips({ rules }: { rules: PuyoRules }) {
-  return <dl className="grid grid-cols-2 gap-2">{ruleSummary(rules).map(r => <div key={r.label} className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-2"><dt className="text-xs text-[var(--md-sys-color-on-surface-variant)]">{r.label}</dt><dd className="text-sm font-bold">{r.value}</dd></div>)}</dl>;
+function RuleChips({ rules, quiz }: { rules: PuyoRules; quiz?: PuyoConfig["quiz"] }) {
+  return <dl className="grid grid-cols-2 gap-2">{ruleSummary(rules, normalizeQuiz(quiz)).map(r => <div key={r.label} className="rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-2"><dt className="text-xs text-[var(--md-sys-color-on-surface-variant)]">{r.label}</dt><dd className="text-sm font-bold">{r.value}</dd></div>)}</dl>;
 }
 
 function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {

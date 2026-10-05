@@ -15,6 +15,10 @@ export type PuyoState = {
   drops?: number[];
   /** 학급 대전에서 보드가 꽉 차 다시 시작한 횟수(연습·예전 상태에는 없음). */
   downs?: number;
+  /** 내려놓은 뿌요 쌍 수 — 문제 풀기에서 '몇 번마다 한 문제'를 셀 때 쓴다. */
+  placed?: number;
+  /** 문제 풀기: 지금까지 나온 문제 수 / 맞힌 수 / 틀린 수 */
+  asked?: number; right?: number; wrong?: number;
 };
 const OFFSETS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const CHAIN = [0, 0, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512];
@@ -113,26 +117,47 @@ function resolve(s: PuyoState) {
   if (s.chain > 0 && s.board.every(v => v === 0)) { s.score += 2100; attack(s, 2100); effect(s, "allclear"); }
   if (s.pending > 0) {
     const amount = Math.min(30, s.pending); s.pending -= amount;
-    // Independent garbage shuffle: receiving garbage must not change the common piece sequence.
-    const columns = [0, 1, 2, 3, 4, 5];
-    for (let i = 5; i > 0; i--) { const j = ((s.seen + s.score + i * 17) >>> 0) % (i + 1); [columns[i], columns[j]] = [columns[j], columns[i]]; }
-    const garbageDrops: number[] = [];
-    for (let n = 0; n < amount; n++) {
-      const x = columns[n % COLS]; let y = ROWS - 1;
-      // 방해 뿌요는 보이는 줄(1~12)에만 쌓는다. 그 줄이 꽉 찼으면 넘치는 방해는 버린다(실제 뿌요뿌요 규칙).
-      // 예전에는 숨은 줄(0)까지 쌓여 보이지 않는 방해가 이동을 막거나, 넘치면 판이 끝났다.
-      while (y >= 1 && s.board[y * COLS + x]) y--;
-      if (y < 1) continue;
-      s.board[y * COLS + x] = 5; garbageDrops.push(y * COLS + x, y + 1);
-    }
-    s.drops = garbageDrops; effect(s, "garbage");
+    dropNuisance(s, amount);
   }
   spawn(s);
+}
+/** 방해 뿌요 amount 개를 지금 떨어뜨린다. avoid: 조작 중인 뿌요가 있는 칸(그 칸은 건너뛴다). */
+function dropNuisance(s: PuyoState, amount: number, avoid?: Set<number>) {
+  // Independent garbage shuffle: receiving garbage must not change the common piece sequence.
+  const columns = [0, 1, 2, 3, 4, 5];
+  for (let i = 5; i > 0; i--) { const j = ((s.seen + s.score + i * 17) >>> 0) % (i + 1); [columns[i], columns[j]] = [columns[j], columns[i]]; }
+  const garbageDrops: number[] = [];
+  for (let n = 0; n < amount; n++) {
+    const x = columns[n % COLS]; let y = ROWS - 1;
+    // 방해 뿌요는 보이는 줄(1~12)에만 쌓는다. 그 줄이 꽉 찼으면 넘치는 방해는 버린다(실제 뿌요뿌요 규칙).
+    // 예전에는 숨은 줄(0)까지 쌓여 보이지 않는 방해가 이동을 막거나, 넘치면 판이 끝났다.
+    while (y >= 1 && s.board[y * COLS + x]) y--;
+    if (y < 1 || avoid?.has(y * COLS + x)) continue;
+    s.board[y * COLS + x] = 5; garbageDrops.push(y * COLS + x, y + 1);
+  }
+  s.drops = garbageDrops; effect(s, "garbage");
+}
+/**
+ * 문제 풀기 — 뿌요를 every 번 내려놓을 때마다 한 문제. 새 뿌요가 나와 조작을 기다리는 순간에만
+ * 문제를 내서(연쇄 도중엔 안 냄) 판이 깔끔하게 멈춘다.
+ */
+export function quizDue(s: PuyoState, every: number) {
+  return every > 0 && s.phase === "fall" && !!s.active && Math.floor((s.placed ?? 0) / every) > (s.asked ?? 0);
+}
+/** 답을 확정한다. 맞히면 bonus 점수, 틀리면 내 보드에 방해 뿌요 penalty 개가 바로 떨어진다. */
+export function answerQuiz(s: PuyoState, correct: boolean, bonus: number, penalty: number) {
+  s.asked = (s.asked ?? 0) + 1;
+  if (correct) { s.right = (s.right ?? 0) + 1; s.score += bonus; return; }
+  s.wrong = (s.wrong ?? 0) + 1;
+  if (penalty > 0) {
+    const avoid = new Set(s.active ? pairCells(s.active).map(({ x, y }) => y * COLS + x) : []);
+    dropNuisance(s, penalty, avoid);
+  }
 }
 function lockPair(s: PuyoState) {
   if (!s.active) return;
   const placed = pairCells(s.active).map(({ x, y, c }) => { s.board[y * COLS + x] = c; return y * COLS + x; });
-  s.active = null;
+  s.active = null; s.placed = (s.placed ?? 0) + 1;
   const moved = settle(s); const drops = s.drops ?? [];
   for (const at of placed) { const to = moved.get(at) ?? at; if (!drops.some((v, k) => k % 2 === 0 && v === to)) drops.push(to, 0); }
   s.drops = drops; s.phase = "settle"; s.timer = Math.max(170, longestFall(drops)); effect(s, "land");
@@ -203,6 +228,7 @@ export function parseState(json: unknown): PuyoState | null {
     const integer = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!s || !Array.isArray(s.board) || s.board.length !== COLS * ROWS || !s.board.every(v => integer(v, 0, 5))) return null;
     if (!Array.isArray(s.next) || s.next.length !== 6 || !s.next.every(v => integer(v, 1, 4))) return null;
+    for (const key of ["placed", "asked", "right", "wrong"] as const) if (s[key] !== undefined && !integer(s[key], 0, 1000000)) return null;
     if ((s.downs !== undefined && !integer(s.downs, 0, 9999)) || (s.drops !== undefined && (!Array.isArray(s.drops) || s.drops.length > COLS * ROWS * 2 || !s.drops.every(v => integer(v, 0, COLS * ROWS)))) || !Array.isArray(s.clearing) || s.clearing.length > COLS * ROWS || !s.clearing.every(v => integer(v, 0, COLS * ROWS - 1))) return null;
     if (!["fall", "clear", "settle", "over"].includes(s.phase) || !["none", "land", "clear", "attack", "allclear", "garbage", "revive", "fall"].includes(s.effect)) return null;
     for (const key of ["rng", "score", "cleared", "maxChain", "chain", "sent", "pending", "seen", "remainder", "resets", "event"] as const) if (!integer(s[key], 0, 4294967295)) return null;

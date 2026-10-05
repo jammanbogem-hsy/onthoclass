@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.11.2";
+export const APP_VERSION = "1.12.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.12.0",
+    date: "2026-10-05",
+    kind: "minor",
+    title: "뿌요뿌요 문제 풀기",
+    items: [
+      "선생님이 문제를 넣으면 뿌요를 5번 내려놓을 때마다 4지선다 문제가 나와요",
+      "맞히면 +500점, 틀리면 내 보드에 방해 뿌요 2개가 떨어져요",
+      "문제를 푸는 동안에는 내 보드만 잠깐 멈추고, 숫자키 1~4로도 답할 수 있어요",
+      "선생님은 CSV 템플릿을 엑셀로 채워 올리면 문제를 한꺼번에 만들 수 있어요",
+    ],
+  },
   {
     version: "1.11.2",
     date: "2026-10-02",
