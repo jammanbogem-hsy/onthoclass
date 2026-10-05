@@ -182,7 +182,10 @@ export function GameStartModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--md-sys-color-scrim)]/40 p-4 backdrop-blur-sm">
       <div
         role="dialog"
-        aria-modal="true"
+        // 테스트 플레이 중에는 경기 화면이 맨 위다 — 이 창이 '열린 대화상자'로 남아 있으면
+        // 경기 화면이 "대화상자가 떠 있다"고 보고 키보드 조작을 모두 무시했다.
+        aria-modal={testing ? undefined : "true"}
+        aria-hidden={testing ? true : undefined}
         aria-labelledby={titleId}
         className={`flex w-full animate-float-in ${kind === "puyo" ? "h-[92vh] max-h-[920px] max-w-6xl" : "h-[88vh] max-h-[820px] max-w-3xl"} flex-col overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-high)] shadow-[var(--md-sys-elevation-3)]`}
       >
