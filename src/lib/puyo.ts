@@ -8,7 +8,10 @@ import { normalizeQuiz, type PuyoQuiz } from "@/lib/puyo-quiz";
 
 export type PuyoPlayer = { uid: string; name: string; teacher: boolean };
 export type PuyoResult = { winner: string | null; reason: "topout" | "time" | "disconnect" | "teacher"; scores: Record<string, number>; at: number; reward?: { uid: string; xp: number } };
-export type PuyoMatch = { id: string; a: string; b: string; seed: number; result: PuyoResult | null };
+/** a·b 는 예전 1:1 호환(=ids[0]·ids[1]). 4인 모둠은 ids 에 2~4명. */
+export type PuyoMatch = { id: string; a: string; b: string; ids?: string[]; seed: number; result: PuyoResult | null };
+/** 이 판에 함께 겨루는 사람들 — 1:1·모둠·예전 기록 모두 같은 방법으로 읽는다. */
+export const matchIds = (m: Pick<PuyoMatch, "a" | "b" | "ids">) => (m.ids && m.ids.length >= 2 ? m.ids : [m.a, m.b]);
 export type PuyoConfig = Partial<Omit<PuyoRules, "durationSec">> & { durationSec: number; round?: number; prevResting?: string[]; carry?: string[]; resting?: { uid: string; name: string }[]; realtime?: boolean; startsAt?: number; endsAt?: number; players?: PuyoPlayer[]; rosterIds?: string[]; matches?: PuyoMatch[]; quiz?: PuyoQuiz };
 export type PuyoPresence = { uid: string; name: string; online: boolean; at: number };
 export type PuyoRun = { uid: string; score: number; sent: number; maxChain: number; lost: boolean; seq: number; at: number; state: PuyoState | null };

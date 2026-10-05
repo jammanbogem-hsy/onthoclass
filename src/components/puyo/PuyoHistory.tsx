@@ -1,5 +1,5 @@
 import type { Game } from "@/lib/games";
-import { puyoUrl } from "@/lib/puyo";
+import { matchIds, puyoUrl } from "@/lib/puyo";
 import { normalizeRules, ruleSummary } from "@/lib/puyo-rules";
 import { normalizeQuiz } from "@/lib/puyo-quiz";
 
@@ -16,8 +16,8 @@ export function PuyoHistory({ cid, game }: { cid: string; game: Game }) {
       <div className="rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-1"><dt className="inline text-[var(--md-sys-color-on-surface-variant)]">참여 </dt><dd className="inline font-bold">{p?.players?.length ?? 0}명</dd></div>
     </dl>
     {p?.matches?.map(m => <div key={m.id} className="rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-low)] p-4 text-[var(--md-sys-color-on-surface)]">
-      <strong>{name(m.a)} vs {name(m.b)}</strong>
-      <p className="mt-2">{m.result ? `${(m.result.scores[m.a] ?? 0).toLocaleString()} : ${(m.result.scores[m.b] ?? 0).toLocaleString()} · ${m.result.winner ? `${name(m.result.winner)} 승리` : "무승부"} · ${REASON[m.result.reason]}` : "진행 중"}</p>
+      <strong>{matchIds(m).map(name).join(" vs ")}</strong>
+      <p className="mt-2">{m.result ? `${matchIds(m).map(id => (m.result!.scores[id] ?? 0).toLocaleString()).join(" : ")} · ${m.result.winner ? `${name(m.result.winner)} ${matchIds(m).length > 2 ? "1등" : "승리"}` : "무승부"} · ${REASON[m.result.reason]}` : "진행 중"}</p>
       {m.result?.reward && <p className="mt-1 text-sm font-bold text-[var(--md-sys-color-tertiary)]">승리 보상 +{m.result.reward.xp} XP 지급 완료</p>}
     </div>)}
     {!!p?.resting?.length && <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">이번 판 쉰 친구: {p.resting.map(r => r.name).join(", ")}</p>}

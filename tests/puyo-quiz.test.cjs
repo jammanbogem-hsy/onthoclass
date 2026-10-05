@@ -58,3 +58,16 @@ test('normalizeQuiz drops broken items, clamps numbers, and returns null without
   const q = Q.normalizeQuiz({ items: [...items, { id: 'bad', prompt: 'p', options: ['a'], answerIndex: 0 }], every: 999, bonus: -5, penalty: 'x' });
   assert.equal(q.items.length, 5); assert.equal(q.every, 20); assert.equal(q.bonus, 0); assert.equal(q.penalty, 2);
 });
+
+test('computer friend plays legal moves, clears puyos and survives a long run', () => {
+  const B = (() => { const exports = {}; const src = require('fs').readFileSync('src/lib/puyo-bot.ts', 'utf8').replace('@/lib/puyo-engine', './__engine'); vm.runInNewContext(ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, require: m => m === './__engine' ? E : require(m), Math, Set, Map, JSON }); return exports; })();
+  let seedRand = 7; const rnd = () => ((seedRand = (seedRand * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const s = E.createState(11); let placed = 0; let downs = 0;
+  for (let k = 0; k < 400 && placed < 60; k++) {
+    if (s.phase === 'over') { downs++; s.phase = 'over'; E.revive(s); }
+    const move = B.planMove(s, 0.9, rnd);
+    if (move) { B.playMove(s, move); placed++; }
+    E.tick(s, 2000); E.tick(s, 2000);
+  }
+  assert.equal(placed, 60); assert.ok(s.cleared >= 20, `cleared ${s.cleared}`); assert.ok(downs <= 1, `downs ${downs}`);
+});

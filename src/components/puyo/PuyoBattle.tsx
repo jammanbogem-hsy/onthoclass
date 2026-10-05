@@ -6,7 +6,7 @@ import { answerQuiz, cloneState, createState, input, quizDue, receive, revive, t
 import { normalizeQuiz, pickQuestion } from "@/lib/puyo-quiz";
 import type { QuizItem } from "@/lib/quizrun";
 import { PuyoQuizPrompt, QuizToast, type QuizFeedback } from "./PuyoQuizPrompt";
-import { finishPuyo, readPuyoSeq, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
+import { finishPuyo, matchIds, readPuyoSeq, savePuyoRun, type PuyoConfig, type PuyoRun } from "@/lib/puyo";
 import { getPuyoLive, watchPuyoConnection, watchPuyoLive, savePuyoLive, PUYO_LIVE_INTERVAL_MS } from "@/lib/puyo-realtime";
 import { cachePuyo, restorePuyo, PuyoPublisher, PUYO_SYNC_INTERVAL_MS, startLiveTicker } from "@/lib/puyo-sync";
 import { normalizeRules, type FlowStage, type PuyoRules } from "@/lib/puyo-rules";
@@ -406,14 +406,17 @@ export function stageResult(winner: string | null, uid: string, mine: number, th
 }
 
 export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: string; gid: string; uid: string; config: PuyoConfig; runs: PuyoRun[]; clockOffset: number }) {
-  const match = config.matches?.find(m => m.a === uid || m.b === uid);
+  const match = config.matches?.find(m => matchIds(m).includes(uid));
   const me = config.players?.find(p => p.uid === uid);
-  const opponentId = match?.a === uid ? match.b : match?.a;
+  // 함께 겨루는 친구들(1:1이면 1명, 4인 모둠이면 1~3명)
+  const seatIds = match ? matchIds(match) : [];
+  const rivalIds = seatIds.filter(id => id !== uid);
+  const rivalKey = rivalIds.join(",");
+  const opponentId = rivalIds[0];
   const other = config.players?.find(p => p.uid === opponentId);
   const myRun = runs.find(r => r.uid === uid);
-  const durableOpponent = runs.find(r => r.uid === opponentId);
   const [liveOwn, setLiveOwn] = useState<PuyoRun | null | undefined>(undefined);
-  const [liveOpponent, setLiveOpponent] = useState<PuyoRun | null>(null);
+  const [liveRivals, setLiveRivals] = useState<Record<string, PuyoRun | null>>({});
   const [liveHealthy, setLiveHealthy] = useState(true);
   // 안내 문구는 문제가 5초 넘게 이어질 때만 — 시작·끝 순간의 한두 번 거절이나 첫 연결 지연은 숨긴다
   const [saveBadAt, setSaveBadAt] = useState<number | null>(null);
@@ -429,7 +432,10 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const [now, setNow] = useState(0);
   // 경기 중에는 전체 화면. '대진표 보기'로 잠시 내려 두고 다시 열 수 있다.
   const [full, setFull] = useState(true);
-  const opponent = liveOpponent && now - liveOpponent.at < 5000 && !match?.result ? liveOpponent : durableOpponent;
+  // 실시간 값이 5초 안쪽이면 그것을, 아니면 저장된 값을 쓴다(친구마다 따로)
+  const rivalRuns = rivalIds.map(id => { const live = liveRivals[id]; return live && now - live.at < 5000 && !match?.result ? live : runs.find(r => r.uid === id); });
+  const opponent = rivalRuns[0];
+  const sentMax = useRef<Record<string, number>>({});
   const sound = useSound(); const soundRef = useRef(sound);
   useEffect(() => { soundRef.current = sound; }, [sound]);
   const healthyRef = useRef(liveHealthy);
@@ -440,14 +446,14 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   useEffect(() => { options.current = { config, match, clockOffset, quiz }; }, [config, match, clockOffset, quiz]);
 
   useEffect(() => {
-    if (!config.realtime || match?.result || !opponentId) return;
+    if (!config.realtime || match?.result || !rivalKey) return;
     let active = true;
     const timeout = setTimeout(() => { if (active) setLiveOwn(v => v === undefined ? null : v); }, 1500);
     void getPuyoLive(cid, gid, uid).then(r => { if (active) setLiveOwn(r); }).catch(() => { if (active) setLiveOwn(null); });
-    const off = watchPuyoLive(cid, gid, opponentId, setLiveOpponent);
+    const offs = rivalKey.split(",").map(id => watchPuyoLive(cid, gid, id, run => setLiveRivals(v => ({ ...v, [id]: run }))));
     const connection = watchPuyoConnection(markLive);
-    return () => { active = false; clearTimeout(timeout); off(); connection(); };
-  }, [cid, gid, uid, opponentId, config.realtime, match?.result, markLive]);
+    return () => { active = false; clearTimeout(timeout); offs.forEach(f => f()); connection(); };
+  }, [cid, gid, uid, rivalKey, config.realtime, match?.result, markLive]);
   // Restore the latest acknowledged state on a reload; never respawn a fresh board.
   useEffect(() => {
     if (started.current || !myRun || !match || (config.realtime && !match.result && liveOwn === undefined)) return;
@@ -459,7 +465,14 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     initialSeq.current = myRun.seq; savedLost.current = myRun.lost;
     started.current = true; setView(cloneState(state.current));
   }, [myRun, match, liveOwn, config.realtime, cid, gid, uid, clockOffset]);
-  useEffect(() => { if (state.current && opponent) receive(state.current, opponent.sent); }, [opponent]);
+  // 공격은 '모두에게 똑같이' — 내가 받을 방해 뿌요 = 친구들이 보낸 공격의 합(친구별 최댓값, 줄지 않게)
+  const sentKey = rivalRuns.map(r => r?.sent ?? 0).join(",");
+  useEffect(() => {
+    rivalIds.forEach((id, i) => { const sent = rivalRuns[i]?.sent ?? 0; sentMax.current[id] = Math.max(sentMax.current[id] ?? 0, sent); });
+    if (state.current) receive(state.current, Object.values(sentMax.current).reduce((a, b) => a + b, 0));
+    // sentKey 가 친구들 공격 값의 요약이다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentKey, rivalKey]);
   useEffect(() => {
     let frame = 0; let previous = performance.now(); let draw = previous; let lastEvent = -1;
     const run = (at: number) => {
@@ -569,6 +582,17 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   const theirScore = result?.scores[opponentId!] ?? oppState.score;
   const stage = countdown > 0 ? "ready" : result ? "reward" : "battle";
   const away = !result && opponent && now - opponent.at > 8000;
+  const multi = rivalIds.length >= 2;
+  const nameOf = (id: string) => config.players?.find(p => p.uid === id)?.name ?? "친구";
+  const others = multi ? rivalIds.map((id, i) => ({ name: nameOf(id), state: rivalRuns[i]?.state ?? createState(match.seed), away: !result && !!rivalRuns[i] && now - (rivalRuns[i]?.at ?? 0) > 8000 })) : undefined;
+  const scoreOf = (id: string) => result?.scores[id] ?? (id === uid ? view.score : rivalRuns[rivalIds.indexOf(id)]?.state?.score ?? 0);
+  const groupResult = result && multi ? (() => {
+    const rank = (id: string) => 1 + seatIds.filter(o => scoreOf(o) > scoreOf(id)).length;
+    const order = [...seatIds].sort((x, y) => scoreOf(y) - scoreOf(x));
+    return { title: result.winner === uid ? "모둠 1등!" : rank(uid) === 1 ? "공동 1등!" : "끝까지 잘했어요", headline: `${rank(uid)}등`,
+      score: order.map(id => `${rank(id)}등 ${id === uid ? "나" : nameOf(id)} ${scoreOf(id).toLocaleString("ko-KR")}`).join(" · "),
+      reward: result.reward?.uid === uid ? `1등 보상 +${result.reward.xp} XP 받았어요!` : undefined };
+  })() : null;
 
   if (!full) return <div className={styles.minimized}>
     <div><strong>{result ? "경기가 끝났어요" : "경기 중이에요"}</strong><span>{me?.name ?? "나"} {myScore.toLocaleString("ko-KR")} : {theirScore.toLocaleString("ko-KR")} {other?.name ?? "상대"}</span></div>
@@ -576,11 +600,11 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
   </div>;
 
   return <BattleStage themeSeed={match.seed} view={view} oppState={oppState} meName={me?.name ?? "나"} oppName={other?.name ?? "상대"} myScore={myScore} theirScore={theirScore}
-    seconds={seconds} countdown={countdown} away={!!away} rules={normalizeRules(config)} flow={stage} mineIndex={match.a === uid ? 0 : 1}
+    others={others} seconds={seconds} countdown={countdown} away={!!away} rules={normalizeRules(config)} flow={stage} mineIndex={Math.max(0, seatIds.indexOf(uid))}
     notice={result || countdown > 0 || seconds <= 0 ? undefined
       : saveBadAt !== null && now - clockOffset - saveBadAt > 5000 ? error
       : config.realtime && liveBadAt !== null && now - clockOffset - liveBadAt > 5000 ? "실시간 연결을 다시 잇는 중이에요. 게임은 그대로 계속돼요." : undefined}
-    result={result ? stageResult(result.winner, uid, result.scores[uid] ?? 0, result.scores[opponentId!] ?? 0, result.reward?.uid === uid ? `승리 보상 +${result.reward.xp} XP 받았어요!` : undefined) : null}
+    result={groupResult ?? (result ? stageResult(result.winner, uid, result.scores[uid] ?? 0, result.scores[opponentId!] ?? 0, result.reward?.uid === uid ? `승리 보상 +${result.reward.xp} XP 받았어요!` : undefined) : null)}
     action={action} sound={sound} onBack={() => setFull(false)} backLabel="대진표" resultAction={{ label: "대진표 보기", icon: "leaderboard", onClick: () => setFull(false) }}
     quiz={quiz ? {
       every: quiz.every, onAnswer: answer, feedback,

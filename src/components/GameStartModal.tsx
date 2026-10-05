@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { createPuyoGame, puyoUrl } from "@/lib/puyo";
 import { DEFAULT_PUYO_RULES, type PuyoRules } from "@/lib/puyo-rules";
 import { PuyoRulesForm } from "@/components/puyo/PuyoRulesForm";
-import { PUYO_QUIZ_DEFAULTS } from "@/lib/puyo-quiz";
+import { normalizeQuiz, PUYO_QUIZ_DEFAULTS } from "@/lib/puyo-quiz";
+import { newTestRound, PuyoTestPlay, type TestRound } from "@/components/puyo/PuyoTestPlay";
 import { Icon } from "@/components/Icon";
 import { listLessons, type Lesson } from "@/lib/lessons";
 import { listProjects, type Project } from "@/lib/projects";
@@ -48,6 +49,8 @@ export function GameStartModal({
   const [puyoRules, setPuyoRules] = useState<PuyoRules>(DEFAULT_PUYO_RULES);
   // 뿌요뿌요 '문제 풀기' — 켜면 아래 문제 세트(퀴즈런과 같은 items)를 경기에 넣는다
   const [puyoQuizOn, setPuyoQuizOn] = useState(false);
+  // 선생님 테스트 플레이(컴퓨터 친구와, 저장 없음)
+  const [testing, setTesting] = useState<TestRound | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +62,7 @@ export function GameStartModal({
 
   // 퀴즈런 설정
   const [items, setItems] = useState<QuizItem[]>([]);
+  const testQuiz = useMemo(() => puyoQuizOn ? normalizeQuiz({ items: items.filter((it) => !isIncomplete(it)), ...PUYO_QUIZ_DEFAULTS }) : null, [puyoQuizOn, items]);
   const [durationMin, setDurationMin] = useState(10);
   const [drainPerSec, setDrainPerSec] = useState(QUIZRUN_DEFAULTS.drainPerSec);
   const [xpDivisor, setXpDivisor] = useState(QUIZRUN_DEFAULTS.xpDivisor);
@@ -83,11 +87,12 @@ export function GameStartModal({
   // Esc 키로 닫기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 테스트 플레이 중 Esc 는 게임창을 닫지 않는다(경기 화면이 위에 떠 있다)
+      if (e.key === "Escape" && !testing) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, testing]);
 
   useEffect(() => {
     let alive = true;
@@ -641,10 +646,23 @@ export function GameStartModal({
                 {err}
               </p>
             )}
+            {kind === "puyo" && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (puyoQuizOn && !items.some((it) => !isIncomplete(it))) { setErr("문제 풀기를 켰다면 완성된 문제가 최소 1개 필요합니다."); return; }
+                  setErr(""); setTesting(newTestRound(puyoRules.durationSec));
+                }}
+                className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--md-sys-color-primary)] px-4 py-3 text-sm font-bold text-[var(--md-sys-color-primary)] transition hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              >
+                <Icon name="sports_esports" size={18} />
+                테스트 플레이 (컴퓨터와 해 보기)
+              </button>
+            )}
             <button
               onClick={start}
               disabled={busy || (!pick && kind !== "puyo")}
-              className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-3 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40"
+              className={`${kind === "puyo" ? "" : "mt-auto "}inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-primary)] px-4 py-3 text-sm font-bold text-[var(--md-sys-color-on-primary)] transition hover:brightness-105 disabled:opacity-40`}
             >
               <Icon name="play_arrow" size={18} />
               {busy ? "게임 여는 중…" : "학급 게임 시작"}
@@ -652,6 +670,11 @@ export function GameStartModal({
           </div>
         </div>
       </div>
+      {testing && (
+        <PuyoTestPlay rules={puyoRules} round={testing} onAgain={() => setTesting(newTestRound(puyoRules.durationSec))}
+          quiz={testQuiz}
+          onClose={() => setTesting(null)} />
+      )}
     </div>
   );
 }

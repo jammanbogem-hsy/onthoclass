@@ -6,9 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { watchActiveGame, watchGame, type Game } from "@/lib/games";
-import { finishPuyo, leavePuyoRoom, nextPuyoRound, presence, puyoClock, puyoUrl, startPuyo, watchPuyoPresence, watchPuyoRuns, type PuyoConfig, type PuyoPresence, type PuyoRun } from "@/lib/puyo";
+import { finishPuyo, leavePuyoRoom, matchIds, nextPuyoRound, presence, puyoClock, puyoUrl, startPuyo, watchPuyoPresence, watchPuyoRuns, type PuyoConfig, type PuyoPresence, type PuyoRun } from "@/lib/puyo";
 import { normalizeQuiz } from "@/lib/puyo-quiz";
-import { DEFAULT_PUYO_RULES, minutesLabel, normalizeRules, planMatches, planPairs, PUYO_COUNTDOWN_SEC, PUYO_HOW_TO, PUYO_MAX_STUDENTS, ruleSummary, swapInPlan, type FlowStage, type PuyoPlan, type PuyoRules } from "@/lib/puyo-rules";
+import { DEFAULT_PUYO_RULES, groupSizes, minutesLabel, normalizeRules, planMatches, planPairs, PUYO_COUNTDOWN_SEC, PUYO_HOW_TO, PUYO_MAX_STUDENTS, ruleSummary, swapInPlan, type FlowStage, type PuyoPlan, type PuyoRules } from "@/lib/puyo-rules";
 import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/Avatar";
 import { PuyoBattle, PuyoPractice } from "./PuyoBattle";
@@ -19,7 +19,7 @@ import { btnOutline, btnPrimary, btnTonal, card, Friend, Header, message, Notice
 /** 로그인 없이 들어온 /puyo — 혼자 연습 + 게임 방법 */
 function Landing() {
   return <Shell back={{ href: "/dashboard", label: "대시보드" }}>
-    <Header title="뿌요뿌요" sub="같은 색 4개를 이어 터뜨리는 1:1 학급 대전 게임이에요. 여기서는 혼자 연습할 수 있어요." />
+    <Header title="뿌요뿌요" sub="같은 색 4개를 이어 터뜨리는 학급 대전 게임이에요(1:1 또는 4인 모둠). 여기서는 혼자 연습할 수 있어요." />
     <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_1fr]">
       <section className={`${card} p-5`}><h2 className="mb-4 text-lg font-bold">혼자 연습</h2><PuyoPractice /></section>
       <section className={`${card} flex flex-col gap-4 p-5`}>
@@ -45,13 +45,25 @@ function Scoreboard({ config, runs, uid, done }: { config: PuyoConfig; runs: Puy
       <span className="rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-1 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{matches.filter(m => m.result).length} / {matches.length} 경기 끝</span>
     </div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{matches.map((m, i) => {
-      const mine = m.a === uid || m.b === uid;
+      const ids = matchIds(m); const mine = ids.includes(uid);
+      const group = ids.length > 2;
       return <article key={m.id} className={`${card} p-4 ${mine ? "ring-2 ring-[var(--md-sys-color-primary)]" : ""}`}>
         <header className="mb-3 flex items-center justify-between text-sm">
-          <span className="font-bold text-[var(--md-sys-color-on-surface-variant)]">{i + 1}경기{mine && " · 나"}</span>
+          <span className="font-bold text-[var(--md-sys-color-on-surface-variant)]">{group ? `${i + 1}모둠 · ${ids.length}명` : `${i + 1}경기`}{mine && " · 나"}</span>
           {m.result ? <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2.5 py-0.5 text-xs font-bold">끝</span> : <span className="flex items-center gap-1 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-2.5 py-0.5 text-xs font-bold text-[var(--md-sys-color-on-tertiary-container)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />경기 중</span>}
         </header>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">{[m.a, m.b].map((id, j) => {
+        {group ? <ol className="flex flex-col gap-1.5">{[...ids].sort((x, y) => (m.result?.scores[y] ?? scores.get(y)?.score ?? 0) - (m.result?.scores[x] ?? scores.get(x)?.score ?? 0)).map((id, _k, arr) => {
+          const sc = (x: string) => m.result?.scores[x] ?? scores.get(x)?.score ?? 0;
+          const rank = 1 + arr.filter(o => sc(o) > sc(id)).length; const won = m.result?.winner === id; const run = scores.get(id);
+          return <li key={id} className={`flex items-center gap-2 rounded-xl px-2 py-1.5 ${won ? "bg-[var(--md-sys-color-tertiary-container)]" : "bg-[var(--md-sys-color-surface-container)]"}`}>
+            <span className="w-6 text-center text-sm font-black text-[var(--md-sys-color-on-surface-variant)]">{rank}</span>
+            <Friend index={i + ids.indexOf(id)} size={30} />
+            <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{players.get(id)?.name || "참가자"}{id === uid && " (나)"}</strong>
+              {config.quiz && (run?.state?.asked ?? 0) > 0 && <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">문제 {run?.state?.right ?? 0}/{run?.state?.asked}</span>}</span>
+            {won && <Icon name="trophy" size={18} fill className="text-[var(--md-sys-color-tertiary)]" />}
+            <strong className="text-lg font-black tabular-nums text-[var(--md-sys-color-primary)]">{sc(id).toLocaleString("ko-KR")}</strong>
+          </li>;
+        })}</ol> : <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">{[m.a, m.b].map((id, j) => {
           const won = m.result?.winner === id; const run = scores.get(id); const downs = run?.state?.downs ?? 0;
           return <div key={id} className={`flex flex-col items-center gap-1 text-center ${j === 1 ? "order-3" : ""}`}>
             <span className={`relative flex h-14 w-14 items-center justify-center rounded-2xl ${won ? "bg-[var(--md-sys-color-tertiary-container)]" : "bg-[var(--md-sys-color-surface-container-high)]"}`}><Friend index={i + j} size={48} />{won && <Icon name="trophy" size={18} fill className="absolute -right-1 -top-1 rounded-full bg-[var(--md-sys-color-tertiary)] p-0.5 text-[var(--md-sys-color-on-tertiary)]" />}</span>
@@ -60,10 +72,10 @@ function Scoreboard({ config, runs, uid, done }: { config: PuyoConfig; runs: Puy
             {downs > 0 && <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">다시 시작 {downs}번</span>}
             {config.quiz && (run?.state?.asked ?? 0) > 0 && <span className="text-xs font-semibold text-[var(--md-sys-color-on-surface-variant)]">문제 {run?.state?.right ?? 0}/{run?.state?.asked}개 맞힘</span>}
           </div>;
-        })}<span className="order-2 text-sm font-black text-[var(--md-sys-color-on-surface-variant)]">VS</span></div>
+        })}<span className="order-2 text-sm font-black text-[var(--md-sys-color-on-surface-variant)]">VS</span></div>}
         <footer className="mt-3 border-t border-[var(--md-sys-color-outline-variant)] pt-2 text-center text-sm">
           {m.result ? <><strong>{m.result.winner ? `${players.get(m.result.winner)?.name || "참가자"} 승리!` : "무승부 · 함께 잘했어요!"}</strong><p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">{reasonLabels[m.result.reason]}{m.result.reward && ` · +${m.result.reward.xp} XP`}</p></>
-            : <span className="text-[var(--md-sys-color-on-surface-variant)]">최고 연쇄 {Math.max(scores.get(m.a)?.maxChain || 0, scores.get(m.b)?.maxChain || 0)}</span>}
+            : <span className="text-[var(--md-sys-color-on-surface-variant)]">최고 연쇄 {Math.max(...ids.map(id => scores.get(id)?.maxChain || 0))}</span>}
         </footer>
       </article>;
     })}</div>
@@ -71,7 +83,7 @@ function Scoreboard({ config, runs, uid, done }: { config: PuyoConfig; runs: Puy
   </section>;
 }
 
-/** 대기실 — 참가자 고르기 → 1:1 짝 정하기(미리보기) → 시작. 학생은 같은 화면에서 진행 상황과 규칙을 본다. */
+/** 대기실 — 참가자 고르기 → 1:1 짝·4인 모둠 정하기(미리보기) → 시작. 학생은 같은 화면에서 진행 상황과 규칙을 본다. */
 function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents, busy, act }: {
   cid: string; gid: string; uid: string; teacher: boolean; config: PuyoConfig; rules: PuyoRules;
   students: Member[]; onlineStudents: Member[]; busy: boolean; act: (task: () => Promise<unknown>) => Promise<void>;
@@ -126,13 +138,15 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
           <h2 className="text-xl font-bold">{teacher ? ready ? "짝 확인하고 시작" : "참가자 고르기" : "선생님을 기다려요"}</h2>
         </div>
         {teacher ? <>
-          <p className="rounded-2xl bg-[var(--md-sys-color-surface-container)] p-3 text-sm leading-relaxed">{selected.length === 0 ? "대결할 학생을 한 명 이상 골라 주세요." : odd ? rules.odd === "teacher" ? `학생 ${selected.length}명 + 선생님이 함께 대결해요.` : `학생 ${selected.length}명 · ${Math.floor(selected.length / 2)}경기, 한 명은 이번 판을 쉬어요.` : `학생 ${selected.length}명이 ${selected.length / 2}경기를 해요. 선생님은 지켜봐요.`}</p>
+          <p className="rounded-2xl bg-[var(--md-sys-color-surface-container)] p-3 text-sm leading-relaxed">{selected.length === 0 ? "대결할 학생을 한 명 이상 골라 주세요." : rules.size === 4 ? selected.length === 1 ? "학생 1명 + 선생님이 함께 대결해요." : `학생 ${selected.length}명을 ${groupSizes(selected.length).join("·")}명 모둠 ${groupSizes(selected.length).length}개로 나눠요.` : odd ? rules.odd === "teacher" ? `학생 ${selected.length}명 + 선생님이 함께 대결해요.` : `학생 ${selected.length}명 · ${Math.floor(selected.length / 2)}경기, 한 명은 이번 판을 쉬어요.` : `학생 ${selected.length}명이 ${selected.length / 2}경기를 해요. 선생님은 지켜봐요.`}</p>
           {ready ? <div className="flex flex-col gap-2" aria-label="대진표 미리보기">
-            {plan.pairs.map(([a, b], i) => <div key={`${a}-${b}`} className="grid grid-cols-[22px_1fr_auto_1fr] items-center gap-1.5"><span className="text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">{i + 1}</span>{seat(a)}<span className="text-xs font-black text-[var(--md-sys-color-on-surface-variant)]">VS</span>{seat(b)}</div>)}
+            {plan.pairs.map((g, i) => g.length === 2 && rules.size !== 4
+              ? <div key={g.join("-")} className="grid grid-cols-[22px_1fr_auto_1fr] items-center gap-1.5"><span className="text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">{i + 1}</span>{seat(g[0])}<span className="text-xs font-black text-[var(--md-sys-color-on-surface-variant)]">VS</span>{seat(g[1])}</div>
+              : <div key={g.join("-")} className="grid grid-cols-[22px_1fr] items-start gap-1.5"><span className="pt-2 text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">{i + 1}</span><div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[var(--md-sys-color-surface-container)] p-1.5">{g.map(seat)}</div></div>)}
             {plan.resting.length > 0 && <div className="grid grid-cols-[22px_1fr] items-center gap-1.5"><span className="text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">쉼</span>{plan.resting.map(seat)}</div>}
             <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">{rules.pairing === "manual" ? swapFrom ? `${nameOf(swapFrom)}와 자리를 바꿀 친구를 눌러요.` : "두 친구를 차례로 누르면 자리가 바뀌어요." : "무작위로 정한 짝이에요."}</p>
             <button type="button" className={btnOutline} disabled={busy} onClick={shuffle}><Icon name="shuffle" size={18} />다시 섞기</button>
-          </div> : <button type="button" className={btnTonal} disabled={busy || selected.length === 0} onClick={shuffle}><Icon name="group" size={18} />1:1 짝 만들기</button>}
+          </div> : <button type="button" className={btnTonal} disabled={busy || selected.length === 0} onClick={shuffle}><Icon name="group" size={18} />{rules.size === 4 ? "4인 모둠 만들기" : "1:1 짝 만들기"}</button>}
           <RuleChips rules={rules} quiz={config.quiz} />
           <button type="button" className={btnPrimary} disabled={busy || !ready} onClick={() => ready && void act(() => startPuyo(cid, gid, plan))}><Icon name="play_arrow" size={20} />{busy ? "경기 준비 중…" : "대결 시작"}</button>
           <p className="text-center text-xs leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">{ready ? `시작하면 ${PUYO_COUNTDOWN_SEC}초 뒤 모두 함께 출발해요.` : "짝을 만들어야 시작할 수 있어요."} 누가 나가거나 선택이 바뀌면 짝을 다시 만들어요.</p>
@@ -144,7 +158,7 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
       </aside>
     </div>
     <section className={`${card} mt-5 p-5`} aria-label="진행 순서와 규칙">
-      <h2 className="mb-3 text-lg font-bold">이렇게 진행돼요 <span className="ml-1 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{minutesLabel(rules.durationSec)} · 1:1 대결</span></h2>
+      <h2 className="mb-3 text-lg font-bold">이렇게 진행돼요 <span className="ml-1 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{minutesLabel(rules.durationSec)} · {rules.size === 4 ? "4인 모둠 대결" : "1:1 대결"}</span></h2>
       <PuyoRulebook rules={rules} current={stage} />
     </section>
   </>;
@@ -220,8 +234,8 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
       else router.push(back);
     });
   }, [cid, gid, member, router, back]);
-  const matched = config?.matches?.find(m => m.a === user?.uid || m.b === user?.uid);
-  const watchIds = teacher || !matched ? "" : [matched.a, matched.b].sort().join(",");
+  const matched = config?.matches?.find(m => matchIds(m).includes(user?.uid ?? ""));
+  const watchIds = teacher || !matched ? "" : [...matchIds(matched)].sort().join(",");
   useEffect(() => {
     if (!member || game?.kind !== "puyo") return;
     return watchPuyoRuns(cid, gid, setRuns, e => setError(message(e)), watchIds ? watchIds.split(",") : undefined);
@@ -236,9 +250,9 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
       const serverNow = Date.now() + offset;
       const pending = (latest.matches || []).filter(m => !m.result);
       if (!pending.length) return;
-      const observed = isTeacher ? pending : pending.filter(m => m.a === uid || m.b === uid);
+      const observed = isTeacher ? pending : pending.filter(m => matchIds(m).includes(uid));
       // 경기는 시간 종료·선생님 종료로만 끝난다(예전 화면이 보낸 lost 만 예외로 처리).
-      const needsResult = serverNow >= (latest.endsAt || Infinity) + 1800 || observed.some(m => [m.a, m.b].some(id => recent.find(r => r.uid === id)?.lost));
+      const needsResult = serverNow >= (latest.endsAt || Infinity) + 1800 || observed.some(m => matchIds(m).some(id => recent.find(r => r.uid === id)?.lost));
       if (!needsResult) return;
       finishing.current = true;
       try { await finishPuyo(cid, gid); } catch (e) { setError(message(e)); } finally { finishing.current = false; }
@@ -248,15 +262,15 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
     // 판정 함수 미리 깨우기 — 수업 중 한 번만 쓰여 잠들어 있으면 첫 호출이 몇 초 걸린다.
     // 끝나기 20초 전에 한 번 불러 두면(아직 끝 전이라 아무것도 바꾸지 않음) 끝날 때 바로 응답한다.
     const { config: c, clockOffset: off, uid: me, teacher: isT } = settleContext.current;
-    const myMatchNow = c?.matches?.find(m => m.a === me || m.b === me);
+    const myMatchNow = c?.matches?.find(m => matchIds(m).includes(me));
     const warmAt = (c?.endsAt ?? 0) - 20000 - (Date.now() + off);
-    const warm = (isT || myMatchNow?.a === me) && warmAt > 0 ? setTimeout(() => { void finishPuyo(cid, gid).catch(() => {}); }, warmAt) : null;
+    const warm = (isT || (myMatchNow && matchIds(myMatchNow)[0] === me)) && warmAt > 0 ? setTimeout(() => { void finishPuyo(cid, gid).catch(() => {}); }, warmAt) : null;
     return () => { clearInterval(timer); if (warm) clearTimeout(warm); };
   }, [cid, gid, game?.status]);
 
   const students = useMemo(() => members.filter(m => m.role === "student"), [members]);
   const onlineStudents = students.filter(m => online.some(p => p.uid === m.uid && p.online && now - p.at < 18000));
-  const myMatch = config?.matches?.find(m => m.a === user?.uid || m.b === user?.uid);
+  const myMatch = config?.matches?.find(m => matchIds(m).includes(user?.uid ?? ""));
   const remaining = config?.endsAt ? Math.max(0, Math.ceil((config.endsAt - now) / 1000)) : config?.durationSec || 0;
   const resting = config?.resting?.some(r => r.uid === user?.uid);
   const stage: FlowStage = game?.status === "done" ? "reward" : now < (config?.startsAt ?? 0) ? "ready" : "battle";
@@ -273,7 +287,7 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
   return <Shell back={backLink}>
     <Header
       title={<>뿌요뿌요<span className="ml-2 text-base font-semibold text-[var(--md-sys-color-on-surface-variant)]">{game.status === "draft" ? "대기실" : game.status === "done" ? "경기 결과" : "경기 중"}{round}</span></>}
-      sub={game.status === "draft" ? teacher ? rules.pairing === "manual" ? "참가 학생을 고르고, 짝을 직접 정한 뒤 시작해요." : "참가 학생을 고르고, 무작위 짝을 만든 뒤 시작해요." : "선생님이 참가자를 확인하고 있어요. 곧 대결이 시작돼요!" : game.status === "done" ? "모두 수고했어요! 친구들의 결과를 함께 봐요." : "같은 색 4개를 이어 더 큰 연쇄에 도전해요."}
+      sub={game.status === "draft" ? teacher ? `참가 학생을 고르고, ${rules.size === 4 ? "모둠" : "짝"}을 ${rules.pairing === "manual" ? "직접 정한" : "무작위로 만든"} 뒤 시작해요.` : "선생님이 참가자를 확인하고 있어요. 곧 대결이 시작돼요!" : game.status === "done" ? "모두 수고했어요! 친구들의 결과를 함께 봐요." : "같은 색 4개를 이어 더 큰 연쇄에 도전해요."}
       right={<div className="flex items-center gap-2">
         <PuyoRulesButton rules={rules} current={game.status === "draft" ? "pick" : stage} className={btnOutline} />
         <div className="flex flex-col items-center rounded-2xl bg-[var(--md-sys-color-primary-container)] px-4 py-1.5 text-[var(--md-sys-color-on-primary-container)]"><span className="text-xs font-semibold">{game.status === "draft" ? "경기 시간" : game.status === "done" ? "경기" : "남은 시간"}</span><strong className="text-2xl font-black tabular-nums">{game.status === "done" ? "끝" : timeLabel(remaining)}</strong></div>

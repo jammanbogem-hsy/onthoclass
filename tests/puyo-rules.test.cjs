@@ -12,10 +12,10 @@ const ids = n => Array.from({ length: n }, (_, i) => `s${i + 1}`);
 const rules = over => ({ ...R.DEFAULT_PUYO_RULES, ...over });
 
 test('client and server normalize rules to the same bounded values', () => {
-  for (const raw of [undefined, {}, { durationSec: 5, winXp: 99, pairing: 'x', odd: 'y' }, { durationSec: 4000, winXp: -3 }, { durationSec: 300, winXp: 15, pairing: 'manual', odd: 'rest' }]) {
+  for (const raw of [undefined, {}, { durationSec: 5, winXp: 99, pairing: 'x', odd: 'y' }, { durationSec: 4000, winXp: -3 }, { durationSec: 300, winXp: 15, pairing: 'manual', odd: 'rest' }, { size: 4 }, { size: '4' }, { size: 3 }]) {
     assert.deepEqual({ ...R.normalizeRules(raw) }, { ...L.normalizeRules(raw) });
   }
-  assert.deepEqual({ ...R.normalizeRules({ durationSec: 5, winXp: 99 }) }, { durationSec: 60, pairing: 'random', odd: 'teacher', winXp: 20 });
+  assert.deepEqual({ ...R.normalizeRules({ durationSec: 5, winXp: 99 }) }, { durationSec: 60, size: 2, pairing: 'random', odd: 'teacher', winXp: 20 });
 });
 
 test('even students pair among themselves; teacher watches', () => {
@@ -93,4 +93,36 @@ test('flow lists every stage from opening to next round and reflects the rules',
   assert.match(flow.find(s => s.stage === 'pair').body, /쉬고/);
   assert.match(flow.find(s => s.stage === 'pair').body, /자리를 바꿀/);
   assert.match(flow.find(s => s.stage === 'reward').body, /보상 없이/);
+});
+
+test('4-player mode splits students into even groups of 3-4 with nobody resting', () => {
+  assert.deepEqual(plain(R.groupSizes(7)), [4, 3]); assert.deepEqual(plain(R.groupSizes(9)), [3, 3, 3]);
+  assert.deepEqual(plain(R.groupSizes(8)), [4, 4]); assert.deepEqual(plain(R.groupSizes(5)), [3, 2]); assert.deepEqual(plain(R.groupSizes(2)), [2]);
+  for (const n of [2, 3, 4, 5, 6, 7, 9, 13, 26, 40]) {
+    const plan = R.planPairs(ids(n), 't', rules({ size: 4, odd: 'rest' }), [], Math.random);
+    assert.equal(plan.resting.length, 0); assert.ok(!plan.pairs.flat().includes('t'));
+    assert.ok(plan.pairs.every(g => g.length >= 2 && g.length <= 4));
+    assert.deepEqual(plain(plan.pairs.flat().sort()), ids(n).sort());
+    assert.doesNotThrow(() => L.validatePlan(plain(plan.pairs), [], 't', L.normalizeRules({ size: 4 })));
+  }
+  const solo = R.planPairs(ids(1), 't', rules({ size: 4 }), [], Math.random);
+  assert.deepEqual(plain(solo.pairs.flat().sort()), ['s1', 't']);
+});
+
+test('server rejects groups that break the chosen mode', () => {
+  const four = L.normalizeRules({ size: 4 }); const two = L.normalizeRules({});
+  assert.throws(() => L.validatePlan([['s1', 's2', 's3']], [], 't', two));
+  assert.throws(() => L.validatePlan([['s1', 's2', 's3', 's4', 's5']], [], 't', four));
+  assert.throws(() => L.validatePlan([['s1', 's2', 's3']], ['s4'], 't', four));
+  assert.throws(() => L.validatePlan([['s1', 's2', 't']], [], 't', four));
+});
+
+test('group judging: single top score wins, tied top is a draw, topout leaves the last one standing', () => {
+  const m = { id: 'm1', a: 'a', b: 'b', ids: ['a', 'b', 'c', 'd'], seed: 1, result: null };
+  assert.equal(L.decideGroup(m, { a: { score: 5 }, b: { score: 9 }, c: { score: 3 }, d: {} }, 22000, 0, 20000, false).winner, 'b');
+  assert.equal(L.decideGroup(m, { a: { score: 9 }, b: { score: 9 }, c: { score: 3 } }, 22000, 0, 20000, false).winner, null);
+  assert.equal(L.decideGroup(m, { a: { score: 9 } }, 10000, 0, 20000, false), null, 'no early end while time remains');
+  assert.equal(L.decideGroup(m, { a: { lost: true }, b: { lost: true }, c: { lost: true }, d: { score: 1 } }, 10000, 0, 20000, false).winner, 'd');
+  assert.equal(L.decideGroup(m, { a: { score: 1 }, b: { score: 50, lost: true } }, 22000, 0, 20000, true).winner, 'a', 'teacher end ignores eliminated players');
+  assert.deepEqual(plain(L.matchIds({ a: 'x', b: 'y' })), ['x', 'y']);
 });

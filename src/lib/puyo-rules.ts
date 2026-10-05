@@ -8,8 +8,12 @@ export type PuyoPairing = "random" | "manual";
 /** 참가 학생이 홀수일 때: 선생님이 함께 대결 / 한 명은 이번 판 쉬기(다음 판 우선 참가) */
 export type PuyoOdd = "teacher" | "rest";
 
+/** 경기 방식: 1:1 / 4인 모둠(3~4명이 한 판, 공격은 모두에게 똑같이) */
+export type PuyoSize = 2 | 4;
+
 export type PuyoRules = {
   durationSec: number;
+  size: PuyoSize;
   pairing: PuyoPairing;
   odd: PuyoOdd;
   /** 이긴 학생에게 주는 경험치. 0이면 보상 없음. */
@@ -23,7 +27,7 @@ export const PUYO_COUNTDOWN_SEC = 6;
 export const PUYO_XP_OPTIONS = [0, 5, 10, 15, 20] as const;
 export const PUYO_MINUTE_OPTIONS = [2, 3, 5, 7, 10] as const;
 
-export const DEFAULT_PUYO_RULES: PuyoRules = { durationSec: 180, pairing: "random", odd: "teacher", winXp: 10 };
+export const DEFAULT_PUYO_RULES: PuyoRules = { durationSec: 180, size: 2, pairing: "random", odd: "teacher", winXp: 10 };
 
 /** 저장된 값이 비었거나 범위를 벗어나도 항상 쓸 수 있는 규칙으로 맞춘다(예전 게임 문서 호환). */
 export function normalizeRules(raw?: Partial<PuyoRules> | null): PuyoRules {
@@ -31,6 +35,7 @@ export function normalizeRules(raw?: Partial<PuyoRules> | null): PuyoRules {
   const xp = Math.round(Number(raw?.winXp));
   return {
     durationSec: Number.isFinite(sec) ? Math.max(PUYO_MIN_SEC, Math.min(PUYO_MAX_SEC, sec)) : DEFAULT_PUYO_RULES.durationSec,
+    size: Number(raw?.size) === 4 ? 4 : 2,
     pairing: raw?.pairing === "manual" ? "manual" : "random",
     odd: raw?.odd === "rest" ? "rest" : "teacher",
     winXp: Number.isFinite(xp) ? Math.max(0, Math.min(20, xp)) : DEFAULT_PUYO_RULES.winXp,
@@ -43,9 +48,10 @@ export const minutesLabel = (sec: number) => (sec % 60 ? `${Math.floor(sec / 60)
 export function ruleSummary(r: PuyoRules, quiz?: { items: unknown[]; every: number; bonus: number; penalty: number } | null): { label: string; value: string }[] {
   return [
     { label: "제한 시간", value: minutesLabel(r.durationSec) },
-    { label: "짝 정하기", value: r.pairing === "manual" ? "선생님이 직접" : "무작위" },
-    { label: "홀수일 때", value: r.odd === "teacher" ? "선생님이 함께 대결" : "한 명은 쉬고 다음 판 먼저" },
-    { label: "이긴 학생", value: r.winXp > 0 ? `+${r.winXp} XP` : "보상 없음" },
+    { label: "경기 방식", value: r.size === 4 ? "4인 모둠(3~4명)" : "1:1" },
+    { label: r.size === 4 ? "모둠 정하기" : "짝 정하기", value: r.pairing === "manual" ? "선생님이 직접" : "무작위" },
+    ...(r.size === 4 ? [] : [{ label: "홀수일 때", value: r.odd === "teacher" ? "선생님이 함께 대결" : "한 명은 쉬고 다음 판 먼저" }]),
+    { label: r.size === 4 ? "모둠 1등" : "이긴 학생", value: r.winXp > 0 ? `+${r.winXp} XP` : "보상 없음" },
     ...(quiz ? [{ label: "문제 풀기", value: `뿌요 ${quiz.every}번마다 1문제(${quiz.items.length}문제) · 정답 +${quiz.bonus}점 · 오답 방해 ${quiz.penalty}개` }] : []),
   ];
 }
@@ -55,7 +61,9 @@ export type FlowStep = { stage: FlowStage; title: string; body: string; who: "�
 
 /** 진행 흐름 = 규칙. 1:1 대진 생성부터 끝까지 이 순서로만 진행된다. */
 export function puyoFlow(r: PuyoRules): FlowStep[] {
-  const odd = r.odd === "teacher"
+  const four = r.size === 4;
+  const odd = four ? "모둠은 3~4명씩 고르게 나눠요(학생이 한 명뿐이면 선생님이 함께해요). 쉬는 친구는 없어요."
+    : r.odd === "teacher"
     ? "참가 학생이 홀수면 선생님이 한 자리를 맡아 함께 대결해요."
     : "참가 학생이 홀수면 한 명은 이번 판을 쉬고 응원해요. 쉰 친구는 다음 판에 먼저 짝을 받아요.";
   return [
@@ -63,19 +71,19 @@ export function puyoFlow(r: PuyoRules): FlowStep[] {
     { stage: "enter", who: "학생", title: "대기실 입장", body: "학급 화면이 자동으로 대기실로 이동해요. 대기실에 들어온 친구만 참가할 수 있어요." },
     { stage: "pick", who: "선생님", title: "참가자 고르기", body: `접속한 학생 중 참가할 친구를 체크해요(최대 ${PUYO_MAX_STUDENTS}명).` },
     {
-      stage: "pair", who: "선생님", title: "1:1 짝 정하기",
-      body: `${r.pairing === "manual" ? "짝을 만든 뒤 두 친구를 차례로 눌러 자리를 바꿀 수 있어요." : "무작위로 짝을 지어요. 마음에 들지 않으면 다시 섞을 수 있어요."} ${odd}`,
+      stage: "pair", who: "선생님", title: four ? "4인 모둠 정하기" : "1:1 짝 정하기",
+      body: `${r.pairing === "manual" ? `${four ? "모둠" : "짝"}을 만든 뒤 두 친구를 차례로 눌러 자리를 바꿀 수 있어요.` : `무작위로 ${four ? "모둠을 나눠요" : "짝을 지어요"}. 마음에 들지 않으면 다시 섞을 수 있어요.`} ${odd}`,
     },
-    { stage: "ready", who: "자동", title: `${PUYO_COUNTDOWN_SEC}초 준비`, body: "시작하면 모두 함께 카운트다운해요. 짝꿍 두 사람은 똑같은 순서로 뿌요를 받아요." },
-    { stage: "battle", who: "학생", title: "대결", body: "같은 색 4개를 이어 터뜨려요. 연쇄로 터뜨릴수록 상대에게 방해 뿌요를 많이 보내요." },
+    { stage: "ready", who: "자동", title: `${PUYO_COUNTDOWN_SEC}초 준비`, body: `시작하면 모두 함께 카운트다운해요. ${four ? "같은 모둠" : "짝꿍 두 사람"}은 똑같은 순서로 뿌요를 받아요.` },
+    { stage: "battle", who: "학생", title: "대결", body: four ? "같은 색 4개를 이어 터뜨려요. 내가 보낸 방해 뿌요는 모둠 친구 모두에게 똑같이 떨어져요." : "같은 색 4개를 이어 터뜨려요. 연쇄로 터뜨릴수록 상대에게 방해 뿌요를 많이 보내요." },
     {
       stage: "judge", who: "자동", title: "승부 결정",
-      body: "보드가 꽉 차도 끝나지 않아요. 판을 비우고 바로 다시 시작해요(다시 시작한 횟수가 기록돼요). 시간이 끝나거나 선생님이 끝내면 점수가 높은 쪽이 이기고, 동점은 무승부예요. 잠깐 연결이 끊겨도 경기는 계속돼요.",
+      body: `보드가 꽉 차도 끝나지 않아요. 판을 비우고 바로 다시 시작해요(다시 시작한 횟수가 기록돼요). 시간이 끝나거나 선생님이 끝내면 ${four ? "모둠에서 점수가 가장 높은 친구가 1등이고, 1등이 동점이면 무승부예요" : "점수가 높은 쪽이 이기고, 동점은 무승부예요"}. 잠깐 연결이 끊겨도 경기는 계속돼요.`,
     },
     {
       stage: "reward", who: "자동", title: "결과와 보상",
       body: r.winXp > 0
-        ? `이긴 학생은 +${r.winXp} XP를 받아요. 선생님이 이기거나 무승부면 보상이 없어요. 결과는 게임 이력에 남아요.`
+        ? `${four ? "모둠 1등" : "이긴 학생"}은 +${r.winXp} XP를 받아요. 선생님이 이기거나 무승부면 보상이 없어요. 결과는 게임 이력에 남아요.`
         : "이번 판은 보상 없이 겨뤄요. 결과는 게임 이력에 남아요.",
     },
     { stage: "next", who: "선생님", title: "한 판 더 · 마치기", body: "같은 규칙으로 한 판 더 하면 모두 새 대기실로 함께 이동해요. 마치면 학급 화면으로 돌아가요." },
@@ -91,7 +99,15 @@ export const PUYO_HOW_TO: { title: string; body: string }[] = [
   { title: "조작", body: "← → 이동, ↓ 빨리 내리기, Z·X(또는 ↑) 회전, Space 바로 떨어뜨리기. 화면 버튼도 돼요." },
 ];
 
-export type PuyoPlan = { pairs: [string, string][]; resting: string[] };
+/** pairs: 한 판에 함께 겨루는 사람들(1:1이면 2명, 4인 모둠이면 2~4명). 이름은 예전 호환으로 유지. */
+export type PuyoPlan = { pairs: string[][]; resting: string[] };
+
+/** n명을 4명 이하 모둠으로 고르게 나눈 크기들 — 7→[4,3], 9→[3,3,3], 5→[3,2]. */
+export function groupSizes(n: number): number[] {
+  if (n <= 0) return [];
+  const g = Math.ceil(n / 4); const base = Math.floor(n / g); const extra = n % g;
+  return Array.from({ length: g }, (_, i) => base + (i < extra ? 1 : 0));
+}
 
 /**
  * 1:1 대진 만들기(대기실 미리보기). 섞은 뒤 둘씩 짝을 짓고, 홀수면 규칙대로 처리한다.
@@ -100,6 +116,13 @@ export type PuyoPlan = { pairs: [string, string][]; resting: string[] };
 export function planPairs(students: string[], teacher: string, r: PuyoRules, prevResting: string[] = [], random: () => number = Math.random): PuyoPlan {
   const ids = [...new Set(students)].filter(id => id && id !== teacher);
   for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  if (r.size === 4) {
+    // 4인 모둠: 쉬는 사람 없이 3~4명씩. 학생이 혼자면 선생님이 함께한다.
+    if (ids.length === 1) ids.push(teacher);
+    const groups: string[][] = []; let at = 0;
+    for (const n of groupSizes(ids.length)) { groups.push(ids.slice(at, at + n)); at += n; }
+    return { pairs: groups, resting: [] };
+  }
   const resting: string[] = [];
   if (ids.length % 2) {
     if (r.odd === "teacher") ids.push(teacher);
@@ -113,7 +136,7 @@ export function planPairs(students: string[], teacher: string, r: PuyoRules, pre
   }
   // 교사가 들어간 경우 교사 자리도 무작위가 되도록 한 번 더 섞는다
   if (ids.includes(teacher)) for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
-  const pairs: [string, string][] = [];
+  const pairs: string[][] = [];
   for (let i = 0; i + 1 < ids.length; i += 2) pairs.push([ids[i], ids[i + 1]]);
   return { pairs, resting };
 }
@@ -126,7 +149,7 @@ export function swapInPlan(plan: PuyoPlan, a: string, b: string): PuyoPlan {
   };
   const x = where(a); const y = where(b);
   if (!x || !y || (x.p === y.p && x.p >= 0)) return plan;
-  const pairs = plan.pairs.map(pair => [...pair] as [string, string]); const resting = [...plan.resting];
+  const pairs = plan.pairs.map(pair => [...pair]); const resting = [...plan.resting];
   const set = (at: { p: number; s: number }, id: string) => { if (at.p >= 0) pairs[at.p][at.s] = id; else resting[at.s] = id; };
   set(x, b); set(y, a);
   return { pairs, resting };

@@ -2,7 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { Timestamp, FieldValue, getFirestore } from "firebase-admin/firestore";
 import { getDatabaseWithUrl } from "firebase-admin/database";
 import { randomInt } from "node:crypto";
-import { decide, normalizeRules, pairPlayers, validatePlan, type Match, type Run } from "./puyoLogic";
+import { decideGroup, matchIds, normalizeRules, pairPlayers, validatePlan, type Match, type Run } from "./puyoLogic";
 
 const liveDb = () => getDatabaseWithUrl(process.env.FIREBASE_DATABASE_EMULATOR_HOST ? "https://demo-puyo-default-rtdb.firebaseio.com" : "https://jammanboeng-default-rtdb.asia-southeast1.firebasedatabase.app");
 const options = { region: "asia-northeast3", maxInstances: 10, timeoutSeconds: 30 };
@@ -51,13 +51,14 @@ export const puyoStart = onCall(options, async request => {
       return { uid: id, name: member.displayName || (id === uid ? "선생님" : "학생"), teacher: id === uid };
     });
     const startsAt = now + 6000; const endsAt = startsAt + duration * 1000;
-    const matches: Match[] = pairs.map(([a, b], i) => ({ id: `m${i + 1}`, a, b, seed: randomInt(1, 2147483647), result: null }));
+    // 1:1 은 예전 모양 그대로(a·b), 모둠은 ids 에 모두 — 화면·판정은 matchIds 로 똑같이 읽는다
+    const matches: Match[] = pairs.map((g, i) => ({ id: `m${i + 1}`, a: g[0], b: g[1], ...(g.length > 2 || rules.size === 4 ? { ids: g } : {}), seed: randomInt(1, 2147483647), result: null }));
     for (const id of roster) tx.set(ref.collection("puyoStates").doc(id), { uid: id, score: 0, sent: 0, maxChain: 0, lost: false, seq: 0, state: "", at: FieldValue.serverTimestamp() });
     tx.update(ref, { status: "play", "puyo.players": players, "puyo.rosterIds": roster, "puyo.resting": resting.map(id => ({ uid: id, name: restDocs[resting.indexOf(id)].data()?.displayName || "학생" })), "puyo.matches": matches, "puyo.startsAt": startsAt, "puyo.endsAt": endsAt, playStartedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     return { startsAt, endsAt, matches };
   });
   try {
-    const pairs = Object.fromEntries(outcome.matches.flatMap(m => [[m.a, m.id], [m.b, m.id]]));
+    const pairs = Object.fromEntries(outcome.matches.flatMap(m => matchIds(m).map(id => [id, m.id])));
     await liveDb().ref(`puyo/${cid}/${gid}`).set({ meta: { teacher: uid, players: pairs, startsAt: outcome.startsAt, endsAt: outcome.endsAt } });
     await ref.update({ "puyo.realtime": true });
   } catch (e) { console.warn("Puyo realtime unavailable; using durable fallback", (e as Error).message); }
@@ -87,7 +88,7 @@ export const puyoFinish = onCall(options, async request => {
     const now = Date.now(); let changed = false;
     const next = matches.map(m => {
       if (m.result) return m;
-      const result = decide(m, runs.get(m.a) ?? {}, runs.get(m.b) ?? {}, now, g.puyo.startsAt, g.puyo.endsAt, manual);
+      const result = decideGroup(m, Object.fromEntries(matchIds(m).map(id => [id, runs.get(id) ?? {}])), now, g.puyo.startsAt, g.puyo.endsAt, manual);
       if (result) { changed = true; return { ...m, result }; } return m;
     });
     // Resolve and pay in one transaction. Deterministic logs also guard retries
@@ -116,7 +117,7 @@ export const puyoFinish = onCall(options, async request => {
     });
     for (const m of next) {
       if (!m.result || matches.find(old => old.id === m.id)?.result) continue;
-      for (const id of [m.a, m.b]) {
+      for (const id of matchIds(m)) {
         const live = frames?.[id]; const saved = docs.find(d => d.id === id)?.data();
         if (live && live.at >= (saved?.at?.toMillis() ?? 0)) tx.update(ref.collection("puyoStates").doc(id), {
           score: live.score, sent: live.sent, lost: live.lost ?? false, maxChain: live.maxChain ?? 0, state: live.state, at: Timestamp.fromMillis(live.at),

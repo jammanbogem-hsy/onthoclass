@@ -26,15 +26,23 @@ export function PuyoRulesForm({ value, onChange, cid }: { value: PuyoRules; onCh
       </div>
     </Field>
 
-    <Field title="1:1 짝 정하기">
-      <Segment value={value.pairing} onChange={v => set("pairing", v)} options={[["random", "무작위", "짝은 무작위로, 다시 섞기만"], ["manual", "선생님이 직접", "무작위로 만든 뒤 자리 바꾸기"]]} />
+    <Field title="경기 방식">
+      <Segment value={String(value.size) as "2" | "4"} onChange={v => set("size", v === "4" ? 4 : 2)} options={[["2", "1:1 대결", "둘이서 겨뤄요"], ["4", "4인 모둠", "3~4명이 한 판, 공격은 모두에게"]]} />
     </Field>
 
-    <Field title="참가 학생이 홀수일 때">
+    <Field title={value.size === 4 ? "모둠 정하기" : "1:1 짝 정하기"}>
+      <Segment value={value.pairing} onChange={v => set("pairing", v)} options={value.size === 4
+        ? [["random", "무작위", "모둠은 무작위로, 다시 섞기만"], ["manual", "선생님이 직접", "무작위로 만든 뒤 자리 바꾸기"]]
+        : [["random", "무작위", "짝은 무작위로, 다시 섞기만"], ["manual", "선생님이 직접", "무작위로 만든 뒤 자리 바꾸기"]]} />
+    </Field>
+
+    {value.size === 4 ? <p className="-mt-2 rounded-2xl bg-[var(--md-sys-color-surface-container)] px-3 py-2 text-sm text-[var(--md-sys-color-on-surface-variant)]">
+      참가 학생을 3~4명씩 고르게 나눠요(예: 7명 → 4명·3명). 쉬는 친구 없이 모두 참가해요.
+    </p> : <Field title="참가 학생이 홀수일 때">
       <Segment value={value.odd} onChange={v => set("odd", v)} options={[["teacher", "선생님이 함께 대결", "선생님 승리는 보상 없음"], ["rest", "한 명은 쉬기", "쉰 친구는 다음 판 먼저"]]} />
-    </Field>
+    </Field>}
 
-    <Field title="이긴 학생 보상">
+    <Field title={value.size === 4 ? "모둠 1등 보상" : "이긴 학생 보상"}>
       <div className="flex flex-wrap gap-1.5">
         {PUYO_XP_OPTIONS.map(x => <Chip key={x} on={value.winXp === x} onClick={() => set("winXp", x)}>{x === 0 ? "없음" : `+${x} XP`}</Chip>)}
       </div>
@@ -46,7 +54,7 @@ export function PuyoRulesForm({ value, onChange, cid }: { value: PuyoRules; onCh
       {cid && <FreeToggleRow cid={cid} />}
       <div className="rounded-2xl bg-[var(--md-sys-color-surface-container-high)] p-4 text-sm leading-relaxed text-[var(--md-sys-color-on-surface-variant)]">
         <p className="mb-1 font-bold text-[var(--md-sys-color-on-surface)]">이렇게 시작해요</p>
-        게임을 열면 학생 화면이 대기실로 이동해요. 대기실에서 참가 학생을 고르고 1:1 짝을 만든 뒤 시작해요. 보드가 꽉 차도 끝나지 않고, 시간이 끝나면 점수로 승부를 정해요.
+        게임을 열면 학생 화면이 대기실로 이동해요. 대기실에서 참가 학생을 고르고 {value.size === 4 ? "4인 모둠" : "1:1 짝"}을 만든 뒤 시작해요. 보드가 꽉 차도 끝나지 않고, 시간이 끝나면 점수로 승부를 정해요.
       </div>
     </div>
   </div>;
