@@ -2970,7 +2970,7 @@ export const suggestCrossPraiseNames = onCall(
  *        tradingMeta/token 에 캐시·공유하고, 발급은 refresh 스로틀 클레임으로 단일화한다.
  * ===================================================================== */
 
-// 종목 유니버스(10종목 고정) — trading.ts 의 TRADING_STOCKS 와 동일 심볼 집합(서버 중복 정의).
+// 종목 유니버스(11종목 고정) — trading.ts 의 TRADING_STOCKS 와 동일 심볼 집합(서버 중복 정의).
 const TRADING_SYMBOLS = [
   "005930",
   "011200",
@@ -2982,6 +2982,7 @@ const TRADING_SYMBOLS = [
   "373220",
   "012450",
   "000250",
+  "000660",
 ] as const;
 const TRADING_SYMBOL_SET = new Set<string>(TRADING_SYMBOLS);
 // 학생 노출용 별칭 — trading.ts TRADING_STOCKS 의 alias 와 동일(지갑 로그 등 표기용).
@@ -2996,6 +2997,7 @@ const TRADING_ALIAS: Record<string, string> = {
   "373220": "만보에너지솔루션",
   "012450": "만보에어로스페이스",
   "000250": "만보당제약",
+  "000660": "잠이닉스",
 };
 
 const TOSS_BASE = "https://openapi.tossinvest.com";
@@ -3006,6 +3008,7 @@ const TRADING_MB_DIVISOR_OVERRIDE: Record<string, number> = {
   "011200": 500, // 만보해운(HMM)
   "012450": 3000, // 만보에어로스페이스(한화에어로스페이스) — 고가주라 배율을 높임
   "000250": 1500, // 만보당제약(삼천당제약)
+  "000660": 10000, // 잠이닉스(SK하이닉스) — 고가주, 학생 요청으로 추가(1/10000)
 };
 function mbDivisorFor(symbol: string): number {
   return TRADING_MB_DIVISOR_OVERRIDE[symbol] ?? TRADING_MB_DIVISOR;
@@ -3185,6 +3188,7 @@ const TRADING_YAHOO: Record<string, string> = {
   "373220": "373220.KS",
   "012450": "012450.KS",
   "000250": "000250.KQ", // 코스닥
+  "000660": "000660.KS",
 };
 
 /** 야후 차트 API — 현재가(15~20분 지연)+전일종가+일봉 최대 1년치를 한 번에. */
