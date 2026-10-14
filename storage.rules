@@ -96,6 +96,20 @@ service firebase.storage {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
+    // 학생 커스텀 프로필 사진 — uid별 고정 파일을 최초 1회만 생성한다.
+    // update/delete를 열지 않아 클라이언트나 변조된 앱에서도 두 번째 사진으로
+    // 교체할 수 없다. 학생 역할과 최종 프로필 반영은 claimCustomAvatar가 재검증한다.
+    match /profile-avatars/{uid}/avatar.jpg {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size > 0
+        && request.resource.size < 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == uid;
+      allow update, delete: if false;
+    }
+
     // 그 외 경로는 모두 차단
     match /{allPaths=**} {
       allow read, write: if false;

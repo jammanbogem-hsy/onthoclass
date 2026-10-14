@@ -13,6 +13,8 @@ import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/Avatar";
 import { PuyoBattle, PuyoPractice } from "./PuyoBattle";
 import { FreeLobby } from "./PuyoFree";
+import { LeagueDashboard, LeagueTable, leagueUrl, toLeagueGames, useLeagueGames, type LeagueGameDoc } from "./PuyoLeague";
+import { leastRepeated, meetCounts, repeatPairs } from "@/lib/puyo-league";
 import { PuyoRulebook, PuyoRulesButton } from "./PuyoRulebook";
 import { btnOutline, btnPrimary, btnTonal, card, Friend, Header, message, Notice, reasonLabels, Shell, timeLabel } from "./PuyoUi";
 
@@ -84,10 +86,14 @@ function Scoreboard({ config, runs, uid, done }: { config: PuyoConfig; runs: Puy
 }
 
 /** 대기실 — 참가자 고르기 → 1:1 짝·4인 모둠 정하기(미리보기) → 시작. 학생은 같은 화면에서 진행 상황과 규칙을 본다. */
-function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents, busy, act }: {
+function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents, busy, act, league }: {
   cid: string; gid: string; uid: string; teacher: boolean; config: PuyoConfig; rules: PuyoRules;
   students: Member[]; onlineStudents: Member[]; busy: boolean; act: (task: () => Promise<unknown>) => Promise<void>;
+  /** 리그 중이면 지난 판들(겹침 피하기·순위표) */
+  league: LeagueGameDoc[] | null;
 }) {
+  // 리그: 이미 끝난 판들에서 누가 누구와 만났는지
+  const met = useMemo(() => meetCounts(toLeagueGames((league ?? []).filter(g => g.id !== gid))), [league, gid]);
   // 한 판 더로 열린 대기실은 직전 참가자를 미리 체크해 둔다(교사가 손대기 전까지).
   const [picked, setPicked] = useState<string[] | null>(null);
   const [plan, setPlan] = useState<PuyoPlan | null>(null);
@@ -99,7 +105,10 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
   const memberOf = (id: string) => students.find(m => m.uid === id);
   const nameOf = (id: string) => id === uid && teacher ? "선생님" : memberOf(id)?.displayName || "학생";
   const toggle = (id: string) => { setPicked(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]); setSwapFrom(null); };
-  const shuffle = () => { setPlan(planPairs(selected, uid, rules, config.prevResting ?? [])); setSwapFrom(null); };
+  const shuffle = () => {
+    const make = () => planPairs(selected, uid, rules, config.prevResting ?? []);
+    setPlan(config.league ? leastRepeated(make, met) : make()); setSwapFrom(null);
+  };
   const tap = (id: string) => {
     if (!ready || rules.pairing !== "manual") return;
     if (!swapFrom) { setSwapFrom(id); return; }
@@ -134,7 +143,7 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
 
       <aside className={`${card} flex flex-col gap-4 p-5 lg:sticky lg:top-24`}>
         <div>
-          <p className="text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{(config.round ?? 1) > 1 ? `${config.round}번째 판` : "대결 준비"}</p>
+          <p className="text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{config.league ? `${config.league.name} · ${config.league.round}/${config.league.total}판` : (config.round ?? 1) > 1 ? `${config.round}번째 판` : "대결 준비"}</p>
           <h2 className="text-xl font-bold">{teacher ? ready ? "짝 확인하고 시작" : "참가자 고르기" : "선생님을 기다려요"}</h2>
         </div>
         {teacher ? <>
@@ -144,6 +153,9 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
               ? <div key={g.join("-")} className="grid grid-cols-[22px_1fr_auto_1fr] items-center gap-1.5"><span className="text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">{i + 1}</span>{seat(g[0])}<span className="text-xs font-black text-[var(--md-sys-color-on-surface-variant)]">VS</span>{seat(g[1])}</div>
               : <div key={g.join("-")} className="grid grid-cols-[22px_1fr] items-start gap-1.5"><span className="pt-2 text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">{i + 1}</span><div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[var(--md-sys-color-surface-container)] p-1.5">{g.map(seat)}</div></div>)}
             {plan.resting.length > 0 && <div className="grid grid-cols-[22px_1fr] items-center gap-1.5"><span className="text-center text-xs font-bold text-[var(--md-sys-color-on-surface-variant)]">쉼</span>{plan.resting.map(seat)}</div>}
+            {config.league && config.league.round > 1 && <p className={`rounded-xl px-3 py-2 text-sm font-semibold ${repeatPairs(plan.pairs, met) ? "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)]" : "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]"}`}>
+              {repeatPairs(plan.pairs, met) ? `이전 판에서 만난 짝 ${repeatPairs(plan.pairs, met)}쌍이 다시 만나요(인원상 최소로 맞췄어요).` : "모두 처음 만나는 친구들이에요."}
+            </p>}
             <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">{rules.pairing === "manual" ? swapFrom ? `${nameOf(swapFrom)}와 자리를 바꿀 친구를 눌러요.` : "두 친구를 차례로 누르면 자리가 바뀌어요." : "무작위로 정한 짝이에요."}</p>
             <button type="button" className={btnOutline} disabled={busy} onClick={shuffle}><Icon name="shuffle" size={18} />다시 섞기</button>
           </div> : <button type="button" className={btnTonal} disabled={busy || selected.length === 0} onClick={shuffle}><Icon name="group" size={18} />{rules.size === 4 ? "4인 모둠 만들기" : "1:1 짝 만들기"}</button>}
@@ -157,6 +169,10 @@ function Lobby({ cid, gid, uid, teacher, config, rules, students, onlineStudents
         </>}
       </aside>
     </div>
+    {config.league && league && config.league.round > 1 && <section className={`${card} mt-5 p-5`} aria-label="리그 순위">
+      <h2 className="mb-3 text-lg font-bold">지금까지 리그 순위 <span className="ml-1 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{config.league.round - 1}판 끝 · 남은 판 {config.league.total - config.league.round + 1}</span></h2>
+      <LeagueTable games={league.filter(g => g.id !== gid)} uid={uid} />
+    </section>}
     <section className={`${card} mt-5 p-5`} aria-label="진행 순서와 규칙">
       <h2 className="mb-3 text-lg font-bold">이렇게 진행돼요 <span className="ml-1 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{minutesLabel(rules.durationSec)} · {rules.size === 4 ? "4인 모둠 대결" : "1:1 대결"}</span></h2>
       <PuyoRulebook rules={rules} current={stage} />
@@ -189,6 +205,8 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
   const back = `/${teacher ? "class-admin" : "class"}/?id=${encodeURIComponent(cid)}`;
   const config = game?.puyo;
   const rules = normalizeRules(config);
+  // 리그: 같은 리그의 판들(이번 판 상태가 바뀔 때마다 다시 읽어 순위를 갱신)
+  const league = useLeagueGames(cid, config?.league?.id, `${gid}:${game?.status}:${config?.matches?.filter(m => m.result).length ?? 0}`);
 
   useEffect(() => { const tick = () => setNow(Date.now() + clockOffset); tick(); const t = setInterval(tick, 1000); return () => clearInterval(t); }, [clockOffset]);
   useEffect(() => {
@@ -283,7 +301,8 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
   if (game === undefined) return <Shell><Notice title="게임방을 불러오고 있어요…" /></Shell>;
   if (!game || game.kind !== "puyo" || !config) return <Shell back={backLink}><Notice title="게임방을 찾을 수 없어요" body="링크나 게임방 권한을 확인해 주세요." action={<Link className={btnOutline} href={back}>학급으로 돌아가기</Link>} /></Shell>;
 
-  const round = (config.round ?? 1) > 1 ? ` · ${config.round}번째 판` : "";
+  const round = config.league ? ` · ${config.league.name} ${config.league.round}/${config.league.total}판` : (config.round ?? 1) > 1 ? ` · ${config.round}번째 판` : "";
+  const leagueLast = !!config.league && config.league.round >= config.league.total;
   return <Shell back={backLink}>
     <Header
       title={<>뿌요뿌요<span className="ml-2 text-base font-semibold text-[var(--md-sys-color-on-surface-variant)]">{game.status === "draft" ? "대기실" : game.status === "done" ? "경기 결과" : "경기 중"}{round}</span></>}
@@ -294,16 +313,21 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
       </div>}
     />
     {error && <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-[var(--md-sys-color-error-container)] px-4 py-3 text-sm text-[var(--md-sys-color-on-error-container)]"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="알림 닫기"><Icon name="close" size={18} /></button></div>}
-    {game.status === "draft" && <Lobby cid={cid} gid={gid} uid={user.uid} teacher={teacher} config={config} rules={rules} students={students} onlineStudents={onlineStudents} busy={busy} act={act} />}
+    {game.status === "draft" && <Lobby cid={cid} gid={gid} uid={user.uid} teacher={teacher} config={config} rules={rules} students={students} onlineStudents={onlineStudents} busy={busy} act={act} league={league} />}
     {(game.status === "play" || game.status === "done") && <>
       {myMatch ? clockReady ? <PuyoBattle cid={cid} gid={gid} uid={user.uid} config={config} runs={runs} clockOffset={clockOffset} /> : <div className={`${card} p-6 text-center text-sm text-[var(--md-sys-color-on-surface-variant)]`}>경기 시간을 서버와 맞추는 중이에요…</div>
         : <div className={`${card} flex items-center gap-4 p-5`}><Friend index={1} size={64} /><div><strong className="text-lg">{game.status === "done" ? "모두 수고했어요!" : resting ? "이번 판은 쉬어요" : "지금은 응원 시간!"}</strong><p className="mt-1 text-sm text-[var(--md-sys-color-on-surface-variant)]">{game.status === "done" ? "아래에서 우리 반 친구들의 결과를 확인해요." : resting ? "참가 인원이 홀수라 이번 판은 응원해요. 다음 판에는 먼저 짝을 받아요!" : "친구들의 점수가 실시간으로 바뀌어요."}</p></div></div>}
       {game.status === "play" && teacher && <div className="mt-4 flex justify-end"><button type="button" className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-[var(--md-sys-color-error-container)] px-5 text-sm font-bold text-[var(--md-sys-color-on-error-container)] disabled:opacity-40" disabled={busy} onClick={() => void act(async () => { finishing.current = true; try { await finishPuyo(cid, gid, true); } finally { finishing.current = false; } })}><Icon name="stop_circle" size={18} />{busy ? "결과 정리 중…" : "지금 끝내고 점수로 판정"}</button></div>}
       <Scoreboard config={config} runs={runs} uid={user.uid} done={game.status === "done"} />
+      {config.league && game.status === "done" && league && <section className={`${card} mt-6 p-5`} aria-label="리그 순위">
+        <h2 className="mb-3 text-lg font-bold">{leagueLast ? "리그 최종 순위" : "리그 순위"} <span className="ml-1 text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">{config.league.round}/{config.league.total}판 끝</span></h2>
+        <LeagueTable games={league} uid={user.uid} limit={leagueLast ? undefined : 8} />
+      </section>}
     </>}
     {game.status === "done" && <div className="mt-6 flex flex-col items-center gap-3 pb-6 text-center">
+      {config.league && <Link className={leagueLast ? btnPrimary : btnOutline} href={leagueUrl(cid, config.league.id)}><Icon name="insights" size={20} />{leagueLast ? "리그 결과 대시보드" : "리그 현황 보기"}</Link>}
       {teacher ? <div className="flex flex-wrap justify-center gap-2">
-        <button type="button" className={btnPrimary} disabled={busy} onClick={() => void act(async () => { const next = await nextPuyoRound(cid, user.uid, game); router.replace(puyoUrl(cid, next)); })}><Icon name="replay" size={20} />{busy ? "준비 중…" : "같은 규칙으로 한 판 더"}</button>
+        <button type="button" className={leagueLast ? btnOutline : btnPrimary} disabled={busy} onClick={() => void act(async () => { const next = await nextPuyoRound(cid, user.uid, game); router.replace(puyoUrl(cid, next)); })}><Icon name="replay" size={20} />{busy ? "준비 중…" : config.league && !leagueLast ? `리그 다음 판 (${config.league.round + 1}/${config.league.total})` : "같은 규칙으로 한 판 더"}</button>
         <button type="button" className={btnOutline} disabled={busy} onClick={() => void act(async () => { await leavePuyoRoom(cid, gid); router.push(back); })}>마치고 학급으로</button>
       </div> : <Link className={btnPrimary} href={back}>학급으로 돌아가기</Link>}
       <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">{teacher ? "한 판 더를 누르면 학생들도 새 대기실로 함께 이동해요. 지난 참가자는 미리 체크돼 있어요." : "선생님이 한 판 더를 시작하면 새 대기실로 자동으로 이동해요."} 결과는 학급 게임 이력에 남아요.</p>
@@ -316,5 +340,6 @@ export default function PuyoRoom() {
   const cid = params.get("class") || "";
   const gid = params.get("game") || "";
   if (cid && params.get("free") === "1") return <FreeLobby cid={cid} />;
+  if (cid && params.get("league")) return <LeagueDashboard key={params.get("league")} cid={cid} leagueId={params.get("league")!} />;
   return cid && gid ? <ConnectedRoom key={`${cid}/${gid}`} cid={cid} gid={gid} /> : <Landing />;
 }

@@ -2,6 +2,7 @@ import type { Game } from "@/lib/games";
 import { matchIds, puyoUrl } from "@/lib/puyo";
 import { normalizeRules, ruleSummary } from "@/lib/puyo-rules";
 import { normalizeQuiz } from "@/lib/puyo-quiz";
+import { leagueUrl } from "./PuyoLeague";
 
 const REASON = { topout: "보드가 가득 참", time: "시간 종료 · 점수", disconnect: "접속 끊김", teacher: "선생님 종료 · 점수" };
 
@@ -10,7 +11,7 @@ export function PuyoHistory({ cid, game }: { cid: string; game: Game }) {
   const rules = normalizeRules(p);
   const name = (uid: string) => p?.players?.find(x => x.uid === uid)?.name ?? "학생";
   return <section className="flex flex-col gap-4">
-    <h3 className="text-xl font-extrabold">뿌요뿌요 경기 결과{(p?.round ?? 1) > 1 && <span className="ml-2 text-base font-bold text-[var(--md-sys-color-on-surface-variant)]">{p?.round}번째 판</span>}</h3>
+    <h3 className="text-xl font-extrabold">뿌요뿌요 경기 결과{p?.league ? <span className="ml-2 text-base font-bold text-[var(--md-sys-color-on-surface-variant)]">{p.league.name} {p.league.round}/{p.league.total}판</span> : (p?.round ?? 1) > 1 && <span className="ml-2 text-base font-bold text-[var(--md-sys-color-on-surface-variant)]">{p?.round}번째 판</span>}</h3>
     <dl className="flex flex-wrap gap-2 text-sm">
       {ruleSummary(rules, normalizeQuiz(p?.quiz)).map(r => <div key={r.label} className="rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-1"><dt className="inline text-[var(--md-sys-color-on-surface-variant)]">{r.label} </dt><dd className="inline font-bold">{r.value}</dd></div>)}
       <div className="rounded-full bg-[var(--md-sys-color-surface-container-high)] px-3 py-1"><dt className="inline text-[var(--md-sys-color-on-surface-variant)]">참여 </dt><dd className="inline font-bold">{p?.players?.length ?? 0}명</dd></div>
@@ -21,6 +22,9 @@ export function PuyoHistory({ cid, game }: { cid: string; game: Game }) {
       {m.result?.reward && <p className="mt-1 text-sm font-bold text-[var(--md-sys-color-tertiary)]">승리 보상 +{m.result.reward.xp} XP 지급 완료</p>}
     </div>)}
     {!!p?.resting?.length && <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">이번 판 쉰 친구: {p.resting.map(r => r.name).join(", ")}</p>}
-    <a href={puyoUrl(cid, game.id)} className="self-start rounded-full bg-[var(--md-sys-color-primary)] px-5 py-2 font-bold text-[var(--md-sys-color-on-primary)]">경기 화면 보기</a>
+    <div className="flex flex-wrap gap-2">
+      <a href={puyoUrl(cid, game.id)} className="rounded-full bg-[var(--md-sys-color-primary)] px-5 py-2 font-bold text-[var(--md-sys-color-on-primary)]">경기 화면 보기</a>
+      {p?.league && <a href={leagueUrl(cid, p.league.id)} className="rounded-full border border-[var(--md-sys-color-outline)] px-5 py-2 font-bold text-[var(--md-sys-color-primary)]">{p.league.name} 결과 대시보드</a>}
+    </div>
   </section>;
 }

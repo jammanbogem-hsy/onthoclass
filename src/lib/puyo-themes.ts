@@ -12,7 +12,7 @@ const cell = (bg: string, inner: string, motif: string) => svgUrl(`<svg xmlns="h
   ${motif}
 </svg>`);
 
-export const PUYO_THEMES: PuyoTheme[] = [
+const BASE_THEMES: PuyoTheme[] = [
   {
     id: "factory", name: "용광로 공장",
     vars: {
@@ -58,6 +58,27 @@ export const PUYO_THEMES: PuyoTheme[] = [
       "--panel-bg": "#4a2616d9", "--panel-line": "#ff8fb1", "--label": "#ffe27a",
     },
   },
+];
+
+/** 추가 무대는 기존 보드 타일을 재사용하고 배경과 패널 색만 맞춘다. */
+const EXTRA_THEMES = [
+  { id: "snow", name: "눈꽃 마을", base: 1, backdrop: "#142c4c", panel: "#142c4ce6", line: "#93c9eb", label: "#dcf6ff", frame: "#426d96" },
+  { id: "sky", name: "구름 왕국", base: 1, backdrop: "#91cce8", panel: "#233b60e6", line: "#a7d8f6", label: "#fff0c6", frame: "#52789b" },
+  { id: "desert", name: "사막 유적", base: 0, backdrop: "#b57743", panel: "#472918e6", line: "#dcb67b", label: "#a7efe3", frame: "#8e5937" },
+  { id: "space", name: "우주 정거장", base: 3, backdrop: "#080f2b", panel: "#101a3fe6", line: "#787fdb", label: "#a5f2ff", frame: "#333d75" },
+  { id: "toy", name: "장난감 도시", base: 4, backdrop: "#a5d9e9", panel: "#253f55e6", line: "#73cdc3", label: "#ffe79b", frame: "#536c8c" },
+];
+
+export const PUYO_THEMES: PuyoTheme[] = [
+  ...BASE_THEMES,
+  ...EXTRA_THEMES.map(({ id, name, base, backdrop, panel, line, label, frame }) => ({
+    id, name,
+    vars: {
+      ...BASE_THEMES[base].vars,
+      "--arena-bg": `linear-gradient(#07101c12, #07101c38), url("/puyo/backgrounds/${id}-v1.webp") center / cover no-repeat ${backdrop}`,
+      "--panel-bg": panel, "--panel-line": line, "--label": label, "--frame-b": frame,
+    },
+  })),
 ];
 
 /** 경기 시드로 테마를 고른다 — 같은 경기의 모든 화면이 같은 무대를 본다. */

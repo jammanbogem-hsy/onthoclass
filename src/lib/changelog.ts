@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.14.0";
+export const APP_VERSION = "1.15.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.15.0",
+    date: "2026-10-14",
+    kind: "minor",
+    title: "뿌요뿌요 리그전 · 결과 대시보드",
+    items: [
+      "선생님이 정한 판 수만큼 겨루고 등수 점수를 더해 리그 순위를 매겨요",
+      "4인 모둠은 1등 10점·2등 7점·3등 4점·4등 2점(3명 모둠은 9·5·2점), 1:1은 이기면 5점·지면 3점이에요",
+      "판마다 이미 만난 친구와는 최대한 다시 만나지 않게 모둠을 짜요",
+      "리그가 끝나면 시상대와 순위, 내가 틀린 문제를 다시 볼 수 있는 결과 화면이 나와요",
+    ],
+  },
   {
     version: "1.14.0",
     date: "2026-10-07",

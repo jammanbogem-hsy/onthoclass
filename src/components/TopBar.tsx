@@ -9,6 +9,7 @@ import { AvatarPicker } from "@/components/AvatarPicker";
 import { NoticeTicker } from "@/components/NoticeTicker";
 import { TypedText } from "@/components/TypedText";
 import { setUserAvatar } from "@/lib/users";
+import { uploadCustomAvatarOnce } from "@/lib/profileAvatar";
 import {
   FONTS,
   FONT_CSS,
@@ -392,12 +393,24 @@ export function TopBar() {
       {pickerOpen && (
         <AvatarPicker
           current={avatarSrc}
+          isStudent={profile?.role === "student"}
+          customAvatarURL={profile?.customAvatarURL}
+          customAvatarUsed={profile?.customAvatarUsed}
           onClose={() => setPickerOpen(false)}
           onSelect={async (path) => {
             if (!user) return;
             await setUserAvatar(user.uid, path, user.photoURL ?? "");
             await refreshProfile();
           }}
+          onCustomUpload={
+            user && profile?.role === "student"
+              ? async (file) => {
+                  const url = await uploadCustomAvatarOnce(user.uid, file);
+                  await refreshProfile();
+                  return url;
+                }
+              : undefined
+          }
         />
       )}
       {pillEditOpen && (

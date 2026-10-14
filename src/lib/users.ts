@@ -21,6 +21,8 @@ export type UserProfile = {
   email: string;
   photoURL: string;
   avatar: string; // 선택한 아바타 경로 (예: /avatar/3.png). ensureUserDoc가 덮지 않음
+  customAvatarURL: string; // 학생이 계정당 한 번 업로드한 커스텀 아바타
+  customAvatarUsed: boolean; // 커스텀 아바타 업로드 기회 사용 여부
   school: string; // 소속 학교(가입 시 선택, 교사용). 없으면 ""
 };
 
@@ -107,6 +109,20 @@ export const AVATARS_PAGE5 = [
   "20-tiger.png",
 ].map((name) => `/avatar5/${name}`);
 
+// 오리지널 게임 테마 캐릭터 10종 (6페이지)
+export const AVATARS_PAGE6 = [
+  "01-rhythm-cube.png",
+  "02-pixel-mechanic.png",
+  "03-maze-ghost.png",
+  "04-pixel-princess.png",
+  "05-voxel-explorer.png",
+  "06-space-alien.png",
+  "07-racing-car.png",
+  "08-ninja-runner.png",
+  "09-fantasy-knight.png",
+  "10-game-controller.png",
+].map((name) => `/avatar6/${name}`);
+
 // 아바타 선택 페이지 목록
 export const AVATAR_PAGES: { label: string; items: string[] }[] = [
   { label: "1페이지", items: AVATARS },
@@ -114,6 +130,7 @@ export const AVATAR_PAGES: { label: string; items: string[] }[] = [
   { label: "3페이지", items: AVATARS_PAGE3 },
   { label: "4페이지", items: AVATARS_PAGE4 },
   { label: "5페이지", items: AVATARS_PAGE5 },
+  { label: "6페이지", items: AVATARS_PAGE6 },
 ];
 
 // 교사 가입 코드는 서버(claimTeacherRole)에서만 검증한다 — 클라이언트에 두지 않음.
@@ -184,6 +201,8 @@ export async function getUserProfile(
     email: (v.email as string) ?? "",
     photoURL: (v.photoURL as string) ?? "",
     avatar: (v.avatar as string) ?? "",
+    customAvatarURL: (v.customAvatarURL as string) ?? "",
+    customAvatarUsed: Boolean(v.customAvatarUsedAt || v.customAvatarURL),
     school: (v.school as string) ?? "",
   };
 }

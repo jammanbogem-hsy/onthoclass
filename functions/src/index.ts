@@ -13,6 +13,7 @@ import { defineSecret } from "firebase-functions/params";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getStorage } from "firebase-admin/storage";
 import {
   FieldValue,
   getFirestore,
@@ -1594,6 +1595,123 @@ export const syncTeacherClaim = onCall(
     }
     await getAuth().setCustomUserClaims(req.auth.uid, { role: "teacher" });
     return { synced: true };
+  }
+);
+
+/**
+ * 학생 커스텀 프로필 사진 최초 1회 확정.
+ *
+ * 실제 파일 생성 횟수는 Storage 규칙(profile-avatars/{uid}/avatar.jpg create만 허용)이
+ * 제한하고, 이 함수가 학생 역할·1회 사용 상태를 재검증한 뒤 모든 학급 멤버 사진을
+ * 한 트랜잭션에서 동기화한다. 응답 유실 뒤 재호출은 기존 URL을 그대로 반환한다.
+ */
+export const claimCustomAvatar = onCall(
+  { memory: "256MiB", maxInstances: 20 },
+  async (req): Promise<{ url: string }> => {
+    if (!req.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const uid = req.auth.uid;
+    const db = getFirestore();
+    const userRef = db.doc(`users/${uid}`);
+    const before = await userRef.get();
+    const beforeData = before.data() ?? {};
+    const existingURL =
+      typeof beforeData.customAvatarURL === "string"
+        ? beforeData.customAvatarURL
+        : "";
+    if (beforeData.customAvatarUsedAt && existingURL) {
+      return { url: existingURL };
+    }
+    if (beforeData.role !== "student") {
+      throw new HttpsError(
+        "permission-denied",
+        "학생 계정만 직접 프로필 사진을 올릴 수 있어요."
+      );
+    }
+
+    const objectPath = `profile-avatars/${uid}/avatar.jpg`;
+    const bucket = getStorage().bucket();
+    const file = bucket.file(objectPath);
+    const metadata = await file
+      .getMetadata()
+      .then(([value]) => value)
+      .catch(() => {
+        throw new HttpsError(
+          "failed-precondition",
+          "업로드된 이미지를 찾을 수 없어요. 다시 시도해 주세요."
+        );
+      });
+    if (
+      metadata.contentType !== "image/jpeg" ||
+      Number(metadata.size ?? 0) <= 0 ||
+      Number(metadata.size ?? 0) >= 1024 * 1024 ||
+      metadata.metadata?.ownerUid !== uid
+    ) {
+      throw new HttpsError("invalid-argument", "올바른 프로필 이미지가 아니에요.");
+    }
+
+    const oldToken = String(
+      metadata.metadata?.firebaseStorageDownloadTokens ?? ""
+    )
+      .split(",")
+      .find(Boolean);
+    const token = oldToken || randomUUID();
+    if (!oldToken) {
+      await file.setMetadata({
+        metadata: {
+          ...(metadata.metadata ?? {}),
+          firebaseStorageDownloadTokens: token,
+        },
+      });
+    }
+    const url =
+      `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket.name)}` +
+      `/o/${encodeURIComponent(objectPath)}?alt=media&token=${encodeURIComponent(token)}`;
+
+    const finalURL = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      const data = snap.data() ?? {};
+      const usedURL =
+        typeof data.customAvatarURL === "string" ? data.customAvatarURL : "";
+      if (data.customAvatarUsedAt) {
+        if (usedURL) return usedURL;
+        throw new HttpsError(
+          "failed-precondition",
+          "직접 사진 업로드 기회를 이미 사용했어요."
+        );
+      }
+      if (data.role !== "student") {
+        throw new HttpsError(
+          "permission-denied",
+          "학생 계정만 직접 프로필 사진을 올릴 수 있어요."
+        );
+      }
+
+      tx.set(
+        userRef,
+        {
+          avatar: url,
+          customAvatarURL: url,
+          customAvatarUsedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      const classIds = Array.isArray(data.classIds)
+        ? data.classIds.filter(
+            (id): id is string => typeof id === "string" && id.length > 0
+          )
+        : [];
+      for (const classId of classIds) {
+        tx.set(
+          db.doc(`classes/${classId}/members/${uid}`),
+          { photoURL: url },
+          { merge: true }
+        );
+      }
+      return url;
+    });
+    return { url: finalURL };
   }
 );
 

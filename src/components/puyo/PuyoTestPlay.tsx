@@ -89,7 +89,7 @@ function TestMatch({ rules, quiz, round, onClose, onAgain }: { rules: PuyoRules;
     const s = me.current; if (!quiz || !quizDue(s, quiz.every)) return;
     const item = pickQuestion(quiz.items, `test:${seed}`, s.asked ?? 0); if (!item) return;
     const ok = i === item.answerIndex;
-    answerQuiz(s, ok, quiz.bonus, quiz.penalty); setView(cloneState(s));
+    answerQuiz(s, ok, quiz.bonus, quiz.penalty, { item: quiz.items.indexOf(item), pick: i }); setView(cloneState(s));
     setFeedback({ key: Date.now(), ok, bonus: quiz.bonus, penalty: quiz.penalty, answer: `${item.answerIndex + 1}번 ${item.options[item.answerIndex]}` });
     if (ok) soundRef.current.play(3);
   }, [quiz, seed]);

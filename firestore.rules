@@ -321,12 +321,21 @@ service cloud.firestore {
       // (교사는 신뢰 주체 — 팀원 학급 가져오기 등에서 타 교사 문서 조회 필요)
       allow read: if signedIn() && (uid() == userId || isTeacherAccount());
       // 본인 문서만 쓰기. 단 role 을 'teacher' 로 자가 설정 금지(권한 상승 차단).
-      //   교사 권한은 claimTeacherRole Cloud Function(admin)만 부여한다.
-      //   기존에 teacher 였던 문서는 role 을 그대로 유지하는 수정은 허용.
-      allow write: if signedIn() && uid() == userId
+      // 커스텀 아바타 사용 기록은 claimCustomAvatar(Admin)만 최초 기록할 수 있고,
+      // 이후 클라이언트 쓰기에서도 삭제·변조되지 않도록 기존 값과 같아야 한다.
+      allow create: if signedIn() && uid() == userId
+        && (!('role' in request.resource.data)
+          || request.resource.data.role != 'teacher')
+        && !('customAvatarURL' in request.resource.data)
+        && !('customAvatarUsedAt' in request.resource.data);
+      allow update: if signedIn() && uid() == userId
         && (!('role' in request.resource.data)
           || request.resource.data.role != 'teacher'
-          || request.resource.data.role == resource.data.role);
+          || request.resource.data.role == resource.data.role)
+        && request.resource.data.get('customAvatarURL', null)
+          == resource.data.get('customAvatarURL', null)
+        && request.resource.data.get('customAvatarUsedAt', null)
+          == resource.data.get('customAvatarUsedAt', null);
 
       // 인앱 알림: 생성은 서버(Admin)만, 본인은 읽기/읽음표시/삭제
       match /notifications/{nid} {

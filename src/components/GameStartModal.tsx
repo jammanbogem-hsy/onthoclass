@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createPuyoGame, puyoUrl } from "@/lib/puyo";
+import { createPuyoGame, newLeague, puyoUrl } from "@/lib/puyo";
+import { DUEL_POINTS, GROUP_POINTS, LEAGUE_MAX_ROUNDS, LEAGUE_MIN_ROUNDS, LEAGUE_ROUND_OPTIONS } from "@/lib/puyo-league";
 import { DEFAULT_PUYO_RULES, type PuyoRules } from "@/lib/puyo-rules";
 import { PuyoRulesForm } from "@/components/puyo/PuyoRulesForm";
 import { normalizeQuiz, PUYO_QUIZ_DEFAULTS } from "@/lib/puyo-quiz";
@@ -49,6 +50,9 @@ export function GameStartModal({
   const [puyoRules, setPuyoRules] = useState<PuyoRules>(DEFAULT_PUYO_RULES);
   // 뿌요뿌요 '문제 풀기' — 켜면 아래 문제 세트(퀴즈런과 같은 items)를 경기에 넣는다
   const [puyoQuizOn, setPuyoQuizOn] = useState(false);
+  // 뿌요뿌요 리그전 — 정한 판 수만큼 모둠을 바꿔 가며 겨루고 등수 점수를 더한다
+  const [leagueOn, setLeagueOn] = useState(false);
+  const [leagueRounds, setLeagueRounds] = useState(4);
   // 선생님 테스트 플레이(컴퓨터 친구와, 저장 없음)
   const [testing, setTesting] = useState<TestRound | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -136,7 +140,8 @@ export function GameStartModal({
           return;
         }
         const gid = await createPuyoGame(cid, by, puyoRules, pick ?? { name: "학급 뿌요뿌요" }, undefined,
-          puyoQuizOn ? { items: usable, ...PUYO_QUIZ_DEFAULTS } : null);
+          puyoQuizOn ? { items: usable, ...PUYO_QUIZ_DEFAULTS } : null,
+          leagueOn ? newLeague(leagueRounds, `${puyoRules.size === 4 ? "4인" : "1:1"} 리그 · ${new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}`) : null);
         onClose();
         router.push(puyoUrl(cid, gid));
         return;
@@ -379,6 +384,36 @@ export function GameStartModal({
             {kind === "puyo" ? (
               <>
                 <PuyoRulesForm value={puyoRules} onChange={setPuyoRules} cid={cid} />
+                <Section title="리그전">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] p-3 transition has-[:checked]:border-[var(--md-sys-color-primary)] has-[:checked]:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_6%,var(--md-sys-color-surface))]">
+                    <input type="checkbox" checked={leagueOn} onChange={(e) => setLeagueOn(e.target.checked)} className="mt-0.5 h-5 w-5 accent-[var(--md-sys-color-primary)]" />
+                    <span className="flex flex-col gap-0.5 text-sm">
+                      <b>여러 판을 겨뤄 등수 점수를 더하는 리그</b>
+                      <span className="text-[var(--md-sys-color-on-surface-variant)]">
+                        판마다 {puyoRules.size === 4 ? "모둠" : "짝"}을 바꿔(이미 만난 친구는 최대한 피해서) 겨루고, 마지막 판이 끝나면 순위와 문제 분석 대시보드가 나와요.
+                      </span>
+                    </span>
+                  </label>
+                  {leagueOn && (
+                    <div className="flex flex-col gap-2 rounded-2xl bg-[var(--md-sys-color-surface-container)] p-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="mr-1 font-bold">판 수</span>
+                        {LEAGUE_ROUND_OPTIONS.map((n) => (
+                          <button key={n} type="button" onClick={() => setLeagueRounds(n)}
+                            className={`rounded-full px-3 py-1.5 text-sm font-bold ${leagueRounds === n ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]" : "border border-[var(--md-sys-color-outline)]"}`}>{n}판</button>
+                        ))}
+                        <input aria-label="리그 판 수 직접 입력" type="number" min={LEAGUE_MIN_ROUNDS} max={LEAGUE_MAX_ROUNDS} value={leagueRounds}
+                          onChange={(e) => setLeagueRounds(Math.max(LEAGUE_MIN_ROUNDS, Math.min(LEAGUE_MAX_ROUNDS, Number(e.target.value) || LEAGUE_MIN_ROUNDS)))} className="m3-field w-16" />
+                      </div>
+                      <p className="text-[var(--md-sys-color-on-surface-variant)]">
+                        {puyoRules.size === 4
+                          ? `등수 점수 — 4명 모둠 ${GROUP_POINTS[4].join("·")}, 3명 모둠 ${GROUP_POINTS[3].join("·")}, 2명 ${GROUP_POINTS[2].join("·")}점. 동점이면 나눠 가져요.`
+                          : `등수 점수 — 이기면 ${DUEL_POINTS[0]}점, 지면 ${DUEL_POINTS[1]}점, 비기면 둘 다 ${(DUEL_POINTS[0] + DUEL_POINTS[1]) / 2}점.`}
+                        {" "}한 판의 경기 시간은 위에서 정한 시간이에요.
+                      </p>
+                    </div>
+                  )}
+                </Section>
                 <Section title="문제 풀기">
                   <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface)] p-3 transition has-[:checked]:border-[var(--md-sys-color-primary)] has-[:checked]:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_6%,var(--md-sys-color-surface))]">
                     <input type="checkbox" checked={puyoQuizOn} onChange={(e) => setPuyoQuizOn(e.target.checked)} className="mt-0.5 h-5 w-5 accent-[var(--md-sys-color-primary)]" />

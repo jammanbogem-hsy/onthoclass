@@ -19,6 +19,8 @@ export type PuyoState = {
   placed?: number;
   /** 문제 풀기: 지금까지 나온 문제 수 / 맞힌 수 / 틀린 수 */
   asked?: number; right?: number; wrong?: number;
+  /** 문제 풀기 답 기록 [문항 위치, 고른 보기] 쌍을 이어 붙인 배열 — 리그 대시보드의 문제 분석용. */
+  answers?: number[];
 };
 const OFFSETS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const CHAIN = [0, 0, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512];
@@ -145,8 +147,10 @@ export function quizDue(s: PuyoState, every: number) {
   return every > 0 && s.phase === "fall" && !!s.active && Math.floor((s.placed ?? 0) / every) > (s.asked ?? 0);
 }
 /** 답을 확정한다. 맞히면 bonus 점수, 틀리면 내 보드에 방해 뿌요 penalty 개가 바로 떨어진다. */
-export function answerQuiz(s: PuyoState, correct: boolean, bonus: number, penalty: number) {
+export function answerQuiz(s: PuyoState, correct: boolean, bonus: number, penalty: number, log?: { item: number; pick: number }) {
   s.asked = (s.asked ?? 0) + 1;
+  // 판이 아주 길어도 상태 크기 상한(16000자) 안에 들도록 최근 300문제까지만 남긴다
+  if (log) s.answers = [...(s.answers ?? []), log.item, log.pick].slice(-600);
   if (correct) { s.right = (s.right ?? 0) + 1; s.score += bonus; return; }
   s.wrong = (s.wrong ?? 0) + 1;
   if (penalty > 0) {
@@ -237,6 +241,7 @@ export function parseState(json: unknown): PuyoState | null {
     const integer = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!s || !Array.isArray(s.board) || s.board.length !== COLS * ROWS || !s.board.every(v => integer(v, 0, 5))) return null;
     if (!Array.isArray(s.next) || s.next.length !== 6 || !s.next.every(v => integer(v, 1, 4))) return null;
+    if (s.answers !== undefined && (!Array.isArray(s.answers) || s.answers.length > 600 || !s.answers.every(v => integer(v, 0, 1000)))) return null;
     for (const key of ["placed", "asked", "right", "wrong"] as const) if (s[key] !== undefined && !integer(s[key], 0, 1000000)) return null;
     if ((s.downs !== undefined && !integer(s.downs, 0, 9999)) || (s.drops !== undefined && (!Array.isArray(s.drops) || s.drops.length > COLS * ROWS * 2 || !s.drops.every(v => integer(v, 0, COLS * ROWS)))) || !Array.isArray(s.clearing) || s.clearing.length > COLS * ROWS || !s.clearing.every(v => integer(v, 0, COLS * ROWS - 1))) return null;
     if (!["fall", "clear", "settle", "over"].includes(s.phase) || !["none", "land", "clear", "attack", "allclear", "garbage", "revive", "fall"].includes(s.effect)) return null;

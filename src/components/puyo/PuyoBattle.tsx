@@ -564,7 +564,7 @@ export function PuyoBattle({ cid, gid, uid, config, runs, clockOffset }: { cid: 
     if (!s || !q || !quizDue(s, q.every)) return;
     const item = pickQuestion(q.items, `${uid}:${gid}`, s.asked ?? 0); if (!item) return;
     const ok = i === item.answerIndex;
-    answerQuiz(s, ok, q.bonus, q.penalty);
+    answerQuiz(s, ok, q.bonus, q.penalty, { item: q.items.indexOf(item), pick: i });
     setView(cloneState(s));
     setFeedback({ key: Date.now(), ok, bonus: q.bonus, penalty: q.penalty, answer: `${item.answerIndex + 1}번 ${item.options[item.answerIndex]}` });
     // 오답 소리는 방해 뿌요 낙하(garbage) 효과음이 대신한다
