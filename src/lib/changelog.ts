@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.19.0";
+export const APP_VERSION = "1.20.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.20.0",
+    date: "2026-10-16",
+    kind: "minor",
+    title: "브레인스토밍 판 확대·말풍선 모아 보기",
+    items: [
+      "말풍선에 내가 쓴 아이디어가 모두 보여요(5개 넘으면 최근 5개 + 몇 개 더)",
+      "섬이 더 커졌고, 휠·두 손가락·＋− 버튼으로 확대하고 끌어서 옮길 수 있어요",
+      "영역이 맞닿으면 경계에도 검정 선이 생겨 누구 땅인지 잘 보여요",
+    ],
+  },
   {
     version: "1.19.0",
     date: "2026-10-16",

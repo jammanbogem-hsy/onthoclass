@@ -2,8 +2,8 @@
 // 섬은 육각 칸(odd-r 배치)으로 나누고, 학생마다 '집' 칸을 하나 정해 아이디어 수만큼 칸을 칠한다.
 // 화면 없이 계산만 하는 순수 모듈 — tests/brainstorm-map.test.cjs 에서 직접 검사한다.
 
-export const MAP_COLS = 26;
-export const MAP_ROWS = 15;
+export const MAP_COLS = 36;
+export const MAP_ROWS = 21;
 const SIZE = 10; // 육각 반지름(뷰박스 단위)
 const W = Math.sqrt(3) * SIZE;
 const H = 2 * SIZE;

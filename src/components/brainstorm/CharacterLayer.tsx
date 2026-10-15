@@ -12,6 +12,8 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import { charUrl, type BrainChar } from "@/lib/brainstorm-chars";
 
 export type Actor = { uid: string; char: BrainChar; x: number; y: number; ideas: number };
+/** 판 확대·이동 상태 — 화면 왼쪽 위 판 좌표(x, y)와 배율(s) */
+export type BoardView = { x: number; y: number; s: number };
 
 type Template = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; scale: number; lift: number };
 type Live = {
@@ -58,8 +60,8 @@ function addOutline(root: THREE.Object3D, scale: number) {
   }
 }
 
-export function CharacterLayer({ actors, viewW, viewH, charH, onLoaded, onFail }: {
-  actors: Actor[]; viewW: number; viewH: number; charH: number;
+export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, onFail }: {
+  actors: Actor[]; viewW: number; viewH: number; charH: number; view: BoardView;
   /** 3D 로 그려지기 시작한 학생들(그 학생의 2D 그림은 숨긴다) */
   onLoaded: (uids: string[]) => void;
   /** WebGL 을 못 쓰는 기기 — 2D 그림으로 대신한다 */
@@ -68,6 +70,8 @@ export function CharacterLayer({ actors, viewW, viewH, charH, onLoaded, onFail }
   const hostRef = useRef<HTMLDivElement>(null);
   const sync = useRef<(list: Actor[]) => void>(() => {});
   const cbs = useRef({ onLoaded, onFail });
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { cbs.current = { onLoaded, onFail }; }, [onLoaded, onFail]);
 
   useEffect(() => {
@@ -181,6 +185,11 @@ export function CharacterLayer({ actors, viewW, viewH, charH, onLoaded, onFail }
           const w = l.actions.walk; w.reset(); w.setLoop(THREE.LoopRepeat, 2); w.play();
           l.nextWalk = t + 6 + Math.random() * 8;
         }
+      }
+      // 확대·이동: 판(HTML)과 같은 영역만 보이게 카메라를 맞춘다
+      const v = viewRef.current;
+      if (cam.left !== v.x || cam.right !== v.x + viewW / v.s || cam.top !== -v.y) {
+        cam.left = v.x; cam.right = v.x + viewW / v.s; cam.top = -v.y; cam.bottom = -(v.y + viewH / v.s); cam.updateProjectionMatrix();
       }
       renderer.render(scene, cam);
     };

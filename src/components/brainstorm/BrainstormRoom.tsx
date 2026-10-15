@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -11,12 +11,20 @@ import { addIdea, deleteIdea, watchIdeas, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type 
 import { CELL_R, inkColor, paintTerritory, VIEW_H, VIEW_W, type Painter } from "@/lib/brainstorm-map";
 import { assignChars, charThumb } from "@/lib/brainstorm-chars";
 import { blocksToPlainText } from "@/components/BlockEditor";
-import type { Actor } from "./CharacterLayer";
+import type { Actor, BoardView } from "./CharacterLayer";
 import { Icon } from "@/components/Icon";
 import styles from "./Brainstorm.module.css";
 
 /** 말풍선이 다음 아이디어로 넘어가는 간격 */
 const BUBBLE_MS = 5000;
+/** '모두 보기' 말풍선에 한 번에 보이는 아이디어 수(더 있으면 "+N개 더") */
+const BUBBLE_MAX = 5;
+/** 확대 배율 범위 */
+const ZOOM_MIN = 1; const ZOOM_MAX = 4;
+const clampView = (v: BoardView): BoardView => {
+  const s = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.s));
+  return { s, x: Math.min(VIEW_W * (1 - 1 / s), Math.max(0, v.x)), y: Math.min(VIEW_H * (1 - 1 / s), Math.max(0, v.y)) };
+};
 /** 방금 들어온 아이디어로 보는 시간(말풍선 통통·잉크 튀김) */
 const FRESH_MS = 6000;
 
@@ -27,7 +35,7 @@ const fallbackFace = (uid: string) => `/avatar/${(hash(uid) % 23) + 1}.png`;
 // 3D 캐릭터(three.js)는 판을 열 때만 따로 불러온다
 const CharacterLayer = dynamic(() => import("./CharacterLayer").then(m => m.CharacterLayer), { ssr: false });
 /** 캐릭터 키(판 좌표) — 발은 집 칸 중심보다 조금 아래 */
-const CHAR_H = CELL_R * 3.2;
+const CHAR_H = CELL_R * 3.6;
 const FEET = CELL_R * 0.5;
 /** 잔디 체크 타일 한 칸(판 좌표) */
 const TILE = 12;
@@ -100,6 +108,17 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
   const [showNames, setShowNames] = useState(true);
   const [panel, setPanel] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
+  // 말풍선: 모두(쓴 아이디어 전부) / 하나씩(돌아가며)
+  const [bubbleAll, setBubbleAll] = useState(true);
+  // 확대·이동 — 판 좌표로 화면 왼쪽 위(x, y)와 배율(s)
+  const [view, setView] = useState<BoardView>({ x: 0, y: 0, s: 1 });
+  const boardRef = useRef<HTMLDivElement>(null);
+  const zoomAt = useCallback((factor: number, fx = 0.5, fy = 0.5) => setView(v => {
+    const s = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.s * factor));
+    const ux = v.x + (fx * VIEW_W) / v.s; const uy = v.y + (fy * VIEW_H) / v.s;
+    return clampView({ s, x: ux - (fx * VIEW_W) / s, y: uy - (fy * VIEW_H) / s });
+  }), []);
+  usePanZoom(boardRef, setView, zoomAt);
   // 3D 로 그려지고 있는 학생들 / WebGL 을 못 쓰는 기기
   const [live3d, setLive3d] = useState<Set<string>>(() => new Set());
   const [no3d, setNo3d] = useState(false);
@@ -133,6 +152,7 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
     return groups;
   }, [map, people]);
 
+  const worldStyle = { transform: `scale(${view.s}) translate(${(-view.x / VIEW_W) * 100}%, ${(-view.y / VIEW_H) * 100}%)`, "--zoom": view.s } as CSSProperties;
   // 섬 가장자리 장식(덤불·바위) — 집 칸은 섬 안쪽이라 캐릭터와 겹치지 않는다
   const props = useMemo(() => edgeProps(map.cells), [map.cells]);
 
@@ -149,6 +169,7 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
       </div>
       <div className={styles.tools}>
         <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
+        <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
         <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
         <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
       </div>
@@ -157,7 +178,9 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
 
     <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
       <section className={styles.sea} aria-label="아이디어 땅따먹기 판">
-        <div className={styles.board} style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}`, "--char-h": `${(CHAR_H / VIEW_W) * 100}cqw` } as CSSProperties}>
+        <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`} style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}`, "--char-h": `${(CHAR_H / VIEW_W) * 100}cqw` } as CSSProperties}>
+          {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
+          <div className={styles.world} style={worldStyle}>
           <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className={styles.map} aria-hidden="true">
             <defs>
               {/* 동그라미들을 녹여 붙여 한 덩어리로(섬·잉크 웅덩이) */}
@@ -194,11 +217,12 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
             <g filter="url(#bs-edge)">
               <rect width={VIEW_W} height={VIEW_H} fill="url(#bs-grass)" mask="url(#bs-island)" />
             </g>
-            <g filter="url(#bs-edge-thin)">
-              {inkGroups.map((cells, k) => <g key={people[k].uid} filter="url(#bs-goo)" fill={inkColor(k)} opacity={focus && focus !== people[k].uid ? 0.35 : 1}>
+            {/* 학생마다 따로 테두리 — 영역이 맞닿으면 그 경계에도 검정 선이 생긴다 */}
+            {inkGroups.map((cells, k) => <g key={people[k].uid} filter="url(#bs-edge-thin)" opacity={focus && focus !== people[k].uid ? 0.35 : 1}>
+              <g filter="url(#bs-goo)" fill={inkColor(k)}>
                 {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
-              </g>)}
-            </g>
+              </g>
+            </g>)}
             <g filter="url(#bs-edge-thin)">
               {props.map(d => d.kind === "bush"
                 ? <g key={d.i} transform={`translate(${d.x} ${d.y})`}>
@@ -210,20 +234,28 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
                   </g>)}
             </g>
           </svg>
-          {!no3d && <CharacterLayer actors={actors} viewW={VIEW_W} viewH={VIEW_H} charH={CHAR_H} onLoaded={onLoaded} onFail={onFail} />}
+          </div>
+          {!no3d && <CharacterLayer actors={actors} viewW={VIEW_W} viewH={VIEW_H} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} />}
+          <div className={styles.world} style={worldStyle}>
           {people.map((p, k) => {
             const home = map.homes[k]; if (!home) return null;
             const latest = p.ideas[p.ideas.length - 1];
             const fresh = now > 0 && now - latest.at < FRESH_MS;
-            // 새 아이디어는 바로 보여 주고, 아니면 학생마다 엇갈리게 돌아가며 보여 준다
+            // 모두: 최근 아이디어 BUBBLE_MAX 개까지 전부 / 하나씩: 새 아이디어 먼저, 아니면 엇갈리게 돌아가며
             const shown = fresh ? latest : p.ideas[Math.floor((now + k * 1700) / BUBBLE_MS) % p.ideas.length];
+            const lines = bubbleAll ? p.ideas.slice(-BUBBLE_MAX) : [shown];
+            const more = bubbleAll ? p.ideas.length - lines.length : 0;
             const in3d = live3d.has(p.uid);
             const left = (home.x / VIEW_W) * 100; const top = ((home.y + (in3d ? FEET : 0)) / VIEW_H) * 100;
             const name = nameOf(p.uid, p.name);
             return <button type="button" key={p.uid} className={`${styles.player} ${in3d ? styles.player3d : ""} ${fresh ? styles.fresh : ""} ${p.uid === uid ? styles.me : ""} ${focus === p.uid ? styles.focused : ""}`}
               style={{ left: `${left}%`, top: `${top}%`, "--ink": inkColor(k), "--delay": `${-(k * 0.37) % 3}s`, zIndex: focus === p.uid ? 300 : fresh ? 200 : Math.round(top) } as CSSProperties}
               onClick={() => { setFocus(f => (f === p.uid ? null : p.uid)); setPanel(true); }} aria-label={`${showNames ? name : "친구"}의 아이디어 ${p.ideas.length}개`}>
-              <span className={styles.bubble} key={shown.id}><span className={styles.bubbleText}>{shown.text}</span>{p.ideas.length > 1 && <em>{p.ideas.length}</em>}</span>
+              <span className={`${styles.bubble} ${bubbleAll && lines.length > 1 ? styles.bubbleList : ""}`} key={bubbleAll ? "all" : shown.id}>
+                {more > 0 && <span className={styles.more}>+{more}개 더</span>}
+                {lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{i.text}</span>)}
+                {p.ideas.length > 1 && <em>{p.ideas.length}</em>}
+              </span>
               {in3d ? <span className={styles.body3d} /> : <span className={styles.char}>
                 {/* 3D 를 못 쓰거나 불러오는 동안: 내 캐릭터 그림 → 없으면 프로필 사진 → 기본 얼굴 */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -233,7 +265,14 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
               {showNames && <span className={styles.name}>{name}</span>}
             </button>;
           })}
+          </div>
           {!people.length && <div className={styles.empty}><Icon name="water_drop" size={32} /><strong>첫 아이디어를 기다리는 중</strong><span>아이디어를 쓰면 내 색 잉크가 섬에 퍼져요!</span></div>}
+        </div>
+        <div className={styles.zoomBar} role="group" aria-label="판 확대·축소">
+          <button type="button" onClick={() => zoomAt(1.4)} aria-label="확대" disabled={view.s >= ZOOM_MAX}><Icon name="add" size={20} /></button>
+          <span>{Math.round(view.s * 100)}%</span>
+          <button type="button" onClick={() => zoomAt(1 / 1.4)} aria-label="축소" disabled={view.s <= ZOOM_MIN}><Icon name="remove" size={20} /></button>
+          <button type="button" onClick={() => setView({ x: 0, y: 0, s: 1 })} aria-label="전체 보기" disabled={view.s === 1}><Icon name="fit_screen" size={20} /></button>
         </div>
       </section>
 
@@ -291,4 +330,48 @@ function Composer({ teacher, cid, lid, qid, uid, name, mine, color, joined }: { 
 
 function Notice({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
   return <main className={styles.notice}><div><strong>{title}</strong>{body && <p>{body}</p>}{action}</div></main>;
+}
+
+/**
+ * 판 확대·이동: 마우스 휠(가리킨 곳 중심) · 끌기 · 두 손가락 벌리기/좁히기.
+ * 살짝 누른 것(6px 미만 이동)은 캐릭터 클릭으로 그대로 둔다.
+ */
+function usePanZoom(ref: React.RefObject<HTMLDivElement | null>, setView: (f: (v: BoardView) => BoardView) => void, zoomAt: (factor: number, fx?: number, fy?: number) => void) {
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const frac = (cx: number, cy: number) => { const r = el.getBoundingClientRect(); return [(cx - r.left) / r.width, (cy - r.top) / r.height] as const; };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const [fx, fy] = frac(e.clientX, e.clientY);
+      zoomAt(Math.exp(-e.deltaY * 0.0015), fx, fy);
+    };
+    const pts = new Map<number, { x: number; y: number }>();
+    let moved = 0; let pinch = 0;
+    const down = (e: PointerEvent) => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); } };
+    const move = (e: PointerEvent) => {
+      const prev = pts.get(e.pointerId); if (!prev) return;
+      const cur = { x: e.clientX, y: e.clientY }; pts.set(e.pointerId, cur);
+      const r = el.getBoundingClientRect();
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0) { const [fx, fy] = frac((a.x + b.x) / 2, (a.y + b.y) / 2); zoomAt(d / pinch, fx, fy); }
+        pinch = d; moved += 10; return;
+      }
+      const dx = cur.x - prev.x; const dy = cur.y - prev.y; moved += Math.abs(dx) + Math.abs(dy);
+      if (moved < 6) return;
+      if (!el.hasPointerCapture(e.pointerId)) el.setPointerCapture(e.pointerId);
+      setView(v => clampView({ s: v.s, x: v.x - (dx / r.width) * (VIEW_W / v.s), y: v.y - (dy / r.height) * (VIEW_H / v.s) }));
+    };
+    const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; };
+    // 끌어서 옮긴 뒤 손을 뗄 때 캐릭터가 눌린 것으로 치지 않게
+    const click = (e: MouseEvent) => { if (moved >= 6) { e.stopPropagation(); e.preventDefault(); moved = 0; } };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("pointerdown", down); el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+    el.addEventListener("click", click, true);
+    return () => {
+      el.removeEventListener("wheel", onWheel); el.removeEventListener("pointerdown", down); el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up); el.removeEventListener("click", click, true);
+    };
+  }, [ref, setView, zoomAt]);
 }
