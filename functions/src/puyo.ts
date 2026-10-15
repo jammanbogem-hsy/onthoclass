@@ -64,15 +64,32 @@ export const puyoStart = onCall(options, async request => {
   } catch (e) { console.warn("Puyo realtime unavailable; using durable fallback", (e as Error).message); }
   return outcome;
 });
+// 경기가 끝나는 순간 여러 기기가 동시에 판정을 부른다. 같은 게임의 판정이 이미 돌고 있으면
+// 새 트랜잭션을 열지 않고 그 결과를 같이 기다린다 — 수십 개의 트랜잭션이 같은 문서들(게임·모든 학생 상태)을
+// 한꺼번에 잠가 서로 다시 시도하느라 판정과 학생 저장이 20~30초씩 밀리던 문제를 막는다.
+type FinishOutcome = { done: boolean; matches?: Match[] };
+const finishing = new Map<string, Promise<FinishOutcome>>();
+
 export const puyoFinish = onCall(options, async request => {
   if (!request.auth) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
   const { cid, gid } = ids(request.data); const uid = request.auth.uid;
   const db = getFirestore(); const ref = db.doc(`classes/${cid}/games/${gid}`);
+  const manual = request.data.manual === true;
+  const [member, current] = await Promise.all([db.doc(`classes/${cid}/members/${uid}`).get(), ref.get()]);
+  if (!member.exists) throw new HttpsError("permission-denied", "학급 구성원만 결과를 볼 수 있습니다.");
+  if (manual && member.data()?.role !== "teacher") throw new HttpsError("permission-denied", "선생님만 종료할 수 있습니다.");
+  // 이미 끝난 게임이면 잠금 없이 바로 답한다(끝난 뒤 늦게 도착한 호출들)
+  if (current.data()?.kind === "puyo" && current.data()?.status !== "play") return { done: current.data()?.status === "done" };
+  const key = `${cid}/${gid}/${manual ? "manual" : "auto"}`;
+  const running = finishing.get(key);
+  if (running) return running;
+  const task = settlePuyo(db, ref, cid, gid, manual).finally(() => finishing.delete(key));
+  finishing.set(key, task);
+  return task;
+});
+
+async function settlePuyo(db: FirebaseFirestore.Firestore, ref: FirebaseFirestore.DocumentReference, cid: string, gid: string, manual: boolean): Promise<FinishOutcome> {
   const outcome = await db.runTransaction(async tx => {
-    const member = await tx.get(db.doc(`classes/${cid}/members/${uid}`));
-    if (!member.exists) throw new HttpsError("permission-denied", "학급 구성원만 결과를 볼 수 있습니다.");
-    const manual = request.data.manual === true;
-    if (manual && member.data()?.role !== "teacher") throw new HttpsError("permission-denied", "선생님만 종료할 수 있습니다.");
     const snap = await tx.get(ref); const g = snap.data();
     if (g?.kind !== "puyo") throw new HttpsError("not-found", "뿌요뿌요 게임이 없습니다.");
     if (g.status !== "play") return { done: g.status === "done" };
@@ -130,4 +147,4 @@ export const puyoFinish = onCall(options, async request => {
   });
   if (outcome.done) await liveDb().ref(`puyo/${cid}/${gid}`).remove().catch(() => {});
   return outcome;
-});
+}

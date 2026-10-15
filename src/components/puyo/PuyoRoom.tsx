@@ -269,8 +269,12 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
       const pending = (latest.matches || []).filter(m => !m.result);
       if (!pending.length) return;
       const observed = isTeacher ? pending : pending.filter(m => matchIds(m).includes(uid));
+      // 판정은 선생님과 각 모둠 첫 번째 친구만 바로 부르고, 나머지는 몇 초 뒤 대신 부른다(그사이 결과가 나면 안 부름).
+      // 모두가 1초마다 동시에 부르면 서버에서 서로 잠금을 기다려 판정·다음 판 이동이 수십 초 밀렸다.
+      const leader = isTeacher || observed.some(m => matchIds(m)[0] === uid);
+      const grace = leader ? 1800 : 7000;
       // 경기는 시간 종료·선생님 종료로만 끝난다(예전 화면이 보낸 lost 만 예외로 처리).
-      const needsResult = serverNow >= (latest.endsAt || Infinity) + 1800 || observed.some(m => matchIds(m).some(id => recent.find(r => r.uid === id)?.lost));
+      const needsResult = serverNow >= (latest.endsAt || Infinity) + grace || (leader && observed.some(m => matchIds(m).some(id => recent.find(r => r.uid === id)?.lost)));
       if (!needsResult) return;
       finishing.current = true;
       try { await finishPuyo(cid, gid); } catch (e) { setError(message(e)); } finally { finishing.current = false; }

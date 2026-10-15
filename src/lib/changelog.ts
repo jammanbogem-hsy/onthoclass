@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.16.0";
+export const APP_VERSION = "1.16.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,15 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.16.1",
+    date: "2026-10-15",
+    kind: "patch",
+    title: "뿌요뿌요 다음 판 이동이 느리던 문제",
+    items: [
+      "경기가 끝난 뒤 결과 정리와 다음 판(리그 다음 판) 대기실로 넘어가는 게 20~30초씩 걸리던 문제를 고쳤어요",
+    ],
+  },
   {
     version: "1.16.0",
     date: "2026-10-15",
