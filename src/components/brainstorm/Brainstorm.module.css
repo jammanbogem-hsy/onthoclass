@@ -35,13 +35,24 @@
 /* 확대·이동되는 판 한 덩어리 */
 .world{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
 /* 말풍선·이름은 확대해도 글자 크기 그대로(판만 커져서 서로 덜 겹친다) */
-.bubble,.name{zoom:calc(1 / var(--zoom, 1))}
+.bubbleWrap,.name{zoom:calc(1 / var(--zoom, 1))}
+/* 겹침 풀기로 비켜난 만큼 옮긴다(JS 가 --bx/--by 를 정한다) */
+.bubbleWrap{position:relative;display:flex;flex-direction:column;align-items:center;transform:translate(var(--bx,0px),var(--by,0px));transition:transform .35s cubic-bezier(.2,1.2,.4,1)}
+/* 많이 비켜났으면 말풍선 꼬리 → 원래 자리(캐릭터 머리)로 가는 점선 */
+.leader{display:none;position:absolute;left:50%;top:calc(100% - 4px);width:var(--ll,0px);height:0;border-top:2.5px dashed #1b1b29;transform-origin:0 0;transform:rotate(var(--la,0rad));pointer-events:none;opacity:.7}
+.bubbleWrap[data-far] .leader{display:block}
+/* 붐빌 때(작은 말풍선): 최근 3개만, 한 줄씩, 폭도 좁게 — 전체 개수는 모서리 숫자로 */
+[data-compact] .bubbleList{max-width:clamp(120px,11vw,170px);padding:5px 9px;gap:1px;font-size:.92em}
+[data-compact] .bubbleList .bubbleText{-webkit-line-clamp:1}
+[data-compact] .bubbleList .bubbleText:not(:nth-last-of-type(-n+3)){display:none}
+[data-compact] .more{display:none}
 .bubbleList{display:flex;flex-direction:column;gap:3px;max-width:clamp(150px,16vw,240px);padding:8px 11px}
 .bubbleList .bubbleText{-webkit-line-clamp:2;padding-left:12px;position:relative}
 .bubbleList .bubbleText::before{content:"";position:absolute;left:0;top:.45em;width:6px;height:6px;border-radius:50%;background:var(--ink);box-shadow:0 0 0 1.5px #1b1b29}
 .bubbleList .bubbleText+.bubbleText{padding-top:3px;border-top:1.5px dashed rgba(27,27,41,.18)}
 .more{font-size:.8em;color:#6b6b80;font-weight:700}
-.newLine{color:var(--ink)}
+/* 방금 쓴 줄: 말풍선이 내 색으로 칠해지니 글자는 흰색 그대로, 뒤에 NEW 표시 */
+.newLine::after{content:"NEW";margin-left:5px;padding:0 5px;border-radius:999px;background:#fff;color:var(--ink);font-size:.72em;font-weight:900;vertical-align:1px}
 .zoomBar{position:absolute;right:14px;bottom:14px;z-index:400;display:flex;align-items:center;gap:2px;padding:4px;border-radius:999px;background:#fff;border:3px solid #1b1b29;box-shadow:0 4px 0 rgba(0,0,0,.2)}
 .zoomBar button{display:inline-flex;min-width:38px;min-height:38px;align-items:center;justify-content:center;border:0;border-radius:999px;background:none;color:#1b1b29;cursor:pointer}
 .zoomBar button:hover:not(:disabled){background:#eef2ff}

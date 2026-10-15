@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -10,6 +10,7 @@ import { watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, watchIdeas, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type Idea } from "@/lib/brainstorm";
 import { CELL_R, inkColor, paintTerritory, VIEW_H, VIEW_W, type Painter } from "@/lib/brainstorm-map";
 import { assignChars, charThumb } from "@/lib/brainstorm-chars";
+import { spreadBubbles } from "@/lib/bubble-spread";
 import { blocksToPlainText } from "@/components/BlockEditor";
 import type { Actor, BoardView } from "./CharacterLayer";
 import { Icon } from "@/components/Icon";
@@ -119,6 +120,7 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
     return clampView({ s, x: ux - (fx * VIEW_W) / s, y: uy - (fy * VIEW_H) / s });
   }), []);
   usePanZoom(boardRef, setView, zoomAt);
+  const seaRef = useRef<HTMLElement>(null);
   // 3D 로 그려지고 있는 학생들 / WebGL 을 못 쓰는 기기
   const [live3d, setLive3d] = useState<Set<string>>(() => new Set());
   const [no3d, setNo3d] = useState(false);
@@ -153,6 +155,31 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
   }, [map, people]);
 
   const worldStyle = { transform: `scale(${view.s}) translate(${(-view.x / VIEW_W) * 100}%, ${(-view.y / VIEW_H) * 100}%)`, "--zoom": view.s } as CSSProperties;
+  // 말풍선 겹침 풀기 — 화면에 그려진 뒤 실제 크기를 재서 서로 비키게 한다(리액트 상태 없이 스타일만 바꿈)
+  const [resizeTick, setResizeTick] = useState(0);
+  useEffect(() => {
+    const sea = seaRef.current; if (!sea) return;
+    const ro = new ResizeObserver(() => setResizeTick(t => t + 1)); ro.observe(sea);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const board = boardRef.current; const sea = seaRef.current; if (!board || !sea) return;
+    const wraps = [...board.querySelectorAll<HTMLElement>("[data-bubble]")];
+    for (const w of wraps) { w.style.setProperty("--bx", "0px"); w.style.setProperty("--by", "0px"); w.removeAttribute("data-far"); }
+    const area = sea.getBoundingClientRect();
+    // 반응형: 말풍선이 화면을 많이 차지하면(붐빔) 최근 3개만 한 줄씩 보이는 작은 말풍선으로
+    const crowd = () => wraps.reduce((n, w) => { const r = w.getBoundingClientRect(); return n + r.width * r.height; }, 0) / (area.width * area.height);
+    delete board.dataset.compact;
+    if (bubbleAll && crowd() > 0.28) board.dataset.compact = "";
+    const rects = wraps.map(w => w.getBoundingClientRect());
+    const shifts = spreadBubbles(rects.map(r => ({ x: r.left, y: r.top, w: r.width, h: r.height })), { x: area.left + 4, y: area.top + 4, w: area.width - 8, h: area.height - 8 });
+    shifts.forEach((d, i) => {
+      const w = wraps[i];
+      w.style.setProperty("--bx", `${d.dx}px`); w.style.setProperty("--by", `${d.dy}px`);
+      const len = Math.hypot(d.dx, d.dy);
+      if (len > 14) { w.dataset.far = ""; w.style.setProperty("--ll", `${len}px`); w.style.setProperty("--la", `${Math.atan2(-d.dy, -d.dx)}rad`); }
+    });
+  }, [people, view, bubbleAll, showNames, live3d, panel, now, resizeTick]);
   // 섬 가장자리 장식(덤불·바위) — 집 칸은 섬 안쪽이라 캐릭터와 겹치지 않는다
   const props = useMemo(() => edgeProps(map.cells), [map.cells]);
 
@@ -177,7 +204,7 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
     {error && <p role="alert" className={styles.error}>{error}</p>}
 
     <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
-      <section className={styles.sea} aria-label="아이디어 땅따먹기 판">
+      <section ref={seaRef} className={styles.sea} aria-label="아이디어 땅따먹기 판">
         <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`} style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}`, "--char-h": `${(CHAR_H / VIEW_W) * 100}cqw` } as CSSProperties}>
           {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
           <div className={styles.world} style={worldStyle}>
@@ -251,10 +278,14 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
             return <button type="button" key={p.uid} className={`${styles.player} ${in3d ? styles.player3d : ""} ${fresh ? styles.fresh : ""} ${p.uid === uid ? styles.me : ""} ${focus === p.uid ? styles.focused : ""}`}
               style={{ left: `${left}%`, top: `${top}%`, "--ink": inkColor(k), "--delay": `${-(k * 0.37) % 3}s`, zIndex: focus === p.uid ? 300 : fresh ? 200 : Math.round(top) } as CSSProperties}
               onClick={() => { setFocus(f => (f === p.uid ? null : p.uid)); setPanel(true); }} aria-label={`${showNames ? name : "친구"}의 아이디어 ${p.ideas.length}개`}>
-              <span className={`${styles.bubble} ${bubbleAll && lines.length > 1 ? styles.bubbleList : ""}`} key={bubbleAll ? "all" : shown.id}>
-                {more > 0 && <span className={styles.more}>+{more}개 더</span>}
-                {lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{i.text}</span>)}
-                {p.ideas.length > 1 && <em>{p.ideas.length}</em>}
+              {/* 겹침 풀기로 옮겨지는 껍데기 — 많이 비켜나면 캐릭터까지 가는 선(leader)이 생긴다 */}
+              <span className={styles.bubbleWrap} data-bubble="">
+                <span className={styles.leader} aria-hidden="true" />
+                <span className={`${styles.bubble} ${bubbleAll && lines.length > 1 ? styles.bubbleList : ""}`} key={bubbleAll ? "all" : shown.id}>
+                  {more > 0 && <span className={styles.more}>+{more}개 더</span>}
+                  {lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{i.text}</span>)}
+                  {p.ideas.length > 1 && <em>{p.ideas.length}</em>}
+                </span>
               </span>
               {in3d ? <span className={styles.body3d} /> : <span className={styles.char}>
                 {/* 3D 를 못 쓰거나 불러오는 동안: 내 캐릭터 그림 → 없으면 프로필 사진 → 기본 얼굴 */}

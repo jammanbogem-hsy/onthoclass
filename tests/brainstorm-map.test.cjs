@@ -54,3 +54,18 @@ test('characters: same student keeps the same character, no duplicates within 30
   const big = C.assignChars(Array.from({ length: 35 }, (_, k) => 'x' + k));
   assert.equal(big.length, 35);
 });
+
+const S = load('src/lib/bubble-spread.ts');
+test('bubbles: overlapping boxes are pushed apart and stay in bounds; separate boxes stay put', () => {
+  const boxes = [{ x: 100, y: 100, w: 120, h: 60 }, { x: 130, y: 110, w: 120, h: 60 }, { x: 140, y: 120, w: 120, h: 60 }, { x: 600, y: 300, w: 100, h: 40 }];
+  const bounds = { x: 0, y: 0, w: 800, h: 500 };
+  const d = S.spreadBubbles(boxes, bounds);
+  const moved = boxes.map((b, i) => ({ x: b.x + d[i].dx, y: b.y + d[i].dy, w: b.w, h: b.h }));
+  for (let i = 0; i < moved.length; i++) for (let j = i + 1; j < moved.length; j++) {
+    const a = moved[i], b = moved[j];
+    const overlap = Math.min(a.x + a.w, b.x + b.w) > Math.max(a.x, b.x) && Math.min(a.y + a.h, b.y + b.h) > Math.max(a.y, b.y);
+    assert.ok(!overlap, `boxes ${i} and ${j} still overlap`);
+  }
+  assert.deepEqual([d[3].dx, d[3].dy], [0, 0]);
+  for (const m of moved) assert.ok(m.x >= 0 && m.y >= 0 && m.x + m.w <= 800 && m.y + m.h <= 500);
+});

@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.20.0";
+export const APP_VERSION = "1.21.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.21.0",
+    date: "2026-10-16",
+    kind: "minor",
+    title: "브레인스토밍 말풍선이 서로 비켜요",
+    items: [
+      "말풍선이 겹치면 자동으로 옆이나 위로 비켜 서고, 멀리 비켜나면 캐릭터와 점선으로 이어져요",
+      "친구가 많아 판이 붐비면 말풍선이 작아져서 최근 3개만 한 줄씩 보여요(확대하면 다시 커져요)",
+      "방금 쓴 아이디어에는 NEW 표시가 붙어요",
+    ],
+  },
   {
     version: "1.20.0",
     date: "2026-10-16",
