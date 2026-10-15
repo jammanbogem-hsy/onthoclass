@@ -226,3 +226,6 @@
 @keyframes quizPop{from{transform:translateY(14px) scale(.94);opacity:0}to{transform:none;opacity:1}}
 @keyframes quizToast{0%{opacity:0;transform:translate(-50%,10px) scale(.9)}12%{opacity:1;transform:translate(-50%,0) scale(1.04)}22%{transform:translate(-50%,0) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-8px)}}
 @media(prefers-reduced-motion:reduce){.quizLayer,.quizCard,.quizToast{animation:none}}
+/* 연습 화면: 음악 켬/끔 + 곡 바꾸기 */
+.musicRow{align-self:center;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.musicRow .musicChip{gap:6px;padding:0 12px;font-size:14px;font-weight:700}

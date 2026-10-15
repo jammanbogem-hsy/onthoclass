@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.15.0";
+export const APP_VERSION = "1.16.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.16.0",
+    date: "2026-10-15",
+    kind: "minor",
+    title: "뿌요뿌요 배경음악 4곡",
+    items: [
+      "배경음악이 4곡으로 늘었어요: 말랑 행진 · 두근두근 대결 · 구름 산책 · 별빛 점프",
+      "음악 버튼 옆 곡 버튼을 누르면 곡을 바꿀 수 있어요(무작위로 두면 판마다 다른 곡이 나와요)",
+    ],
+  },
   {
     version: "1.15.0",
     date: "2026-10-14",

@@ -15,7 +15,7 @@ import { PuyoBoard, Puyo } from "./PuyoBoard";
 import { pickTheme, playerPalette } from "@/lib/puyo-themes";
 import { PuyoRulesButton } from "./PuyoRulebook";
 import styles from "./PuyoBattle.module.css";
-import { PuyoBgm } from "@/lib/puyo-bgm";
+import { BGM_TRACKS, bgmTrack, PuyoBgm } from "@/lib/puyo-bgm";
 
 const MUSIC_KEY = "jam:puyo:music";
 // 저장소를 못 쓰는 기기(사생활 보호 창 등)에서도 이번 방문 동안은 선택이 유지되게 메모리에 같이 둔다
@@ -23,17 +23,29 @@ let musicFallback = true;
 const musicListeners = new Set<() => void>();
 function subscribeMusic(f: () => void) { musicListeners.add(f); return () => { musicListeners.delete(f); }; }
 function readMusic() { try { const v = localStorage.getItem(MUSIC_KEY); return v ? v !== "off" : musicFallback; } catch { return musicFallback; } }
+// 곡 고르기: "shuffle"(판마다 무작위) 또는 곡 id — 역시 기기마다 기억한다
+const TRACK_KEY = "jam:puyo:track";
+let trackFallback = "shuffle";
+function readTrack() { try { return localStorage.getItem(TRACK_KEY) ?? trackFallback; } catch { return trackFallback; } }
 
 export function useSound() {
   const [muted, setMuted] = useState(false);
   // 배경음악 켬/끔은 기기마다 기억한다(효과음과 따로)
   const music = useSyncExternalStore(subscribeMusic, readMusic, () => true);
+  const track = useSyncExternalStore(subscribeMusic, readTrack, () => "shuffle");
   const [ready, setReady] = useState(false);
   const ctx = useRef<AudioContext | null>(null);
   const bgm = useRef<PuyoBgm | null>(null);
   const setMusic = useCallback((on: boolean) => {
     try { localStorage.setItem(MUSIC_KEY, on ? "on" : "off"); } catch { /* 기억만 못 할 뿐 */ }
     musicFallback = on; musicListeners.forEach(f => f());
+  }, []);
+  /** 곡 바꾸기 버튼: 무작위 → 1번 곡 → 2번 곡 … → 다시 무작위 */
+  const nextTrack = useCallback(() => {
+    const order = ["shuffle", ...BGM_TRACKS.map(t => t.id)];
+    const next = order[(order.indexOf(readTrack()) + 1) % order.length];
+    try { localStorage.setItem(TRACK_KEY, next); } catch { /* 기억만 못 할 뿐 */ }
+    trackFallback = next; musicListeners.forEach(f => f());
   }, []);
   const unlock = useCallback(() => {
     if (!ctx.current) ctx.current = new AudioContext();
@@ -43,8 +55,14 @@ export function useSound() {
   const setPlaying = useCallback((on: boolean) => {
     const audio = ctx.current;
     if (on && audio && audio.state === "running") {
-      bgm.current ??= new PuyoBgm(audio);
-      bgm.current.start();
+      const b = bgm.current ??= new PuyoBgm(audio);
+      const pref = readTrack();
+      if (pref !== "shuffle") b.start(bgmTrack(pref));
+      else if (!b.playing) {
+        // 무작위: 방금 들은 곡은 빼고 고른다
+        const pool = BGM_TRACKS.filter(t => t !== b.current);
+        b.start(pool[Math.floor(Math.random() * pool.length)]);
+      }
     } else bgm.current?.stop();
   }, []);
   const play = useCallback((chain: number, garbage = false) => {
@@ -60,16 +78,25 @@ export function useSound() {
     });
   }, [muted]);
   useEffect(() => () => { bgm.current?.stop(); bgm.current = null; void ctx.current?.close(); ctx.current = null; }, []);
-  return { muted, setMuted, music, setMusic, ready, setPlaying, unlock, play };
+  return { muted, setMuted, music, setMusic, track, nextTrack, ready, setPlaying, unlock, play };
 }
 
 /** 배경음악 — active(경기 진행 중)이고 음악·소리가 켜져 있을 때만 흐른다. */
 export function useBgm(sound: ReturnType<typeof useSound>, active: boolean) {
-  const { setPlaying, music, muted, ready } = sound;
+  const { setPlaying, music, muted, ready, track } = sound;
   useEffect(() => {
     setPlaying(active && music && !muted && ready);
-    return () => setPlaying(false);
-  }, [setPlaying, active, music, muted, ready]);
+  }, [setPlaying, active, music, muted, ready, track]);
+  useEffect(() => () => setPlaying(false), [setPlaying]);
+}
+
+/** 곡 바꾸기 버튼 — 음악이 켜져 있을 때만 보인다. 넓은 화면에서는 곡 이름도 보여 준다. */
+export function TrackButton({ sound, className, labelClassName }: { sound: ReturnType<typeof useSound>; className?: string; labelClassName?: string }) {
+  if (!sound.music) return null;
+  const name = sound.track === "shuffle" ? "무작위 곡" : bgmTrack(sound.track).name;
+  return <button type="button" className={className} onClick={() => { sound.unlock(); sound.nextTrack(); }} aria-label={`배경음악 바꾸기 (지금: ${name})`} title={`배경음악: ${name} — 눌러서 바꾸기`}>
+    <Icon name={sound.track === "shuffle" ? "shuffle" : "queue_music"} size={20} /><span className={labelClassName}>{name}</span>
+  </button>;
 }
 
 /** 음악 켬/끔 버튼 */
@@ -348,6 +375,7 @@ export function BattleStage({ themeSeed = 0, view, oppState, meName, oppName, my
       <div className={styles.barActions}>
         {rules && <PuyoRulesButton rules={rules} current={flow} label="규칙" className={styles.chipBtn} />}
         <MusicButton sound={sound} className={styles.chipBtn} />
+        <TrackButton sound={sound} className={styles.chipBtn} labelClassName={styles.hideSm} />
         <button type="button" className={styles.chipBtn} onClick={() => { sound.unlock(); sound.setMuted(!sound.muted); }} aria-label={sound.muted ? "소리 켜기" : "소리 끄기"}><Icon name={sound.muted ? "volume_off" : "volume_up"} size={20} /></button>
       </div>
     </header>
@@ -635,6 +663,9 @@ export function PuyoPractice() {
     <PuyoBoard state={view} name="나의 연습 보드" status="연습 점수는 학급 경기에 반영되지 않아요" />
     <Controls action={action} disabled={!running || view.phase === "over"} unlock={sound.unlock} layout="row" />
     <button type="button" className={styles.primaryBtn} onClick={e => { e.currentTarget.blur(); sound.unlock(); state.current = createState(Math.floor(Math.random() * 2147483646) + 1); setView(cloneState(state.current)); setRunning(true); }}><Icon name={running ? "restart_alt" : "play_arrow"} size={18} />{!running ? "연습 시작" : "새로 연습하기"}</button>
-    <MusicButton sound={sound} className={styles.musicChip} />
+    <div className={styles.musicRow}>
+      <MusicButton sound={sound} className={styles.musicChip} />
+      <TrackButton sound={sound} className={styles.musicChip} />
+    </div>
   </div>;
 }
