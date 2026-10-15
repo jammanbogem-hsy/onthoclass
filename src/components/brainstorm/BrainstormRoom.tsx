@@ -29,6 +29,24 @@ const CharacterLayer = dynamic(() => import("./CharacterLayer").then(m => m.Char
 /** 캐릭터 키(판 좌표) — 발은 집 칸 중심보다 조금 아래 */
 const CHAR_H = CELL_R * 3.2;
 const FEET = CELL_R * 0.5;
+/** 잔디 체크 타일 한 칸(판 좌표) */
+const TILE = 12;
+
+/** 섬 가장자리 칸 중 서로 떨어진 몇 곳에 덤불·바위를 둔다(활동마다 같은 자리). */
+function edgeProps(cells: { i: number; c: number; r: number; x: number; y: number }[]) {
+  const isEdge = (c: { c: number; r: number }) => {
+    let n = 0;
+    for (const o of cells) if (Math.abs(o.c - c.c) <= 1 && Math.abs(o.r - c.r) <= 1 && !(o.c === c.c && o.r === c.r)) n++;
+    return n <= 5;
+  };
+  const picks: { i: number; x: number; y: number; kind: "bush" | "rock" }[] = [];
+  for (const c of [...cells].sort((a, b) => ((a.i * 2654435761) % 997) - ((b.i * 2654435761) % 997))) {
+    if (picks.length >= 9 || !isEdge(c)) continue;
+    if (picks.some(p => Math.hypot(p.x - c.x, p.y - c.y) < 70)) continue;
+    picks.push({ i: c.i, x: c.x, y: c.y, kind: picks.length % 3 === 2 ? "rock" : "bush" });
+  }
+  return picks;
+}
 
 export default function BrainstormRoom() {
   const params = useSearchParams();
@@ -115,6 +133,9 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
     return groups;
   }, [map, people]);
 
+  // 섬 가장자리 장식(덤불·바위) — 집 칸은 섬 안쪽이라 캐릭터와 겹치지 않는다
+  const props = useMemo(() => edgeProps(map.cells), [map.cells]);
+
   return <main className={styles.page}>
     <header className={styles.top}>
       <div className={styles.topic}>
@@ -139,18 +160,55 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
         <div className={styles.board} style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}`, "--char-h": `${(CHAR_H / VIEW_W) * 100}cqw` } as CSSProperties}>
           <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className={styles.map} aria-hidden="true">
             <defs>
-              {/* 동그라미들을 녹여 붙여 잉크 웅덩이처럼 */}
+              {/* 동그라미들을 녹여 붙여 한 덩어리로(섬·잉크 웅덩이) */}
               <filter id="bs-goo" x="-10%" y="-10%" width="120%" height="120%">
                 <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="b" />
                 <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9" />
               </filter>
+              {/* 브롤스타즈풍 굵은 검정 테두리 — 모양 바깥으로 부풀린 검정을 뒤에 깐다 */}
+              <filter id="bs-edge" x="-5%" y="-5%" width="110%" height="110%">
+                <feMorphology in="SourceAlpha" operator="dilate" radius="2" result="d" />
+                <feFlood floodColor="#1b1b29" />
+                <feComposite in2="d" operator="in" result="line" />
+                <feMerge><feMergeNode in="line" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id="bs-edge-thin" x="-5%" y="-5%" width="110%" height="110%">
+                <feMorphology in="SourceAlpha" operator="dilate" radius="1.3" result="d" />
+                <feFlood floodColor="#1b1b29" floodOpacity="0.9" />
+                <feComposite in2="d" operator="in" result="line" />
+                <feMerge><feMergeNode in="line" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              {/* 섬 윗면: 연한 잔디 체크 타일(잉크 색이 잘 보이도록 옅게) */}
+              <pattern id="bs-grass" width={TILE * 2} height={TILE * 2} patternUnits="userSpaceOnUse">
+                <rect width={TILE * 2} height={TILE * 2} fill="#cdeea0" />
+                <rect width={TILE} height={TILE} fill="#bfe58c" /><rect x={TILE} y={TILE} width={TILE} height={TILE} fill="#bfe58c" />
+              </pattern>
+              <mask id="bs-island" maskUnits="userSpaceOnUse" x="0" y="0" width={VIEW_W} height={VIEW_H + 20}>
+                <g filter="url(#bs-goo)" fill="#fff">{map.cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.2} />)}</g>
+              </mask>
             </defs>
-            <g filter="url(#bs-goo)" className={styles.islandShadow}>{map.cells.map(c => <circle key={c.i} cx={c.x} cy={c.y + 5} r={CELL_R * 1.2} />)}</g>
-            <g filter="url(#bs-goo)" className={styles.island}>{map.cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.2} />)}</g>
-            {map.cells.filter(c => (c.c * 7 + c.r * 3) % 5 === 0).map(c => <circle key={`d${c.i}`} cx={c.x} cy={c.y} r={1.4} className={styles.dot} />)}
-            {inkGroups.map((cells, k) => <g key={people[k].uid} filter="url(#bs-goo)" fill={inkColor(k)} opacity={focus && focus !== people[k].uid ? 0.35 : 1}>
-              {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
-            </g>)}
+            {/* 절벽(섬 옆면) → 윗면 → 잉크 → 가장자리 장식 */}
+            <g filter="url(#bs-edge)" transform="translate(0 8)">
+              <rect width={VIEW_W} height={VIEW_H} fill="#b8743f" mask="url(#bs-island)" />
+            </g>
+            <g filter="url(#bs-edge)">
+              <rect width={VIEW_W} height={VIEW_H} fill="url(#bs-grass)" mask="url(#bs-island)" />
+            </g>
+            <g filter="url(#bs-edge-thin)">
+              {inkGroups.map((cells, k) => <g key={people[k].uid} filter="url(#bs-goo)" fill={inkColor(k)} opacity={focus && focus !== people[k].uid ? 0.35 : 1}>
+                {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
+              </g>)}
+            </g>
+            <g filter="url(#bs-edge-thin)">
+              {props.map(d => d.kind === "bush"
+                ? <g key={d.i} transform={`translate(${d.x} ${d.y})`}>
+                    <circle cx={-5} cy={1} r={5.2} fill="#2f9e44" /><circle cx={5} cy={1} r={5.2} fill="#2f9e44" /><circle cx={0} cy={-3} r={6.2} fill="#37b24d" />
+                    <circle cx={-1.5} cy={-5.5} r={2} fill="#69db7c" />
+                  </g>
+                : <g key={d.i} transform={`translate(${d.x} ${d.y})`}>
+                    <rect x={-6.5} y={-5} width={13} height={10} rx={3.5} fill="#a5afc4" /><rect x={-4.5} y={-4} width={6} height={3} rx={1.5} fill="#d0d6e4" />
+                  </g>)}
+            </g>
           </svg>
           {!no3d && <CharacterLayer actors={actors} viewW={VIEW_W} viewH={VIEW_H} charH={CHAR_H} onLoaded={onLoaded} onFail={onFail} />}
           {people.map((p, k) => {
@@ -198,12 +256,13 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
       </aside>}
     </div>
 
-    {!teacher && <Composer cid={cid} lid={lid} qid={qid} uid={uid} name={myName} mine={ideas.filter(i => i.uid === uid)} color={inkColor(Math.max(0, people.findIndex(p => p.uid === uid)))} joined={people.some(p => p.uid === uid)} />}
+    {/* 선생님도 써 볼 수 있다(테스트·예시 아이디어) — 선생님 글도 판에 똑같이 칠해진다 */}
+    <Composer teacher={teacher} cid={cid} lid={lid} qid={qid} uid={uid} name={myName} mine={ideas.filter(i => i.uid === uid)} color={inkColor(Math.max(0, people.findIndex(p => p.uid === uid)))} joined={people.some(p => p.uid === uid)} />
   </main>;
 }
 
 /** 학생 아이디어 쓰기 칸 — 판 아래에 붙어 있다. */
-function Composer({ cid, lid, qid, uid, name, mine, color, joined }: { cid: string; lid: string; qid: string; uid: string; name: string; mine: Idea[]; color: string; joined: boolean }) {
+function Composer({ teacher, cid, lid, qid, uid, name, mine, color, joined }: { teacher: boolean; cid: string; lid: string; qid: string; uid: string; name: string; mine: Idea[]; color: string; joined: boolean }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -219,7 +278,7 @@ function Composer({ cid, lid, qid, uid, name, mine, color, joined }: { cid: stri
   return <form className={styles.composer} onSubmit={submit} style={{ "--ink": joined ? color : "#ff2d8a" } as CSSProperties}>
     <div className={styles.inputRow}>
       <input value={text} onChange={e => setText(e.target.value.slice(0, IDEA_MAX_LEN))} maxLength={IDEA_MAX_LEN} disabled={full}
-        placeholder={full ? `아이디어는 ${IDEAS_PER_STUDENT}개까지 쓸 수 있어요` : "떠오르는 생각을 자유롭게 써 보세요"} aria-label="아이디어 쓰기" />
+        placeholder={full ? `아이디어는 ${IDEAS_PER_STUDENT}개까지 쓸 수 있어요` : teacher ? "선생님도 써 볼 수 있어요(예시·테스트 아이디어)" : "떠오르는 생각을 자유롭게 써 보세요"} aria-label="아이디어 쓰기" />
       <span className={styles.count}>{text.length}/{IDEA_MAX_LEN}</span>
       <button type="submit" className={styles.send} disabled={busy || full || !text.trim()}><Icon name="water_drop" size={18} fill />{busy ? "칠하는 중…" : "잉크 뿌리기"}</button>
     </div>

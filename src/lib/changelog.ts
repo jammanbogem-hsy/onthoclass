@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.18.0";
+export const APP_VERSION = "1.19.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.19.0",
+    date: "2026-10-16",
+    kind: "minor",
+    title: "브레인스토밍 판 새 단장",
+    items: [
+      "섬이 브롤스타즈 경기장처럼 바뀌었어요: 잔디 체크 타일, 굵은 테두리, 절벽, 덤불·바위",
+      "잉크 영역에도 테두리가 생겨 누구 땅인지 더 잘 보여요",
+      "선생님도 아이디어를 써 볼 수 있어요(예시·테스트용)",
+    ],
+  },
   {
     version: "1.18.0",
     date: "2026-10-16",
