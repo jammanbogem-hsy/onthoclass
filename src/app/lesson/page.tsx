@@ -71,6 +71,7 @@ import {
   type Submission,
   type SurveyItem,
 } from "@/lib/lessons";
+import { brainstormUrl } from "@/lib/brainstorm";
 import { AttachmentField, AttachmentList } from "@/components/AttachmentField";
 import { GameFeedbackCard } from "@/components/GameFeedbackCard";
 import { SurveyBuilder } from "@/components/SurveyBuilder";
@@ -1122,6 +1123,7 @@ function TeacherPanel({
                       { kind: "quiz", icon: "how_to_vote", label: "투표·설문", desc: "정답 없는 선택형 · 응답 분포", ungraded: true },
                       { kind: "link", icon: "link", label: "링크 제공", desc: "자료 링크 (제출 없음)" },
                       { kind: "canvas", icon: "dashboard", label: "보드 (캔버스)", desc: "학생 협업 카드 보드" },
+                      { kind: "brainstorm", icon: "tips_and_updates", label: "브레인스토밍", desc: "아이디어 땅따먹기 판 (새 탭)" },
                       { kind: "reflection", icon: "rate_review", label: "수업 후 성찰", desc: "이해도·흥미도 + 배운 점" },
                       { kind: "survey", icon: "fact_check", label: "설문 (검증)", desc: "사전/사후 효과성 검증 (t검정)" },
                     ] as const
@@ -1423,6 +1425,8 @@ function kindLabel(q: { kind: ActivityKind; ungraded?: boolean }): string {
       return "링크";
     case "canvas":
       return "보드";
+    case "brainstorm":
+      return "브레인스토밍";
     case "game-result":
       return "게임 결과";
     default:
@@ -1579,6 +1583,7 @@ function QuestionRow({
   const isQuiz = question.kind === "quiz";
   const isLink = question.kind === "link";
   const isCanvas = question.kind === "canvas";
+  const isBrainstorm = question.kind === "brainstorm";
   const isSurvey = question.kind === "survey";
   const kindLabel = isQuiz
     ? question.ungraded
@@ -1588,7 +1593,9 @@ function QuestionRow({
       ? "링크"
       : isCanvas
         ? "보드"
-        : isSurvey
+        : isBrainstorm
+          ? "브레인스토밍"
+          : isSurvey
           ? "설문"
           : "질문";
 
@@ -1896,7 +1903,7 @@ function QuestionRow({
     <GlassCard className="p-0">
       <div
         className={`grid gap-0 ${
-          isLink
+          isLink || isBrainstorm
             ? ""
             : "lg:grid-cols-2 lg:divide-x lg:divide-black/5 dark:lg:divide-white/10"
         }`}
@@ -2095,6 +2102,22 @@ function QuestionRow({
             </div>
           )}
 
+          {isBrainstorm && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.open(brainstormUrl(cid, lid, question.id), "_blank", "noopener")}
+                className="btn-accent inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold"
+              >
+                <Icon name="open_in_new" size={16} />
+                땅따먹기 판 열기 (새 탭)
+              </button>
+              <span className="text-xs text-black/45 dark:text-white/45">
+                제목이 주제가 돼요. 학생이 아이디어를 쓰면 섬 위에 말풍선과 잉크로 나타나요.
+              </span>
+            </div>
+          )}
+
           {isCanvas && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
@@ -2207,7 +2230,7 @@ function QuestionRow({
             </div>
           )}
 
-          {!isQuiz && !isCanvas && !isSurvey && (
+          {!isQuiz && !isCanvas && !isSurvey && !isBrainstorm && (
             <LinksEditor
               links={links}
               onChange={setLinks}
@@ -2216,7 +2239,7 @@ function QuestionRow({
             />
           )}
 
-          {!isLink && !isCanvas && (
+          {!isLink && !isCanvas && !isBrainstorm && (
             <div className="mt-3" title="저장을 눌러야 반영됩니다">
               <Switch
                 checked={allowResubmit}
@@ -2504,7 +2527,7 @@ function QuestionRow({
         )}
 
         {/* 우: 결과 패널 (링크·보드·설문은 별도) */}
-        {!isLink && !isCanvas && !isSurvey && (
+        {!isLink && !isCanvas && !isSurvey && !isBrainstorm && (
         <div className="bg-white/30 p-6 dark:bg-white/5">
           {isQuiz ? (
             <>
@@ -3843,6 +3866,7 @@ function StudentQuestionCard({
   const isQuiz = question.kind === "quiz";
   const isLink = question.kind === "link";
   const isCanvas = question.kind === "canvas";
+  const isBrainstorm = question.kind === "brainstorm";
   const isSurvey = question.kind === "survey";
   const kindLabel = isQuiz
     ? question.ungraded
@@ -3852,7 +3876,9 @@ function StudentQuestionCard({
       ? "링크"
       : isCanvas
         ? "보드"
-        : isSurvey
+        : isBrainstorm
+          ? "브레인스토밍"
+          : isSurvey
           ? "설문"
           : "질문";
 
@@ -3865,7 +3891,7 @@ function StudentQuestionCard({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!user || isLink) {
+    if (!user || isLink || isBrainstorm) {
       setReady(true);
       return;
     }
@@ -3885,7 +3911,7 @@ function StudentQuestionCard({
     // 활동(id)·사용자 변경 시에만 초기화한다. question.text 변경(교사 실시간
     // 편집)으로 재실행하면 학생이 작성 중인 내용을 덮어쓰므로 의존성에서 제외.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, cid, lid, question.id, isQuiz, isLink, isSurvey]);
+  }, [user, cid, lid, question.id, isQuiz, isLink, isSurvey, isBrainstorm]);
 
   const value = isQuiz ? choice : content;
   const hasAnswer = isQuiz
@@ -4124,6 +4150,14 @@ function StudentQuestionCard({
             )
           )}
         </div>
+      ) : isBrainstorm ? (
+        <button
+          onClick={() => window.open(brainstormUrl(cid, lid, question.id), "_blank", "noopener")}
+          className="btn-accent mt-4 flex w-full items-center justify-center gap-1.5 px-5 py-3 text-sm font-semibold"
+        >
+          <Icon name="tips_and_updates" size={18} />
+          브레인스토밍 참여하기 (새 탭)
+        </button>
       ) : isCanvas ? (
         <>
           <button
@@ -4269,7 +4303,7 @@ function StudentQuestionCard({
           )}
         </div>
       )}
-      {user && !isLink && !isCanvas && (
+      {user && !isLink && !isCanvas && !isBrainstorm && (
         <CommentThread
           cid={cid}
           lid={lid}

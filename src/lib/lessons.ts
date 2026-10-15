@@ -84,6 +84,7 @@ export type ActivityKind =
   | "canvas"
   | "reflection"
   | "survey"
+  | "brainstorm" // 브레인스토밍 — 새 탭 땅따먹기 판에 학생 아이디어가 말풍선으로 뜬다(src/components/brainstorm)
   | "game-result"; // 학급 게임 결과 피드백(읽기 전용) — 순위·워드클라우드·개념지식맵·AI코멘트
 
 // 설문(검증) 문항 — 사전/사후 효과성 분석용. id 는 전·후를 잇는 변수키.
@@ -474,6 +475,21 @@ export function watchQuestions(
           .sort((a, b) => a.order - b.order)
       ),
     () => cb([])
+  );
+}
+
+/** 질문(활동) 하나 실시간 구독 — 브레인스토밍 판처럼 활동 하나만 여는 화면용. 없으면 null. */
+export function watchQuestion(
+  cid: string,
+  lid: string,
+  qid: string,
+  cb: (q: Question | null) => void,
+  onError?: (e: Error) => void
+): () => void {
+  return onSnapshot(
+    doc(questionsCol(cid, lid), qid),
+    (d) => cb(d.exists() ? mapQuestion(d.id, d.data()) : null),
+    (e) => (onError ? onError(e) : cb(null))
   );
 }
 

@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.16.1";
+export const APP_VERSION = "1.17.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.17.0",
+    date: "2026-10-15",
+    kind: "minor",
+    title: "새 활동: 브레인스토밍 땅따먹기",
+    items: [
+      "차시 활동에 '브레인스토밍'이 생겼어요. 누르면 새 탭에서 우리 반 판이 열려요",
+      "선생님 주제에 아이디어를 쓰면 내 캐릭터가 섬 위에 말풍선으로 나타나요",
+      "아이디어를 쓸수록 내 색 잉크가 섬에 넓게 번져요(스플래툰처럼!)",
+      "선생님은 이름 숨기기, 아이디어 모아 보기, 부적절한 글 지우기를 할 수 있어요",
+    ],
+  },
   {
     version: "1.16.1",
     date: "2026-10-15",

@@ -844,6 +844,21 @@ service cloud.firestore {
                 || (signedIn() && resource.data.authorUid == uid());
             }
           }
+
+          // 브레인스토밍 아이디어: 학급 구성원 모두 읽기(판에 함께 보임),
+          // 쓰기는 본인 이름으로만(글자 수 제한·서버 시각), 수정 없음, 지우기는 본인·교사.
+          match /ideas/{ideaId} {
+            allow read: if isMember(classId);
+            allow create: if isMember(classId)
+              && request.resource.data.keys().hasOnly(["uid", "name", "text", "at"])
+              && request.resource.data.uid == uid()
+              && request.resource.data.name is string && request.resource.data.name.size() <= 60
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 100
+              && request.resource.data.at == request.time;
+            allow delete: if isTeacher(classId)
+              || (isMember(classId) && resource.data.uid == uid());
+          }
         }
 
         // 차시 보드(캔버스): 멤버(학생+교사) 협업 작성, 삭제는 교사만.

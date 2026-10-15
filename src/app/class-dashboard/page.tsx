@@ -176,7 +176,7 @@ function ClassDashboardInner() {
       for (const l of lessons) {
         const qs = await listQuestions(cid, l.id).catch(() => []);
         for (const q of qs) {
-          if (q.kind === "link") continue;
+          if (q.kind === "link" || q.kind === "brainstorm") continue;
           total++;
           const subs = await listQuestionSubmissions(cid, l.id, q.id).catch(
             () => []
