@@ -43,3 +43,14 @@ test('once the island is full, area follows the share of ideas', () => {
   assert.ok(t.area[0] > t.area[1] * 2.5, `leader ${t.area[0]} vs ${t.area[1]}`);
   assert.ok(t.owner.size <= t.cells.length);
 });
+
+const C = load('src/lib/brainstorm-chars.ts');
+test('characters: same student keeps the same character, no duplicates within 30', () => {
+  const uids = Array.from({ length: 30 }, (_, k) => 'student' + k);
+  const a = C.assignChars(uids);
+  assert.equal(new Set(a.map(c => c.id)).size, 30);
+  assert.equal(C.assignChars(['student7'])[0].id, C.assignChars(['student7'])[0].id);
+  assert.equal(C.BRAIN_CHARS.length, 30);
+  const big = C.assignChars(Array.from({ length: 35 }, (_, k) => 'x' + k));
+  assert.equal(big.length, 35);
+});

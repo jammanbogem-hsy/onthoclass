@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, watchIdeas, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type Idea } from "@/lib/brainstorm";
 import { CELL_R, inkColor, paintTerritory, VIEW_H, VIEW_W, type Painter } from "@/lib/brainstorm-map";
+import { assignChars, charThumb } from "@/lib/brainstorm-chars";
 import { blocksToPlainText } from "@/components/BlockEditor";
+import type { Actor } from "./CharacterLayer";
 import { Icon } from "@/components/Icon";
 import styles from "./Brainstorm.module.css";
 
@@ -20,6 +23,12 @@ const FRESH_MS = 6000;
 function hash(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
 /** 프로필 사진이 없으면 기본 캐릭터 그림 중 하나(학생마다 고정) */
 const fallbackFace = (uid: string) => `/avatar/${(hash(uid) % 23) + 1}.png`;
+
+// 3D 캐릭터(three.js)는 판을 열 때만 따로 불러온다
+const CharacterLayer = dynamic(() => import("./CharacterLayer").then(m => m.CharacterLayer), { ssr: false });
+/** 캐릭터 키(판 좌표) — 발은 집 칸 중심보다 조금 아래 */
+const CHAR_H = CELL_R * 3.2;
+const FEET = CELL_R * 0.5;
 
 export default function BrainstormRoom() {
   const params = useSearchParams();
@@ -73,6 +82,11 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
   const [showNames, setShowNames] = useState(true);
   const [panel, setPanel] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
+  // 3D 로 그려지고 있는 학생들 / WebGL 을 못 쓰는 기기
+  const [live3d, setLive3d] = useState<Set<string>>(() => new Set());
+  const [no3d, setNo3d] = useState(false);
+  const onLoaded = useCallback((uids: string[]) => setLive3d(prev => (prev.size === uids.length && uids.every(u => prev.has(u)) ? prev : new Set(uids))), []);
+  const onFail = useCallback(() => setNo3d(true), []);
   const topic = question.title.trim() || "브레인스토밍";
   const detail = useMemo(() => blocksToPlainText(question.text).trim(), [question.text]);
 
@@ -84,6 +98,11 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
   }, [ideas]);
   const painters: Painter[] = useMemo(() => people.map(p => ({ uid: p.uid, ideas: p.ideas.length })), [people]);
   const map = useMemo(() => paintTerritory(qid, painters), [qid, painters]);
+  const chars = useMemo(() => assignChars(people.map(p => p.uid)), [people]);
+  const actors: Actor[] = useMemo(() => people.flatMap((p, k) => {
+    const home = map.homes[k];
+    return home ? [{ uid: p.uid, char: chars[k], x: home.x, y: home.y + FEET, ideas: p.ideas.length }] : [];
+  }), [people, map, chars]);
   const photo = useMemo(() => new Map(members.map(m => [m.uid, m.photoURL])), [members]);
   const nameOf = (id: string, fallback: string) => members.find(m => m.uid === id)?.displayName || fallback;
   const totalCells = map.cells.length;
@@ -117,7 +136,7 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
 
     <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
       <section className={styles.sea} aria-label="아이디어 땅따먹기 판">
-        <div className={styles.board} style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}` } as CSSProperties}>
+        <div className={styles.board} style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}`, "--char-h": `${(CHAR_H / VIEW_W) * 100}cqw` } as CSSProperties}>
           <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className={styles.map} aria-hidden="true">
             <defs>
               {/* 동그라미들을 녹여 붙여 잉크 웅덩이처럼 */}
@@ -133,22 +152,25 @@ export function BrainstormBoard({ cid, lid, qid, uid, myName, teacher, question,
               {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
             </g>)}
           </svg>
+          {!no3d && <CharacterLayer actors={actors} viewW={VIEW_W} viewH={VIEW_H} charH={CHAR_H} onLoaded={onLoaded} onFail={onFail} />}
           {people.map((p, k) => {
             const home = map.homes[k]; if (!home) return null;
             const latest = p.ideas[p.ideas.length - 1];
             const fresh = now > 0 && now - latest.at < FRESH_MS;
             // 새 아이디어는 바로 보여 주고, 아니면 학생마다 엇갈리게 돌아가며 보여 준다
             const shown = fresh ? latest : p.ideas[Math.floor((now + k * 1700) / BUBBLE_MS) % p.ideas.length];
-            const left = (home.x / VIEW_W) * 100; const top = (home.y / VIEW_H) * 100;
+            const in3d = live3d.has(p.uid);
+            const left = (home.x / VIEW_W) * 100; const top = ((home.y + (in3d ? FEET : 0)) / VIEW_H) * 100;
             const name = nameOf(p.uid, p.name);
-            return <button type="button" key={p.uid} className={`${styles.player} ${fresh ? styles.fresh : ""} ${p.uid === uid ? styles.me : ""} ${focus === p.uid ? styles.focused : ""}`}
+            return <button type="button" key={p.uid} className={`${styles.player} ${in3d ? styles.player3d : ""} ${fresh ? styles.fresh : ""} ${p.uid === uid ? styles.me : ""} ${focus === p.uid ? styles.focused : ""}`}
               style={{ left: `${left}%`, top: `${top}%`, "--ink": inkColor(k), "--delay": `${-(k * 0.37) % 3}s`, zIndex: focus === p.uid ? 300 : fresh ? 200 : Math.round(top) } as CSSProperties}
               onClick={() => { setFocus(f => (f === p.uid ? null : p.uid)); setPanel(true); }} aria-label={`${showNames ? name : "친구"}의 아이디어 ${p.ideas.length}개`}>
               <span className={styles.bubble} key={shown.id}><span className={styles.bubbleText}>{shown.text}</span>{p.ideas.length > 1 && <em>{p.ideas.length}</em>}</span>
-              <span className={styles.char}>
+              {in3d ? <span className={styles.body3d} /> : <span className={styles.char}>
+                {/* 3D 를 못 쓰거나 불러오는 동안: 내 캐릭터 그림 → 없으면 프로필 사진 → 기본 얼굴 */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photo.get(p.uid) || fallbackFace(p.uid)} alt="" onError={e => { e.currentTarget.src = fallbackFace(p.uid); }} />
-              </span>
+                <img src={charThumb(chars[k].id)} alt="" onError={e => { const img = e.currentTarget; const next = photo.get(p.uid); if (next && img.dataset.step !== "photo") { img.dataset.step = "photo"; img.src = next; } else img.src = fallbackFace(p.uid); }} />
+              </span>}
               <span className={styles.shadow} />
               {showNames && <span className={styles.name}>{name}</span>}
             </button>;

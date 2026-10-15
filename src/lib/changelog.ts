@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.17.0";
+export const APP_VERSION = "1.18.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.18.0",
+    date: "2026-10-16",
+    kind: "minor",
+    title: "브레인스토밍 3D 캐릭터 30종",
+    items: [
+      "브레인스토밍 판에 브롤스타즈풍 3D 캐릭터 30종(친구 14명·동물·새)이 등장해요",
+      "새 아이디어를 쓰면 내 캐릭터가 점프하고, 동물·새는 통통 뛰거나 걸어 다녀요",
+      "캐릭터는 학생마다 정해져 있어서 어느 활동에서나 같은 캐릭터로 나와요",
+    ],
+  },
   {
     version: "1.17.0",
     date: "2026-10-15",
