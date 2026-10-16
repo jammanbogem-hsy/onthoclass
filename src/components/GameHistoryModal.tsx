@@ -99,8 +99,12 @@ export function GameHistoryModal({
   useEffect(() => {
     let live = true;
     getGames(cid)
-      .then((gs) => {
+      .then((all) => {
         if (!live) return;
+        // 시작하지 않은 뿌요 대기실(경기 없이 끝났거나 버려진 대기실)은 이력에서 뺀다
+        const gs = all.filter(
+          (g) => !(g.kind === "puyo" && g.status !== "play" && !g.puyo?.matches?.length)
+        );
         setGames(gs);
         const first = gs[0];
         if (first) {

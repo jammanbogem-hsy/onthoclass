@@ -109,9 +109,16 @@ export async function leavePuyoRoom(cid: string, gid: string) {
 /** 같은 리그의 게임(판)들 — 판 순서대로. 대기실(겹침 피하기)·리그 순위·대시보드가 쓴다. */
 export async function listLeagueGames(cid: string, leagueId: string) {
   const snap = await getDocs(query(collection(getDbClient(), "classes", cid, "games"), where("puyo.league.id", "==", leagueId)));
-  return snap.docs.map(d => ({ id: d.id, status: d.data().status as string, puyo: d.data().puyo as PuyoConfig }))
+  const all = snap.docs.map(d => ({ id: d.id, status: d.data().status as string, puyo: d.data().puyo as PuyoConfig }))
     .filter(g => g.puyo?.league?.id === leagueId)
     .sort((a, b) => (a.puyo.league!.round - b.puyo.league!.round));
+  // 경기 없이 끝난(버려진) 대기실은 판으로 치지 않는다. 대기실(draft)은 그 판을 아직 안 했을 때 하나만 남긴다
+  // (예전에 '다음 판'을 여러 번 눌러 같은 판 대기실이 여러 개 생긴 기록 정리).
+  const played = all.filter(g => g.puyo.matches?.length);
+  const playedRounds = new Set(played.map(g => g.puyo.league!.round));
+  const drafts = new Map<number, (typeof all)[number]>();
+  for (const g of all) if (g.status === "draft" && !playedRounds.has(g.puyo.league!.round)) drafts.set(g.puyo.league!.round, g);
+  return [...played, ...drafts.values()].sort((a, b) => (a.puyo.league!.round - b.puyo.league!.round));
 }
 /** 한 판의 모든 학생 최종 상태(한 번 읽기) — 대시보드 문제 분석용. */
 export async function getPuyoRuns(cid: string, gid: string): Promise<PuyoRun[]> {

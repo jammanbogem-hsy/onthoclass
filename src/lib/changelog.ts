@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.22.1";
+export const APP_VERSION = "1.22.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,15 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.22.2",
+    date: "2026-10-16",
+    kind: "patch",
+    title: "뿌요뿌요 기록 정리",
+    items: [
+      "시작하지 않고 남은 빈 대기실이 게임 이력과 리그 현황에 보이지 않아요",
+    ],
+  },
   {
     version: "1.22.1",
     date: "2026-10-16",
