@@ -4,7 +4,15 @@
 // classes/{cid}/lessons/{lid}/questions/{qid}/ideas/{ideaId}  아이디어 한 개 {uid, name, text, at}
 //
 // 권한(firestore.rules): 학급 구성원은 읽기, 본인 이름으로만 쓰기, 지우기는 본인·선생님.
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from "firebase/firestore";
+//
+// 여러 반 함께하기(섬 연결) — 반마다 자기 차시에 브레인스토밍 활동이 하나씩 있고(아이디어도 반마다 따로 저장),
+// 그 활동들을 '세계' 하나로 묶어 한 바다에 반별 섬으로 보여 준다.
+// brainstormWorlds/{wid}              {ownerId, islands:[{cid,lid,qid,name}], cids:[cid], createdAt}
+// brainstormWorlds/{wid}/seats/{uid}  {cid} — 묶인 반의 구성원이 판을 열 때 스스로 앉는 자리.
+//   다른 반 섬의 아이디어 읽기는 '그 반 활동이 이 세계를 가리키고 + 내 자리가 묶인 반 구성원'일 때만 허용된다.
+import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, runTransaction, serverTimestamp, setDoc } from "firebase/firestore";
+import type { User } from "firebase/auth";
+import { createQuestion, updateQuestion, type Question } from "@/lib/lessons";
 import { getDbClient } from "@/lib/firebase";
 
 export type Idea = { id: string; uid: string; name: string; text: string; at: number };
@@ -36,4 +44,70 @@ export async function addIdea(cid: string, lid: string, qid: string, uid: string
 
 export async function deleteIdea(cid: string, lid: string, qid: string, id: string) {
   await deleteDoc(doc(ideasCol(cid, lid, qid), id));
+}
+
+/* ---------- 여러 반 섬 연결 ---------- */
+
+export type Island = { cid: string; lid: string; qid: string; name: string };
+export type BrainWorld = { id: string; ownerId: string; islands: Island[] };
+/** 한 세계에 묶을 수 있는 반 수 */
+export const WORLD_MAX = 9;
+
+const worldRef = (wid: string) => doc(getDbClient(), "brainstormWorlds", wid);
+
+export function watchWorld(wid: string, cb: (w: BrainWorld | null) => void, onError?: (e: Error) => void) {
+  return onSnapshot(worldRef(wid), snap => {
+    if (!snap.exists()) { cb(null); return; }
+    const v = snap.data();
+    const islands = (Array.isArray(v.islands) ? v.islands : []).map((x: Record<string, unknown>) => ({
+      cid: String(x.cid ?? ""), lid: String(x.lid ?? ""), qid: String(x.qid ?? ""), name: String(x.name ?? ""),
+    })).filter((x: Island) => x.cid && x.lid && x.qid);
+    cb({ id: snap.id, ownerId: String(v.ownerId ?? ""), islands });
+  }, onError);
+}
+
+/** 판을 연 학생·선생님의 자리 — 이 반 구성원임을 세계에 알린다(다른 반 섬 읽기 권한의 근거). */
+export async function ensureSeat(wid: string, uid: string, cid: string) {
+  const ref = doc(getDbClient(), "brainstormWorlds", wid, "seats", uid);
+  const cur = await getDoc(ref).catch(() => null);
+  if (cur?.exists() && cur.data().cid === cid) return;
+  await setDoc(ref, { cid });
+}
+
+/**
+ * 다른 반에 같은 주제의 브레인스토밍을 열고 섬으로 잇는다.
+ * 처음 잇는 거면 세계를 새로 만들고 지금 활동을 첫 섬으로 넣는다.
+ */
+export async function linkIsland(user: User, from: { cid: string; lid: string; question: Question; className: string }, to: { cid: string; lid: string; name: string }) {
+  const db = getDbClient();
+  // 화면의 활동 정보가 늦게 갱신됐을 수 있어 저장된 값을 다시 읽는다(세계를 두 번 만들지 않게)
+  const fresh = await getDoc(doc(db, "classes", from.cid, "lessons", from.lid, "questions", from.question.id));
+  let wid: string | undefined = typeof fresh.data()?.world === "string" && fresh.data()!.world ? fresh.data()!.world : undefined;
+  if (!wid) {
+    const ref = doc(collection(db, "brainstormWorlds"));
+    await setDoc(ref, { ownerId: user.uid, islands: [{ cid: from.cid, lid: from.lid, qid: from.question.id, name: from.className }], cids: [from.cid], createdAt: serverTimestamp() });
+    await updateQuestion(from.cid, from.lid, from.question.id, { world: ref.id });
+    wid = ref.id;
+  }
+  const qid = await createQuestion(to.cid, to.lid, user, { phase: from.question.phase, kind: "brainstorm", title: from.question.title, text: from.question.text });
+  await updateQuestion(to.cid, to.lid, qid, { world: wid, ...(from.question.published === false ? { published: false } : {}) });
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(worldRef(wid!));
+    const v = snap.data() ?? {};
+    const islands = (v.islands ?? []) as Island[];
+    if (islands.length >= WORLD_MAX) throw new Error(`섬은 ${WORLD_MAX}개까지 이을 수 있어요.`);
+    tx.update(worldRef(wid!), { islands: [...islands, { cid: to.cid, lid: to.lid, qid, name: to.name }], cids: [...new Set([...(v.cids ?? []), to.cid])] });
+  });
+  return wid;
+}
+
+/** 섬 연결 끊기 — 그 반 활동과 아이디어는 그대로 남고, 한 반짜리 판으로 돌아간다. */
+export async function unlinkIsland(wid: string, island: Island) {
+  const db = getDbClient();
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(worldRef(wid));
+    const islands = ((snap.data()?.islands ?? []) as Island[]).filter(x => !(x.cid === island.cid && x.qid === island.qid));
+    tx.update(worldRef(wid), { islands, cids: [...new Set(islands.map(x => x.cid))] });
+  });
+  await setDoc(doc(db, "classes", island.cid, "lessons", island.lid, "questions", island.qid), { world: deleteField() }, { merge: true });
 }

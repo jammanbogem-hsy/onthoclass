@@ -2,8 +2,8 @@
 // 섬은 육각 칸(odd-r 배치)으로 나누고, 학생마다 '집' 칸을 하나 정해 아이디어 수만큼 칸을 칠한다.
 // 화면 없이 계산만 하는 순수 모듈 — tests/brainstorm-map.test.cjs 에서 직접 검사한다.
 
-export const MAP_COLS = 36;
-export const MAP_ROWS = 21;
+export const MAP_COLS = 44;
+export const MAP_ROWS = 26;
 const SIZE = 10; // 육각 반지름(뷰박스 단위)
 const W = Math.sqrt(3) * SIZE;
 const H = 2 * SIZE;
@@ -63,7 +63,8 @@ export function islandCells(seedKey: string): Cell[] {
 export function homeSlots(cells: Cell[], count: number, seedKey: string): number[] {
   if (!cells.length) return [];
   // 가장자리 바로 위는 잉크가 바다로 막히니 피한다
-  const inner = cells.filter(cell => neighbors(cell.c, cell.r).filter(([c, r]) => cells.some(o => o.c === c && o.r === r)).length === 6);
+  const has = new Set(cells.map(c => c.i));
+  const inner = cells.filter(cell => neighbors(cell.c, cell.r).filter(([c, r]) => has.has(idx(c, r))).length === 6);
   const pool = inner.length >= count ? inner : cells;
   const first = pool[hash(seedKey) % pool.length];
   const slots = [first]; const dist = pool.map(p => Math.hypot(p.x - first.x, p.y - first.y));
@@ -137,3 +138,33 @@ export function paintTerritory(seedKey: string, painters: Painter[]): Territory 
 
 /** 학생 순번 → 잉크 색 */
 export const inkColor = (k: number) => INK_COLORS[k % INK_COLORS.length];
+
+/** 여러 반 섬을 바다 위에 늘어놓을 때 섬 사이 바다 폭 · 섬 위 반 이름표 자리(판 좌표) */
+export const ISLAND_GAP = W * 3;
+export const LABEL_H = 34;
+export type WorldLayout = { w: number; h: number; cols: number; rows: number; offsets: { x: number; y: number }[] };
+
+/**
+ * 섬 n개 배치 — 화면 비율(screen = 가로/세로)에 맞춰 섬 하나가 가장 크게 보이는 열 수를 고른다.
+ * 마지막 줄 섬이 모자라면 가운데로 모은다. 섬이 하나면 이름표 자리 없이 예전과 같다.
+ */
+export function worldLayout(n: number, screen = 1.9): WorldLayout {
+  if (n <= 1) return { w: VIEW_W, h: VIEW_H, cols: 1, rows: 1, offsets: [{ x: 0, y: 0 }] };
+  const cellW = VIEW_W + ISLAND_GAP; const cellH = VIEW_H + LABEL_H + ISLAND_GAP;
+  let best = { cols: 1, size: 0 };
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const w = cols * cellW - ISLAND_GAP; const h = rows * cellH - ISLAND_GAP;
+    // 판을 화면에 맞췄을 때 섬 하나의 화면 폭(화면 폭 = 1)
+    const size = (w / h >= screen ? 1 : w / h / screen) * (VIEW_W / w);
+    if (size > best.size + 1e-9) best = { cols, size };
+  }
+  const { cols } = best; const rows = Math.ceil(n / cols);
+  const w = cols * cellW - ISLAND_GAP; const h = rows * cellH - ISLAND_GAP;
+  const offsets = Array.from({ length: n }, (_, k) => {
+    const row = Math.floor(k / cols); const inRow = Math.min(cols, n - row * cols);
+    const pad = ((cols - inRow) * cellW) / 2;
+    return { x: pad + (k % cols) * cellW, y: row * cellH + LABEL_H };
+  });
+  return { w, h, cols, rows, offsets };
+}

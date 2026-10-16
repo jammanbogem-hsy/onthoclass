@@ -72,6 +72,7 @@ import {
   type SurveyItem,
 } from "@/lib/lessons";
 import { brainstormUrl } from "@/lib/brainstorm";
+import { LinkIslandsDialog } from "@/components/brainstorm/LinkIslandsDialog";
 import { AttachmentField, AttachmentList } from "@/components/AttachmentField";
 import { GameFeedbackCard } from "@/components/GameFeedbackCard";
 import { SurveyBuilder } from "@/components/SurveyBuilder";
@@ -1532,6 +1533,7 @@ function QuestionRow({
     question.surveyItems ?? []
   );
   const [surveyImport, setSurveyImport] = useState(false);
+  const [linkIslands, setLinkIslands] = useState(false);
   const [audGroupIds, setAudGroupIds] = useState<string[]>(
     question.audGroupIds
   );
@@ -2112,9 +2114,19 @@ function QuestionRow({
                 <Icon name="open_in_new" size={16} />
                 땅따먹기 판 열기 (새 탭)
               </button>
+              <button
+                type="button"
+                onClick={() => setLinkIslands(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-4 py-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              >
+                <Icon name="travel_explore" size={16} />
+                {question.world ? "이어진 반 섬 관리" : "다른 반과 섬 잇기"}
+              </button>
               <span className="text-xs text-black/45 dark:text-white/45">
                 제목이 주제가 돼요. 학생이 아이디어를 쓰면 섬 위에 말풍선과 잉크로 나타나요.
+                다른 반과 이으면 반마다 섬 하나씩 한 바다에 함께 보여요.
               </span>
+              {linkIslands && <LinkIslandsDialog cid={cid} lid={lid} question={question} onClose={() => setLinkIslands(false)} />}
             </div>
           )}
 

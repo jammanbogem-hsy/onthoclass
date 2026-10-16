@@ -20,6 +20,8 @@ type Live = {
   uid: string; charId: string; kind: BrainChar["kind"]; root: THREE.Group; body: THREE.Object3D;
   mixer: THREE.AnimationMixer | null; actions: Record<string, THREE.AnimationAction>;
   phase: number; ideas: number; hopAt: number; nextWalk: number;
+  /** 건너뛴 프레임 동안 쌓인 시간(많을 때 동작을 격프레임으로) */
+  acc: number; slot: number;
 };
 
 const OUTLINE = 0.55; // 외곽선 두께(판 좌표)
@@ -127,7 +129,7 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
       const actions: Record<string, THREE.AnimationAction> = {};
       if (mixer) for (const c of t.clips) actions[c.name.replace(/^preset:(quadruped:)?/, "")] = mixer.clipAction(c);
       if (actions.idle) actions.idle.play();
-      const live: Live = { uid: a.uid, charId: a.char.id, kind: a.char.kind, root, body, mixer, actions, phase: Math.random() * Math.PI * 2, ideas: a.ideas, hopAt: -10, nextWalk: 2 + Math.random() * 6 };
+      const live: Live = { uid: a.uid, charId: a.char.id, kind: a.char.kind, root, body, mixer, actions, phase: Math.random() * Math.PI * 2, ideas: a.ideas, hopAt: -10, nextWalk: 2 + Math.random() * 6, acc: 0, slot: lives.size % 2 };
       lives.set(a.uid, live); scene.add(root);
       place(live, a);
       cbs.current.onLoaded([...lives.keys()]);
@@ -166,13 +168,23 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
     };
 
     const clock = new THREE.Clock();
-    let frame = 0;
+    let frame = 0; let tick = 0;
     const loop = () => {
       frame = requestAnimationFrame(loop);
       if (document.hidden) return;
       const dt = Math.min(clock.getDelta(), 0.1); const t = clock.elapsedTime;
+      const v = viewRef.current; tick++;
+      // 화면 밖(확대해서 안 보이는 섬)의 캐릭터는 그리지도 움직이지도 않는다.
+      // 여러 반이 모여 캐릭터가 많으면 뼈 동작은 한 프레임씩 번갈아(반씩) 계산한다.
+      const x0 = v.x - charH; const x1 = v.x + viewW / v.s + charH; const y0 = v.y - charH * 0.5; const y1 = v.y + viewH / v.s + charH * 1.5;
+      const many = lives.size > 40;
       for (const l of lives.values()) {
-        l.mixer?.update(dt);
+        const p = l.root.position;
+        const vis = p.x > x0 && p.x < x1 && -p.y > y0 && -p.y < y1;
+        l.root.visible = vis;
+        if (!vis) { l.acc += dt; continue; }
+        l.acc += dt;
+        if (!many || (tick + l.slot) % 2 === 0) { l.mixer?.update(Math.min(l.acc, 0.25)); l.acc = 0; }
         // 모델은 +x 를 보고 있어서 -90° 돌려 정면으로, 거기에 살랑살랑 좌우로
         l.body.rotation.y = -Math.PI / 2 + Math.sin(t * 0.6 + l.phase) * 0.45;
         // 둥실 + 새 아이디어 통통(사람은 점프 동작이 대신한다)
@@ -187,7 +199,6 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
         }
       }
       // 확대·이동: 판(HTML)과 같은 영역만 보이게 카메라를 맞춘다
-      const v = viewRef.current;
       if (cam.left !== v.x || cam.right !== v.x + viewW / v.s || cam.top !== -v.y) {
         cam.left = v.x; cam.right = v.x + viewW / v.s; cam.top = -v.y; cam.bottom = -(v.y + viewH / v.s); cam.updateProjectionMatrix();
       }

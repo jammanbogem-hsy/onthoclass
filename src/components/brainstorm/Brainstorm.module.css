@@ -41,16 +41,26 @@
 /* 많이 비켜났으면 말풍선 꼬리 → 원래 자리(캐릭터 머리)로 가는 점선 */
 .leader{display:none;position:absolute;left:50%;top:calc(100% - 4px);width:var(--ll,0px);height:0;border-top:2.5px dashed #1b1b29;transform-origin:0 0;transform:rotate(var(--la,0rad));pointer-events:none;opacity:.7}
 .bubbleWrap[data-far] .leader{display:block}
-/* 붐빌 때(작은 말풍선): 최근 3개만, 한 줄씩, 폭도 좁게 — 전체 개수는 모서리 숫자로 */
-[data-compact] .bubbleList{max-width:clamp(120px,11vw,170px);padding:5px 9px;gap:1px;font-size:.92em}
-[data-compact] .bubbleList .bubbleText{-webkit-line-clamp:1}
-[data-compact] .bubbleList .bubbleText:not(:nth-last-of-type(-n+3)){display:none}
-[data-compact] .more{display:none}
-.bubbleList{display:flex;flex-direction:column;gap:3px;max-width:clamp(150px,16vw,240px);padding:8px 11px}
+/* 붐빌 때(작은 말풍선): 최근 2개만, 한 줄씩, 폭도 좁게 — 전체 개수는 모서리 숫자로(펼친 말풍선은 그대로) */
+[data-compact] .bubbleWrap:not([data-open]) .bubbleList{max-width:clamp(120px,11vw,170px);padding:5px 9px;font-size:.92em}
+[data-compact] .bubbleWrap:not([data-open]) .bubbleText{-webkit-line-clamp:1}
+[data-compact] .bubbleWrap:not([data-open]) .bubbleText:not(:nth-last-of-type(-n+2)){display:none}
+[data-compact="2"] .bubbleWrap:not([data-open]) .bubbleText:not(:last-of-type){display:none}
+[data-compact="2"] .bubbleWrap:not([data-open]) .bubble{max-width:clamp(96px,8vw,130px);padding:3px 8px;font-size:.82em;border-width:2.5px}
+[data-compact="2"] .bubbleWrap:not([data-open]) .more{margin-top:2px;font-size:.72em}
+.lines{display:flex;flex-direction:column;gap:3px}
+.bubbleList{max-width:clamp(150px,16vw,240px);padding:8px 11px}
+/* 펼친 말풍선: 전부, 줄 제한 없이 — 길면 말풍선 안에서 스크롤 */
+.bubbleWrap[data-open] .bubbleList{max-width:clamp(190px,22vw,300px)}
+.bubbleWrap[data-open] .lines{max-height:min(42vh,300px);overflow:auto;overscroll-behavior:contain;touch-action:pan-y;padding-right:2px}
+.bubbleWrap[data-open] .bubbleText{display:block;-webkit-line-clamp:unset}
 .bubbleList .bubbleText{-webkit-line-clamp:2;padding-left:12px;position:relative}
 .bubbleList .bubbleText::before{content:"";position:absolute;left:0;top:.45em;width:6px;height:6px;border-radius:50%;background:var(--ink);box-shadow:0 0 0 1.5px #1b1b29}
 .bubbleList .bubbleText+.bubbleText{padding-top:3px;border-top:1.5px dashed rgba(27,27,41,.18)}
-.more{font-size:.8em;color:#6b6b80;font-weight:700}
+/* "N개 더 보기 / 접기" — 누를 수 있는 작은 알약 */
+.more{display:inline-flex;align-items:center;gap:1px;align-self:flex-start;margin-top:5px;padding:1px 9px 1px 4px;border-radius:999px;background:var(--ink);color:#fff;font-size:.78em;font-weight:900;line-height:1.5}
+.fresh .more{background:#fff;color:var(--ink)}
+.bubble:hover .more{filter:brightness(1.08)}
 /* 방금 쓴 줄: 말풍선이 내 색으로 칠해지니 글자는 흰색 그대로, 뒤에 NEW 표시 */
 .newLine::after{content:"NEW";margin-left:5px;padding:0 5px;border-radius:999px;background:#fff;color:var(--ink);font-size:.72em;font-weight:900;vertical-align:1px}
 .zoomBar{position:absolute;right:14px;bottom:14px;z-index:400;display:flex;align-items:center;gap:2px;padding:4px;border-radius:999px;background:#fff;border:3px solid #1b1b29;box-shadow:0 4px 0 rgba(0,0,0,.2)}
@@ -80,7 +90,7 @@
 .name{margin-top:2px;padding:1px 8px;border-radius:999px;background:#1b1b29;color:#fff;font-size:clamp(10px,1vw,13px);font-weight:800;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
 .me .name{background:var(--ink)}
 
-.bubble{position:relative;margin-bottom:10px;max-width:clamp(120px,14vw,210px);padding:7px 11px;border-radius:16px;background:#fff;color:#1b1b29;border:3px solid #1b1b29;
+.bubble{display:flex;flex-direction:column;font-family:inherit;cursor:pointer;position:relative;margin-bottom:10px;max-width:clamp(120px,14vw,210px);padding:7px 11px;border-radius:16px;background:#fff;color:#1b1b29;border:3px solid #1b1b29;
   font-size:clamp(11px,1.05vw,15px);font-weight:800;line-height:1.3;text-align:left;word-break:keep-all;overflow-wrap:anywhere;box-shadow:0 4px 0 rgba(0,0,0,.18);animation:bubbleIn .45s cubic-bezier(.2,1.5,.4,1) both}
 .bubble::after{content:"";position:absolute;left:50%;bottom:-9px;width:12px;height:12px;background:#fff;border-right:3px solid #1b1b29;border-bottom:3px solid #1b1b29;transform:translateX(-50%) rotate(45deg)}
 .bubble em{position:absolute;top:-11px;right:-11px;min-width:22px;padding:1px 6px;border-radius:999px;border:2px solid #1b1b29;background:var(--ink);color:#fff;font-style:normal;font-size:12px;text-align:center}
@@ -93,7 +103,17 @@
 .fresh .bubble em{background:#fff;color:var(--ink)}
 @keyframes pop{50%{transform:scale(1.08) rotate(-2deg)}}
 .focused .char{box-shadow:0 0 0 5px var(--ink),0 0 0 9px #fff,0 6px 0 rgba(0,0,0,.18)}
-.player:focus-visible{outline:3px solid #fff;outline-offset:4px;border-radius:12px}
+.player button:focus-visible{outline:3px solid #fff;outline-offset:3px;border-radius:12px}
+.charBtn{display:block;border:0;background:none;padding:0;color:inherit;cursor:pointer;border-radius:50%}
+
+/* 여러 반: 섬마다 반 이름표(누르면 그 섬으로) */
+.isleTag{position:absolute;transform:translate(-50%,-50%);z-index:250}
+.isleBtn{zoom:calc(1 / var(--zoom, 1));display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:4px 14px 4px 10px;border-radius:999px;border:3px solid #1b1b29;background:#fff;color:#1b1b29;
+  font-size:clamp(13px,1.3vw,17px);font-weight:900;white-space:nowrap;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.25)}
+.isleBtn span{font-size:.78em;font-weight:800;color:#5b5b70}
+.isleBtn em{font-style:normal;font-size:.72em;padding:1px 8px;border-radius:999px;background:#1b1b29;color:#fff}
+.isleHome{background:#ffd000}
+.isleBtn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.25)}
 
 .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#2b5a12;text-align:center;pointer-events:none}
 .empty strong{font-size:clamp(16px,2vw,24px);font-weight:900}
@@ -111,6 +131,10 @@
 .swatch{width:14px;height:14px;border-radius:50%;flex:none;box-shadow:0 0 0 2px #1b1b29}
 .rankName{flex:1;min-width:0;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rankNum{font-size:12px;font-weight:700;color:var(--md-sys-color-on-surface-variant);white-space:nowrap}
+.panelIsle+.panelIsle{margin-top:14px}
+.panelIsle h3{display:flex;align-items:baseline;gap:6px;margin:0 0 6px;font-size:14px;font-weight:900}
+.panelIsle h3 span{font-size:12px;font-weight:700;color:var(--md-sys-color-on-surface-variant)}
+.panelEmpty{margin:0;padding:8px 4px;font-size:13px;color:var(--md-sys-color-on-surface-variant)}
 .ideaList{list-style:none;margin:0;padding:0 10px 8px 38px;display:flex;flex-direction:column;gap:4px}
 .ideaList li{display:flex;align-items:flex-start;gap:6px;font-size:14px;line-height:1.35}
 .ideaList li span{flex:1}
@@ -141,7 +165,7 @@
   .top{padding:10px 14px}
   .withPanel{grid-template-columns:minmax(0,1fr)}
   /* 좁은 화면: 말풍선은 방금 쓴 것·내 것·고른 친구 것만(나머지는 캐릭터를 눌러 모아 보기에서) */
-  .player:not(.fresh):not(.me):not(.focused) .bubble{display:none}
+  .player:not(.fresh):not(.me):not(.focused):not(.opened) .bubble{display:none}
   .sea{padding:40px 8px 16px}
   .panel{border-left:0;border-top:1px solid var(--md-sys-color-outline-variant);max-height:none}
   .board{width:100%}
@@ -155,3 +179,4 @@
   .player,.sea{animation:none}
   .ink,.bubble,.fresh .bubble{animation:none}
 }
+.opened .bubble{box-shadow:0 6px 0 rgba(0,0,0,.25)}

@@ -45,12 +45,12 @@ test('once the island is full, area follows the share of ideas', () => {
 });
 
 const C = load('src/lib/brainstorm-chars.ts');
-test('characters: same student keeps the same character, no duplicates within 30', () => {
-  const uids = Array.from({ length: 30 }, (_, k) => 'student' + k);
+test('characters: same student keeps the same character, no duplicates within 40', () => {
+  const uids = Array.from({ length: 40 }, (_, k) => 'student' + k);
   const a = C.assignChars(uids);
-  assert.equal(new Set(a.map(c => c.id)).size, 30);
+  assert.equal(new Set(a.map(c => c.id)).size, 40);
   assert.equal(C.assignChars(['student7'])[0].id, C.assignChars(['student7'])[0].id);
-  assert.equal(C.BRAIN_CHARS.length, 30);
+  assert.equal(C.BRAIN_CHARS.length, 40);
   const big = C.assignChars(Array.from({ length: 35 }, (_, k) => 'x' + k));
   assert.equal(big.length, 35);
 });
@@ -68,4 +68,23 @@ test('bubbles: overlapping boxes are pushed apart and stay in bounds; separate b
   }
   assert.deepEqual([d[3].dx, d[3].dy], [0, 0]);
   for (const m of moved) assert.ok(m.x >= 0 && m.y >= 0 && m.x + m.w <= 800 && m.y + m.h <= 500);
+});
+
+test('world layout: islands never overlap, fit inside, and one island keeps the old frame', () => {
+  const one = M.worldLayout(1);
+  assert.equal(one.w, M.VIEW_W); assert.equal(one.h, M.VIEW_H); assert.equal(JSON.stringify(one.offsets), JSON.stringify([{ x: 0, y: 0 }]));
+  for (let n = 2; n <= 9; n++) {
+    const L = M.worldLayout(n);
+    assert.equal(L.offsets.length, n);
+    for (const o of L.offsets) {
+      assert.ok(o.x >= -1e-6 && o.y >= M.LABEL_H - 1e-6 && o.x + M.VIEW_W <= L.w + 1e-6 && o.y + M.VIEW_H <= L.h + 1e-6, `n=${n} inside`);
+    }
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = L.offsets[i]; const b = L.offsets[j];
+      const apart = a.x + M.VIEW_W <= b.x + 1e-6 || b.x + M.VIEW_W <= a.x + 1e-6 || a.y + M.VIEW_H <= b.y + 1e-6 || b.y + M.VIEW_H <= a.y + 1e-6;
+      assert.ok(apart, `n=${n} islands ${i},${j} overlap`);
+    }
+  }
+  // 3개 반은 한 줄로 길게 늘어놓지 않는다(화면에 섬이 너무 작아짐)
+  assert.ok(M.worldLayout(3).cols < 3);
 });

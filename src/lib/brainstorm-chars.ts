@@ -1,4 +1,4 @@
-// 브레인스토밍 판 캐릭터 — Tripo 로 만든 브롤스타즈풍 3D 캐릭터 30개(public/brainstorm/chars/{id}.glb).
+// 브레인스토밍 판 캐릭터 — Tripo 로 만든 브롤스타즈풍 3D 캐릭터 40개(public/brainstorm/chars/{id}.glb).
 // person: 대기·점프·걷기·아파하기 동작 / animal: 네 발 걷기 / bird·still: 동작 없이 코드로 통통 움직인다
 // (두 발로 선 모양으로 만들어진 동물들은 네 발 리깅이 안 돼서 still).
 // 순수 모듈 — 학생에게 캐릭터를 나눠 주는 규칙은 tests/brainstorm-map.test.cjs 에서 함께 검사한다.
@@ -37,6 +37,16 @@ export const BRAIN_CHARS: BrainChar[] = [
   { id: "parrot", name: "앵무새", kind: "bird" },
   { id: "owl", name: "부엉이", kind: "bird" },
   { id: "duck", name: "오리", kind: "bird" },
+  { id: "boy-soccer", name: "축구복 친구", kind: "person" },
+  { id: "boy-sweater", name: "스웨터 친구", kind: "person" },
+  { id: "boy-taekwondo", name: "태권도 친구", kind: "person" },
+  { id: "girl-hanbok", name: "한복 친구", kind: "person" },
+  { id: "girl-overalls", name: "멜빵바지 친구", kind: "person" },
+  { id: "girl-beanie", name: "털모자 친구", kind: "person" },
+  { id: "corgi", name: "웰시코기", kind: "animal" },
+  { id: "dalmatian", name: "달마시안", kind: "animal" },
+  { id: "tiger", name: "아기 호랑이", kind: "animal" },
+  { id: "lion", name: "아기 사자", kind: "animal" },
 ];
 
 export const charUrl = (id: string) => `/brainstorm/chars/${id}.glb?v=1`;
@@ -50,7 +60,7 @@ function hash(s: string) {
 
 /**
  * 학생마다 캐릭터 하나 — 같은 학생은 어느 활동에서나 같은 캐릭터를 받고(uid 기준),
- * 한 판 안에서는 먼저 들어온 순서대로 겹치지 않게 다음 빈 캐릭터로 넘긴다(30명이 넘으면 다시 겹친다).
+ * 한 판 안에서는 먼저 들어온 순서대로 겹치지 않게 다음 빈 캐릭터로 넘긴다(40명이 넘으면 다시 겹친다).
  */
 export function assignChars(uids: string[], chars: BrainChar[] = BRAIN_CHARS): BrainChar[] {
   const used = new Set<number>(); const n = chars.length;

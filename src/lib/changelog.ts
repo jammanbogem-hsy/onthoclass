@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.21.0";
+export const APP_VERSION = "1.22.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,19 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.22.0",
+    date: "2026-10-16",
+    kind: "minor",
+    title: "브레인스토밍: 여러 반이 한 바다에서 함께",
+    items: [
+      "선생님이 다른 반과 섬을 이으면 반마다 섬 하나씩, 한 바다에서 다른 반 아이디어도 함께 볼 수 있어요(내 아이디어는 우리 반 섬에만)",
+      "반 이름표를 누르면 그 섬으로 가고, 집 모양 버튼을 누르면 우리 반 섬으로 돌아와요",
+      "섬이 더 넓어져서 아이디어로 칠할 땅이 많아졌어요",
+      "아이디어를 많이 쓴 친구의 말풍선은 접혀 있어요. 'N개 더 보기'를 누르면 전부 펼쳐져요",
+      "새 캐릭터 10종(축구복·태권도·한복 친구, 웰시코기·아기 호랑이 등)이 생겼어요",
+    ],
+  },
   {
     version: "1.21.0",
     date: "2026-10-16",

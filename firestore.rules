@@ -37,6 +37,16 @@ service cloud.firestore {
     function classOwner(cid) {
       return get(/databases/$(database)/documents/classes/$(cid)).data.ownerId;
     }
+    // 브레인스토밍 섬 연결 — 활동이 가리키는 세계에 내 자리가 있고, 자리의 반·이 반이 모두 세계에 묶여 있을 때
+    function worldReader(cid, lid, qid) {
+      let w = get(/databases/$(database)/documents/classes/$(cid)/lessons/$(lid)/questions/$(qid)).data.get('world', '');
+      let seat = /databases/$(database)/documents/brainstormWorlds/$(w)/seats/$(uid());
+      return signedIn() && w is string && w != '' && exists(seat)
+        && cid in get(/databases/$(database)/documents/brainstormWorlds/$(w)).data.cids
+        && get(seat).data.cid in get(/databases/$(database)/documents/brainstormWorlds/$(w)).data.cids
+        && isMember(get(seat).data.cid);
+    }
+
     // 학급 멤버이거나 학급 소유 교사의 팀원이면 콘텐츠(차시/활동) 읽기 허용
     function canReadContent(cid) {
       return isMember(cid) || isTeammate(classOwner(cid));
@@ -44,6 +54,29 @@ service cloud.firestore {
 
     // 공개 메타(로그인 화면 회원 수 카운터 등): 비로그인 포함 누구나 읽기.
     // 쓰기는 Admin Cloud Function(publicMemberCount)만 — 클라이언트 쓰기 금지(변조 차단).
+    // 브레인스토밍 세계(여러 반 섬 묶음): 만든 선생님만 쓰기, 읽기는 만든 선생님·자리 잡은 구성원.
+    // 자리(seats/{uid})는 본인이 직접 — 세계에 묶인 반의 구성원일 때만 앉을 수 있다.
+    match /brainstormWorlds/{wid} {
+      allow read: if signedIn() && (resource.data.ownerId == uid()
+        || exists(/databases/$(database)/documents/brainstormWorlds/$(wid)/seats/$(uid())));
+      allow create: if isTeacherAccount() && request.resource.data.ownerId == uid()
+        && request.resource.data.cids is list && request.resource.data.cids.size() <= 12
+        && request.resource.data.islands is list && request.resource.data.islands.size() <= 12;
+      allow update: if signedIn() && resource.data.ownerId == uid()
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.cids is list && request.resource.data.cids.size() <= 12
+        && request.resource.data.islands is list && request.resource.data.islands.size() <= 12;
+      allow delete: if signedIn() && resource.data.ownerId == uid();
+      match /seats/{sid} {
+        allow get: if signedIn() && sid == uid();
+        allow create, update: if signedIn() && sid == uid()
+          && request.resource.data.keys().hasOnly(["cid"])
+          && request.resource.data.cid is string
+          && request.resource.data.cid in get(/databases/$(database)/documents/brainstormWorlds/$(wid)).data.cids
+          && isMember(request.resource.data.cid);
+      }
+    }
+
     match /meta/{docId} {
       allow read: if true;
       allow write: if false;
@@ -847,8 +880,10 @@ service cloud.firestore {
 
           // 브레인스토밍 아이디어: 학급 구성원 모두 읽기(판에 함께 보임),
           // 쓰기는 본인 이름으로만(글자 수 제한·서버 시각), 수정 없음, 지우기는 본인·교사.
+          // 여러 반 섬 연결: 이 활동이 세계(brainstormWorlds)를 가리키고, 읽는 사람이 그 세계에
+          // 묶인 반의 구성원으로 자리(seat)를 잡았으면 다른 반이라도 읽기 허용.
           match /ideas/{ideaId} {
-            allow read: if isMember(classId);
+            allow read: if isMember(classId) || worldReader(classId, lessonId, questionId);
             allow create: if isMember(classId)
               && request.resource.data.keys().hasOnly(["uid", "name", "text", "at"])
               && request.resource.data.uid == uid()
