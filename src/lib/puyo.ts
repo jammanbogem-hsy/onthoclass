@@ -76,6 +76,16 @@ export async function nextPuyoRound(cid: string, by: string, prev: { link: GameL
   const played = (p?.players ?? []).filter(x => !x.teacher).map(x => x.uid);
   // 리그 중이면 다음 판으로(마지막 판 뒤의 '한 판 더'는 리그 밖의 일반 경기)
   const league = p?.league && p.league.round < p.league.total ? { ...p.league, round: p.league.round + 1 } : null;
+  // 이미 열어 둔 다음 판 대기실이 있으면 그리로(버튼을 여러 번 눌러도 대기실이 여러 개 생기지 않게)
+  const db = getDbClient();
+  const ptr = await getDocFromServer(doc(db, "classes", cid, "control", "game")).catch(() => null);
+  const openId = ptr?.data()?.gameId as string | undefined;
+  if (openId) {
+    const open = await getDocFromServer(doc(db, path(cid, openId))).catch(() => null);
+    const o = open?.data();
+    const same = league ? o?.puyo?.league?.id === league.id && o?.puyo?.league?.round === league.round : !o?.puyo?.league && o?.puyo?.round === (p?.round ?? 1) + 1;
+    if (o?.kind === "puyo" && o.status === "draft" && same) return openId;
+  }
   return createPuyoGame(cid, by, normalizeRules(p), prev.link, { round: (p?.round ?? 1) + 1, prevResting: resting, carry: [...played, ...resting] }, p?.quiz, league);
 }
 export async function finishPuyo(cid: string, gid: string, manual = false) {

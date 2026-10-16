@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
@@ -200,6 +200,15 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const finishing = useRef(false);
+  // 다른 판으로 옮기기 — 화면 안 이동이 막혀 선생님 화면이 결과에 그대로 머무는 일이 있었다
+  // (학생은 새 대기실로 갔는데 선생님만 남아 버튼을 계속 누르게 됨). 2.5초 뒤에도 이 화면이 그대로면 새로 연다.
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const go = useCallback((url: string) => {
+    router.replace(url);
+    setTimeout(() => { if (alive.current) window.location.replace(url); }, 2500);
+  }, [router]);
+  const [nextId, setNextId] = useState<string | null>(null);
   const settleContext = useRef<{ config: PuyoConfig | undefined; runs: PuyoRun[]; clockOffset: number; uid: string; teacher: boolean }>({ config: undefined, runs: [], clockOffset: 0, uid: "", teacher: false });
   const teacher = member?.role === "teacher";
   const back = `/${teacher ? "class-admin" : "class"}/?id=${encodeURIComponent(cid)}`;
@@ -248,10 +257,10 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
       if (first === undefined) { first = id; return; }
       if (!g || id === first || id === gid) return;
       first = id;
-      if (g.kind === "puyo") router.replace(puyoUrl(cid, g.id));
+      if (g.kind === "puyo") go(puyoUrl(cid, g.id));
       else router.push(back);
     });
-  }, [cid, gid, member, router, back]);
+  }, [cid, gid, member, router, back, go]);
   const matched = config?.matches?.find(m => matchIds(m).includes(user?.uid ?? ""));
   const watchIds = teacher || !matched ? "" : [...matchIds(matched)].sort().join(",");
   useEffect(() => {
@@ -331,7 +340,7 @@ function ConnectedRoom({ cid, gid }: { cid: string; gid: string }) {
     {game.status === "done" && <div className="mt-6 flex flex-col items-center gap-3 pb-6 text-center">
       {config.league && <Link className={leagueLast ? btnPrimary : btnOutline} href={leagueUrl(cid, config.league.id)}><Icon name="insights" size={20} />{leagueLast ? "리그 결과 대시보드" : "리그 현황 보기"}</Link>}
       {teacher ? <div className="flex flex-wrap justify-center gap-2">
-        <button type="button" className={leagueLast ? btnOutline : btnPrimary} disabled={busy} onClick={() => void act(async () => { const next = await nextPuyoRound(cid, user.uid, game); router.replace(puyoUrl(cid, next)); })}><Icon name="replay" size={20} />{busy ? "준비 중…" : config.league && !leagueLast ? `리그 다음 판 (${config.league.round + 1}/${config.league.total})` : "같은 규칙으로 한 판 더"}</button>
+        <button type="button" className={leagueLast ? btnOutline : btnPrimary} disabled={busy} onClick={() => void act(async () => { const next = nextId ?? await nextPuyoRound(cid, user.uid, game); setNextId(next); go(puyoUrl(cid, next)); })}><Icon name="replay" size={20} />{busy ? "준비 중…" : nextId ? "새 대기실로 이동" : config.league && !leagueLast ? `리그 다음 판 (${config.league.round + 1}/${config.league.total})` : "같은 규칙으로 한 판 더"}</button>
         <button type="button" className={btnOutline} disabled={busy} onClick={() => void act(async () => { await leavePuyoRoom(cid, gid); router.push(back); })}>마치고 학급으로</button>
       </div> : <Link className={btnPrimary} href={back}>학급으로 돌아가기</Link>}
       <p className="text-sm text-[var(--md-sys-color-on-surface-variant)]">{teacher ? "한 판 더를 누르면 학생들도 새 대기실로 함께 이동해요. 지난 참가자는 미리 체크돼 있어요." : "선생님이 한 판 더를 시작하면 새 대기실로 자동으로 이동해요."} 결과는 학급 게임 이력에 남아요.</p>
