@@ -46,16 +46,21 @@ function Brand() {
 }
 
 function Resolve({ code }: { code: string }) {
-  const [state, setState] = useState<{ user: User; sid: string } | "missing" | "error" | null>(null);
+  const [state, setState] = useState<{ user: User; sid: string } | "missing" | "error" | "auth" | null>(null);
   useEffect(() => {
     let alive = true;
     ensureGuest()
       .then(async user => { const sid = await resolveCode(code); if (alive) setState(sid ? { user, sid } : "missing"); })
-      .catch(() => { if (alive) setState("error"); });
+      .catch(e => {
+        const code = String((e as { code?: string })?.code ?? "");
+        // 익명 로그인이 꺼진 프로젝트(콘솔 설정)면 진행자가 고쳐야 하는 문제라고 알려 준다
+        if (alive) setState(code === "auth/admin-restricted-operation" || code === "auth/operation-not-allowed" ? "auth" : "error");
+      });
     return () => { alive = false; };
   }, [code]);
   if (!state) return <Notice title="섬을 찾는 중…" />;
   if (state === "missing") return <Notice title="이 코드의 세션이 없어요" body="코드를 다시 확인하거나 진행자 화면의 QR을 찍어 주세요." again />;
+  if (state === "auth") return <Notice title="아직 참여를 받을 수 없어요" body="진행자에게 알려 주세요: 사이트의 익명 로그인 설정이 꺼져 있어요." again />;
   if (state === "error") return <Notice title="들어가지 못했어요" body="인터넷 연결을 확인하고 다시 열어 주세요." again />;
   return <Play sid={state.sid} user={state.user} />;
 }
