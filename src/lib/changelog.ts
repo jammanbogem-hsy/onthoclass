@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.22.2";
+export const APP_VERSION = "1.23.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.23.0",
+    date: "2026-10-17",
+    kind: "minor",
+    title: "브레인스토밍 판이 더 넓어졌어요",
+    items: [
+      "친구가 아주 많을 때는 방금 쓴 말풍선과 내 말풍선만 보이고, 확대하면 다시 모두 보여요",
+      "선생님: 러닝크루 밖에서도 QR로 100명까지 함께하는 '아이디어 섬'을 열 수 있어요",
+    ],
+  },
   {
     version: "1.22.2",
     date: "2026-10-16",

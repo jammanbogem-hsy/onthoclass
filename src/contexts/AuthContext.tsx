@@ -103,7 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(getAuthClient(), (u) => {
       setUser(u);
       setLoading(false);
-      if (u) {
+      // 익명 계정(아이디어 섬 /idea 참여자)은 러닝크루 사용자 문서를 만들지 않는다
+      if (u && !u.isAnonymous) {
         loadProfile(u);
       } else {
         setProfile(null);

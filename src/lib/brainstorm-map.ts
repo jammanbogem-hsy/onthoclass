@@ -11,6 +11,14 @@ export const VIEW_W = (MAP_COLS + 0.5) * W;
 export const VIEW_H = (MAP_ROWS - 1) * 0.75 * H + H;
 export const CELL_R = SIZE;
 
+/** 판 크기(칸 수 · 판 좌표 폭/높이). 학급 판은 CLASS_GRID, 인원이 많은 판은 makeGrid 로 더 크게. */
+export type Grid = { cols: number; rows: number; w: number; h: number };
+export const makeGrid = (cols: number, rows: number): Grid => ({ cols, rows, w: (cols + 0.5) * W, h: (rows - 1) * 0.75 * H + H });
+export const CLASS_GRID = makeGrid(MAP_COLS, MAP_ROWS);
+/** 예상 인원 → 판 크기(섬 넓이가 인원에 비례하게) */
+export const GRID_FOR: Record<number, Grid> = { 30: CLASS_GRID, 60: makeGrid(62, 36), 100: makeGrid(80, 46) };
+export const gridFor = (size: number) => GRID_FOR[size] ?? (size > 60 ? GRID_FOR[100] : size > 30 ? GRID_FOR[60] : CLASS_GRID);
+
 /** 스플래툰 잉크처럼 쨍한 색들 — 이웃한 학생끼리 겹치지 않게 순서대로 돌려 쓴다. */
 export const INK_COLORS = ["#ff2d8a", "#ffd000", "#22d36b", "#3d6bff", "#ff7a00", "#9b3cff", "#00c4dd", "#ff4040", "#a8e600", "#ff5ac8", "#00b894", "#6c5ce7"];
 
@@ -34,37 +42,37 @@ export function cellCenter(c: number, r: number) {
   return { x: (c + (r % 2 ? 1 : 0.5)) * W, y: SIZE + r * 0.75 * H };
 }
 
-export function neighbors(c: number, r: number): [number, number][] {
+export function neighbors(c: number, r: number, g: Grid = CLASS_GRID): [number, number][] {
   const odd = r % 2 === 1;
   const d = odd ? [[1, 0], [-1, 0], [0, -1], [1, -1], [0, 1], [1, 1]] : [[1, 0], [-1, 0], [-1, -1], [0, -1], [-1, 1], [0, 1]];
-  return d.map(([dc, dr]) => [c + dc, r + dr] as [number, number]).filter(([x, y]) => x >= 0 && y >= 0 && x < MAP_COLS && y < MAP_ROWS);
+  return d.map(([dc, dr]) => [c + dc, r + dr] as [number, number]).filter(([x, y]) => x >= 0 && y >= 0 && x < g.cols && y < g.rows);
 }
 
-const idx = (c: number, r: number) => r * MAP_COLS + c;
+const idx = (c: number, r: number, g: Grid) => r * g.cols + c;
 
 /** 섬 모양(활동마다 조금씩 다르게) — 타원 + 가장자리 흔들림. */
-export function islandCells(seedKey: string): Cell[] {
+export function islandCells(seedKey: string, g: Grid = CLASS_GRID): Cell[] {
   const seed = hash(seedKey) % 100000;
   const cells: Cell[] = [];
-  for (let r = 0; r < MAP_ROWS; r++) for (let c = 0; c < MAP_COLS; c++) {
+  for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
     const { x, y } = cellCenter(c, r);
-    const dx = (x - VIEW_W / 2) / (VIEW_W / 2 - W * 0.6); const dy = (y - VIEW_H / 2) / (VIEW_H / 2 - SIZE * 0.6);
-    if (dx * dx + dy * dy < 0.9 + (wobble(c, r, seed) - 0.5) * 0.35) cells.push({ i: idx(c, r), c, r, x, y });
+    const dx = (x - g.w / 2) / (g.w / 2 - W * 0.6); const dy = (y - g.h / 2) / (g.h / 2 - SIZE * 0.6);
+    if (dx * dx + dy * dy < 0.9 + (wobble(c, r, seed) - 0.5) * 0.35) cells.push({ i: idx(c, r, g), c, r, x, y });
   }
   // 동떨어진 한두 칸(바다 위 점)은 지운다
   const has = new Set(cells.map(c => c.i));
-  return cells.filter(cell => neighbors(cell.c, cell.r).filter(([c, r]) => has.has(idx(c, r))).length >= 2);
+  return cells.filter(cell => neighbors(cell.c, cell.r, g).filter(([c, r]) => has.has(idx(c, r, g))).length >= 2);
 }
 
 /**
  * 집 칸 자리들 — 서로 최대한 멀리 떨어진 칸을 차례로 고른다(가장 먼 점 고르기).
  * 앞쪽 자리일수록 고르게 퍼져 있어서, 참여 순서대로 앉히면 몇 명이든 섬 전체에 흩어진다.
  */
-export function homeSlots(cells: Cell[], count: number, seedKey: string): number[] {
+export function homeSlots(cells: Cell[], count: number, seedKey: string, g: Grid = CLASS_GRID): number[] {
   if (!cells.length) return [];
   // 가장자리 바로 위는 잉크가 바다로 막히니 피한다
   const has = new Set(cells.map(c => c.i));
-  const inner = cells.filter(cell => neighbors(cell.c, cell.r).filter(([c, r]) => has.has(idx(c, r))).length === 6);
+  const inner = cells.filter(cell => neighbors(cell.c, cell.r, g).filter(([c, r]) => has.has(idx(c, r, g))).length === 6);
   const pool = inner.length >= count ? inner : cells;
   const first = pool[hash(seedKey) % pool.length];
   const slots = [first]; const dist = pool.map(p => Math.hypot(p.x - first.x, p.y - first.y));
@@ -91,10 +99,10 @@ export type Territory = {
  * 땅따먹기 계산. painters 는 처음 아이디어를 낸 순서 — 순서가 그대로면 이미 있는 학생의 집은 바뀌지 않는다.
  * 섬이 남아 있으면 아이디어 1개당 6칸씩, 꽉 차면 아이디어 비율만큼 칠한다.
  */
-export function paintTerritory(seedKey: string, painters: Painter[]): Territory {
-  const cells = islandCells(seedKey);
+export function paintTerritory(seedKey: string, painters: Painter[], g: Grid = CLASS_GRID): Territory {
+  const cells = islandCells(seedKey, g);
   const byIdx = new Map(cells.map(c => [c.i, c]));
-  const slots = homeSlots(cells, Math.max(painters.length, 1), seedKey);
+  const slots = homeSlots(cells, Math.max(painters.length, 1), seedKey, g);
   const owner = new Map<number, number>();
   const homes: Cell[] = []; const area = painters.map(() => 0);
   // 섬이 다 찰 만큼 아이디어가 모이면 그때부터는 '아이디어 비율'만큼 나눠 칠한다(스플래툰 영역 %처럼).
@@ -124,8 +132,8 @@ export function paintTerritory(seedKey: string, painters: Painter[]): Territory 
     }
     if (k < 0) break;
     const home = homes[k]; let best: Cell | null = null; let bestD = Infinity;
-    for (const cell of mine[k]) for (const [c, r] of neighbors(cell.c, cell.r)) {
-      const n = byIdx.get(idx(c, r));
+    for (const cell of mine[k]) for (const [c, r] of neighbors(cell.c, cell.r, g)) {
+      const n = byIdx.get(idx(c, r, g));
       if (!n || owner.has(n.i)) continue;
       const d = Math.hypot(n.x - home.x, n.y - home.y);
       if (d < bestD) { bestD = d; best = n; }
@@ -148,7 +156,8 @@ export type WorldLayout = { w: number; h: number; cols: number; rows: number; of
  * 섬 n개 배치 — 화면 비율(screen = 가로/세로)에 맞춰 섬 하나가 가장 크게 보이는 열 수를 고른다.
  * 마지막 줄 섬이 모자라면 가운데로 모은다. 섬이 하나면 이름표 자리 없이 예전과 같다.
  */
-export function worldLayout(n: number, screen = 1.9): WorldLayout {
+export function worldLayout(n: number, screen = 1.9, g: Grid = CLASS_GRID): WorldLayout {
+  const VIEW_W = g.w; const VIEW_H = g.h;
   if (n <= 1) return { w: VIEW_W, h: VIEW_H, cols: 1, rows: 1, offsets: [{ x: 0, y: 0 }] };
   const cellW = VIEW_W + ISLAND_GAP; const cellH = VIEW_H + LABEL_H + ISLAND_GAP;
   let best = { cols: 1, size: 0 };

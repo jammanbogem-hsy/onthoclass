@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, ensureSeat, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
-import { CELL_R, inkColor, LABEL_H, paintTerritory, VIEW_H, VIEW_W, worldLayout, type Cell, type Painter, type Territory } from "@/lib/brainstorm-map";
+import { CELL_R, CLASS_GRID, inkColor, LABEL_H, paintTerritory, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
 import { assignChars, charThumb } from "@/lib/brainstorm-chars";
 import { spreadBubbles } from "@/lib/bubble-spread";
 import { blocksToPlainText } from "@/components/BlockEditor";
@@ -38,7 +38,7 @@ const FEET = CELL_R * 0.5;
 const TILE = 12;
 
 /** 섬 가장자리 칸 중 서로 떨어진 몇 곳에 덤불·바위를 둔다(활동마다 같은 자리). */
-function edgeProps(cells: Cell[]) {
+function edgeProps(cells: Cell[], max = 12) {
   const has = new Set(cells.map(c => `${c.c},${c.r}`));
   const isEdge = (c: Cell) => {
     let n = 0;
@@ -47,7 +47,7 @@ function edgeProps(cells: Cell[]) {
   };
   const picks: { i: number; x: number; y: number; kind: "bush" | "rock" }[] = [];
   for (const c of [...cells].sort((a, b) => ((a.i * 2654435761) % 997) - ((b.i * 2654435761) % 997))) {
-    if (picks.length >= 12 || !isEdge(c)) continue;
+    if (picks.length >= max || !isEdge(c)) continue;
     if (picks.some(p => Math.hypot(p.x - c.x, p.y - c.y) < 70)) continue;
     picks.push({ i: c.i, x: c.x, y: c.y, kind: picks.length % 3 === 2 ? "rock" : "bush" });
   }
@@ -56,20 +56,21 @@ function edgeProps(cells: Cell[]) {
 
 // 땅 계산은 섬마다 아이디어 수가 바뀔 때만 다시 한다(섬이 여러 개라도 바뀐 섬만)
 const territoryCache = new Map<string, Territory>();
-function territoryFor(seed: string, painters: Painter[]) {
-  const key = `${seed}|${painters.map(p => `${p.uid}:${p.ideas}`).join(",")}`;
+function territoryFor(seed: string, painters: Painter[], g: Grid) {
+  const key = `${seed}|${g.cols}x${g.rows}|${painters.map(p => `${p.uid}:${p.ideas}`).join(",")}`;
   let t = territoryCache.get(key);
   if (!t) {
-    t = paintTerritory(seed, painters);
+    t = paintTerritory(seed, painters, g);
     if (territoryCache.size > 80) territoryCache.delete(territoryCache.keys().next().value!);
     territoryCache.set(key, t);
   }
   return t;
 }
 const propsCache = new Map<string, ReturnType<typeof edgeProps>>();
-function propsFor(seed: string, cells: Cell[]) {
-  let p = propsCache.get(seed);
-  if (!p) { p = edgeProps(cells); propsCache.set(seed, p); }
+function propsFor(seed: string, cells: Cell[], g: Grid) {
+  const key = `${seed}|${g.cols}x${g.rows}`;
+  let p = propsCache.get(key);
+  if (!p) { p = edgeProps(cells, Math.round(12 * Math.sqrt(cells.length / 700))); propsCache.set(key, p); }
   return p;
 }
 
@@ -82,6 +83,16 @@ export default function BrainstormRoom() {
 
 /** 판에 그릴 섬 하나 = 한 반의 브레인스토밍 활동 */
 export type IslandData = { cid: string; lid: string; qid: string; name: string; ideas: Idea[] };
+
+/** 아이디어 쓰기·지우기 — 학급 판은 차시 활동에, 따로 여는 세션 판(/idea)은 세션에 저장한다. */
+export type BoardStore = {
+  add: (island: IslandData, uid: string, name: string, text: string) => Promise<void>;
+  remove: (island: IslandData, ideaId: string) => Promise<void>;
+};
+const classStore: BoardStore = {
+  add: (I, uid, name, text) => addIdea(I.cid, I.lid, I.qid, uid, name, text),
+  remove: (I, id) => deleteIdea(I.cid, I.lid, I.qid, id),
+};
 
 function Room({ cid, lid, qid }: { cid: string; lid: string; qid: string }) {
   const { user, loading, configured } = useAuth();
@@ -142,12 +153,18 @@ function Room({ cid, lid, qid }: { cid: string; lid: string; qid: string }) {
     canLink={teacher && (!linked || linked.ownerId === user.uid)} question={question} members={members} now={now} error={error} />;
 }
 
-export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, question, members, now, error }: {
+export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, question, members, now, error,
+  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe }: {
   islands: IslandData[]; home: number; uid: string; myName: string; teacher: boolean; canLink?: boolean;
-  question: Question; members: Member[]; now: number; error: string;
+  question: Pick<Question, "title" | "text">; members: Member[]; now: number; error: string;
+  /** 판 크기(인원이 많은 세션은 더 큰 판) · 저장소 · 머리글 꼬리표 · 머리글 도구 더하기 · 판 위에 띄울 것 */
+  grid?: Grid; store?: BoardStore; kicker?: string; extraTools?: ReactNode; overlay?: ReactNode;
+  /** 아래 쓰기 칸을 보일지 · 마감돼 못 쓸 때 쓰기 칸 대신 보일 말 · 내 자리가 생기면 거기로 확대해 보여 주기(휴대폰 참여자) */
+  composer?: boolean; closedNote?: string; startOnMe?: boolean;
 }) {
+  const VIEW_W = grid.w; const VIEW_H = grid.h;
   const multi = islands.length > 1;
-  const layout = useMemo(() => worldLayout(islands.length), [islands.length]);
+  const layout = useMemo(() => worldLayout(islands.length, 1.9, grid), [islands.length, grid]);
   const WW = layout.w; const WH = layout.h;
   const zoomMax = 4 * Math.max(layout.cols, layout.rows);
   const clampView = useCallback((v: BoardView): BoardView => {
@@ -159,7 +176,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
     const o = layout.offsets[n] ?? { x: 0, y: 0 };
     const s = Math.min(WW / (VIEW_W * 1.04), WH / ((VIEW_H + LABEL_H) * 1.08));
     return clampView({ s, x: o.x + VIEW_W / 2 - WW / s / 2, y: o.y + (VIEW_H - LABEL_H) / 2 - WH / s / 2 });
-  }, [layout, WW, WH, clampView]);
+  }, [layout, WW, WH, VIEW_W, VIEW_H, clampView]);
 
   const [showNames, setShowNames] = useState(true);
   const [panel, setPanel] = useState(false);
@@ -196,10 +213,10 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
     const byUid = new Map<string, Idea[]>();
     for (const idea of is.ideas) { const list = byUid.get(idea.uid) ?? []; list.push(idea); byUid.set(idea.uid, list); }
     const people = [...byUid.entries()].map(([id, list]) => ({ uid: id, ideas: list, name: list[list.length - 1].name }));
-    const map = territoryFor(is.qid, people.map(p => ({ uid: p.uid, ideas: p.ideas.length })));
+    const map = territoryFor(is.qid, people.map(p => ({ uid: p.uid, ideas: p.ideas.length })), grid);
     const chars = assignChars(people.map(p => p.uid));
-    return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells) };
-  }), [islands, layout]);
+    return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells, grid) };
+  }), [islands, layout, grid]);
   // 판 위 모든 학생(섬 여럿이면 같은 사람도 섬마다 따로 — 선생님이 여러 반에 쓴 경우)
   const everyone = useMemo(() => isles.flatMap(I => I.people.map((p, k) => {
     const h = I.map.homes[k];
@@ -210,6 +227,14 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
   const nameOf = (n: number, id: string, fallback: string) => (n === home ? members.find(m => m.uid === id)?.displayName : "") || fallback;
   const totalIdeas = islands.reduce((a, i) => a + i.ideas.length, 0);
   const select = (id: string) => { setFocus(f => (f === id ? null : id)); setPanel(true); };
+  // 휴대폰 참여자: 내 땅이 처음 생기면 그 자리로 확대해 보여 준다(한 번만)
+  const myPos = startOnMe ? everyone.find(e => e.id === `${home}:${uid}`)?.home : null;
+  const [centered, setCentered] = useState(false);
+  if (myPos && !centered) {
+    setCentered(true);
+    const s = Math.min(zoomMax, 2.4);
+    setView(clampView({ s, x: myPos.x - WW / s / 2, y: myPos.y - WH / s / 2 }));
+  }
 
   const worldStyle = { transform: `scale(${view.s}) translate(${(-view.x / WW) * 100}%, ${(-view.y / WH) * 100}%)`, "--zoom": view.s } as CSSProperties;
   // 말풍선 겹침 풀기 — 화면에 그려진 뒤 실제 크기를 재서 서로 비키게 한다(리액트 상태 없이 스타일만 바꿈)
@@ -233,11 +258,14 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
     if (bubbleAll && crowd() > 0.28) {
       board.dataset.compact = "1";
       if (crowd() > 0.3) board.dataset.compact = "2";
+      // 3단계(수십 명이 한 판에): 방금 쓴·내·고른 친구 말풍선만 — 확대하면 다시 보인다
+      if (crowd() > 0.34) board.dataset.compact = "3";
     }
-    const rects = wraps.map(w => w.getBoundingClientRect());
+    const shown = wraps.filter(w => w.getBoundingClientRect().width > 0);
+    const rects = shown.map(w => w.getBoundingClientRect());
     const shifts = spreadBubbles(rects.map(r => ({ x: r.left, y: r.top, w: r.width, h: r.height })), { x: area.left + 4, y: area.top + 4, w: area.width - 8, h: area.height - 8 });
     shifts.forEach((d, i) => {
-      const w = wraps[i];
+      const w = shown[i];
       w.style.setProperty("--bx", `${d.dx}px`); w.style.setProperty("--by", `${d.dy}px`);
       const len = Math.hypot(d.dx, d.dy);
       if (len > 14) { w.dataset.far = ""; w.style.setProperty("--ll", `${len}px`); w.style.setProperty("--la", `${Math.atan2(-d.dy, -d.dx)}rad`); }
@@ -249,7 +277,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
   return <main className={styles.page}>
     <header className={styles.top}>
       <div className={styles.topic}>
-        <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />브레인스토밍{multi ? ` · ${islands.length}개 반이 함께` : ""}</span>
+        <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />{kicker}{multi ? ` · ${islands.length}개 반이 함께` : ""}</span>
         <h1>{topic}</h1>
         {detail && <p>{detail}</p>}
       </div>
@@ -261,6 +289,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
         <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
         <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
         <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
+        {extraTools}
         {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{multi ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
         <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
       </div>
@@ -385,6 +414,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
           </div>
           {!everyone.length && <div className={styles.empty}><Icon name="water_drop" size={32} /><strong>첫 아이디어를 기다리는 중</strong><span>아이디어를 쓰면 내 색 잉크가 섬에 퍼져요!</span></div>}
         </div>
+        {overlay}
         <div className={styles.zoomBar} role="group" aria-label="판 확대·축소">
           <button type="button" onClick={() => zoomAt(1.4)} aria-label="확대" disabled={view.s >= zoomMax}><Icon name="add" size={20} /></button>
           <span>{Math.round(view.s * 100)}%</span>
@@ -411,7 +441,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
                 </button>
                 {(focus === p.id || ranking.length <= 6) && <ul className={styles.ideaList}>
                   {p.ideas.map(idea => <li key={idea.id}><span>{idea.text}</span>
-                    {(teacher || (I.n === home && idea.uid === uid)) && <button type="button" onClick={() => void deleteIdea(I.cid, I.lid, I.qid, idea.id)} aria-label="아이디어 지우기"><Icon name="delete" size={16} /></button>}
+                    {(teacher || (I.n === home && idea.uid === uid)) && <button type="button" onClick={() => void store.remove(I, idea.id)} aria-label="아이디어 지우기"><Icon name="delete" size={16} /></button>}
                   </li>)}
                 </ul>}
               </li>)}
@@ -422,13 +452,14 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
     </div>
 
     {/* 선생님도 써 볼 수 있다(테스트·예시 아이디어) — 선생님 글도 판에 똑같이 칠해진다. 쓰는 곳은 언제나 우리 반 섬 */}
-    {myIsle && <Composer teacher={teacher} cid={myIsle.cid} lid={myIsle.lid} qid={myIsle.qid} uid={uid} name={myName} mine={myIsle.ideas.filter(i => i.uid === uid)} color={inkColor(Math.max(0, myK))} joined={myK >= 0} />}
-    {linking && <LinkIslandsDialog cid={islands[home].cid} lid={islands[home].lid} question={question} onClose={() => setLinking(false)} />}
+    {myIsle && composer && (closedNote ? <p className={styles.closedNote}><Icon name="lock" size={18} />{closedNote}</p>
+      : <Composer teacher={teacher} island={myIsle} store={store} uid={uid} name={myName} mine={myIsle.ideas.filter(i => i.uid === uid)} color={inkColor(Math.max(0, myK))} joined={myK >= 0} />)}
+    {linking && <LinkIslandsDialog cid={islands[home].cid} lid={islands[home].lid} question={question as Question} onClose={() => setLinking(false)} />}
   </main>;
 }
 
 /** 학생 아이디어 쓰기 칸 — 판 아래에 붙어 있다. */
-function Composer({ teacher, cid, lid, qid, uid, name, mine, color, joined }: { teacher: boolean; cid: string; lid: string; qid: string; uid: string; name: string; mine: Idea[]; color: string; joined: boolean }) {
+function Composer({ teacher, island, store, uid, name, mine, color, joined }: { teacher: boolean; island: IslandData; store: BoardStore; uid: string; name: string; mine: Idea[]; color: string; joined: boolean }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -437,7 +468,7 @@ function Composer({ teacher, cid, lid, qid, uid, name, mine, color, joined }: { 
     e.preventDefault();
     if (!text.trim() || busy || full) return;
     setBusy(true); setErr("");
-    try { await addIdea(cid, lid, qid, uid, name, text); setText(""); }
+    try { await store.add(island, uid, name, text); setText(""); }
     catch { setErr("아이디어를 올리지 못했어요. 잠시 뒤 다시 해 주세요."); }
     finally { setBusy(false); }
   }
@@ -450,7 +481,7 @@ function Composer({ teacher, cid, lid, qid, uid, name, mine, color, joined }: { 
     </div>
     {err && <p role="alert" className={styles.composerErr}>{err}</p>}
     {mine.length > 0 && <ul className={styles.mine} aria-label="내 아이디어">
-      {mine.map(idea => <li key={idea.id}><span>{idea.text}</span><button type="button" onClick={() => void deleteIdea(cid, lid, qid, idea.id)} aria-label="내 아이디어 지우기"><Icon name="close" size={14} /></button></li>)}
+      {mine.map(idea => <li key={idea.id}><span>{idea.text}</span><button type="button" onClick={() => void store.remove(island, idea.id)} aria-label="내 아이디어 지우기"><Icon name="close" size={14} /></button></li>)}
     </ul>}
   </form>;
 }

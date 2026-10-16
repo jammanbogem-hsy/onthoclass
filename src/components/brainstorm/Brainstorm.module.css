@@ -45,9 +45,10 @@
 [data-compact] .bubbleWrap:not([data-open]) .bubbleList{max-width:clamp(120px,11vw,170px);padding:5px 9px;font-size:.92em}
 [data-compact] .bubbleWrap:not([data-open]) .bubbleText{-webkit-line-clamp:1}
 [data-compact] .bubbleWrap:not([data-open]) .bubbleText:not(:nth-last-of-type(-n+2)){display:none}
-[data-compact="2"] .bubbleWrap:not([data-open]) .bubbleText:not(:last-of-type){display:none}
-[data-compact="2"] .bubbleWrap:not([data-open]) .bubble{max-width:clamp(96px,8vw,130px);padding:3px 8px;font-size:.82em;border-width:2.5px}
-[data-compact="2"] .bubbleWrap:not([data-open]) .more{margin-top:2px;font-size:.72em}
+[data-compact]:not([data-compact="1"]) .bubbleWrap:not([data-open]) .bubbleText:not(:last-of-type){display:none}
+[data-compact]:not([data-compact="1"]) .bubbleWrap:not([data-open]) .bubble{max-width:clamp(96px,8vw,130px);padding:3px 8px;font-size:.82em;border-width:2.5px}
+[data-compact]:not([data-compact="1"]) .bubbleWrap:not([data-open]) .more{margin-top:2px;font-size:.72em}
+[data-compact="3"] .player:not(.fresh):not(.me):not(.focused) .bubbleWrap:not([data-open]){display:none}
 .lines{display:flex;flex-direction:column;gap:3px}
 .bubbleList{max-width:clamp(150px,16vw,240px);padding:8px 11px}
 /* 펼친 말풍선: 전부, 줄 제한 없이 — 길면 말풍선 안에서 스크롤 */
@@ -180,3 +181,5 @@
   .ink,.bubble,.fresh .bubble{animation:none}
 }
 .opened .bubble{box-shadow:0 6px 0 rgba(0,0,0,.25)}
+
+.closedNote{position:sticky;bottom:0;display:flex;align-items:center;justify-content:center;gap:8px;margin:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:var(--md-sys-color-surface-container);border-top:1px solid var(--md-sys-color-outline-variant);font-weight:600;color:var(--md-sys-color-on-surface-variant)}

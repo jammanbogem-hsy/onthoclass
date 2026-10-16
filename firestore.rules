@@ -77,6 +77,71 @@ service cloud.firestore {
       }
     }
 
+    // 아이디어 섬(/idea, 러닝크루 밖 브레인스토밍 세션) — src/lib/idea-session.ts
+    // 세션 만들기: 익명이 아닌 로그인 계정(구글). 고치기·마감·지우기: 만든 진행자만.
+    // 읽기: 참여 코드로 세션을 찾은 로그인 사용자(익명 참여자 포함). 쓰기: 열린 세션에 참여한 본인만.
+    function ideaHost() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+    function ideaSession(sid) {
+      return get(/databases/$(database)/documents/ideaSessions/$(sid)).data;
+    }
+    match /ideaSessions/{sid} {
+      allow get: if signedIn();
+      allow list: if signedIn() && resource.data.ownerId == uid();
+      allow create: if ideaHost()
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'title', 'detail', 'code', 'size', 'status', 'createdAt'])
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.ownerName is string && request.resource.data.ownerName.size() <= 40
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
+        && request.resource.data.detail is string && request.resource.data.detail.size() <= 300
+        && request.resource.data.code is string && request.resource.data.code.matches('[0-9]{6}')
+        && request.resource.data.size in [30, 60, 100]
+        && request.resource.data.status == 'open'
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && resource.data.ownerId == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'detail', 'status'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
+        && request.resource.data.detail is string && request.resource.data.detail.size() <= 300
+        && request.resource.data.status in ['open', 'closed'];
+      allow delete: if signedIn() && resource.data.ownerId == uid();
+
+      match /players/{pid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && pid == uid()
+          && ideaSession(sid).status == 'open'
+          && request.resource.data.keys().hasOnly(['name', 'at'])
+          && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 12
+          && request.resource.data.at == request.time;
+        allow delete: if signedIn() && (pid == uid() || ideaSession(sid).ownerId == uid());
+      }
+      // 아이디어 문서 이름 = 본인uid_번호(0~19) — 한 사람이 20개보다 많이 못 쓴다
+      match /ideas/{iid} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && ideaSession(sid).status == 'open'
+          && exists(/databases/$(database)/documents/ideaSessions/$(sid)/players/$(uid()))
+          && iid.matches(uid() + '_([0-9]|1[0-9])')
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'text', 'at'])
+          && request.resource.data.uid == uid()
+          && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 12
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 100
+          && request.resource.data.at == request.time;
+        allow delete: if signedIn() && (resource.data.uid == uid() || ideaSession(sid).ownerId == uid());
+      }
+    }
+    // 6자리 참여 코드 → 세션. 세션과 같은 트랜잭션에서 그 세션의 진행자만 만든다.
+    match /ideaCodes/{code} {
+      allow get: if signedIn();
+      allow create: if ideaHost()
+        && request.resource.data.keys().hasOnly(['sid', 'ownerId'])
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.sid is string
+        && getAfter(/databases/$(database)/documents/ideaSessions/$(request.resource.data.sid)).data.ownerId == uid()
+        && getAfter(/databases/$(database)/documents/ideaSessions/$(request.resource.data.sid)).data.code == code;
+      allow delete: if signedIn() && resource.data.ownerId == uid();
+    }
+
     match /meta/{docId} {
       allow read: if true;
       allow write: if false;

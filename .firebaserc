@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "jammanboeng"
-  }
+  },
+  "targets": {
+    "jammanboeng": {
+      "hosting": {
+        "main": [
+          "jammanboeng"
+        ],
+        "idea": [
+          "jambrain"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

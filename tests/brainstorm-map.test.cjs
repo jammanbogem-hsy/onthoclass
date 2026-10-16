@@ -88,3 +88,18 @@ test('world layout: islands never overlap, fit inside, and one island keeps the 
   // 3개 반은 한 줄로 길게 늘어놓지 않는다(화면에 섬이 너무 작아짐)
   assert.ok(M.worldLayout(3).cols < 3);
 });
+
+test('big session grid: 100 people all get their own home and ground, island scales with the grid', () => {
+  const g = M.gridFor(100);
+  assert.ok(g.cols > M.MAP_COLS && g.rows > M.MAP_ROWS);
+  assert.equal(JSON.stringify(M.gridFor(30)), JSON.stringify(M.CLASS_GRID));
+  const small = M.islandCells('s1').length; const big = M.islandCells('s1', g).length;
+  assert.ok(big > small * 3, `big ${big} vs small ${small}`);
+  const painters = Array.from({ length: 100 }, (_, k) => ({ uid: 'p' + k, ideas: 1 + (k % 4) }));
+  const t = M.paintTerritory('s1', painters, g);
+  assert.equal(new Set(t.homes.map(h => h.i)).size, 100);
+  assert.ok(t.area.every(a => a > 0), 'everyone painted');
+  for (const c of t.cells) assert.ok(c.x <= g.w && c.y <= g.h);
+  // 학급 판(기본값)은 예전과 똑같다
+  assert.equal(JSON.stringify(M.paintTerritory('q1', painters.slice(0, 5)).homes), JSON.stringify(M.paintTerritory('q1', painters.slice(0, 5), M.CLASS_GRID).homes));
+});

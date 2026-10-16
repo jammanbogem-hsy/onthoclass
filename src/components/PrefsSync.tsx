@@ -29,7 +29,8 @@ import { getFont, isFontKey, setFontLocal } from "@/lib/fontTheme";
 export function PrefsSync() {
   const { user } = useAuth();
   const { setMaskedFromRemote } = useNameMask();
-  const uid = user?.uid ?? null;
+  // 익명 참여자(/idea)는 러닝크루 설정이 없다
+  const uid = user && !user.isAnonymous ? user.uid : null;
 
   useEffect(() => {
     setPrefsUid(uid);
