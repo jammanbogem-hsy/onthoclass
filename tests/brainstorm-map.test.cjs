@@ -118,11 +118,16 @@ test('csv export: one tidy table, header first, quotes escaped, student and idea
   const E = load('src/lib/brainstorm-export.ts');
   const at = Date.UTC(2026, 9, 18, 0, 5, 0);
   const isl = [{ name: '1반', students: [{ name: '김"민', share: 0.123, ideas: [{ id: 'a', uid: 'u', name: '김"민', text: '나무, 심기', at }, { id: 'b', uid: 'u', name: '김"민', text: '텀블러', at: at + 1000 }] }] }];
-  const s = E.brainstormCsv('주제', isl, 'student').replace(/^﻿/, '').trim().split('\r\n');
+  const full = E.brainstormCsv('주제', isl, 'student').replace(/^\ufeff/, '');
+  // 표 → 빈 줄 → AI 안내(첫 칸에 한 줄씩)
+  const [tablePart, guidePart] = full.split('\r\n\r\n');
+  const s = tablePart.split('\r\n');
   assert.equal(s.length, 2);
+  assert.ok(guidePart.startsWith(`"${E.PROMPT_MARK}"`) && guidePart.includes('임베딩') && guidePart.includes('대시보드'));
+  assert.ok(guidePart.trim().split('\r\n').every(l => /^".*"$/.test(l)), 'each guide line is a single quoted cell');
   assert.ok(s[0].startsWith('"주제","반","학생_코드"'));
   assert.ok(s[1].includes('"김""민"') && s[1].includes('"A-01"') && s[1].includes('"12.3"') && s[1].includes('"[1] 나무, 심기 | [2] 텀블러"'));
   assert.ok(s[1].includes('"2026-10-18 09:05:00"'));
-  const i = E.brainstormCsv('주제', isl, 'idea').trim().split('\r\n');
+  const i = E.brainstormCsv('주제', isl, 'idea').split('\r\n\r\n')[0].replace(/^\ufeff/, '').split('\r\n');
   assert.equal(i.length, 3);
 });

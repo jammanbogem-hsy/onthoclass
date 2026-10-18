@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.24.0";
+export const APP_VERSION = "1.24.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,15 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.24.1",
+    date: "2026-10-18",
+    kind: "patch",
+    title: "브레인스토밍 CSV에 AI 분석 안내",
+    items: [
+      "선생님: 브레인스토밍 CSV 아래에 시각화·대시보드·임베딩을 바로 시킬 수 있는 AI 안내문이 붙어요",
+    ],
+  },
   {
     version: "1.24.0",
     date: "2026-10-18",
