@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.23.0";
+export const APP_VERSION = "1.24.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.24.0",
+    date: "2026-10-18",
+    kind: "minor",
+    title: "브레인스토밍 땅이 솟아올라요",
+    items: [
+      "아이디어를 많이 쓸수록 내 땅이 언덕처럼 높아져요",
+      "친구 땅과 맞닿은 곳은 두 색이 섞여 번져요",
+      "여러 반이 함께할 때 다른 반 섬은 선생님이 열어 주면 보여요",
+      "선생님: 학생별·아이디어별 CSV를 받아 AI로 분석할 수 있어요",
+    ],
+  },
   {
     version: "1.23.0",
     date: "2026-10-17",

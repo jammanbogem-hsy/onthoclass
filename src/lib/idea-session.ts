@@ -139,15 +139,3 @@ export async function addSessionIdea(sid: string, uid: string, name: string, tex
 export async function deleteSessionIdea(sid: string, id: string) {
   await deleteDoc(doc(db(), "ideaSessions", sid, "ideas", id));
 }
-
-/** 결과 내려받기(엑셀에서 한글이 깨지지 않게 BOM) */
-export function ideasCsv(s: IdeaSession, ideas: Idea[]) {
-  const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
-  const time = (t: number) => new Date(t).toLocaleString("ko-KR", { hour12: false });
-  const rows = [["번호", "이름", "아이디어", "쓴 시각"], ...ideas.map((i, k) => [String(k + 1), i.name, i.text, time(i.at)])];
-  const body = "﻿" + `${q("주제")},${q(s.title)}\n\n` + rows.map(r => r.map(q).join(",")).join("\n");
-  const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url; a.download = `아이디어섬-${s.title.slice(0, 20).replace(/[\\/:*?"<>|]/g, "") || s.code}.csv`;
-  a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-}

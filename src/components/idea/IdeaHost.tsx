@@ -10,7 +10,7 @@ import { BrainstormBoard, type BoardStore, type IslandData } from "@/components/
 import { gridFor } from "@/lib/brainstorm-map";
 import type { Idea } from "@/lib/brainstorm";
 import type { Member } from "@/lib/classes";
-import { createSession, deleteSession, deleteSessionIdea, DETAIL_MAX, ideasCsv, joinUrl, SESSION_SIZES, TITLE_MAX, updateSession, watchMySessions, watchPlayers, watchSession, watchSessionIdeas, type IdeaSession, type Player } from "@/lib/idea-session";
+import { createSession, deleteSession, deleteSessionIdea, DETAIL_MAX, joinUrl, SESSION_SIZES, TITLE_MAX, updateSession, watchMySessions, watchPlayers, watchSession, watchSessionIdeas, type IdeaSession, type Player } from "@/lib/idea-session";
 import { Icon } from "@/components/Icon";
 import { QrCode } from "./QrCode";
 import { Notice } from "./IdeaPlay";
@@ -144,7 +144,6 @@ function HostBoard({ sid, uid }: { sid: string; uid: string }) {
     <Link href="/idea/host/" className={boardStyles.chip}><Icon name="arrow_back" size={18} />목록</Link>
     <button type="button" className={boardStyles.chip} onClick={() => setBigQr(true)}><Icon name="qr_code_2" size={18} />참여 QR</button>
     <button type="button" className={boardStyles.chip} aria-pressed={closed} onClick={toggle}><Icon name={closed ? "lock" : "lock_open"} size={18} />{closed ? "마감됨 · 다시 열기" : "마감하기"}</button>
-    <button type="button" className={boardStyles.chip} onClick={() => ideasCsv(session, ideas)} disabled={!ideas.length}><Icon name="download" size={18} />CSV</button>
   </>;
   // 판 구석의 작은 QR — 늦게 온 참여자용. 누르면 크게.
   const corner = !closed && <button type="button" className={styles.cornerQr} onClick={() => setBigQr(true)} aria-label="참여 QR 크게 보기">

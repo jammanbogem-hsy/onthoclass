@@ -44,7 +44,11 @@ service cloud.firestore {
       return signedIn() && w is string && w != '' && exists(seat)
         && cid in get(/databases/$(database)/documents/brainstormWorlds/$(w)).data.cids
         && get(seat).data.cid in get(/databases/$(database)/documents/brainstormWorlds/$(w)).data.cids
-        && isMember(get(seat).data.cid);
+        && isMember(get(seat).data.cid)
+        // 다른 반 섬 내용은 선생님이 '보여 주기'를 켰을 때만(선생님은 언제나)
+        && (get(/databases/$(database)/documents/brainstormWorlds/$(w)).data.get('shared', false) == true
+          || get(/databases/$(database)/documents/brainstormWorlds/$(w)).data.ownerId == uid()
+          || get(memberDoc(get(seat).data.cid)).data.role == 'teacher');
     }
 
     // 학급 멤버이거나 학급 소유 교사의 팀원이면 콘텐츠(차시/활동) 읽기 허용

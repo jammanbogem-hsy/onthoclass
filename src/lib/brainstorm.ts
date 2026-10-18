@@ -49,7 +49,8 @@ export async function deleteIdea(cid: string, lid: string, qid: string, id: stri
 /* ---------- 여러 반 섬 연결 ---------- */
 
 export type Island = { cid: string; lid: string; qid: string; name: string };
-export type BrainWorld = { id: string; ownerId: string; islands: Island[] };
+/** shared: 학생에게 다른 반 섬 내용을 보여 줄지(선생님 토글, 처음엔 꺼짐 — 규칙에서도 막는다) */
+export type BrainWorld = { id: string; ownerId: string; islands: Island[]; shared: boolean };
 /** 한 세계에 묶을 수 있는 반 수 */
 export const WORLD_MAX = 9;
 
@@ -62,8 +63,13 @@ export function watchWorld(wid: string, cb: (w: BrainWorld | null) => void, onEr
     const islands = (Array.isArray(v.islands) ? v.islands : []).map((x: Record<string, unknown>) => ({
       cid: String(x.cid ?? ""), lid: String(x.lid ?? ""), qid: String(x.qid ?? ""), name: String(x.name ?? ""),
     })).filter((x: Island) => x.cid && x.lid && x.qid);
-    cb({ id: snap.id, ownerId: String(v.ownerId ?? ""), islands });
+    cb({ id: snap.id, ownerId: String(v.ownerId ?? ""), islands, shared: v.shared === true });
   }, onError);
+}
+
+/** 다른 반 섬 보여 주기 켜기/끄기(세계를 만든 선생님만) */
+export async function setWorldShared(wid: string, shared: boolean) {
+  await setDoc(worldRef(wid), { shared }, { merge: true });
 }
 
 /** 판을 연 학생·선생님의 자리 — 이 반 구성원임을 세계에 알린다(다른 반 섬 읽기 권한의 근거). */

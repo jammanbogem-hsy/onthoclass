@@ -103,3 +103,26 @@ test('big session grid: 100 people all get their own home and ground, island sca
   // 학급 판(기본값)은 예전과 똑같다
   assert.equal(JSON.stringify(M.paintTerritory('q1', painters.slice(0, 5)).homes), JSON.stringify(M.paintTerritory('q1', painters.slice(0, 5), M.CLASS_GRID).homes));
 });
+
+test('seams sit between two different owners; colors mix; lift grows with ideas and caps', () => {
+  const t = M.paintTerritory('q5', Array.from({ length: 8 }, (_, k) => ({ uid: 'u' + k, ideas: 20 })));
+  const s = M.seamsOf(t);
+  assert.ok(s.length > 0);
+  assert.ok(s.every(x => x.a !== x.b));
+  assert.equal(new Set(s.map(x => `${x.x},${x.y}`)).size, s.length);
+  assert.equal(M.mixColor('#ff0000', '#0000ff'), '#800080');
+  assert.equal(M.liftFor(0), 0); assert.ok(M.liftFor(3) > M.liftFor(1)); assert.equal(M.liftFor(50), M.LIFT_MAX);
+});
+
+test('csv export: one tidy table, header first, quotes escaped, student and idea modes', () => {
+  const E = load('src/lib/brainstorm-export.ts');
+  const at = Date.UTC(2026, 9, 18, 0, 5, 0);
+  const isl = [{ name: '1반', students: [{ name: '김"민', share: 0.123, ideas: [{ id: 'a', uid: 'u', name: '김"민', text: '나무, 심기', at }, { id: 'b', uid: 'u', name: '김"민', text: '텀블러', at: at + 1000 }] }] }];
+  const s = E.brainstormCsv('주제', isl, 'student').replace(/^﻿/, '').trim().split('\r\n');
+  assert.equal(s.length, 2);
+  assert.ok(s[0].startsWith('"주제","반","학생_코드"'));
+  assert.ok(s[1].includes('"김""민"') && s[1].includes('"A-01"') && s[1].includes('"12.3"') && s[1].includes('"[1] 나무, 심기 | [2] 텀블러"'));
+  assert.ok(s[1].includes('"2026-10-18 09:05:00"'));
+  const i = E.brainstormCsv('주제', isl, 'idea').trim().split('\r\n');
+  assert.equal(i.length, 3);
+});

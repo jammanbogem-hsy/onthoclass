@@ -177,3 +177,32 @@ export function worldLayout(n: number, screen = 1.9, g: Grid = CLASS_GRID): Worl
   });
   return { w, h, cols, rows, offsets };
 }
+
+/** 아이디어 수 → 땅이 솟는 높이(판 좌표). 많이 쓴 친구일수록 높은 언덕. */
+export const LIFT_MAX = 14;
+export const liftFor = (ideas: number) => (ideas > 0 ? Math.min(LIFT_MAX, ideas * 2) : 0);
+
+/** 두 잉크 색의 중간색 */
+export function mixColor(a: string, b: string) {
+  const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return "#" + x.map((v, i) => Math.round((v + y[i]) / 2).toString(16).padStart(2, "0")).join("");
+}
+
+/** 서로 다른 친구 땅이 맞닿은 곳 — 두 칸 사이 가운데 점(색을 섞어 칠할 자리). 같은 쌍은 한 번만. */
+export type Seam = { x: number; y: number; a: number; b: number };
+export function seamsOf(t: Territory, g: Grid = CLASS_GRID): Seam[] {
+  const byIdx = new Map(t.cells.map(c => [c.i, c]));
+  const out: Seam[] = [];
+  for (const [i, a] of t.owner) {
+    const cell = byIdx.get(i); if (!cell) continue;
+    for (const [c, r] of neighbors(cell.c, cell.r, g)) {
+      const j = idx(c, r, g); if (j <= i) continue;
+      const b = t.owner.get(j);
+      if (b === undefined || b === a) continue;
+      const n = byIdx.get(j)!;
+      out.push({ x: (cell.x + n.x) / 2, y: (cell.y + n.y) / 2, a, b });
+    }
+  }
+  return out;
+}

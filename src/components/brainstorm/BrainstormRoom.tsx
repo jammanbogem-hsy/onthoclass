@@ -7,8 +7,9 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { watchQuestion, type Question } from "@/lib/lessons";
-import { addIdea, deleteIdea, ensureSeat, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
-import { CELL_R, CLASS_GRID, inkColor, LABEL_H, paintTerritory, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
+import { addIdea, deleteIdea, ensureSeat, setWorldShared, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
+import { CELL_R, CLASS_GRID, INK_COLORS, inkColor, LABEL_H, LIFT_MAX, liftFor, mixColor, paintTerritory, seamsOf, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
+import { downloadBrainstormCsv, type ExportMode } from "@/lib/brainstorm-export";
 import { assignChars, charThumb } from "@/lib/brainstorm-chars";
 import { spreadBubbles } from "@/lib/bubble-spread";
 import { blocksToPlainText } from "@/components/BlockEditor";
@@ -54,6 +55,9 @@ function edgeProps(cells: Cell[], max = 12) {
   return picks;
 }
 
+/** 잉크 색 번호 쌍(작은 번호 먼저) — 섞은 색 그라디언트 이름 */
+const pairKey = (a: number, b: number) => { const x = a % INK_COLORS.length; const y = b % INK_COLORS.length; return x < y ? `${x}-${y}` : `${y}-${x}`; };
+
 // 땅 계산은 섬마다 아이디어 수가 바뀔 때만 다시 한다(섬이 여러 개라도 바뀐 섬만)
 const territoryCache = new Map<string, Territory>();
 function territoryFor(seed: string, painters: Painter[], g: Grid) {
@@ -82,7 +86,7 @@ export default function BrainstormRoom() {
 }
 
 /** 판에 그릴 섬 하나 = 한 반의 브레인스토밍 활동 */
-export type IslandData = { cid: string; lid: string; qid: string; name: string; ideas: Idea[] };
+export type IslandData = { cid: string; lid: string; qid: string; name: string; ideas: Idea[]; hidden?: boolean };
 
 /** 아이디어 쓰기·지우기 — 학급 판은 차시 활동에, 따로 여는 세션 판(/idea)은 세션에 저장한다. */
 export type BoardStore = {
@@ -127,7 +131,10 @@ function Room({ cid, lid, qid }: { cid: string; lid: string; qid: string }) {
   }, [wid, user, cid]);
 
   const linked = wid && world?.id === wid && world.w?.islands.some(i => i.cid === cid && i.qid === qid) ? world.w : null;
-  const islandsSig = linked ? linked.islands.map(i => `${i.cid}/${i.lid}/${i.qid}`).join("|") : `${cid}/${lid}/${qid}`;
+  // 다른 반 섬 내용: 선생님은 언제나, 학생은 선생님이 '보여 주기'를 켰을 때만(규칙에서도 막는다)
+  const isTeacher = member?.role === "teacher";
+  const seeOthers = !!linked && (isTeacher || linked.shared);
+  const islandsSig = linked ? linked.islands.filter(i => seeOthers || (i.cid === cid && i.qid === qid)).map(i => `${i.cid}/${i.lid}/${i.qid}`).join("|") : `${cid}/${lid}/${qid}`;
   useEffect(() => {
     const offs = islandsSig.split("|").map(key => {
       const [c, l, q] = key.split("/");
@@ -147,20 +154,26 @@ function Room({ cid, lid, qid }: { cid: string; lid: string; qid: string }) {
   if (wid && world?.id !== wid) return <Notice title="이어진 섬들을 불러오는 중…" />;
 
   const islands: IslandData[] = (linked ? linked.islands : [{ cid, lid, qid, name: "" }])
-    .map(i => ({ ...i, ideas: ideaMap[`${i.cid}/${i.lid}/${i.qid}`] ?? [] }));
+    .map(i => {
+      const hidden = !seeOthers && !(i.cid === cid && i.qid === qid);
+      return { ...i, hidden, ideas: hidden ? [] : ideaMap[`${i.cid}/${i.lid}/${i.qid}`] ?? [] };
+    });
   const home = Math.max(0, islands.findIndex(i => i.cid === cid && i.qid === qid));
   return <BrainstormBoard islands={islands} home={home} uid={user.uid} myName={member.displayName || user.displayName || "학생"} teacher={teacher}
-    canLink={teacher && (!linked || linked.ownerId === user.uid)} question={question} members={members} now={now} error={error} />;
+    canLink={teacher && (!linked || linked.ownerId === user.uid)} question={question} members={members} now={now} error={error}
+    shared={linked?.shared} onShare={linked && linked.ownerId === user.uid ? v => void setWorldShared(linked.id, v).catch(() => setError("공개 설정을 바꾸지 못했어요.")) : undefined} />;
 }
 
 export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, question, members, now, error,
-  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe }: {
+  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare }: {
   islands: IslandData[]; home: number; uid: string; myName: string; teacher: boolean; canLink?: boolean;
   question: Pick<Question, "title" | "text">; members: Member[]; now: number; error: string;
   /** 판 크기(인원이 많은 세션은 더 큰 판) · 저장소 · 머리글 꼬리표 · 머리글 도구 더하기 · 판 위에 띄울 것 */
   grid?: Grid; store?: BoardStore; kicker?: string; extraTools?: ReactNode; overlay?: ReactNode;
   /** 아래 쓰기 칸을 보일지 · 마감돼 못 쓸 때 쓰기 칸 대신 보일 말 · 내 자리가 생기면 거기로 확대해 보여 주기(휴대폰 참여자) */
   composer?: boolean; closedNote?: string; startOnMe?: boolean;
+  /** 여러 반 섬: 학생에게 다른 반 섬 내용을 보여 주는지 · 바꾸기(세계를 만든 선생님만) */
+  shared?: boolean; onShare?: (v: boolean) => void;
 }) {
   const VIEW_W = grid.w; const VIEW_H = grid.h;
   const multi = islands.length > 1;
@@ -215,18 +228,32 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
     const people = [...byUid.entries()].map(([id, list]) => ({ uid: id, ideas: list, name: list[list.length - 1].name }));
     const map = territoryFor(is.qid, people.map(p => ({ uid: p.uid, ideas: p.ideas.length })), grid);
     const chars = assignChars(people.map(p => p.uid));
-    return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells, grid) };
+    // 많이 쓴 친구일수록 땅이 솟는다. 앞(아래)쪽 땅이 뒤쪽 땅의 옆면을 가리도록 집이 위에 있는 친구부터 그린다.
+    const lifts = people.map(p => liftFor(p.ideas.length));
+    const order = people.map((_, k) => k).sort((a, b) => (map.homes[a]?.y ?? 0) - (map.homes[b]?.y ?? 0));
+    return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, lifts, order, seams: seamsOf(map, grid), off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells, grid) };
   }), [islands, layout, grid]);
   // 판 위 모든 학생(섬 여럿이면 같은 사람도 섬마다 따로 — 선생님이 여러 반에 쓴 경우)
   const everyone = useMemo(() => isles.flatMap(I => I.people.map((p, k) => {
     const h = I.map.homes[k];
-    return { id: `${I.n}:${p.uid}`, k, p, I, char: I.chars[k], color: inkColor(k), home: h ? { x: I.off.x + h.x, y: I.off.y + h.y } : null };
+    return { id: `${I.n}:${p.uid}`, k, p, I, char: I.chars[k], color: inkColor(k), home: h ? { x: I.off.x + h.x, y: I.off.y + h.y - I.lifts[k] } : null };
   })), [isles]);
+  // 판에 실제로 나오는 색 쌍만 그라디언트를 만든다
+  const mixPairs = useMemo(() => [...new Set(isles.flatMap(I => I.seams.map(m => pairKey(m.a, m.b))))].map(k => k.split("-").map(Number)), [isles]);
   const actors: Actor[] = useMemo(() => everyone.flatMap(e => (e.home ? [{ uid: e.id, char: e.char, x: e.home.x, y: e.home.y + FEET, ideas: e.p.ideas.length }] : [])), [everyone]);
   const photo = useMemo(() => new Map(members.map(m => [m.uid, m.photoURL])), [members]);
   const nameOf = (n: number, id: string, fallback: string) => (n === home ? members.find(m => m.uid === id)?.displayName : "") || fallback;
   const totalIdeas = islands.reduce((a, i) => a + i.ideas.length, 0);
   const select = (id: string) => { setFocus(f => (f === id ? null : id)); setPanel(true); };
+  // AI 분석용 CSV — 보이는 섬(가려진 섬 제외)의 학생을 처음 쓴 순서대로
+  const [csvMenu, setCsvMenu] = useState(false);
+  const exportCsv = (mode: ExportMode) => {
+    setCsvMenu(false);
+    downloadBrainstormCsv(topic, isles.filter(I => !I.hidden).map(I => ({
+      name: I.name || "우리 반",
+      students: I.people.map((p, k) => ({ name: nameOf(I.n, p.uid, p.name), ideas: p.ideas, share: I.map.cells.length ? I.map.area[k] / I.map.cells.length : 0 })),
+    })), mode);
+  };
   // 휴대폰 참여자: 내 땅이 처음 생기면 그 자리로 확대해 보여 준다(한 번만)
   const myPos = startOnMe ? everyone.find(e => e.id === `${home}:${uid}`)?.home : null;
   const [centered, setCentered] = useState(false);
@@ -290,6 +317,16 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
         <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
         <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
         {extraTools}
+        {multi && onShare && <button type="button" className={styles.chip} aria-pressed={!!shared} onClick={() => onShare(!shared)}>
+          <Icon name={shared ? "visibility" : "visibility_off"} size={18} />{shared ? "다른 반 섬 보임" : "다른 반 섬 가림"}
+        </button>}
+        {teacher && totalIdeas > 0 && <span className={styles.menuWrap}>
+          <button type="button" className={styles.chip} aria-expanded={csvMenu} onClick={() => setCsvMenu(v => !v)}><Icon name="download" size={18} />CSV</button>
+          {csvMenu && <span className={styles.menu} role="menu">
+            <button type="button" role="menuitem" onClick={() => exportCsv("student")}><Icon name="person" size={18} /><span><b>학생별</b>한 줄에 한 학생 · 아이디어 목록</span></button>
+            <button type="button" role="menuitem" onClick={() => exportCsv("idea")}><Icon name="lightbulb" size={18} /><span><b>아이디어별</b>한 줄에 한 아이디어 · 묶기·분류용</span></button>
+          </span>}
+        </span>}
         {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{multi ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
         <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
       </div>
@@ -316,6 +353,20 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
                 <feComposite in2="d" operator="in" result="line" />
                 <feMerge><feMergeNode in="line" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
+              {/* 솟은 땅의 옆면 — 잉크를 어둡게 해서 아래로 여러 번 겹쳐 찍는다(높이마다 하나) */}
+              {Array.from({ length: LIFT_MAX / 2 }, (_, j) => (j + 1) * 2).map(L => <filter key={L} id={`bs-lift-${L}`} x="-10%" y="-50%" width="120%" height="200%">
+                <feComponentTransfer in="SourceGraphic" result="dark">
+                  <feFuncR type="linear" slope="0.62" /><feFuncG type="linear" slope="0.62" /><feFuncB type="linear" slope="0.62" />
+                </feComponentTransfer>
+                {Array.from({ length: L / 2 }, (_, j) => <feOffset key={j} in="dark" dy={L - j * 2} result={`o${j}`} />)}
+                <feMerge>{Array.from({ length: L / 2 }, (_, j) => <feMergeNode key={j} in={`o${j}`} />)}<feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>)}
+              {/* 맞닿은 두 친구 땅 사이 — 가운데는 섞은 색, 가장자리로 갈수록 투명(흐림 필터보다 훨씬 가볍다). 색 쌍마다 하나 */}
+              {mixPairs.map(([a, b]) => <radialGradient key={`${a}-${b}`} id={`bs-mix-${a}-${b}`}>
+                <stop offset="0%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.95} />
+                <stop offset="55%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.7} />
+                <stop offset="100%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0} />
+              </radialGradient>)}
               <filter id="bs-edge-thin" x="-5%" y="-5%" width="110%" height="110%">
                 <feMorphology in="SourceAlpha" operator="dilate" radius="1.3" result="d" />
                 <feFlood floodColor="#1b1b29" floodOpacity="0.9" />
@@ -339,16 +390,30 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
               <g filter="url(#bs-edge)">
                 <rect width={VIEW_W} height={VIEW_H} fill="url(#bs-grass)" mask={`url(#bs-island-${I.n})`} />
               </g>
-              {/* 학생마다 따로 테두리 — 영역이 맞닿으면 그 경계에도 검정 선이 생긴다 */}
-              {I.people.map((p, k) => {
+              {/* 학생마다 따로 테두리 + 아이디어 수만큼 솟은 언덕 */}
+              {I.order.map(k => {
+                const p = I.people[k];
                 const cells = I.map.cells.filter(c => I.map.owner.get(c.i) === k);
-                const id = `${I.n}:${p.uid}`;
-                return <g key={p.uid} filter="url(#bs-edge-thin)" opacity={focus && focus !== id ? 0.35 : 1}>
-                  <g filter="url(#bs-goo)" fill={inkColor(k)}>
-                    {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
+                const id = `${I.n}:${p.uid}`; const L = I.lifts[k];
+                return <g key={p.uid} transform={`translate(0 ${-L})`} filter={L ? `url(#bs-lift-${L})` : undefined} opacity={focus && focus !== id ? 0.35 : 1}>
+                  <g filter="url(#bs-edge-thin)">
+                    <g filter="url(#bs-goo)" fill={inkColor(k)}>
+                      {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
+                    </g>
                   </g>
                 </g>;
               })}
+              {/* 친구 땅끼리 맞닿은 곳은 두 색이 섞여 번진다(높이는 둘의 중간) */}
+              {!focus && I.seams.length > 0 && <g>
+                {I.seams.map(m => <circle key={`${m.x},${m.y}`} cx={m.x} cy={m.y - (I.lifts[m.a] + I.lifts[m.b]) / 2} r={CELL_R * 1.15} fill={`url(#bs-mix-${pairKey(m.a, m.b)})`} />)}
+              </g>}
+              {/* 아직 공개되지 않은 다른 반 섬 — 구름에 가려 둔다 */}
+              {I.hidden && <g>
+                <rect width={VIEW_W} height={VIEW_H} fill="#f3f6ff" opacity={0.78} mask={`url(#bs-island-${I.n})`} />
+                {[[0.3, 0.38], [0.62, 0.3], [0.45, 0.62], [0.74, 0.62]].map(([fx, fy], j) => <g key={j} transform={`translate(${VIEW_W * fx} ${VIEW_H * fy})`} fill="#fff" opacity={0.95}>
+                  <circle r={VIEW_H * 0.09} /><circle cx={VIEW_H * 0.1} cy={VIEW_H * 0.02} r={VIEW_H * 0.07} /><circle cx={-VIEW_H * 0.1} cy={VIEW_H * 0.03} r={VIEW_H * 0.065} />
+                </g>)}
+              </g>}
               <g filter="url(#bs-edge-thin)">
                 {I.props.map(d => d.kind === "bush"
                   ? <g key={d.i} transform={`translate(${d.x} ${d.y})`}>
@@ -367,7 +432,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
           {/* 섬마다 반 이름표 — 누르면 그 섬으로 */}
           {multi && isles.map(I => <div key={I.key} className={styles.isleTag} style={{ left: `${((I.off.x + VIEW_W / 2) / WW) * 100}%`, top: `${((I.off.y - LABEL_H * 0.45) / WH) * 100}%` }}>
             <button type="button" className={`${styles.isleBtn} ${I.n === home ? styles.isleHome : ""}`} onClick={() => setView(islandView(I.n))}>
-              <Icon name="flag" size={16} fill />{I.name || "반"}<span>{I.people.length}명 · {I.ideas.length}개</span>{I.n === home && <em>우리 반</em>}
+              <Icon name={I.hidden ? "lock" : "flag"} size={16} fill />{I.name || "반"}<span>{I.hidden ? "선생님이 열면 보여요" : `${I.people.length}명 · ${I.ideas.length}개`}</span>{I.n === home && <em>우리 반</em>}
             </button>
           </div>)}
           {everyone.map(({ id, k, p, I, char, color, home: pos }) => {
@@ -427,7 +492,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
       {panel && <aside className={styles.panel} aria-label="아이디어 모아 보기">
         <div className={styles.panelHead}><strong>영역 순위</strong><button type="button" onClick={() => { setPanel(false); setFocus(null); }} aria-label="닫기"><Icon name="close" size={18} /></button></div>
         {/* 섬이 여럿이면 우리 반 섬부터, 섬마다 따로 순위 */}
-        {[...isles].sort((a, b) => (a.n === home ? -1 : b.n === home ? 1 : a.n - b.n)).map(I => {
+        {isles.filter(I => !I.hidden).sort((a, b) => (a.n === home ? -1 : b.n === home ? 1 : a.n - b.n)).map(I => {
           const total = I.map.cells.length;
           const ranking = I.people.map((p, k) => ({ ...p, k, id: `${I.n}:${p.uid}`, share: total ? I.map.area[k] / total : 0 })).sort((a, b) => b.share - a.share || b.ideas.length - a.ideas.length);
           return <section key={I.key} className={styles.panelIsle}>

@@ -183,3 +183,9 @@
 .opened .bubble{box-shadow:0 6px 0 rgba(0,0,0,.25)}
 
 .closedNote{position:sticky;bottom:0;display:flex;align-items:center;justify-content:center;gap:8px;margin:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:var(--md-sys-color-surface-container);border-top:1px solid var(--md-sys-color-outline-variant);font-weight:600;color:var(--md-sys-color-on-surface-variant)}
+.menuWrap{position:relative;display:inline-flex}
+.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:600;display:flex;flex-direction:column;gap:2px;min-width:250px;padding:6px;border-radius:16px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-lowest);box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.menu button{display:flex;align-items:flex-start;gap:10px;min-height:48px;padding:8px 10px;border:0;border-radius:12px;background:none;color:var(--md-sys-color-on-surface);text-align:left;cursor:pointer}
+.menu button:hover{background:var(--md-sys-color-surface-container-high)}
+.menu button span{display:flex;flex-direction:column;font-size:12px;color:var(--md-sys-color-on-surface-variant)}
+.menu button b{font-size:14px;color:var(--md-sys-color-on-surface)}
