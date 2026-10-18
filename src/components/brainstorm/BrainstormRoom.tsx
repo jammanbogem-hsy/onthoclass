@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
-import { watchQuestion, type Question } from "@/lib/lessons";
+import { updateQuestion, watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, ensureSeat, setWorldShared, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
 import { CELL_R, CLASS_GRID, INK_COLORS, inkColor, LABEL_H, LIFT_MAX, liftFor, mixColor, paintTerritory, seamsOf, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
 import { downloadBrainstormCsv, type ExportMode } from "@/lib/brainstorm-export";
@@ -161,11 +161,13 @@ function Room({ cid, lid, qid }: { cid: string; lid: string; qid: string }) {
   const home = Math.max(0, islands.findIndex(i => i.cid === cid && i.qid === qid));
   return <BrainstormBoard islands={islands} home={home} uid={user.uid} myName={member.displayName || user.displayName || "학생"} teacher={teacher}
     canLink={teacher && (!linked || linked.ownerId === user.uid)} question={question} members={members} now={now} error={error}
+    hideIdeas={!!question.hideIdeas} onHide={teacher ? v => void Promise.all(islands.map(i => updateQuestion(i.cid, i.lid, i.qid, { hideIdeas: v })))
+      .catch(() => setError("응답 가리기를 바꾸지 못했어요.")) : undefined}
     shared={linked?.shared} onShare={linked && linked.ownerId === user.uid ? v => void setWorldShared(linked.id, v).catch(() => setError("공개 설정을 바꾸지 못했어요.")) : undefined} />;
 }
 
 export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, question, members, now, error,
-  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare }: {
+  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare, hideIdeas, onHide }: {
   islands: IslandData[]; home: number; uid: string; myName: string; teacher: boolean; canLink?: boolean;
   question: Pick<Question, "title" | "text">; members: Member[]; now: number; error: string;
   /** 판 크기(인원이 많은 세션은 더 큰 판) · 저장소 · 머리글 꼬리표 · 머리글 도구 더하기 · 판 위에 띄울 것 */
@@ -174,6 +176,8 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
   composer?: boolean; closedNote?: string; startOnMe?: boolean;
   /** 여러 반 섬: 학생에게 다른 반 섬 내용을 보여 주는지 · 바꾸기(세계를 만든 선생님만) */
   shared?: boolean; onShare?: (v: boolean) => void;
+  /** 응답 가리기 — 켜져 있으면 학생에게 다른 친구 응답 글은 안 보이고 개수만(선생님·자기 응답은 그대로) · 바꾸기(선생님) */
+  hideIdeas?: boolean; onHide?: (v: boolean) => void;
 }) {
   const VIEW_W = grid.w; const VIEW_H = grid.h;
   const multi = islands.length > 1;
@@ -317,6 +321,9 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
         <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
         <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
         {extraTools}
+        {onHide && <button type="button" className={styles.chip} aria-pressed={!!hideIdeas} onClick={() => onHide(!hideIdeas)}>
+          <Icon name={hideIdeas ? "speaker_notes_off" : "speaker_notes"} size={18} />{hideIdeas ? "응답 가림" : "응답 보임"}
+        </button>}
         {multi && onShare && <button type="button" className={styles.chip} aria-pressed={!!shared} onClick={() => onShare(!shared)}>
           <Icon name={shared ? "visibility" : "visibility_off"} size={18} />{shared ? "다른 반 섬 보임" : "다른 반 섬 가림"}
         </button>}
@@ -395,8 +402,9 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
                 const p = I.people[k];
                 const cells = I.map.cells.filter(c => I.map.owner.get(c.i) === k);
                 const id = `${I.n}:${p.uid}`; const L = I.lifts[k];
-                return <g key={p.uid} transform={`translate(0 ${-L})`} filter={L ? `url(#bs-lift-${L})` : undefined} opacity={focus && focus !== id ? 0.35 : 1}>
-                  <g filter="url(#bs-edge-thin)">
+                // 옆면은 잉크만으로 만들고(줄무늬 없이) 테두리는 솟은 덩어리 전체에 한 번만
+                return <g key={p.uid} transform={`translate(0 ${-L})`} filter="url(#bs-edge-thin)" opacity={focus && focus !== id ? 0.35 : 1}>
+                  <g filter={L ? `url(#bs-lift-${L})` : undefined}>
                     <g filter="url(#bs-goo)" fill={inkColor(k)}>
                       {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
                     </g>
@@ -442,14 +450,16 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
             const n = p.ideas.length;
             const open = opened.has(id);
             // 모두: 3개까지는 전부, 더 많으면 최근 2개 + "N개 더 보기"(누르면 펼침) / 하나씩: 새 아이디어 먼저, 아니면 엇갈리게 돌아가며
-            const collapsible = bubbleAll && n > COLLAPSE_AT;
+            const mine = I.n === home && p.uid === uid;
+            // 선생님이 응답을 가리면: 학생 화면에서 다른 친구 말풍선은 글 없이 개수만
+            const veiled = !!hideIdeas && !teacher && !mine;
+            const collapsible = !veiled && bubbleAll && n > COLLAPSE_AT;
             const shown = fresh ? latest : p.ideas[Math.floor((now + k * 1700) / BUBBLE_MS) % n];
             const lines = !bubbleAll ? [shown] : collapsible && !open ? p.ideas.slice(-PEEK) : p.ideas;
             const more = n - lines.length;
             const in3d = live3d.has(id);
             const left = (pos.x / WW) * 100; const top = ((pos.y + (in3d ? FEET : 0)) / WH) * 100;
             const name = nameOf(I.n, p.uid, p.name);
-            const mine = I.n === home && p.uid === uid;
             return <div key={id} className={`${styles.player} ${in3d ? styles.player3d : ""} ${fresh ? styles.fresh : ""} ${mine ? styles.me : ""} ${focus === id ? styles.focused : ""} ${open ? styles.opened : ""}`}
               style={{ left: `${left}%`, top: `${top}%`, "--ink": color, "--delay": `${-(k * 0.37) % 3}s`, zIndex: open ? 350 : focus === id ? 300 : fresh ? 200 : Math.round(top) } as CSSProperties}>
               {/* 겹침 풀기로 옮겨지는 껍데기 — 많이 비켜나면 캐릭터까지 가는 선(leader)이 생긴다 */}
@@ -459,10 +469,11 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
                   onClick={() => (collapsible ? toggleOpen(id) : select(id))} aria-expanded={collapsible ? open : undefined}
                   aria-label={collapsible ? `${showNames ? name : "친구"}의 아이디어 ${n}개 ${open ? "접기" : "모두 보기"}` : undefined}>
                   <span className={styles.lines} data-scroll={open ? "" : undefined}>
-                    {lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{i.text}</span>)}
+                    {veiled ? <span className={`${styles.bubbleText} ${styles.veiled}`}><Icon name="visibility_off" size={14} />아이디어 {n}개</span>
+                      : lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{i.text}</span>)}
                   </span>
                   {collapsible && <small className={styles.more}>{open ? <><Icon name="expand_less" size={14} />접기</> : <><Icon name="expand_more" size={14} />{more}개 더 보기</>}</small>}
-                  {n > 1 && <em>{n}</em>}
+                  {n > 1 && !veiled && <em>{n}</em>}
                 </button>
               </span>
               <button type="button" className={styles.charBtn} onClick={() => select(id)} aria-label={`${showNames ? name : "친구"}의 아이디어 ${n}개 모아 보기`}>
@@ -504,7 +515,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
                   <span className={styles.rankName}>{showNames || (I.n === home && p.uid === uid) ? nameOf(I.n, p.uid, p.name) : `친구 ${i + 1}`}</span>
                   <span className={styles.rankNum}>{Math.round(p.share * 100)}% · {p.ideas.length}개</span>
                 </button>
-                {(focus === p.id || ranking.length <= 6) && <ul className={styles.ideaList}>
+                {(focus === p.id || ranking.length <= 6) && !(hideIdeas && !teacher && !(I.n === home && p.uid === uid)) && <ul className={styles.ideaList}>
                   {p.ideas.map(idea => <li key={idea.id}><span>{idea.text}</span>
                     {(teacher || (I.n === home && idea.uid === uid)) && <button type="button" onClick={() => void store.remove(I, idea.id)} aria-label="아이디어 지우기"><Icon name="delete" size={16} /></button>}
                   </li>)}

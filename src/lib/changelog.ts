@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.24.1";
+export const APP_VERSION = "1.25.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.25.0",
+    date: "2026-10-18",
+    kind: "minor",
+    title: "브레인스토밍 바다가 진짜 물처럼",
+    items: [
+      "바다에 물빛 무늬가 일렁여요",
+      "확대했을 때 검은 테두리 없이 판 가장자리가 바다로 자연스럽게 이어져요",
+      "솟은 땅 옆면이 줄무늬 없이 깔끔해졌어요",
+      "선생님이 '응답 가리기'를 켜면 친구 응답은 개수만 보이고 내 응답만 보여요",
+    ],
+  },
   {
     version: "1.24.1",
     date: "2026-10-18",

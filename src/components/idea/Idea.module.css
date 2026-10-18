@@ -2,7 +2,8 @@
    바다 배경(게임 장면)만 고정색, 카드·글자·버튼은 M3 토큰. */
 
 .landing{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px 16px;
-  background:repeating-conic-gradient(rgba(255,255,255,.09) 0 25%,transparent 0 50%) 0 0/56px 56px,linear-gradient(180deg,#45c3ff 0%,#2a9cf0 60%,#1f7fd6 100%)}
+  background:url(/brainstorm/water.webp) 0 0/384px 384px,#1f86d6;animation:landDrift 60s linear infinite}
+@keyframes landDrift{to{background-position:384px 192px}}
 .card{display:flex;flex-direction:column;gap:12px;width:100%;max-width:420px;padding:28px 24px;border-radius:28px;border:3px solid #1b1b29;box-shadow:0 6px 0 rgba(27,27,41,.85);
   background:var(--md-sys-color-surface-container-lowest);color:var(--md-sys-color-on-surface)}
 .brand{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin-bottom:4px}

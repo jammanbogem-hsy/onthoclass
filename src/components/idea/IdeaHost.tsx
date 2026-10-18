@@ -155,7 +155,8 @@ function HostBoard({ sid, uid }: { sid: string; uid: string }) {
     <BrainstormBoard islands={islands} home={0} uid={uid} myName="진행자" teacher
       question={{ title: session.title, text: session.detail }} members={members} now={now} error={error}
       grid={gridFor(session.size)} store={store} kicker={`아이디어 섬 · 코드 ${session.code}${closed ? " · 마감" : ""}`}
-      extraTools={tools} overlay={corner} composer={false} />
+      extraTools={tools} overlay={corner} composer={false}
+      hideIdeas={session.hideIdeas} onHide={v => void updateSession(sid, { hideIdeas: v }).catch(() => setError("응답 가리기를 바꾸지 못했어요."))} />
     {bigQr && <div className={styles.qrModal} role="dialog" aria-modal="true" aria-label="참여 QR" onClick={() => setBigQr(false)}>
       <div className={styles.qrBox} onClick={e => e.stopPropagation()}>
         <h2>{session.title}</h2>

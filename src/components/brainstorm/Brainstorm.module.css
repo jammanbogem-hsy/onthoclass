@@ -23,14 +23,24 @@
 /* 바다 — 잔물결 무늬가 천천히 흐른다 */
 /* 바다 — 브롤스타즈 물 타일처럼 큼직한 체크무늬가 천천히 흐른다 */
 .sea{position:relative;display:flex;align-items:center;justify-content:center;padding:clamp(28px,5vw,64px) clamp(12px,3vw,40px) 24px;overflow:hidden;
-  background:repeating-conic-gradient(rgba(255,255,255,.09) 0 25%,transparent 0 50%) 0 0/56px 56px,linear-gradient(180deg,#45c3ff 0%,#2a9cf0 60%,#1f7fd6 100%);
-  animation:seaDrift 30s linear infinite}
-@keyframes seaDrift{to{background-position:112px 56px,0 0}}
+  background:url(/brainstorm/water.webp) 0 0/384px 384px,#1f86d6;
+  animation:seaDrift 60s linear infinite}
+/* 물결 반짝임 — 같은 무늬를 다른 크기·방향으로 두 겹 흘려서 일렁이게(이미지만, 필터 없음 → 가볍다).
+   ::before 는 판보다 먼저 그려져서 섬·캐릭터를 덮지 않는다. */
+.sea::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.32;
+  background:url(/brainstorm/water-glint.webp) 0 0/300px 300px,url(/brainstorm/water-glint.webp) 0 0/470px 470px;animation:glint 30s linear infinite}
+@keyframes seaDrift{to{background-position:384px 192px}}
+@keyframes glint{to{background-position:300px -300px,-470px 470px}}
 
 .board{position:relative;container-type:inline-size;touch-action:none;cursor:grab;user-select:none;width:min(100%,calc((100dvh - 230px) * 1.95));max-width:1500px}
 .map{display:block;width:100%;height:100%;overflow:visible}
 /* 확대 중에는 판 경계에서 자른다(1배일 때는 위쪽 말풍선이 바다로 넘쳐도 보이게) */
-.zoomed{overflow:hidden;border-radius:16px;box-shadow:0 0 0 3px #1b1b29}
+/* 확대하면 판 밖은 잘리는데, 테두리 없이 가장자리를 바다로 스르르 녹인다 */
+.zoomed{overflow:hidden;
+  -webkit-mask-image:linear-gradient(to right,transparent,#000 36px,#000 calc(100% - 36px),transparent),linear-gradient(to bottom,transparent,#000 36px,#000 calc(100% - 36px),transparent);
+  -webkit-mask-composite:source-in;
+  mask-image:linear-gradient(to right,transparent,#000 36px,#000 calc(100% - 36px),transparent),linear-gradient(to bottom,transparent,#000 36px,#000 calc(100% - 36px),transparent);
+  mask-composite:intersect}
 .zoomed:active{cursor:grabbing}
 /* 확대·이동되는 판 한 덩어리 */
 .world{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
@@ -178,7 +188,7 @@
 }
 @media (prefers-reduced-motion:reduce){
   .player,.sea{animation:none}
-  .ink,.bubble,.fresh .bubble{animation:none}
+  .ink,.bubble,.fresh .bubble,.sea,.sea::before{animation:none}
 }
 .opened .bubble{box-shadow:0 6px 0 rgba(0,0,0,.25)}
 
@@ -189,3 +199,5 @@
 .menu button:hover{background:var(--md-sys-color-surface-container-high)}
 .menu button span{display:flex;flex-direction:column;font-size:12px;color:var(--md-sys-color-on-surface-variant)}
 .menu button b{font-size:14px;color:var(--md-sys-color-on-surface)}
+
+.veiled{display:inline-flex;align-items:center;gap:4px;font-style:italic;opacity:.75}

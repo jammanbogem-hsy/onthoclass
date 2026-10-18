@@ -104,7 +104,8 @@ service cloud.firestore {
         && request.resource.data.status == 'open'
         && request.resource.data.createdAt == request.time;
       allow update: if signedIn() && resource.data.ownerId == uid()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'detail', 'status'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'detail', 'status', 'hideIdeas'])
+        && request.resource.data.get('hideIdeas', false) is bool
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
         && request.resource.data.detail is string && request.resource.data.detail.size() <= 300
         && request.resource.data.status in ['open', 'closed'];

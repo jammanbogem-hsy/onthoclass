@@ -16,6 +16,8 @@ import { IDEA_MAX_LEN, IDEAS_PER_STUDENT, type Idea } from "@/lib/brainstorm";
 export type IdeaSession = {
   id: string; ownerId: string; ownerName: string; title: string; detail: string;
   code: string; size: number; status: "open" | "closed"; createdAt: number;
+  /** 진행자가 응답 가리기를 켰는지(참여자는 자기 응답만 보임) */
+  hideIdeas: boolean;
 };
 export type Player = { uid: string; name: string; at: number };
 
@@ -34,6 +36,7 @@ const toSession = (id: string, v: Record<string, unknown>): IdeaSession => ({
   id, ownerId: String(v.ownerId ?? ""), ownerName: String(v.ownerName ?? ""), title: String(v.title ?? ""), detail: String(v.detail ?? ""),
   code: String(v.code ?? ""), size: Number(v.size ?? 30), status: v.status === "closed" ? "closed" : "open",
   createdAt: (v.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? Date.now(),
+  hideIdeas: v.hideIdeas === true,
 });
 
 /** 참여 주소 — QR 에 담는다 */
@@ -72,7 +75,7 @@ export function watchMySessions(uid: string, cb: (list: IdeaSession[]) => void, 
     snap => cb(snap.docs.map(d => toSession(d.id, d.data())).sort((a, b) => b.createdAt - a.createdAt)), onError);
 }
 
-export async function updateSession(sid: string, patch: Partial<Pick<IdeaSession, "title" | "detail" | "status">>) {
+export async function updateSession(sid: string, patch: Partial<Pick<IdeaSession, "title" | "detail" | "status" | "hideIdeas">>) {
   await updateDoc(sessionRef(sid), patch);
 }
 

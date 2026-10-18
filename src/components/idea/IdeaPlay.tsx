@@ -99,7 +99,7 @@ function Play({ sid, user }: { sid: string; user: User }) {
   return <BrainstormBoard islands={islands} home={0} uid={uid} myName={me?.name || "진행자"} teacher={host}
     question={{ title: session.title, text: session.detail }} members={members} now={now} error={error}
     grid={gridFor(session.size)} store={store} kicker="아이디어 섬" startOnMe={!host}
-    composer={!!me} closedNote={closed ? "진행자가 세션을 마감했어요. 판은 계속 볼 수 있어요." : undefined} />;
+    composer={!!me} hideIdeas={session.hideIdeas} closedNote={closed ? "진행자가 세션을 마감했어요. 판은 계속 볼 수 있어요." : undefined} />;
 }
 
 function NameForm({ sid, uid, session, players }: { sid: string; uid: string; session: IdeaSession; players: Player[] }) {

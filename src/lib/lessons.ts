@@ -119,6 +119,7 @@ export type Question = {
   surveyVerifiedHash?: string; // 설문 검증(분석 수합) 시점의 응답 해시 — 있으면 분석 생성됨, 불일치면 stale
   clonedFrom?: string; // 복제 원본 질문 id (수업 전→후 가져오기 등)
   world?: string; // 브레인스토밍: 여러 반 섬을 묶은 세계 id(brainstormWorlds)
+  hideIdeas?: boolean; // 브레인스토밍: 선생님이 학생 응답 가리기(학생은 자기 응답만 보임)
   gameResult?: GameResultPayload; // kind="game-result" 일 때 게임 결과 피드백 데이터(스냅샷)
   createdBy: string;
   createdAt: number | null;
@@ -638,6 +639,7 @@ export async function updateQuestion(
     surveyVerifiedHash?: string;
     clonedFrom?: string;
     world?: string;
+    hideIdeas?: boolean;
   }
 ): Promise<void> {
   // surveyItems 가 있으면 undefined 필드를 제거해 저장
@@ -1133,6 +1135,7 @@ function mapQuestion(id: string, v: Record<string, unknown>): Question {
     clonedFrom:
       typeof v.clonedFrom === "string" ? (v.clonedFrom as string) : undefined,
     world: typeof v.world === "string" && v.world ? (v.world as string) : undefined,
+    hideIdeas: v.hideIdeas === true ? true : undefined,
     gameResult:
       v.gameResult !== undefined
         ? (v.gameResult as GameResultPayload)
