@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.3";
+export const APP_VERSION = "1.26.4";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.4",
+    date: "2026-10-19",
+    kind: "patch",
+    title: "크롬북에서도 가벼운 브레인스토밍",
+    items: [
+      "물결 바다가 화면 전체를 계속 다시 그리지 않게 바꿔 훨씬 가벼워졌어요.",
+      "기기가 버거워하면 3D 캐릭터가 자동으로 그림 캐릭터로 바뀌어 판이 부드럽게 움직여요.",
+      "아이디어가 한꺼번에 많이 올라와도 섬 그림은 1.5초에 한 번만 다시 그려요.",
+      "말풍선이 너무 붐벼 서로 겹치면 덜 중요한 말풍선은 잠시 숨겨요. 확대하거나 캐릭터를 누르면 보여요.",
+    ],
+  },
   {
     version: "1.26.3",
     date: "2026-10-19",

@@ -24,14 +24,15 @@
 /* 바다 — 브롤스타즈 물 타일처럼 큼직한 체크무늬가 천천히 흐른다 */
 /* 머리글·쓰기 칸을 뺀 남은 높이를 바다가 채우고, 판은 그 안에 가로·세로 모두 들어가게(아래 반 탭·확대 막대 자리는 비워 둔다) */
 .sea{position:relative;display:flex;align-items:center;justify-content:center;padding:clamp(28px,5vw,64px) clamp(12px,3vw,40px) 68px;overflow:clip;container-type:size;min-height:260px;touch-action:none;cursor:grab;
-  background:url(/brainstorm/water.webp) 0 0/384px 384px,#1f86d6;
-  animation:seaDrift 60s linear infinite}
-/* 물결 반짝임 — 같은 무늬를 다른 크기·방향으로 두 겹 흘려서 일렁이게(이미지만, 필터 없음 → 가볍다).
-   ::before 는 판보다 먼저 그려져서 섬·캐릭터를 덮지 않는다. */
-.sea::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.32;
-  background:url(/brainstorm/water-glint.webp) 0 0/300px 300px,url(/brainstorm/water-glint.webp) 0 0/470px 470px;animation:glint 30s linear infinite}
-@keyframes seaDrift{to{background-position:384px 192px}}
-@keyframes glint{to{background-position:300px -300px,-470px 470px}}
+  isolation:isolate;background:#1f86d6}
+/* 물결 — 무늬 이미지를 판보다 넓은 층에 깔고 층째 옮긴다(transform → 그래픽 칩이 처리, 다시 그리기 없음).
+   예전처럼 background-position 을 움직이면 바다 전체를 매 프레임 새로 그려 크롬북에서 무거웠다.
+   z-index:-1 + isolation 으로 판·말풍선 뒤에 깔린다. 한 칸(타일) 크기만큼 옮겨 이음새 없이 되풀이 */
+.sea::before,.sea::after{content:"";position:absolute;z-index:-1;pointer-events:none;will-change:transform}
+.sea::before{inset:-384px;background:url(/brainstorm/water.webp) 0 0/384px 384px;animation:seaDrift 80s linear infinite}
+.sea::after{inset:-300px;opacity:.32;background:url(/brainstorm/water-glint.webp) 0 0/300px 300px;animation:glint 30s linear infinite}
+@keyframes seaDrift{to{transform:translate3d(384px,384px,0)}}
+@keyframes glint{to{transform:translate3d(-300px,300px,0)}}
 
 .board{position:relative;container-type:inline-size;touch-action:none;cursor:grab;user-select:none;width:min(100cqw,calc(100cqh * 1.95));max-width:1500px}
 .map{display:block;width:100%;height:100%;overflow:visible}
@@ -48,6 +49,8 @@
 /* 많이 비켜났으면 말풍선 꼬리 → 원래 자리(캐릭터 머리)로 가는 점선 */
 .leader{display:none;position:absolute;left:50%;top:calc(100% - 4px);width:var(--ll,0px);height:0;border-top:2.5px dashed #1b1b29;transform-origin:0 0;transform:rotate(var(--la,0rad));pointer-events:none;opacity:.7}
 .bubbleWrap[data-far] .leader{display:block}
+/* 비켜도 자리가 없어 겹치는 말풍선은 잠시 숨긴다(덜 중요한 것부터) — 확대하거나 캐릭터를 누르면 보인다 */
+.bubbleWrap[data-crowd]{visibility:hidden}
 /* 붐빌 때(작은 말풍선): 최근 2개만, 한 줄씩, 폭도 좁게 — 전체 개수는 모서리 숫자로(펼친 말풍선은 그대로) */
 [data-compact] .bubbleWrap:not([data-open]) .bubbleList{max-width:clamp(120px,11vw,170px);padding:5px 9px;font-size:.92em}
 [data-compact] .bubbleWrap:not([data-open]) .bubbleText{-webkit-line-clamp:1}
@@ -195,7 +198,7 @@
 }
 @media (prefers-reduced-motion:reduce){
   .player,.sea{animation:none}
-  .ink,.bubble,.fresh .bubble,.sea,.sea::before{animation:none}
+  .ink,.bubble,.fresh .bubble,.sea,.sea::before,.sea::after{animation:none}
 }
 .opened .bubble{box-shadow:0 6px 0 rgba(0,0,0,.25)}
 

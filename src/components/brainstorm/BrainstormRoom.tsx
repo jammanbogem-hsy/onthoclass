@@ -316,7 +316,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
   useLayoutEffect(() => {
     const board = boardRef.current; const sea = seaRef.current; if (!board || !sea) return;
     const all = [...board.querySelectorAll<HTMLElement>("[data-bubble]")];
-    for (const w of all) { w.style.setProperty("--bx", "0px"); w.style.setProperty("--by", "0px"); w.removeAttribute("data-far"); }
+    for (const w of all) { w.style.setProperty("--bx", "0px"); w.style.setProperty("--by", "0px"); w.removeAttribute("data-far"); w.removeAttribute("data-crowd"); }
     const area = sea.getBoundingClientRect();
     // 화면 밖(확대해서 안 보이는 섬)의 말풍선은 셈하지 않는다
     const wraps = all.filter(w => { const r = w.getBoundingClientRect(); return r.width > 0 && r.right > area.left && r.left < area.right && r.bottom > area.top && r.top < area.bottom; });
@@ -333,8 +333,19 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     const shown = wraps.filter(w => w.getBoundingClientRect().width > 0);
     const rects = shown.map(w => w.getBoundingClientRect());
     const shifts = spreadBubbles(rects.map(r => ({ x: r.left, y: r.top, w: r.width, h: r.height })), { x: area.left + 4, y: area.top + 4, w: area.width - 8, h: area.height - 8 });
+    // 비킨 뒤에도 겹치면(자리가 모자람) 중요한 말풍선(펼침·고름 > 방금 씀·내 것 > 아이디어 많은 순)만 남기고 나머지는 숨긴다 → 뭉쳐 보이지 않게
+    const pri = (i: number) => Number(shown[i].dataset.pri || 0);
+    const kept: { x: number; y: number; w: number; h: number }[] = [];
+    const order = shifts.map((_, i) => i).sort((a, b) => pri(b) - pri(a));
+    const crowded = new Set<number>();
+    for (const i of order) {
+      const r = rects[i]; const box = { x: r.left + shifts[i].dx + 3, y: r.top + shifts[i].dy + 3, w: r.width - 6, h: r.height - 6 };
+      if (pri(i) < 100 && kept.some(k => box.x < k.x + k.w && k.x < box.x + box.w && box.y < k.y + k.h && k.y < box.y + box.h)) { crowded.add(i); continue; }
+      kept.push(box);
+    }
     shifts.forEach((d, i) => {
       const w = shown[i];
+      if (crowded.has(i)) { w.dataset.crowd = ""; return; }
       w.style.setProperty("--bx", `${d.dx}px`); w.style.setProperty("--by", `${d.dy}px`);
       const len = Math.hypot(d.dx, d.dy);
       if (len > 14) { w.dataset.far = ""; w.style.setProperty("--ll", `${len}px`); w.style.setProperty("--la", `${Math.atan2(-d.dy, -d.dx)}rad`); }
@@ -457,7 +468,8 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
             return <div key={id} className={`${styles.player} ${in3d ? styles.player3d : ""} ${fresh ? styles.fresh : ""} ${mine ? styles.me : ""} ${focus === id ? styles.focused : ""} ${open ? styles.opened : ""}`}
               style={{ left: `${left}%`, top: `${top}%`, "--ink": color, "--delay": `${-(k * 0.37) % 3}s`, zIndex: open ? 350 : focus === id ? 300 : fresh ? 200 : Math.round(top) } as CSSProperties}>
               {/* 겹침 풀기로 옮겨지는 껍데기 — 많이 비켜나면 캐릭터까지 가는 선(leader)이 생긴다 */}
-              <span className={styles.bubbleWrap} data-bubble="" data-open={open ? "" : undefined}>
+              <span className={styles.bubbleWrap} data-bubble="" data-open={open ? "" : undefined}
+                data-pri={open || focus === id ? 100 : fresh || mine ? 50 : n}>
                 <span className={styles.leader} aria-hidden="true" />
                 <button type="button" className={`${styles.bubble} ${bubbleAll && (lines.length > 1 || more > 0) ? styles.bubbleList : ""}`} key={bubbleAll ? "all" : shown.id}
                   onClick={() => (collapsible ? toggleOpen(id) : select(id))} aria-expanded={collapsible ? open : undefined}
@@ -489,13 +501,19 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
   const svgHostRef = useRef<HTMLDivElement>(null);
   const bakeRef = useRef<HTMLCanvasElement>(null);
   const [baked, setBaked] = useState(false);
-  const bakeScale = settledView.s > 2.2 ? 4 : settledView.s > 1.1 ? 2 : 1;
+  const lastBake = useRef(0);
+  // 코어가 적은 기기(크롬북 등)는 너무 큰 그림을 굽지 않는다
+  const lowEnd = typeof navigator !== "undefined" && (navigator.hardwareConcurrency || 8) <= 4;
+  const bakeScale = settledView.s > 2.2 && !lowEnd ? 4 : settledView.s > 1.1 ? 2 : 1;
   useEffect(() => {
     let alive = true;
+    // 아이디어가 몰려 들어와도 굽기는 1.5초에 한 번까지(사이에 온 것은 모아서 한 번에)
+    const wait = Math.max(80, 1500 - (Date.now() - lastBake.current));
     const t = setTimeout(() => {
+      lastBake.current = Date.now();
       const svg = svgHostRef.current?.querySelector("svg"); const cv = bakeRef.current; const board = boardRef.current;
       if (!svg || !cv || !board || !board.clientWidth) return;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(lowEnd ? 1.25 : 2, window.devicePixelRatio || 1);
       let w = board.clientWidth * dpr * bakeScale; let h = (w * WH) / WW;
       // 캔버스 한계(브라우저마다 다름) 안으로: 한 변 8192, 넓이 1600만 화소
       const k = Math.min(1, 8192 / w, 8192 / h, Math.sqrt(16e6 / (w * h))); w = Math.round(w * k); h = Math.round(h * k);
@@ -512,9 +530,9 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
       };
       img.onerror = () => { URL.revokeObjectURL(url); if (alive) setBaked(false); };
       img.src = url;
-    }, 80);
+    }, wait);
     return () => { alive = false; clearTimeout(t); };
-  }, [mapSvg, bakeScale, resizeTick, WW, WH]);
+  }, [mapSvg, bakeScale, resizeTick, WW, WH, lowEnd]);
 
   return <main className={styles.page}>
     <header className={styles.top}>

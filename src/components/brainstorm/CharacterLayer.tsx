@@ -179,9 +179,20 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
 
     const clock = new THREE.Clock();
     let frame = 0; let tick = 0;
+    // 기기가 버거워하면(크롬북 등) 2D 그림으로 바꾼다 — 불러오기가 끝난 뒤(4초부터) 3초마다 화면 갱신 간격을 재서
+    // 평균 25fps 밑이면 3D 를 끈다. 3D 를 끄면 판 전체(말풍선·확대)가 훨씬 가벼워진다.
+    const born = performance.now(); let last = born; let gapSum = 0; let gapN = 0; let winAt = born;
     const loop = () => {
       frame = requestAnimationFrame(loop);
-      if (document.hidden) return;
+      const nowP = performance.now(); const gap = nowP - last; last = nowP;
+      if (document.hidden) { gapSum = 0; gapN = 0; winAt = nowP; return; }
+      if (nowP - born > 4000 && lives.size > 0 && gap < 1000) {
+        gapSum += gap; gapN++;
+        if (nowP - winAt > 3000) {
+          if (gapSum / gapN > 40) { cbs.current.onFail(); return; }
+          gapSum = 0; gapN = 0; winAt = nowP;
+        }
+      }
       const v = viewRef.current; tick++;
       // 캐릭터가 많으면 둥실 움직임은 30fps(20명 넘게)·20fps(40명 넘게)로만 그린다 — 확대·이동 중에는 판과 어긋나지 않게 매 프레임
       // 화면(바다 전체)에 보이는 판 좌표 범위 — 판 밖 여백만큼 더 넓다
