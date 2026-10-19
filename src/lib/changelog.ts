@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.2";
+export const APP_VERSION = "1.26.3";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.3",
+    date: "2026-10-19",
+    kind: "patch",
+    title: "브레인스토밍 판이 화면에 꼭 맞게",
+    items: [
+      "반 고르기 탭과 확대 막대가 아이디어 쓰는 칸을 가리던 것을 고쳤어요.",
+      "판이 머리글과 쓰는 칸 사이 남은 공간에 꼭 맞게 들어가, 섬 아래쪽이 잘리지 않아요.",
+    ],
+  },
   {
     version: "1.26.2",
     date: "2026-10-19",

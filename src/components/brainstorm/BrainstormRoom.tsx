@@ -554,7 +554,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
       <section ref={seaRef} className={styles.sea} aria-label="아이디어 땅따먹기 판">
         <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`} data-calm={everyone.length > CALM_AT ? "" : undefined}
-          style={{ aspectRatio: `${WW} / ${WH}`, width: `min(100%, calc((100dvh - 230px) * ${(WW / WH).toFixed(3)}))`, maxWidth: multi ? "none" : 1500, "--char-h": `${(CHAR_H / WW) * 100}cqw` } as CSSProperties}>
+          style={{ aspectRatio: `${WW} / ${WH}`, width: `min(100cqw, calc(100cqh * ${(WW / WH).toFixed(3)}))`, maxWidth: multi ? "none" : 1500, "--char-h": `${(CHAR_H / WW) * 100}cqw` } as CSSProperties}>
           {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
           <div className={styles.world} style={worldStyle}>
             {/* 실제 SVG 는 숨겨 두고(그리지 않음) 구운 그림만 보인다 — 굽기 전·실패하면 SVG 를 그대로 */}

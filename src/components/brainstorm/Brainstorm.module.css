@@ -1,7 +1,7 @@
 /* 브레인스토밍 땅따먹기 판 — 바다 위 섬에 스플래툰처럼 잉크가 번지고, 캐릭터와 말풍선이 둥실 떠 있다.
    판(바다·섬·잉크)은 게임 장면이라 고정색, 머리줄·패널·입력칸은 M3 토큰을 쓴다. */
 
-.page{min-height:100dvh;display:flex;flex-direction:column;max-width:100vw;overflow-x:clip;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)}
+.page{height:100dvh;display:flex;flex-direction:column;max-width:100vw;overflow-x:clip;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)}
 
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:14px 20px;border-bottom:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low)}
 .topic{flex:1 1 320px;min-width:0}
@@ -17,12 +17,13 @@
 .chip[aria-pressed="true"]{border-color:var(--md-sys-color-primary);color:var(--md-sys-color-primary)}
 .error{margin:8px 20px 0;padding:10px 14px;border-radius:12px;background:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container);font-size:14px}
 
-.body{flex:1;display:grid;grid-template-columns:minmax(0,1fr);min-height:0}
+.body{flex:1;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);min-height:0}
 .withPanel{grid-template-columns:minmax(0,1fr) minmax(260px,340px)}
 
 /* 바다 — 잔물결 무늬가 천천히 흐른다 */
 /* 바다 — 브롤스타즈 물 타일처럼 큼직한 체크무늬가 천천히 흐른다 */
-.sea{position:relative;display:flex;align-items:center;justify-content:center;padding:clamp(28px,5vw,64px) clamp(12px,3vw,40px) 24px;overflow:clip;touch-action:none;cursor:grab;
+/* 머리글·쓰기 칸을 뺀 남은 높이를 바다가 채우고, 판은 그 안에 가로·세로 모두 들어가게(아래 반 탭·확대 막대 자리는 비워 둔다) */
+.sea{position:relative;display:flex;align-items:center;justify-content:center;padding:clamp(28px,5vw,64px) clamp(12px,3vw,40px) 68px;overflow:clip;container-type:size;min-height:260px;touch-action:none;cursor:grab;
   background:url(/brainstorm/water.webp) 0 0/384px 384px,#1f86d6;
   animation:seaDrift 60s linear infinite}
 /* 물결 반짝임 — 같은 무늬를 다른 크기·방향으로 두 겹 흘려서 일렁이게(이미지만, 필터 없음 → 가볍다).
@@ -32,7 +33,7 @@
 @keyframes seaDrift{to{background-position:384px 192px}}
 @keyframes glint{to{background-position:300px -300px,-470px 470px}}
 
-.board{position:relative;container-type:inline-size;touch-action:none;cursor:grab;user-select:none;width:min(100%,calc((100dvh - 230px) * 1.95));max-width:1500px}
+.board{position:relative;container-type:inline-size;touch-action:none;cursor:grab;user-select:none;width:min(100cqw,calc(100cqh * 1.95));max-width:1500px}
 .map{display:block;width:100%;height:100%;overflow:visible}
 .mapHost{position:absolute;inset:0;width:100%;height:100%;display:block}
 /* 확대해도 판 네모에서 자르지 않는다 — 판 밖 바다 여백까지 섬이 이어져 보이고, 바다 가장자리에서만 잘린다 */
@@ -133,7 +134,7 @@
 .empty span{font-size:14px}
 
 /* 모아 보기 패널 */
-.panel{border-left:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);overflow:auto;max-height:calc(100dvh - 90px);padding:12px}
+.panel{border-left:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);overflow:auto;min-height:0;padding:12px}
 .panelHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .panelHead button{display:inline-flex;min-width:36px;min-height:36px;align-items:center;justify-content:center;border-radius:999px;border:0;background:none;color:inherit;cursor:pointer}
 .rank{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -179,7 +180,11 @@
   .withPanel{grid-template-columns:minmax(0,1fr)}
   /* 좁은 화면: 말풍선은 방금 쓴 것·내 것·고른 친구 것만(나머지는 캐릭터를 눌러 모아 보기에서) */
   .player:not(.fresh):not(.me):not(.focused):not(.opened) .bubble{display:none}
-  .sea{padding:40px 8px 16px}
+  /* 휴대폰: 페이지가 아래로 스크롤되고(모아 보기는 판 아래), 판은 화면 폭에 맞춘다. 아래 확대 막대·반 탭 자리만큼 띄운다 */
+  .page{height:auto;min-height:100dvh}
+  .body{grid-template-rows:none}
+  .sea{padding:40px 8px 64px;container-type:normal;min-height:0}
+  .sea:has(.isleTabs){padding-bottom:116px}
   .panel{border-left:0;border-top:1px solid var(--md-sys-color-outline-variant);max-height:none}
   .board{width:100%}
   .bubble{max-width:110px;padding:5px 8px;border-width:2px}
