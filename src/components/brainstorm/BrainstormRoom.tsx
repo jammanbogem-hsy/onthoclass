@@ -9,7 +9,7 @@ import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { updateQuestion, watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, ensureSeat, setWorldShared, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
 import { reloadOnce } from "@/lib/chunk-reload";
-import { CELL_R, CLASS_GRID, INK_COLORS, inkColor, LABEL_H, LIFT_MAX, liftFor, mixColor, paintTerritory, seamsOf, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
+import { CELL_R, CLASS_GRID, inkColor, LABEL_H, LIFT_MAX, liftFor, paintTerritory, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
 import { downloadBrainstormCsv, type ExportMode } from "@/lib/brainstorm-export";
 import { assignChars, charThumb } from "@/lib/brainstorm-chars";
 import { spreadBubbles } from "@/lib/bubble-spread";
@@ -66,8 +66,6 @@ function edgeProps(cells: Cell[], max = 12) {
   return picks;
 }
 
-/** 잉크 색 번호 쌍(작은 번호 먼저) — 섞은 색 그라디언트 이름 */
-const pairKey = (a: number, b: number) => { const x = a % INK_COLORS.length; const y = b % INK_COLORS.length; return x < y ? `${x}-${y}` : `${y}-${x}`; };
 
 // 땅 계산은 섬마다 아이디어 수가 바뀔 때만 다시 한다(섬이 여러 개라도 바뀐 섬만)
 const territoryCache = new Map<string, Territory>();
@@ -272,15 +270,13 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     // 많이 쓴 친구일수록 땅이 솟는다. 앞(아래)쪽 땅이 뒤쪽 땅의 옆면을 가리도록 집이 위에 있는 친구부터 그린다.
     const lifts = people.map(p => liftFor(p.ideas.length));
     const order = people.map((_, k) => k).sort((a, b) => (map.homes[a]?.y ?? 0) - (map.homes[b]?.y ?? 0));
-    return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, lifts, order, seams: seamsOf(map, grid), off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells, grid) };
+    return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, lifts, order, off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells, grid) };
   }), [islands, layout, grid]);
   // 판 위 모든 학생(섬 여럿이면 같은 사람도 섬마다 따로 — 선생님이 여러 반에 쓴 경우)
   const everyone = useMemo(() => isles.flatMap(I => I.people.map((p, k) => {
     const h = I.map.homes[k];
     return { id: `${I.n}:${p.uid}`, k, p, I, char: I.chars[k], color: inkColor(k), home: h ? { x: I.off.x + h.x, y: I.off.y + h.y - I.lifts[k] } : null };
   })), [isles]);
-  // 판에 실제로 나오는 색 쌍만 그라디언트를 만든다
-  const mixPairs = useMemo(() => [...new Set(isles.flatMap(I => I.seams.map(m => pairKey(m.a, m.b))))].map(k => k.split("-").map(Number)), [isles]);
   const actors: Actor[] = useMemo(() => everyone.flatMap(e => (e.home ? [{ uid: e.id, char: e.char, x: e.home.x, y: e.home.y + FEET, ideas: e.p.ideas.length }] : [])), [everyone]);
   const photo = useMemo(() => new Map(members.map(m => [m.uid, m.photoURL])), [members]);
   const nameOf = (n: number, id: string, fallback: string) => (n === home ? members.find(m => m.uid === id)?.displayName : "") || fallback;
@@ -394,12 +390,6 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                 <feComposite in2="d" operator="in" result="line" />
                 <feMerge><feMergeNode in="line" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              {/* 맞닿은 두 친구 땅 사이 — 가운데는 섞은 색, 가장자리로 갈수록 투명(흐림 필터보다 훨씬 가볍다). 색 쌍마다 하나 */}
-              {mixPairs.map(([a, b]) => <radialGradient key={`${a}-${b}`} id={`bs-mix-${a}-${b}`}>
-                <stop offset="0%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.8} />
-                <stop offset="50%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.5} />
-                <stop offset="100%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0} />
-              </radialGradient>)}
               <filter id="bs-edge-thin" x="-5%" y="-5%" width="110%" height="110%">
                 <feMorphology in="SourceAlpha" operator="dilate" radius="1.3" result="d" />
                 <feFlood floodColor="#1b1b29" floodOpacity="0.9" />
@@ -444,10 +434,6 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                   </g>
                 </g>;
               })}
-              {/* 친구 땅끼리 맞닿은 곳은 두 색이 섞여 번진다(높이는 둘의 중간) */}
-              {!focus && I.seams.length > 0 && <g>
-                {I.seams.map(m => <circle key={`${m.x},${m.y}`} cx={m.x} cy={m.y - (I.lifts[m.a] + I.lifts[m.b]) / 2} r={CELL_R * 0.95} fill={`url(#bs-mix-${pairKey(m.a, m.b)})`} />)}
-              </g>}
               {/* 아직 공개되지 않은 다른 반 섬 — 구름에 가려 둔다 */}
               {I.hidden && <g>
                 <rect width={VIEW_W} height={VIEW_H} fill="#f3f6ff" opacity={0.78} mask={`url(#bs-island-${I.n})`} />
@@ -467,7 +453,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
               </g>
             </g>)}
           </svg>
-  ), [isles, focus, multi, mixPairs, WW, WH, VIEW_W, VIEW_H]);
+  ), [isles, focus, multi, WW, WH, VIEW_W, VIEW_H]);
   // 캐릭터·말풍선 층 — 확대·이동(view)과 무관하니 그때는 다시 만들지 않는다. 시계(now)는 '방금 쓴' 친구가 바뀔 때만 반영(bubbleTick)
   const playersLayer = useMemo(() => (
     everyone.map(({ id, k, p, I, char, color, home: pos }) => {

@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.5";
+export const APP_VERSION = "1.26.6";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,13 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.6",
+    date: "2026-10-19",
+    kind: "patch",
+    title: "브레인스토밍 땅 색 섞임 없앰",
+    items: ["친구 땅끼리 맞닿은 곳에 색이 번져 섞이던 효과를 없앴어요. 땅마다 또렷한 제 색과 테두리로 보여요."],
+  },
   {
     version: "1.26.5",
     date: "2026-10-19",
