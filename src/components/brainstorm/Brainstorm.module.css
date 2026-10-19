@@ -79,6 +79,12 @@
 .zoomBar button:hover:not(:disabled){background:#eef2ff}
 .zoomBar button:disabled{opacity:.3;cursor:default}
 .zoomBar span{min-width:44px;text-align:center;font-size:13px;font-weight:900;color:#1b1b29;font-variant-numeric:tabular-nums}
+/* 여러 반 섬: 모두 / 반 하나만 보기 탭 */
+.isleTabs{position:absolute;left:14px;bottom:14px;z-index:400;display:flex;gap:2px;max-width:calc(100% - 300px);overflow-x:auto;padding:4px;border-radius:999px;background:#fff;border:3px solid #1b1b29;box-shadow:0 4px 0 rgba(0,0,0,.2);scrollbar-width:none}
+.isleTabs button{display:inline-flex;align-items:center;gap:4px;flex:none;min-height:38px;padding:0 14px;border:0;border-radius:999px;background:none;color:#1b1b29;font-size:14px;font-weight:900;cursor:pointer;white-space:nowrap}
+.isleTabs button:hover{background:#eef2ff}
+.isleTabs button[aria-selected="true"]{background:#1b1b29;color:#fff}
+@media (max-width:640px){.isleTabs{left:8px;right:8px;bottom:64px;max-width:none}}
 .ink{animation:inkIn .55s cubic-bezier(.2,1.6,.4,1) both}
 @keyframes inkIn{0%{transform:scale(0)}100%{transform:scale(1)}}
 
@@ -201,3 +207,8 @@
 .menu button b{font-size:14px;color:var(--md-sys-color-on-surface)}
 
 .veiled{display:inline-flex;align-items:center;gap:4px;font-style:italic;opacity:.75}
+/* 사람이 많은 판(data-calm): 캐릭터·말풍선의 끝없는 둥실 움직임을 멈춘다 — 수십 개의 합성 레이어가 사라져 저사양 기기에서도 부드럽다.
+   새 아이디어 반짝임(pop)과 처음 나타나는 효과는 그대로 */
+.board[data-calm] .player{animation:none;will-change:auto}
+.board[data-calm] .player3d .bubble{animation:bubbleIn .45s cubic-bezier(.2,1.5,.4,1) both}
+.board[data-calm] .player3d.fresh .bubble{animation:bubbleIn .45s cubic-bezier(.2,1.5,.4,1) both,pop 1.2s ease-in-out .5s 2}

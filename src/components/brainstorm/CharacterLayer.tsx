@@ -172,8 +172,12 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
     const loop = () => {
       frame = requestAnimationFrame(loop);
       if (document.hidden) return;
-      const dt = Math.min(clock.getDelta(), 0.1); const t = clock.elapsedTime;
       const v = viewRef.current; tick++;
+      // 캐릭터가 많으면 둥실 움직임은 30fps(20명 넘게)·20fps(40명 넘게)로만 그린다 — 확대·이동 중에는 판과 어긋나지 않게 매 프레임
+      const camMoved = cam.left !== v.x || cam.right !== v.x + viewW / v.s || cam.top !== -v.y;
+      const step = lives.size > 40 ? 3 : lives.size > 20 ? 2 : 1;
+      if (!camMoved && tick % step) return;
+      const dt = Math.min(clock.getDelta(), 0.1); const t = clock.elapsedTime;
       // 화면 밖(확대해서 안 보이는 섬)의 캐릭터는 그리지도 움직이지도 않는다.
       // 여러 반이 모여 캐릭터가 많으면 뼈 동작은 한 프레임씩 번갈아(반씩) 계산한다.
       const x0 = v.x - charH; const x1 = v.x + viewW / v.s + charH; const y0 = v.y - charH * 0.5; const y1 = v.y + viewH / v.s + charH * 1.5;
@@ -184,7 +188,7 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
         l.root.visible = vis;
         if (!vis) { l.acc += dt; continue; }
         l.acc += dt;
-        if (!many || (tick + l.slot) % 2 === 0) { l.mixer?.update(Math.min(l.acc, 0.25)); l.acc = 0; }
+        if (!many || (Math.floor(tick / step) + l.slot) % 2 === 0) { l.mixer?.update(Math.min(l.acc, 0.25)); l.acc = 0; }
         // 모델은 +x 를 보고 있어서 -90° 돌려 정면으로, 거기에 살랑살랑 좌우로
         l.body.rotation.y = -Math.PI / 2 + Math.sin(t * 0.6 + l.phase) * 0.45;
         // 둥실 + 새 아이디어 통통(사람은 점프 동작이 대신한다)
@@ -199,7 +203,7 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
         }
       }
       // 확대·이동: 판(HTML)과 같은 영역만 보이게 카메라를 맞춘다
-      if (cam.left !== v.x || cam.right !== v.x + viewW / v.s || cam.top !== -v.y) {
+      if (camMoved) {
         cam.left = v.x; cam.right = v.x + viewW / v.s; cam.top = -v.y; cam.bottom = -(v.y + viewH / v.s); cam.updateProjectionMatrix();
       }
       renderer.render(scene, cam);

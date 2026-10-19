@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.25.0";
+export const APP_VERSION = "1.26.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.0",
+    date: "2026-10-19",
+    kind: "minor",
+    title: "브레인스토밍 반별로 보기·더 가벼워진 판",
+    items: [
+      "여러 반 섬을 이었을 때 판 왼쪽 아래 탭에서 '모두' 또는 반 하나를 골라 그 반 섬만 크게 볼 수 있어요. 섬 이름표를 눌러도 그 반만 보여요.",
+      "학생은 우리 반 섬부터, 선생님은 모든 섬부터 보여요. 반 하나만 볼 때는 다른 반 친구들이 섞여 보이지 않아요.",
+      "아이디어와 친구가 많아도 덜 버벅이도록 판 그리기를 가볍게 했어요.",
+    ],
+  },
   {
     version: "1.25.0",
     date: "2026-10-18",

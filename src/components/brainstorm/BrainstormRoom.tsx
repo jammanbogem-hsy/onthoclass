@@ -25,6 +25,8 @@ const COLLAPSE_AT = 3;
 const PEEK = 2;
 /** 방금 들어온 아이디어로 보는 시간(말풍선 통통·잉크 튀김) */
 const FRESH_MS = 6000;
+/** 이보다 사람이 많으면 캐릭터 둥실 움직임을 멈춰 가볍게 */
+const CALM_AT = 20;
 
 function hash(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
 /** 프로필 사진이 없으면 기본 캐릭터 그림 중 하나(학생마다 고정) */
@@ -166,8 +168,7 @@ function Room({ cid, lid, qid }: { cid: string; lid: string; qid: string }) {
     shared={linked?.shared} onShare={linked && linked.ownerId === user.uid ? v => void setWorldShared(linked.id, v).catch(() => setError("공개 설정을 바꾸지 못했어요.")) : undefined} />;
 }
 
-export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, question, members, now, error,
-  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare, hideIdeas, onHide }: {
+type BoardProps = {
   islands: IslandData[]; home: number; uid: string; myName: string; teacher: boolean; canLink?: boolean;
   question: Pick<Question, "title" | "text">; members: Member[]; now: number; error: string;
   /** 판 크기(인원이 많은 세션은 더 큰 판) · 저장소 · 머리글 꼬리표 · 머리글 도구 더하기 · 판 위에 띄울 것 */
@@ -178,7 +179,33 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
   shared?: boolean; onShare?: (v: boolean) => void;
   /** 응답 가리기 — 켜져 있으면 학생에게 다른 친구 응답 글은 안 보이고 개수만(선생님·자기 응답은 그대로) · 바꾸기(선생님) */
   hideIdeas?: boolean; onHide?: (v: boolean) => void;
+};
+
+/** 여러 반 섬: 위쪽 탭으로 '모두' 또는 반 하나만 골라 그 섬만 크게 본다(다른 반 섬은 아예 그리지 않는다).
+ *  학생은 우리 반 섬부터, 선생님은 모두부터. 섬 이름표를 눌러도 그 반만 보기로 들어간다. */
+export function BrainstormBoard(props: BoardProps) {
+  const { islands, home, teacher } = props;
+  const keyOf = (i: IslandData) => `${i.cid}/${i.qid}`;
+  const [solo, setSolo] = useState<string | null>(() => (islands.length > 1 && !teacher && islands[home] ? keyOf(islands[home]) : null));
+  if (islands.length < 2) return <Board {...props} />;
+  const n = solo ? islands.findIndex(i => keyOf(i) === solo) : -1;
+  const tabs = <div className={styles.isleTabs} role="tablist" aria-label="볼 섬 고르기">
+    <button type="button" role="tab" aria-selected={n < 0} onClick={() => setSolo(null)}><Icon name="public" size={18} />모두</button>
+    {islands.map((I, k) => <button key={keyOf(I)} type="button" role="tab" aria-selected={k === n} onClick={() => setSolo(keyOf(I))}>
+      <Icon name={I.hidden ? "lock" : k === home ? "home" : "flag"} size={16} fill={k === n} />{I.name || "반"}
+    </button>)}
+  </div>;
+  if (n < 0) return <Board {...props} isleTabs={tabs} onIsle={k => setSolo(keyOf(islands[k]))} />;
+  return <Board {...props} islands={[islands[n]]} home={n === home ? 0 : -1} homeIsland={islands[home]} linkedCount={islands.length} isleTabs={tabs} />;
+}
+
+function Board({ islands, home, uid, myName, teacher, canLink, question, members, now, error,
+  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare, hideIdeas, onHide,
+  linkedCount = islands.length, homeIsland = islands[home], isleTabs, onIsle }: BoardProps & {
+  /** 반 하나만 보기일 때: 이어진 섬 수 · 쓰기 칸이 쓸 우리 반 섬(지금 보는 섬이 다른 반이어도) · 섬 고르기 탭 · 이름표 눌러 그 반만 보기 */
+  linkedCount?: number; homeIsland?: IslandData; isleTabs?: ReactNode; onIsle?: (n: number) => void;
 }) {
+  const linked = linkedCount > 1;
   const VIEW_W = grid.w; const VIEW_H = grid.h;
   const multi = islands.length > 1;
   const layout = useMemo(() => worldLayout(islands.length, 1.9, grid), [islands.length, grid]);
@@ -206,7 +233,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
   // 확대·이동 — 판 좌표로 화면 왼쪽 위(x, y)와 배율(s). 섬이 여럿이면 학생은 우리 반 섬부터, 선생님은 전체부터.
   const startView = () => (multi && !teacher ? islandView(home) : { x: 0, y: 0, s: 1 });
   const [view, setView] = useState<BoardView>(startView);
-  const layoutKey = `${islands.length}:${home}`;
+  const layoutKey = `${islands.map(i => i.qid).join()}:${home}`;
   const [viewFor, setViewFor] = useState(layoutKey);
   if (viewFor !== layoutKey) { setViewFor(layoutKey); setView(startView()); }
   const boardRef = useRef<HTMLDivElement>(null);
@@ -270,6 +297,11 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
   const worldStyle = { transform: `scale(${view.s}) translate(${(-view.x / WW) * 100}%, ${(-view.y / WH) * 100}%)`, "--zoom": view.s } as CSSProperties;
   // 말풍선 겹침 풀기 — 화면에 그려진 뒤 실제 크기를 재서 서로 비키게 한다(리액트 상태 없이 스타일만 바꿈)
   const [resizeTick, setResizeTick] = useState(0);
+  // 확대·이동 중에는 매 프레임 재지 않고, 멈춘 뒤(0.15초) 한 번만 다시 비킨다
+  const [settledView, setSettledView] = useState(view);
+  useEffect(() => { const t = setTimeout(() => setSettledView(view), 150); return () => clearTimeout(t); }, [view]);
+  // 시계는 매초 가지만 말풍선 모양이 바뀌는 때는 '방금 쓴' 친구가 바뀔 때뿐(하나씩 보기는 돌아가니 매번)
+  const bubbleTick = bubbleAll ? everyone.filter(e => { const l = e.p.ideas[e.p.ideas.length - 1]; return now > 0 && now - l.at < FRESH_MS; }).map(e => e.id).join() : String(now);
   useEffect(() => {
     const sea = seaRef.current; if (!sea) return;
     const ro = new ResizeObserver(() => setResizeTick(t => t + 1)); ro.observe(sea);
@@ -301,51 +333,13 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
       const len = Math.hypot(d.dx, d.dy);
       if (len > 14) { w.dataset.far = ""; w.style.setProperty("--ll", `${len}px`); w.style.setProperty("--la", `${Math.atan2(-d.dy, -d.dx)}rad`); }
     });
-  }, [everyone, view, bubbleAll, opened, showNames, live3d, panel, now, resizeTick]);
+  }, [everyone, settledView, bubbleAll, opened, showNames, live3d, panel, bubbleTick, resizeTick]);
 
-  const myIsle = isles[home];
-  const myK = myIsle ? myIsle.people.findIndex(p => p.uid === uid) : -1;
-  return <main className={styles.page}>
-    <header className={styles.top}>
-      <div className={styles.topic}>
-        <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />{kicker}{multi ? ` · ${islands.length}개 반이 함께` : ""}</span>
-        <h1>{topic}</h1>
-        {detail && <p>{detail}</p>}
-      </div>
-      <div className={styles.stats}>
-        <span><b>{everyone.length}</b>명 참여</span>
-        <span><b>{totalIdeas}</b>개 아이디어</span>
-      </div>
-      <div className={styles.tools}>
-        <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
-        <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
-        <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
-        {extraTools}
-        {onHide && <button type="button" className={styles.chip} aria-pressed={!!hideIdeas} onClick={() => onHide(!hideIdeas)}>
-          <Icon name={hideIdeas ? "speaker_notes_off" : "speaker_notes"} size={18} />{hideIdeas ? "응답 가림" : "응답 보임"}
-        </button>}
-        {multi && onShare && <button type="button" className={styles.chip} aria-pressed={!!shared} onClick={() => onShare(!shared)}>
-          <Icon name={shared ? "visibility" : "visibility_off"} size={18} />{shared ? "다른 반 섬 보임" : "다른 반 섬 가림"}
-        </button>}
-        {teacher && totalIdeas > 0 && <span className={styles.menuWrap}>
-          <button type="button" className={styles.chip} aria-expanded={csvMenu} onClick={() => setCsvMenu(v => !v)}><Icon name="download" size={18} />CSV</button>
-          {csvMenu && <span className={styles.menu} role="menu">
-            <button type="button" role="menuitem" onClick={() => exportCsv("student")}><Icon name="person" size={18} /><span><b>학생별</b>한 줄에 한 학생 · 아이디어 목록</span></button>
-            <button type="button" role="menuitem" onClick={() => exportCsv("idea")}><Icon name="lightbulb" size={18} /><span><b>아이디어별</b>한 줄에 한 아이디어 · 묶기·분류용</span></button>
-          </span>}
-        </span>}
-        {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{multi ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
-        <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
-      </div>
-    </header>
-    {error && <p role="alert" className={styles.error}>{error}</p>}
-
-    <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
-      <section ref={seaRef} className={styles.sea} aria-label="아이디어 땅따먹기 판">
-        <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`}
-          style={{ aspectRatio: `${WW} / ${WH}`, width: `min(100%, calc((100dvh - 230px) * ${(WW / WH).toFixed(3)}))`, maxWidth: multi ? "none" : 1500, "--char-h": `${(CHAR_H / WW) * 100}cqw` } as CSSProperties}>
-          {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
-          <div className={styles.world} style={worldStyle}>
+  // 쓰기 칸은 언제나 우리 반 섬에 쓴다(다른 반 섬만 보고 있어도). 내 색 = 우리 섬에서 처음 쓴 순서
+  const myIsle = homeIsland;
+  const myK = useMemo(() => (myIsle ? [...new Set(myIsle.ideas.map(i => i.uid))].indexOf(uid) : -1), [myIsle, uid]);
+  // 섬·잉크 SVG(필터가 많아 비싸다)는 땅이 바뀔 때만 다시 만든다 — 매초 시계·말풍선 갱신 때는 그대로
+  const mapSvg = useMemo(() => (
           <svg viewBox={`0 0 ${WW} ${WH}`} className={styles.map} aria-hidden="true">
             <defs>
               {/* 동그라미들을 녹여 붙여 한 덩어리로(섬·잉크 웅덩이) */}
@@ -434,12 +428,55 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
               </g>
             </g>)}
           </svg>
+  ), [isles, focus, multi, mixPairs, WW, WH, VIEW_W, VIEW_H]);
+  return <main className={styles.page}>
+    <header className={styles.top}>
+      <div className={styles.topic}>
+        <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />{kicker}{linked ? ` · ${linkedCount}개 반이 함께` : ""}</span>
+        <h1>{topic}</h1>
+        {detail && <p>{detail}</p>}
+      </div>
+      <div className={styles.stats}>
+        <span><b>{everyone.length}</b>명 참여</span>
+        <span><b>{totalIdeas}</b>개 아이디어</span>
+      </div>
+      <div className={styles.tools}>
+        <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
+        <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
+        <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
+        {extraTools}
+        {onHide && <button type="button" className={styles.chip} aria-pressed={!!hideIdeas} onClick={() => onHide(!hideIdeas)}>
+          <Icon name={hideIdeas ? "speaker_notes_off" : "speaker_notes"} size={18} />{hideIdeas ? "응답 가림" : "응답 보임"}
+        </button>}
+        {linked && onShare && <button type="button" className={styles.chip} aria-pressed={!!shared} onClick={() => onShare(!shared)}>
+          <Icon name={shared ? "visibility" : "visibility_off"} size={18} />{shared ? "다른 반 섬 보임" : "다른 반 섬 가림"}
+        </button>}
+        {teacher && totalIdeas > 0 && <span className={styles.menuWrap}>
+          <button type="button" className={styles.chip} aria-expanded={csvMenu} onClick={() => setCsvMenu(v => !v)}><Icon name="download" size={18} />CSV</button>
+          {csvMenu && <span className={styles.menu} role="menu">
+            <button type="button" role="menuitem" onClick={() => exportCsv("student")}><Icon name="person" size={18} /><span><b>학생별</b>한 줄에 한 학생 · 아이디어 목록</span></button>
+            <button type="button" role="menuitem" onClick={() => exportCsv("idea")}><Icon name="lightbulb" size={18} /><span><b>아이디어별</b>한 줄에 한 아이디어 · 묶기·분류용</span></button>
+          </span>}
+        </span>}
+        {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{linked ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
+        <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
+      </div>
+    </header>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+
+    <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
+      <section ref={seaRef} className={styles.sea} aria-label="아이디어 땅따먹기 판">
+        <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`} data-calm={everyone.length > CALM_AT ? "" : undefined}
+          style={{ aspectRatio: `${WW} / ${WH}`, width: `min(100%, calc((100dvh - 230px) * ${(WW / WH).toFixed(3)}))`, maxWidth: multi ? "none" : 1500, "--char-h": `${(CHAR_H / WW) * 100}cqw` } as CSSProperties}>
+          {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
+          <div className={styles.world} style={worldStyle}>
+          {mapSvg}
           </div>
           {!no3d && <CharacterLayer actors={actors} viewW={WW} viewH={WH} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} />}
           <div className={styles.world} style={worldStyle}>
           {/* 섬마다 반 이름표 — 누르면 그 섬으로 */}
           {multi && isles.map(I => <div key={I.key} className={styles.isleTag} style={{ left: `${((I.off.x + VIEW_W / 2) / WW) * 100}%`, top: `${((I.off.y - LABEL_H * 0.45) / WH) * 100}%` }}>
-            <button type="button" className={`${styles.isleBtn} ${I.n === home ? styles.isleHome : ""}`} onClick={() => setView(islandView(I.n))}>
+            <button type="button" className={`${styles.isleBtn} ${I.n === home ? styles.isleHome : ""}`} onClick={() => (onIsle ? onIsle(I.n) : setView(islandView(I.n)))} aria-label={`${I.name || "반"} 섬만 크게 보기`}>
               <Icon name={I.hidden ? "lock" : "flag"} size={16} fill />{I.name || "반"}<span>{I.hidden ? "선생님이 열면 보여요" : `${I.people.length}명 · ${I.ideas.length}개`}</span>{I.n === home && <em>우리 반</em>}
             </button>
           </div>)}
@@ -490,6 +527,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
           </div>
           {!everyone.length && <div className={styles.empty}><Icon name="water_drop" size={32} /><strong>첫 아이디어를 기다리는 중</strong><span>아이디어를 쓰면 내 색 잉크가 섬에 퍼져요!</span></div>}
         </div>
+        {isleTabs}
         {overlay}
         <div className={styles.zoomBar} role="group" aria-label="판 확대·축소">
           <button type="button" onClick={() => zoomAt(1.4)} aria-label="확대" disabled={view.s >= zoomMax}><Icon name="add" size={20} /></button>
@@ -530,7 +568,7 @@ export function BrainstormBoard({ islands, home, uid, myName, teacher, canLink, 
     {/* 선생님도 써 볼 수 있다(테스트·예시 아이디어) — 선생님 글도 판에 똑같이 칠해진다. 쓰는 곳은 언제나 우리 반 섬 */}
     {myIsle && composer && (closedNote ? <p className={styles.closedNote}><Icon name="lock" size={18} />{closedNote}</p>
       : <Composer teacher={teacher} island={myIsle} store={store} uid={uid} name={myName} mine={myIsle.ideas.filter(i => i.uid === uid)} color={inkColor(Math.max(0, myK))} joined={myK >= 0} />)}
-    {linking && <LinkIslandsDialog cid={islands[home].cid} lid={islands[home].lid} question={question as Question} onClose={() => setLinking(false)} />}
+    {linking && myIsle && <LinkIslandsDialog cid={myIsle.cid} lid={myIsle.lid} question={question as Question} onClose={() => setLinking(false)} />}
   </main>;
 }
 
