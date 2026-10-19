@@ -90,7 +90,51 @@
           ]
         }
       ],
-      "target": "main"
+      "target": "main",
+      "rewrites": [
+        {
+          "source": "/oauth/**",
+          "function": {
+            "functionId": "mcp",
+            "region": "asia-northeast3"
+          }
+        },
+        {
+          "source": "/.well-known/openid-configuration{,/**}",
+          "function": {
+            "functionId": "mcp",
+            "region": "asia-northeast3"
+          }
+        },
+        {
+          "source": "/.well-known/oauth-authorization-server{,/**}",
+          "function": {
+            "functionId": "mcp",
+            "region": "asia-northeast3"
+          }
+        },
+        {
+          "source": "/.well-known/oauth-protected-resource{,/**}",
+          "function": {
+            "functionId": "mcp",
+            "region": "asia-northeast3"
+          }
+        },
+        {
+          "source": "/mcp/**",
+          "function": {
+            "functionId": "mcp",
+            "region": "asia-northeast3"
+          }
+        },
+        {
+          "source": "/mcp",
+          "function": {
+            "functionId": "mcp",
+            "region": "asia-northeast3"
+          }
+        }
+      ]
     },
     {
       "target": "idea",
