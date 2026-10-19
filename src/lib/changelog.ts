@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.4";
+export const APP_VERSION = "1.26.5";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.5",
+    date: "2026-10-19",
+    kind: "patch",
+    title: "브레인스토밍 섬·땅 테두리 매끈하게",
+    items: [
+      "섬 가장자리와 솟은 땅 옆면이 일자로 잘려 보이던 것을 고쳤어요. 테두리가 끊기지 않고 이어져요.",
+      "친구 땅끼리 섞이는 색을 조금 옅게 해서 테두리가 번져 보이지 않아요.",
+    ],
+  },
   {
     version: "1.26.4",
     date: "2026-10-19",

@@ -28,6 +28,10 @@ const PEEK = 2;
 const FRESH_MS = 6000;
 /** 이보다 사람이 많으면 캐릭터 둥실 움직임을 멈춰 가볍게 */
 const CALM_AT = 20;
+/** 섬 바탕·마스크를 판 칸보다 이만큼 넓게 — 가장자리 동그라미가 네모에 잘리지 않게 */
+const EDGE = 24;
+/** 섬 그림 굽기 여백(판 좌표) */
+const BAKE_M = 30;
 
 function hash(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
 /** 프로필 사진이 없으면 기본 캐릭터 그림 중 하나(학생마다 고정) */
@@ -371,18 +375,29 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                 <feComposite in2="d" operator="in" result="line" />
                 <feMerge><feMergeNode in="line" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              {/* 솟은 땅의 옆면 — 잉크를 어둡게 해서 아래로 여러 번 겹쳐 찍는다(높이마다 하나) */}
-              {Array.from({ length: LIFT_MAX / 2 }, (_, j) => (j + 1) * 2).map(L => <filter key={L} id={`bs-lift-${L}`} x="-10%" y="-50%" width="120%" height="200%">
+              {/* 솟은 땅의 옆면 — 잉크를 어둡게 해서 아래로 여러 번 겹쳐 찍는다(높이마다 하나).
+                  필터 영역은 땅을 감싼 투명 여백 네모(아래 pad) 기준이라 옆면·테두리가 잘리지 않는다 */}
+              {Array.from({ length: LIFT_MAX / 2 }, (_, j) => (j + 1) * 2).map(L => <filter key={L} id={`bs-lift-${L}`} x="0" y="0" width="1" height="1">
                 <feComponentTransfer in="SourceGraphic" result="dark">
                   <feFuncR type="linear" slope="0.62" /><feFuncG type="linear" slope="0.62" /><feFuncB type="linear" slope="0.62" />
                 </feComponentTransfer>
                 {Array.from({ length: L / 2 }, (_, j) => <feOffset key={j} in="dark" dy={L - j * 2} result={`o${j}`} />)}
                 <feMerge>{Array.from({ length: L / 2 }, (_, j) => <feMergeNode key={j} in={`o${j}`} />)}<feMergeNode in="SourceGraphic" /></feMerge>
               </filter>)}
+              <filter id="bs-goo-pad" x="0" y="0" width="1" height="1">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="b" />
+                <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9" />
+              </filter>
+              <filter id="bs-edge-pad" x="0" y="0" width="1" height="1">
+                <feMorphology in="SourceAlpha" operator="dilate" radius="1.3" result="d" />
+                <feFlood floodColor="#1b1b29" floodOpacity="0.9" />
+                <feComposite in2="d" operator="in" result="line" />
+                <feMerge><feMergeNode in="line" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
               {/* 맞닿은 두 친구 땅 사이 — 가운데는 섞은 색, 가장자리로 갈수록 투명(흐림 필터보다 훨씬 가볍다). 색 쌍마다 하나 */}
               {mixPairs.map(([a, b]) => <radialGradient key={`${a}-${b}`} id={`bs-mix-${a}-${b}`}>
-                <stop offset="0%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.95} />
-                <stop offset="55%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.7} />
+                <stop offset="0%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.8} />
+                <stop offset="50%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0.5} />
                 <stop offset="100%" stopColor={mixColor(INK_COLORS[a], INK_COLORS[b])} stopOpacity={0} />
               </radialGradient>)}
               <filter id="bs-edge-thin" x="-5%" y="-5%" width="110%" height="110%">
@@ -396,17 +411,17 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                 <rect width={TILE * 2} height={TILE * 2} fill="#cdeea0" />
                 <rect width={TILE} height={TILE} fill="#bfe58c" /><rect x={TILE} y={TILE} width={TILE} height={TILE} fill="#bfe58c" />
               </pattern>
-              {isles.map(I => <mask key={I.key} id={`bs-island-${I.n}`} maskUnits="userSpaceOnUse" x="0" y="0" width={VIEW_W} height={VIEW_H + 20}>
+              {isles.map(I => <mask key={I.key} id={`bs-island-${I.n}`} maskUnits="userSpaceOnUse" x={-EDGE} y={-EDGE} width={VIEW_W + EDGE * 2} height={VIEW_H + EDGE * 2}>
                 <g filter="url(#bs-goo)" fill="#fff">{I.map.cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.2} />)}</g>
               </mask>)}
             </defs>
             {isles.map(I => <g key={I.key} transform={`translate(${I.off.x} ${I.off.y})`} opacity={multi && focus && !focus.startsWith(`${I.n}:`) ? 0.6 : 1}>
               {/* 절벽(섬 옆면) → 윗면 → 잉크 → 가장자리 장식 */}
               <g filter="url(#bs-edge)" transform="translate(0 8)">
-                <rect width={VIEW_W} height={VIEW_H} fill="#b8743f" mask={`url(#bs-island-${I.n})`} />
+                <rect x={-EDGE} y={-EDGE} width={VIEW_W + EDGE * 2} height={VIEW_H + EDGE * 2} fill="#b8743f" mask={`url(#bs-island-${I.n})`} />
               </g>
               <g filter="url(#bs-edge)">
-                <rect width={VIEW_W} height={VIEW_H} fill="url(#bs-grass)" mask={`url(#bs-island-${I.n})`} />
+                <rect x={-EDGE} y={-EDGE} width={VIEW_W + EDGE * 2} height={VIEW_H + EDGE * 2} fill="url(#bs-grass)" mask={`url(#bs-island-${I.n})`} />
               </g>
               {/* 학생마다 따로 테두리 + 아이디어 수만큼 솟은 언덕 */}
               {I.order.map(k => {
@@ -414,9 +429,16 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                 const cells = I.map.cells.filter(c => I.map.owner.get(c.i) === k);
                 const id = `${I.n}:${p.uid}`; const L = I.lifts[k];
                 // 옆면은 잉크만으로 만들고(줄무늬 없이) 테두리는 솟은 덩어리 전체에 한 번만
-                return <g key={p.uid} transform={`translate(0 ${-L})`} filter="url(#bs-edge-thin)" opacity={focus && focus !== id ? 0.35 : 1}>
+                if (!cells.length) return null;
+                // 필터 영역용 투명 여백(번짐·옆면·테두리가 들어갈 자리)
+                const pad = 12; // 번짐(3.2×3)+테두리 두께. 원 반지름은 이미 상자에 들어 있다
+                const x0 = Math.min(...cells.map(c => c.x)) - CELL_R - pad; const x1 = Math.max(...cells.map(c => c.x)) + CELL_R + pad;
+                const y0 = Math.min(...cells.map(c => c.y)) - CELL_R - pad; const y1 = Math.max(...cells.map(c => c.y)) + CELL_R + pad + L;
+                // 옆면은 잉크만으로 만들고(줄무늬 없이) 테두리는 솟은 덩어리 전체에 한 번만
+                return <g key={p.uid} transform={`translate(0 ${-L})`} filter="url(#bs-edge-pad)" opacity={focus && focus !== id ? 0.35 : 1}>
                   <g filter={L ? `url(#bs-lift-${L})` : undefined}>
-                    <g filter="url(#bs-goo)" fill={inkColor(k)}>
+                    <g filter="url(#bs-goo-pad)" fill={inkColor(k)}>
+                      <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill="none" />
                       {cells.map(c => <circle key={c.i} cx={c.x} cy={c.y} r={CELL_R * 1.08} className={styles.ink} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />)}
                     </g>
                   </g>
@@ -424,7 +446,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
               })}
               {/* 친구 땅끼리 맞닿은 곳은 두 색이 섞여 번진다(높이는 둘의 중간) */}
               {!focus && I.seams.length > 0 && <g>
-                {I.seams.map(m => <circle key={`${m.x},${m.y}`} cx={m.x} cy={m.y - (I.lifts[m.a] + I.lifts[m.b]) / 2} r={CELL_R * 1.15} fill={`url(#bs-mix-${pairKey(m.a, m.b)})`} />)}
+                {I.seams.map(m => <circle key={`${m.x},${m.y}`} cx={m.x} cy={m.y - (I.lifts[m.a] + I.lifts[m.b]) / 2} r={CELL_R * 0.95} fill={`url(#bs-mix-${pairKey(m.a, m.b)})`} />)}
               </g>}
               {/* 아직 공개되지 않은 다른 반 섬 — 구름에 가려 둔다 */}
               {I.hidden && <g>
@@ -516,8 +538,13 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
       const dpr = Math.min(lowEnd ? 1.25 : 2, window.devicePixelRatio || 1);
       let w = board.clientWidth * dpr * bakeScale; let h = (w * WH) / WW;
       // 캔버스 한계(브라우저마다 다름) 안으로: 한 변 8192, 넓이 1600만 화소
-      const k = Math.min(1, 8192 / w, 8192 / h, Math.sqrt(16e6 / (w * h))); w = Math.round(w * k); h = Math.round(h * k);
+      // (굽기 여백까지 더해도 한계 안으로 조금 낮춰 잡는다)
+      const k = Math.min(1, 7600 / w, 7600 / h, Math.sqrt(14e6 / (w * h))); w = Math.round(w * k); h = Math.round(h * k);
       const copy = svg.cloneNode(true) as SVGSVGElement;
+      // 판 밖으로 조금 넘친 절벽·테두리까지 굽는다(캔버스도 그만큼 넓게 놓는다)
+      const mx = (BAKE_M / WW) * w; const my = (BAKE_M / WH) * h;
+      copy.setAttribute("viewBox", `${-BAKE_M} ${-BAKE_M} ${WW + BAKE_M * 2} ${WH + BAKE_M * 2}`);
+      w = Math.round(w + mx * 2); h = Math.round(h + my * 2);
       copy.setAttribute("width", String(w)); copy.setAttribute("height", String(h));
       copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
@@ -577,7 +604,8 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
           <div className={styles.world} style={worldStyle}>
             {/* 실제 SVG 는 숨겨 두고(그리지 않음) 구운 그림만 보인다 — 굽기 전·실패하면 SVG 를 그대로 */}
             <div ref={svgHostRef} className={styles.mapHost} style={{ visibility: baked ? "hidden" : "visible" }}>{mapSvg}</div>
-            <canvas ref={bakeRef} className={styles.mapHost} aria-hidden="true" />
+            <canvas ref={bakeRef} className={styles.mapHost} aria-hidden="true"
+              style={{ left: `${(-BAKE_M / WW) * 100}%`, top: `${(-BAKE_M / WH) * 100}%`, width: `${((WW + BAKE_M * 2) / WW) * 100}%`, height: `${((WH + BAKE_M * 2) / WH) * 100}%` }} />
           </div>
           {!no3d && <CharacterLayer actors={actors} viewW={WW} viewH={WH} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} frameRef={seaRef} />}
           <div className={styles.world} style={worldStyle}>
