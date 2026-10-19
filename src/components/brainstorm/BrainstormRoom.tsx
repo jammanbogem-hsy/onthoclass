@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
 import { updateQuestion, watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, ensureSeat, setWorldShared, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
+import { reloadOnce } from "@/lib/chunk-reload";
 import { CELL_R, CLASS_GRID, INK_COLORS, inkColor, LABEL_H, LIFT_MAX, liftFor, mixColor, paintTerritory, seamsOf, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
 import { downloadBrainstormCsv, type ExportMode } from "@/lib/brainstorm-export";
 import { assignChars, charThumb } from "@/lib/brainstorm-chars";
@@ -33,7 +34,11 @@ function hash(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h 
 const fallbackFace = (uid: string) => `/avatar/${(hash(uid) % 23) + 1}.png`;
 
 // 3D 캐릭터(three.js)는 판을 열 때만 따로 불러온다
-const CharacterLayer = dynamic(() => import("./CharacterLayer").then(m => m.CharacterLayer), { ssr: false });
+// 3D 층 코드는 따로 불러온다. 배포 직후 옛 탭이라 못 불러오면 판을 깨뜨리지 않고 한 번 새로 고침 → 그래도 안 되면 2D 그림으로
+const CharacterLayer = dynamic(() => import("./CharacterLayer").then(m => m.CharacterLayer).catch(() => {
+  reloadOnce();
+  return function No3d({ onFail }: { onFail: () => void }) { useEffect(() => onFail(), [onFail]); return null; } as unknown as typeof import("./CharacterLayer").CharacterLayer;
+}), { ssr: false });
 /** 캐릭터 키(판 좌표) — 발은 집 칸 중심보다 조금 아래 */
 const CHAR_H = CELL_R * 3.6;
 const FEET = CELL_R * 0.5;
@@ -429,58 +434,9 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
             </g>)}
           </svg>
   ), [isles, focus, multi, mixPairs, WW, WH, VIEW_W, VIEW_H]);
-  return <main className={styles.page}>
-    <header className={styles.top}>
-      <div className={styles.topic}>
-        <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />{kicker}{linked ? ` · ${linkedCount}개 반이 함께` : ""}</span>
-        <h1>{topic}</h1>
-        {detail && <p>{detail}</p>}
-      </div>
-      <div className={styles.stats}>
-        <span><b>{everyone.length}</b>명 참여</span>
-        <span><b>{totalIdeas}</b>개 아이디어</span>
-      </div>
-      <div className={styles.tools}>
-        <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
-        <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
-        <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
-        {extraTools}
-        {onHide && <button type="button" className={styles.chip} aria-pressed={!!hideIdeas} onClick={() => onHide(!hideIdeas)}>
-          <Icon name={hideIdeas ? "speaker_notes_off" : "speaker_notes"} size={18} />{hideIdeas ? "응답 가림" : "응답 보임"}
-        </button>}
-        {linked && onShare && <button type="button" className={styles.chip} aria-pressed={!!shared} onClick={() => onShare(!shared)}>
-          <Icon name={shared ? "visibility" : "visibility_off"} size={18} />{shared ? "다른 반 섬 보임" : "다른 반 섬 가림"}
-        </button>}
-        {teacher && totalIdeas > 0 && <span className={styles.menuWrap}>
-          <button type="button" className={styles.chip} aria-expanded={csvMenu} onClick={() => setCsvMenu(v => !v)}><Icon name="download" size={18} />CSV</button>
-          {csvMenu && <span className={styles.menu} role="menu">
-            <button type="button" role="menuitem" onClick={() => exportCsv("student")}><Icon name="person" size={18} /><span><b>학생별</b>한 줄에 한 학생 · 아이디어 목록</span></button>
-            <button type="button" role="menuitem" onClick={() => exportCsv("idea")}><Icon name="lightbulb" size={18} /><span><b>아이디어별</b>한 줄에 한 아이디어 · 묶기·분류용</span></button>
-          </span>}
-        </span>}
-        {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{linked ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
-        <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
-      </div>
-    </header>
-    {error && <p role="alert" className={styles.error}>{error}</p>}
-
-    <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
-      <section ref={seaRef} className={styles.sea} aria-label="아이디어 땅따먹기 판">
-        <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`} data-calm={everyone.length > CALM_AT ? "" : undefined}
-          style={{ aspectRatio: `${WW} / ${WH}`, width: `min(100%, calc((100dvh - 230px) * ${(WW / WH).toFixed(3)}))`, maxWidth: multi ? "none" : 1500, "--char-h": `${(CHAR_H / WW) * 100}cqw` } as CSSProperties}>
-          {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
-          <div className={styles.world} style={worldStyle}>
-          {mapSvg}
-          </div>
-          {!no3d && <CharacterLayer actors={actors} viewW={WW} viewH={WH} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} />}
-          <div className={styles.world} style={worldStyle}>
-          {/* 섬마다 반 이름표 — 누르면 그 섬으로 */}
-          {multi && isles.map(I => <div key={I.key} className={styles.isleTag} style={{ left: `${((I.off.x + VIEW_W / 2) / WW) * 100}%`, top: `${((I.off.y - LABEL_H * 0.45) / WH) * 100}%` }}>
-            <button type="button" className={`${styles.isleBtn} ${I.n === home ? styles.isleHome : ""}`} onClick={() => (onIsle ? onIsle(I.n) : setView(islandView(I.n)))} aria-label={`${I.name || "반"} 섬만 크게 보기`}>
-              <Icon name={I.hidden ? "lock" : "flag"} size={16} fill />{I.name || "반"}<span>{I.hidden ? "선생님이 열면 보여요" : `${I.people.length}명 · ${I.ideas.length}개`}</span>{I.n === home && <em>우리 반</em>}
-            </button>
-          </div>)}
-          {everyone.map(({ id, k, p, I, char, color, home: pos }) => {
+  // 캐릭터·말풍선 층 — 확대·이동(view)과 무관하니 그때는 다시 만들지 않는다. 시계(now)는 '방금 쓴' 친구가 바뀔 때만 반영(bubbleTick)
+  const playersLayer = useMemo(() => (
+    everyone.map(({ id, k, p, I, char, color, home: pos }) => {
             if (!pos) return null;
             const latest = p.ideas[p.ideas.length - 1];
             const fresh = now > 0 && now - latest.at < FRESH_MS;
@@ -523,7 +479,96 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
               <span className={styles.shadow} />
               {showNames && <span className={styles.name}>{name}</span>}
             </div>;
-          })}
+          })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [everyone, bubbleTick, opened, focus, showNames, live3d, bubbleAll, hideIdeas, teacher, home, uid, members, photo, WW, WH, store]);
+
+  // 섬 그림 굽기 — 필터(번짐·테두리·언덕)가 많은 SVG 를 확대·이동할 때마다 다시 그리면 무겁다.
+  // 땅이 바뀌거나 확대 단계(1·2·4배)가 바뀔 때만 캔버스에 한 장으로 구워 두고, 확대·이동은 그 그림을 늘이기만 한다.
+  const svgHostRef = useRef<HTMLDivElement>(null);
+  const bakeRef = useRef<HTMLCanvasElement>(null);
+  const [baked, setBaked] = useState(false);
+  const bakeScale = settledView.s > 2.2 ? 4 : settledView.s > 1.1 ? 2 : 1;
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      const svg = svgHostRef.current?.querySelector("svg"); const cv = bakeRef.current; const board = boardRef.current;
+      if (!svg || !cv || !board || !board.clientWidth) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      let w = board.clientWidth * dpr * bakeScale; let h = (w * WH) / WW;
+      // 캔버스 한계(브라우저마다 다름) 안으로: 한 변 8192, 넓이 1600만 화소
+      const k = Math.min(1, 8192 / w, 8192 / h, Math.sqrt(16e6 / (w * h))); w = Math.round(w * k); h = Math.round(h * k);
+      const copy = svg.cloneNode(true) as SVGSVGElement;
+      copy.setAttribute("width", String(w)); copy.setAttribute("height", String(h));
+      copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url); if (!alive) return;
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext("2d"); if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h); setBaked(true);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); if (alive) setBaked(false); };
+      img.src = url;
+    }, 80);
+    return () => { alive = false; clearTimeout(t); };
+  }, [mapSvg, bakeScale, resizeTick, WW, WH]);
+
+  return <main className={styles.page}>
+    <header className={styles.top}>
+      <div className={styles.topic}>
+        <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />{kicker}{linked ? ` · ${linkedCount}개 반이 함께` : ""}</span>
+        <h1>{topic}</h1>
+        {detail && <p>{detail}</p>}
+      </div>
+      <div className={styles.stats}>
+        <span><b>{everyone.length}</b>명 참여</span>
+        <span><b>{totalIdeas}</b>개 아이디어</span>
+      </div>
+      <div className={styles.tools}>
+        <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
+        <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
+        <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
+        {extraTools}
+        {onHide && <button type="button" className={styles.chip} aria-pressed={!!hideIdeas} onClick={() => onHide(!hideIdeas)}>
+          <Icon name={hideIdeas ? "speaker_notes_off" : "speaker_notes"} size={18} />{hideIdeas ? "응답 가림" : "응답 보임"}
+        </button>}
+        {linked && onShare && <button type="button" className={styles.chip} aria-pressed={!!shared} onClick={() => onShare(!shared)}>
+          <Icon name={shared ? "visibility" : "visibility_off"} size={18} />{shared ? "다른 반 섬 보임" : "다른 반 섬 가림"}
+        </button>}
+        {teacher && totalIdeas > 0 && <span className={styles.menuWrap}>
+          <button type="button" className={styles.chip} aria-expanded={csvMenu} onClick={() => setCsvMenu(v => !v)}><Icon name="download" size={18} />CSV</button>
+          {csvMenu && <span className={styles.menu} role="menu">
+            <button type="button" role="menuitem" onClick={() => exportCsv("student")}><Icon name="person" size={18} /><span><b>학생별</b>한 줄에 한 학생 · 아이디어 목록</span></button>
+            <button type="button" role="menuitem" onClick={() => exportCsv("idea")}><Icon name="lightbulb" size={18} /><span><b>아이디어별</b>한 줄에 한 아이디어 · 묶기·분류용</span></button>
+          </span>}
+        </span>}
+        {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{linked ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
+        <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
+      </div>
+    </header>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+
+    <div className={`${styles.body} ${panel ? styles.withPanel : ""}`}>
+      <section ref={seaRef} className={styles.sea} aria-label="아이디어 땅따먹기 판">
+        <div ref={boardRef} className={`${styles.board} ${view.s > 1 ? styles.zoomed : ""}`} data-calm={everyone.length > CALM_AT ? "" : undefined}
+          style={{ aspectRatio: `${WW} / ${WH}`, width: `min(100%, calc((100dvh - 230px) * ${(WW / WH).toFixed(3)}))`, maxWidth: multi ? "none" : 1500, "--char-h": `${(CHAR_H / WW) * 100}cqw` } as CSSProperties}>
+          {/* 층: 섬·잉크(SVG) → 3D 캐릭터(WebGL) → 말풍선·이름(HTML). 섬과 말풍선은 같은 변환으로 확대·이동하고, 3D 는 카메라를 맞춘다 */}
+          <div className={styles.world} style={worldStyle}>
+            {/* 실제 SVG 는 숨겨 두고(그리지 않음) 구운 그림만 보인다 — 굽기 전·실패하면 SVG 를 그대로 */}
+            <div ref={svgHostRef} className={styles.mapHost} style={{ visibility: baked ? "hidden" : "visible" }}>{mapSvg}</div>
+            <canvas ref={bakeRef} className={styles.mapHost} aria-hidden="true" />
+          </div>
+          {!no3d && <CharacterLayer actors={actors} viewW={WW} viewH={WH} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} />}
+          <div className={styles.world} style={worldStyle}>
+          {/* 섬마다 반 이름표 — 누르면 그 섬으로 */}
+          {multi && isles.map(I => <div key={I.key} className={styles.isleTag} style={{ left: `${((I.off.x + VIEW_W / 2) / WW) * 100}%`, top: `${((I.off.y - LABEL_H * 0.45) / WH) * 100}%` }}>
+            <button type="button" className={`${styles.isleBtn} ${I.n === home ? styles.isleHome : ""}`} onClick={() => (onIsle ? onIsle(I.n) : setView(islandView(I.n)))} aria-label={`${I.name || "반"} 섬만 크게 보기`}>
+              <Icon name={I.hidden ? "lock" : "flag"} size={16} fill />{I.name || "반"}<span>{I.hidden ? "선생님이 열면 보여요" : `${I.people.length}명 · ${I.ideas.length}개`}</span>{I.n === home && <em>우리 반</em>}
+            </button>
+          </div>)}
+          {playersLayer}
           </div>
           {!everyone.length && <div className={styles.empty}><Icon name="water_drop" size={32} /><strong>첫 아이디어를 기다리는 중</strong><span>아이디어를 쓰면 내 색 잉크가 섬에 퍼져요!</span></div>}
         </div>

@@ -8,6 +8,7 @@ import { FONT_INIT_SCRIPT } from "@/lib/fontTheme";
 import { THEME_INIT_SCRIPT } from "@/lib/colorTheme";
 import { NameMaskProvider } from "@/components/NameMask";
 import { PrefsSync } from "@/components/PrefsSync";
+import { ChunkRecovery } from "@/components/ChunkRecovery";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -56,6 +57,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
+        <ChunkRecovery />
         <AuthProvider>
           <DialogProvider>
             {/* 이름 가리기는 앱 전체가 한 상태를 공유한다 — 메인에서 한 번 켜면

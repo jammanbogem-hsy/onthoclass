@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.0";
+export const APP_VERSION = "1.26.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.1",
+    date: "2026-10-19",
+    kind: "patch",
+    title: "새 버전 오류 자동 복구·브레인스토밍 더 가볍게",
+    items: [
+      "새 버전이 나온 직후 열려 있던 화면에서 3D 캐릭터 등을 못 불러와 오류가 뜨던 문제를 고쳤어요. 이제 저절로 한 번 새로 고쳐지고, 캐시를 지우지 않아도 돼요.",
+      "브레인스토밍 섬 그림을 한 장으로 구워 두어 확대·이동이 가벼워졌어요.",
+      "캐릭터 그림과 물결 그림을 한 번 받으면 다시 받지 않아 판이 더 빨리 열려요.",
+    ],
+  },
   {
     version: "1.26.0",
     date: "2026-10-19",
