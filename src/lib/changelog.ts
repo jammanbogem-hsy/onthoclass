@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.1";
+export const APP_VERSION = "1.26.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.26.2",
+    date: "2026-10-19",
+    kind: "patch",
+    title: "브레인스토밍 말풍선 출렁임·가장자리 잘림 고침",
+    items: [
+      "새 아이디어가 올라올 때마다 말풍선들이 모였다 흩어지던 움직임을 없앴어요.",
+      "확대하면 판 네모 밖이 잘려 보이던 것을 고쳐, 화면 끝까지 섬이 이어져 보여요.",
+      "판 옆 바다 여백에서도 끌어서 옮기고 확대·축소할 수 있어요.",
+      "가장자리에 있는 친구 말풍선이 세로로 좁게 찌그러지던 것을 고쳤어요.",
+    ],
+  },
   {
     version: "1.26.1",
     date: "2026-10-19",

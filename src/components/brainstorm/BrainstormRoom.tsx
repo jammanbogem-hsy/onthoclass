@@ -194,7 +194,7 @@ export function BrainstormBoard(props: BoardProps) {
   const [solo, setSolo] = useState<string | null>(() => (islands.length > 1 && !teacher && islands[home] ? keyOf(islands[home]) : null));
   if (islands.length < 2) return <Board {...props} />;
   const n = solo ? islands.findIndex(i => keyOf(i) === solo) : -1;
-  const tabs = <div className={styles.isleTabs} role="tablist" aria-label="볼 섬 고르기">
+  const tabs = <div className={styles.isleTabs} data-nopan="" role="tablist" aria-label="볼 섬 고르기">
     <button type="button" role="tab" aria-selected={n < 0} onClick={() => setSolo(null)}><Icon name="public" size={18} />모두</button>
     {islands.map((I, k) => <button key={keyOf(I)} type="button" role="tab" aria-selected={k === n} onClick={() => setSolo(keyOf(I))}>
       <Icon name={I.hidden ? "lock" : k === home ? "home" : "flag"} size={16} fill={k === n} />{I.name || "반"}
@@ -247,8 +247,9 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     const ux = v.x + (fx * WW) / v.s; const uy = v.y + (fy * WH) / v.s;
     return clampView({ s, x: ux - (fx * WW) / s, y: uy - (fy * WH) / s });
   }), [WW, WH, zoomMax, clampView]);
-  usePanZoom(boardRef, WW, WH, setView, zoomAt, clampView);
   const seaRef = useRef<HTMLElement>(null);
+  // 판 바깥 바다 여백에서도 끌기·확대가 된다(좌표 계산은 판 기준)
+  usePanZoom(seaRef, boardRef, WW, WH, setView, zoomAt, clampView);
   // 3D 로 그려지고 있는 학생들 / WebGL 을 못 쓰는 기기
   const [live3d, setLive3d] = useState<Set<string>>(() => new Set());
   const [no3d, setNo3d] = useState(false);
@@ -560,7 +561,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
             <div ref={svgHostRef} className={styles.mapHost} style={{ visibility: baked ? "hidden" : "visible" }}>{mapSvg}</div>
             <canvas ref={bakeRef} className={styles.mapHost} aria-hidden="true" />
           </div>
-          {!no3d && <CharacterLayer actors={actors} viewW={WW} viewH={WH} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} />}
+          {!no3d && <CharacterLayer actors={actors} viewW={WW} viewH={WH} charH={CHAR_H} view={view} onLoaded={onLoaded} onFail={onFail} frameRef={seaRef} />}
           <div className={styles.world} style={worldStyle}>
           {/* 섬마다 반 이름표 — 누르면 그 섬으로 */}
           {multi && isles.map(I => <div key={I.key} className={styles.isleTag} style={{ left: `${((I.off.x + VIEW_W / 2) / WW) * 100}%`, top: `${((I.off.y - LABEL_H * 0.45) / WH) * 100}%` }}>
@@ -574,7 +575,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
         </div>
         {isleTabs}
         {overlay}
-        <div className={styles.zoomBar} role="group" aria-label="판 확대·축소">
+        <div className={styles.zoomBar} data-nopan="" role="group" aria-label="판 확대·축소">
           <button type="button" onClick={() => zoomAt(1.4)} aria-label="확대" disabled={view.s >= zoomMax}><Icon name="add" size={20} /></button>
           <span>{Math.round(view.s * 100)}%</span>
           <button type="button" onClick={() => zoomAt(1 / 1.4)} aria-label="축소" disabled={view.s <= 1}><Icon name="remove" size={20} /></button>
@@ -653,11 +654,12 @@ function Notice({ title, body, action }: { title: string; body?: string; action?
  * 판 확대·이동: 마우스 휠(가리킨 곳 중심) · 끌기 · 두 손가락 벌리기/좁히기.
  * 살짝 누른 것(6px 미만 이동)은 캐릭터·말풍선 클릭으로 그대로 둔다. 펼친 말풍선 안에서는 스크롤.
  */
-function usePanZoom(ref: React.RefObject<HTMLDivElement | null>, ww: number, wh: number, setView: (f: (v: BoardView) => BoardView) => void,
+function usePanZoom(areaRef: React.RefObject<HTMLElement | null>, ref: React.RefObject<HTMLDivElement | null>, ww: number, wh: number, setView: (f: (v: BoardView) => BoardView) => void,
   zoomAt: (factor: number, fx?: number, fy?: number) => void, clampView: (v: BoardView) => BoardView) {
   useEffect(() => {
-    const el = ref.current; if (!el) return;
-    const inScroll = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("[data-scroll]");
+    const el = ref.current; const area = areaRef.current; if (!el || !area) return;
+    // 말풍선 목록 스크롤·판 위 버튼 묶음(확대 막대·반 탭·QR)에서는 판을 움직이지 않는다
+    const inScroll = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("[data-scroll],[data-nopan]");
     const frac = (cx: number, cy: number) => { const r = el.getBoundingClientRect(); return [(cx - r.left) / r.width, (cy - r.top) / r.height] as const; };
     const onWheel = (e: WheelEvent) => {
       if (inScroll(e.target)) return;
@@ -679,19 +681,19 @@ function usePanZoom(ref: React.RefObject<HTMLDivElement | null>, ww: number, wh:
       }
       const dx = cur.x - prev.x; const dy = cur.y - prev.y; moved += Math.abs(dx) + Math.abs(dy);
       if (moved < 6) return;
-      if (!el.hasPointerCapture(e.pointerId)) el.setPointerCapture(e.pointerId);
+      if (!area.hasPointerCapture(e.pointerId)) area.setPointerCapture(e.pointerId);
       setView(v => clampView({ s: v.s, x: v.x - (dx / r.width) * (ww / v.s), y: v.y - (dy / r.height) * (wh / v.s) }));
     };
     const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; };
     // 끌어서 옮긴 뒤 손을 뗄 때 캐릭터가 눌린 것으로 치지 않게
     const click = (e: MouseEvent) => { if (moved >= 6) { e.stopPropagation(); e.preventDefault(); moved = 0; } };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("pointerdown", down); el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
-    el.addEventListener("click", click, true);
+    area.addEventListener("wheel", onWheel, { passive: false });
+    area.addEventListener("pointerdown", down); area.addEventListener("pointermove", move);
+    area.addEventListener("pointerup", up); area.addEventListener("pointercancel", up);
+    area.addEventListener("click", click, true);
     return () => {
-      el.removeEventListener("wheel", onWheel); el.removeEventListener("pointerdown", down); el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up); el.removeEventListener("click", click, true);
+      area.removeEventListener("wheel", onWheel); area.removeEventListener("pointerdown", down); area.removeEventListener("pointermove", move);
+      area.removeEventListener("pointerup", up); area.removeEventListener("pointercancel", up); area.removeEventListener("click", click, true);
     };
-  }, [ref, ww, wh, setView, zoomAt, clampView]);
+  }, [areaRef, ref, ww, wh, setView, zoomAt, clampView]);
 }

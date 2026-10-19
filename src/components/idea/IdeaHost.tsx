@@ -146,7 +146,7 @@ function HostBoard({ sid, uid }: { sid: string; uid: string }) {
     <button type="button" className={boardStyles.chip} aria-pressed={closed} onClick={toggle}><Icon name={closed ? "lock" : "lock_open"} size={18} />{closed ? "마감됨 · 다시 열기" : "마감하기"}</button>
   </>;
   // 판 구석의 작은 QR — 늦게 온 참여자용. 누르면 크게.
-  const corner = !closed && <button type="button" className={styles.cornerQr} onClick={() => setBigQr(true)} aria-label="참여 QR 크게 보기">
+  const corner = !closed && <button type="button" className={styles.cornerQr} data-nopan="" onClick={() => setBigQr(true)} aria-label="참여 QR 크게 보기">
     <QrCode text={url} className={styles.qrSm} />
     <span><b>{session.code}</b>{players.length}명 참여</span>
   </button>;

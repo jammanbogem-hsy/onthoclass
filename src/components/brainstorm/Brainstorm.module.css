@@ -1,7 +1,7 @@
 /* 브레인스토밍 땅따먹기 판 — 바다 위 섬에 스플래툰처럼 잉크가 번지고, 캐릭터와 말풍선이 둥실 떠 있다.
    판(바다·섬·잉크)은 게임 장면이라 고정색, 머리줄·패널·입력칸은 M3 토큰을 쓴다. */
 
-.page{min-height:100dvh;display:flex;flex-direction:column;max-width:100vw;overflow-x:hidden;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)}
+.page{min-height:100dvh;display:flex;flex-direction:column;max-width:100vw;overflow-x:clip;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)}
 
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:14px 20px;border-bottom:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low)}
 .topic{flex:1 1 320px;min-width:0}
@@ -22,7 +22,7 @@
 
 /* 바다 — 잔물결 무늬가 천천히 흐른다 */
 /* 바다 — 브롤스타즈 물 타일처럼 큼직한 체크무늬가 천천히 흐른다 */
-.sea{position:relative;display:flex;align-items:center;justify-content:center;padding:clamp(28px,5vw,64px) clamp(12px,3vw,40px) 24px;overflow:hidden;
+.sea{position:relative;display:flex;align-items:center;justify-content:center;padding:clamp(28px,5vw,64px) clamp(12px,3vw,40px) 24px;overflow:clip;touch-action:none;cursor:grab;
   background:url(/brainstorm/water.webp) 0 0/384px 384px,#1f86d6;
   animation:seaDrift 60s linear infinite}
 /* 물결 반짝임 — 같은 무늬를 다른 크기·방향으로 두 겹 흘려서 일렁이게(이미지만, 필터 없음 → 가볍다).
@@ -35,20 +35,15 @@
 .board{position:relative;container-type:inline-size;touch-action:none;cursor:grab;user-select:none;width:min(100%,calc((100dvh - 230px) * 1.95));max-width:1500px}
 .map{display:block;width:100%;height:100%;overflow:visible}
 .mapHost{position:absolute;inset:0;width:100%;height:100%;display:block}
-/* 확대 중에는 판 경계에서 자른다(1배일 때는 위쪽 말풍선이 바다로 넘쳐도 보이게) */
-/* 확대하면 판 밖은 잘리는데, 테두리 없이 가장자리를 바다로 스르르 녹인다 */
-.zoomed{overflow:hidden;
-  -webkit-mask-image:linear-gradient(to right,transparent,#000 36px,#000 calc(100% - 36px),transparent),linear-gradient(to bottom,transparent,#000 36px,#000 calc(100% - 36px),transparent);
-  -webkit-mask-composite:source-in;
-  mask-image:linear-gradient(to right,transparent,#000 36px,#000 calc(100% - 36px),transparent),linear-gradient(to bottom,transparent,#000 36px,#000 calc(100% - 36px),transparent);
-  mask-composite:intersect}
+/* 확대해도 판 네모에서 자르지 않는다 — 판 밖 바다 여백까지 섬이 이어져 보이고, 바다 가장자리에서만 잘린다 */
+
 .zoomed:active{cursor:grabbing}
 /* 확대·이동되는 판 한 덩어리 */
 .world{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
 /* 말풍선·이름은 확대해도 글자 크기 그대로(판만 커져서 서로 덜 겹친다) */
 .bubbleWrap,.name{zoom:calc(1 / var(--zoom, 1))}
 /* 겹침 풀기로 비켜난 만큼 옮긴다(JS 가 --bx/--by 를 정한다) */
-.bubbleWrap{position:relative;display:flex;flex-direction:column;align-items:center;transform:translate(var(--bx,0px),var(--by,0px));transition:transform .35s cubic-bezier(.2,1.2,.4,1)}
+.bubbleWrap{position:relative;display:flex;flex-direction:column;align-items:center;transform:translate(var(--bx,0px),var(--by,0px))}
 /* 많이 비켜났으면 말풍선 꼬리 → 원래 자리(캐릭터 머리)로 가는 점선 */
 .leader{display:none;position:absolute;left:50%;top:calc(100% - 4px);width:var(--ll,0px);height:0;border-top:2.5px dashed #1b1b29;transform-origin:0 0;transform:rotate(var(--la,0rad));pointer-events:none;opacity:.7}
 .bubbleWrap[data-far] .leader{display:block}
@@ -90,7 +85,7 @@
 @keyframes inkIn{0%{transform:scale(0)}100%{transform:scale(1)}}
 
 /* 캐릭터 + 말풍선 */
-.player{position:absolute;transform:translate(-50%,-78%);display:flex;flex-direction:column;align-items:center;border:0;background:none;padding:0;cursor:pointer;
+.player{position:absolute;width:max-content;transform:translate(-50%,-78%);display:flex;flex-direction:column;align-items:center;border:0;background:none;padding:0;cursor:pointer;
   animation:float 3s ease-in-out infinite;animation-delay:var(--delay);will-change:transform}
 @keyframes float{0%,100%{transform:translate(-50%,-78%)}50%{transform:translate(-50%,-86%)}}
 /* 3D 캐릭터: 버튼은 발 위치에 붙고, 캐릭터 키만큼 빈 칸 위에 말풍선이 뜬다(움직임은 3D 가 한다) */

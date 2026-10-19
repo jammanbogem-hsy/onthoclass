@@ -62,8 +62,10 @@ function addOutline(root: THREE.Object3D, scale: number) {
   }
 }
 
-export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, onFail }: {
+export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, onFail, frameRef }: {
   actors: Actor[]; viewW: number; viewH: number; charH: number; view: BoardView;
+  /** 판보다 넓은 바다 영역 — 확대했을 때 판 밖(바다 여백)에 걸친 캐릭터도 그린다 */
+  frameRef?: React.RefObject<HTMLElement | null>;
   /** 3D 로 그려지기 시작한 학생들(그 학생의 2D 그림은 숨긴다) */
   onLoaded: (uids: string[]) => void;
   /** WebGL 을 못 쓰는 기기 — 2D 그림으로 대신한다 */
@@ -84,7 +86,7 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
     } catch { cbs.current.onFail(); return; }
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-    renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
+    renderer.domElement.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none";
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -94,8 +96,16 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
     const cam = new THREE.OrthographicCamera(0, viewW, 0, -viewH, -2000, 2000);
     cam.position.set(0, 0, 1000); cam.lookAt(0, 0, 0);
 
-    const resize = () => { const r = host.getBoundingClientRect(); renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false); };
-    const ro = new ResizeObserver(resize); ro.observe(host); resize();
+    // 캔버스는 바다 전체를 덮는다. pad = 판 가장자리에서 바다 가장자리까지(px), bw/bh = 판 크기(px)
+    const geo = { l: 0, t: 0, r: 0, b: 0, bw: 1, bh: 1 };
+    const resize = () => {
+      const r = host.getBoundingClientRect(); const f = frameRef?.current?.getBoundingClientRect() ?? r;
+      Object.assign(geo, { l: r.left - f.left, t: r.top - f.top, r: f.right - r.right, b: f.bottom - r.bottom, bw: Math.max(1, r.width), bh: Math.max(1, r.height) });
+      const s = renderer.domElement.style;
+      s.left = `${-geo.l}px`; s.top = `${-geo.t}px`; s.width = `${f.width}px`; s.height = `${f.height}px`;
+      renderer.setSize(Math.max(1, f.width), Math.max(1, f.height), false);
+    };
+    const ro = new ResizeObserver(resize); ro.observe(host); if (frameRef?.current) ro.observe(frameRef.current); resize();
 
     const gradient = toonGradient();
     const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
@@ -174,13 +184,16 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
       if (document.hidden) return;
       const v = viewRef.current; tick++;
       // 캐릭터가 많으면 둥실 움직임은 30fps(20명 넘게)·20fps(40명 넘게)로만 그린다 — 확대·이동 중에는 판과 어긋나지 않게 매 프레임
-      const camMoved = cam.left !== v.x || cam.right !== v.x + viewW / v.s || cam.top !== -v.y;
+      // 화면(바다 전체)에 보이는 판 좌표 범위 — 판 밖 여백만큼 더 넓다
+      const ux = viewW / v.s / geo.bw; const uy = viewH / v.s / geo.bh;
+      const L = v.x - geo.l * ux; const R = v.x + viewW / v.s + geo.r * ux; const T = v.y - geo.t * uy; const B = v.y + viewH / v.s + geo.b * uy;
+      const camMoved = cam.left !== L || cam.right !== R || cam.top !== -T || cam.bottom !== -B;
       const step = lives.size > 40 ? 3 : lives.size > 20 ? 2 : 1;
       if (!camMoved && tick % step) return;
       const dt = Math.min(clock.getDelta(), 0.1); const t = clock.elapsedTime;
       // 화면 밖(확대해서 안 보이는 섬)의 캐릭터는 그리지도 움직이지도 않는다.
       // 여러 반이 모여 캐릭터가 많으면 뼈 동작은 한 프레임씩 번갈아(반씩) 계산한다.
-      const x0 = v.x - charH; const x1 = v.x + viewW / v.s + charH; const y0 = v.y - charH * 0.5; const y1 = v.y + viewH / v.s + charH * 1.5;
+      const x0 = L - charH; const x1 = R + charH; const y0 = T - charH * 0.5; const y1 = B + charH * 1.5;
       const many = lives.size > 40;
       for (const l of lives.values()) {
         const p = l.root.position;
@@ -204,7 +217,7 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
       }
       // 확대·이동: 판(HTML)과 같은 영역만 보이게 카메라를 맞춘다
       if (camMoved) {
-        cam.left = v.x; cam.right = v.x + viewW / v.s; cam.top = -v.y; cam.bottom = -(v.y + viewH / v.s); cam.updateProjectionMatrix();
+        cam.left = L; cam.right = R; cam.top = -T; cam.bottom = -B; cam.updateProjectionMatrix();
       }
       renderer.render(scene, cam);
     };
@@ -215,7 +228,7 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
       renderer.dispose(); renderer.domElement.remove();
       sync.current = () => {};
     };
-  }, [viewW, viewH, charH]);
+  }, [viewW, viewH, charH, frameRef]);
 
   useEffect(() => { sync.current(actors); }, [actors]);
 
