@@ -392,7 +392,7 @@ async function classRecords(cid: string, kind: string, r: Roster, only: string |
 
 /** 요청마다 만드는 MCP 서버(테스트에서도 직접 불러 쓴다) */
 export function buildServer(ctx: Ctx) {
-  const s = new McpServer({ name: "러닝크루", version: "1.0.0" }, {
+  const s = new McpServer({ name: "러닝크루", version: "1.1.0" } /* 도구를 바꾸면 올린다(1.1.0: 학급 생활 기록·요약) */, {
     instructions: "러닝크루(초등 학급 LMS) 교사용 읽기 전용 도구. 먼저 list_classes 로 학급 id 를 얻고, list_lessons 로 차시·활동 id 를 얻은 뒤 응답을 읽으세요. "
       + "주식 거래·만보 경제·칭찬·피드백·댓글·메시지 같은 학급 생활 기록은 get_class_records(kind 로 종류 선택), 기간 요약은 get_class_summary 를 쓰세요. "
       + "학생은 기본으로 학생 코드(S01…)로 표시됩니다. 결과를 학생·학부모에게 그대로 공유하지 말고, 분석은 한국어로 해 주세요.",
