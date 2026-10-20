@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.26.6";
+export const APP_VERSION = "1.27.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,13 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.27.0",
+    date: "2026-10-20",
+    kind: "minor",
+    title: "만보 트레이딩 새 종목 JMB엔터테인먼트",
+    items: ["가수와 아이돌을 키우는 엔터테인먼트 회사 'JMB엔터테인먼트'를 사고팔 수 있어요."],
+  },
   {
     version: "1.26.6",
     date: "2026-10-19",

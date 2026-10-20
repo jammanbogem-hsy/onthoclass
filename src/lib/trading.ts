@@ -64,6 +64,7 @@ export const TRADING_STOCKS: readonly TradingStock[] = [
   { symbol: "012450", alias: "만보에어로스페이스", real: "한화에어로스페이스", color: "#dc2626", icon: "rocket_launch", desc: "비행기 엔진과 우주로 가는 로켓을 만드는 회사예요.", mbDivisor: 3000 },
   { symbol: "000250", alias: "만보당제약", real: "삼천당제약", color: "#db2777", icon: "medication", desc: "우리 몸을 건강하게 지켜주는 약을 만드는 제약 회사예요.", mbDivisor: 1500 },
   { symbol: "000660", alias: "잠이닉스", real: "SK하이닉스", color: "#ea580c", icon: "developer_board", desc: "컴퓨터와 스마트폰이 기억하는 칩(메모리 반도체)을 만드는 회사예요.", mbDivisor: 10000 },
+  { symbol: "035900", alias: "JMB엔터테인먼트", real: "JYP Ent.", color: "#9333ea", icon: "mic", desc: "가수와 아이돌 그룹을 키우고 노래·공연·음반을 만드는 엔터테인먼트 회사예요.", mbDivisor: 250 },
 ] as const;
 
 export const stockBySymbol = (symbol: string): TradingStock | undefined =>
