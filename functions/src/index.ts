@@ -20,6 +20,7 @@ import {
   type DocumentReference,
 } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
+import { TRADING_ALIAS } from "./tradingAlias";
 import { loadSharedCache, hasInvested, sumBuyTotal, type CacheClaim } from "./sharedCache";
 import { USAGE_FEATURES, usageDay, validateUsage, mergeUsage, type UsageEntry, type UsageCounts } from "./usage";
 import Anthropic from "@anthropic-ai/sdk";
@@ -3105,21 +3106,7 @@ const TRADING_SYMBOLS = [
   "035900",
 ] as const;
 const TRADING_SYMBOL_SET = new Set<string>(TRADING_SYMBOLS);
-// 학생 노출용 별칭 — trading.ts TRADING_STOCKS 의 alias 와 동일(지갑 로그 등 표기용).
-const TRADING_ALIAS: Record<string, string> = {
-  "005930": "만보전자",
-  "011200": "만보해운",
-  "035420": "잠이버",
-  "005380": "만보차",
-  "042660": "만보오션",
-  "010950": "J-Oil",
-  "277810": "JMB로보틱스",
-  "373220": "만보에너지솔루션",
-  "012450": "만보에어로스페이스",
-  "000250": "만보당제약",
-  "000660": "잠이닉스",
-  "035900": "JMB엔터테인먼트",
-};
+// 학생 노출용 별칭은 tradingAlias.ts(MCP 서버도 함께 쓴다)
 
 const TOSS_BASE = "https://openapi.tossinvest.com";
 const TRADING_MB_DIVISOR = 2000; // 기본 배율 — mbPrice = floor(실제가격 / divisor)

@@ -24,6 +24,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { TRADING_ALIAS } from "./tradingAlias";
 
 const BASE = "https://jammanboeng.web.app";
 const RESOURCE = `${BASE}/mcp`; // 함수 rewrite 주소는 호스팅의 trailingSlash 리디렉트를 받지 않는다
@@ -218,11 +219,16 @@ const who = (ctx: Ctx, r: Roster, uid: string, fallback = "") => {
   return ctx.includeNames ? `${r.nameOf.get(uid) || fallback}(${code})` : code;
 };
 
+/** 명단에 없는 계정 id(다른 반 학생 등)처럼 보이는 문자열 — 그대로 내보내지 않는다 */
+const UIDLIKE = /^[A-Za-z0-9]{28}$/; // 파이어베이스 계정 id 는 28자(문서 id 는 20자라 건드리지 않는다)
+const otherKey = (v: string) => `다른반-${createHash("sha256").update(v).digest("hex").slice(0, 6)}`;
+
 function clean(v: unknown, ctx: Ctx, r: Roster | null, depth = 0): unknown {
   if (v == null) return v;
   if (v instanceof Timestamp) return kst(v.toMillis());
   if (typeof v === "string") {
     if (r?.codeOf.has(v)) return who(ctx, r, v);
+    if (UIDLIKE.test(v) && /[0-9]/.test(v) && /[A-Za-z]/.test(v)) return otherKey(v);
     let s = v.length > 4000 ? v.slice(0, 4000) + "…" : v;
     if (!ctx.includeNames && r) for (const [n, code] of r.names) if (s.includes(n)) s = s.split(n).join(code);
     return s;
@@ -233,9 +239,11 @@ function clean(v: unknown, ctx: Ctx, r: Roster | null, depth = 0): unknown {
   const out: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
     if (DROP.has(k)) continue;
+    // 계정 id 가 칸 이름인 경우(대회 기준값·보유 표 등)도 학생 코드로
+    const key = r?.codeOf.has(k) ? who(ctx, r, k) : UIDLIKE.test(k) && /[0-9]/.test(k) && /[A-Za-z]/.test(k) ? otherKey(k) : k;
     // 첨부는 종류만(주소 없이)
     if (k === "attachments" && Array.isArray(x)) { out.attachments = x.map(a => (a as { kind?: string; type?: string })?.kind ?? (a as { type?: string })?.type ?? "file"); continue; }
-    out[k] = clean(x, ctx, r, depth + 1);
+    out[key] = clean(x, ctx, r, depth + 1);
   }
   return out;
 }
@@ -325,10 +333,68 @@ async function islandIdeas(ctx: Ctx, cid: string, lid: string, qid: string) {
   return { totalIdeas: snap.size, students };
 }
 
+
+/* ---------- 학급 기록 읽기(get_class_records / get_class_summary / 학생 이력) ---------- */
+
+type Row = { _t: number; v: DocumentData };
+const timeOf = (v: DocumentData) => ms(v.at) || ms(v.createdAt) || ms(v.submittedAt) || ms(v.decidedAt) || ms(v.requestedAt) || ms(v.updatedAt) || ms(v.date);
+const rowsOf = (docs: FirebaseFirestore.QueryDocumentSnapshot[], extra?: (d: FirebaseFirestore.QueryDocumentSnapshot) => DocumentData): Row[] =>
+  docs.map(d => { const v = { id: d.id, ...d.data(), ...(extra ? extra(d) : {}) }; return { _t: timeOf(v), v }; });
+/** 종목 코드 옆에 학생에게 보이는 별칭(만보전자 등)을 붙인다 */
+const withStock = (v: DocumentData) => (typeof v.symbol === "string" && TRADING_ALIAS[v.symbol] ? { stock: TRADING_ALIAS[v.symbol], ...v } : v);
+const studentUid = (r: Roster, s: string) => r.uidOfCode.get(s.trim().toUpperCase()) ?? [...r.nameOf.entries()].find(([, n]) => n === s.trim())?.[0] ?? null;
+
+async function classRecords(cid: string, kind: string, r: Roster, only: string | null): Promise<Row[]> {
+  const col = (p: string) => db().collection(`classes/${cid}/${p}`).get().then(x => rowsOf(x.docs));
+  const students = only ? [only] : [...r.codeOf.keys()];
+  /** 학생마다 있는 하위 기록(지갑·경험치·칭찬함·메시지) */
+  const perStudent = async (path: (u: string) => string) => (await Promise.all(students.map(async u => {
+    const snap = await db().collection(`classes/${cid}/${path(u)}`).get();
+    return rowsOf(snap.docs, () => ({ studentUid: u }));
+  }))).flat();
+  switch (kind) {
+    case "trades": return col("trades");
+    case "positions": return col("positions").then(rows => rows.map(x => ({ ...x, v: { ...x.v, studentUid: x.v.id } })));
+    case "trading_config": return col("trading");
+    case "stock_contests": {
+      const snap = await db().collection("stockContests").where("cids", "array-contains", cid).get();
+      return rowsOf(snap.docs);
+    }
+    case "purchases": return col("purchases");
+    case "market_items": return col("market");
+    case "fundings": return col("fundings");
+    case "manbo_log": return perStudent(u => `manbo/${u}/log`);
+    case "manbo_wallets": return col("manbo").then(rows => rows.map(x => ({ ...x, v: { ...x.v, studentUid: x.v.id } })));
+    case "xp_log": return perStudent(u => `xp/${u}/log`);
+    case "xp_totals": return col("xp").then(rows => rows.map(x => ({ ...x, v: { ...x.v, studentUid: x.v.id } })));
+    case "xp_requests": return col("xpRequests");
+    case "praises": return col("praises");
+    case "praise_inbox": return perStudent(u => `praiseInbox/${u}/items`);
+    case "feedback": return col("feedback");
+    case "messages": return perStudent(u => `threads/${u}/messages`);
+    case "comments": {
+      // 응답 댓글은 수가 적어 전체에서 이 학급 경로만 고른다
+      const snap = await db().collectionGroup("comments").get();
+      return rowsOf(snap.docs.filter(d => d.ref.path.startsWith(`classes/${cid}/lessons/`)), d => {
+        const seg = d.ref.path.split("/"); // classes/c/lessons/l/questions/q/submissions/s/comments/x
+        return { lessonId: seg[3], activityId: seg[5], onResponseOf: seg[7] };
+      });
+    }
+    case "presentation_requests": return col("presentationRequests");
+    case "attendance": return col("attendance");
+    case "badges": return col("badges").then(rows => rows.map(x => ({ ...x, v: { ...x.v, studentUid: x.v.id } })));
+    case "quests": return col("quests");
+    case "groups": return col("groups");
+    case "projects": return col("projects");
+  }
+  throw new Error("알 수 없는 기록 종류예요.");
+}
+
 /** 요청마다 만드는 MCP 서버(테스트에서도 직접 불러 쓴다) */
 export function buildServer(ctx: Ctx) {
   const s = new McpServer({ name: "러닝크루", version: "1.0.0" }, {
     instructions: "러닝크루(초등 학급 LMS) 교사용 읽기 전용 도구. 먼저 list_classes 로 학급 id 를 얻고, list_lessons 로 차시·활동 id 를 얻은 뒤 응답을 읽으세요. "
+      + "주식 거래·만보 경제·칭찬·피드백·댓글·메시지 같은 학급 생활 기록은 get_class_records(kind 로 종류 선택), 기간 요약은 get_class_summary 를 쓰세요. "
       + "학생은 기본으로 학생 코드(S01…)로 표시됩니다. 결과를 학생·학부모에게 그대로 공유하지 말고, 분석은 한국어로 해 주세요.",
   });
 
@@ -423,7 +489,7 @@ export function buildServer(ctx: Ctx) {
   });
 
   s.registerTool("get_student_activity", {
-    title: "학생 한 명의 활동 이력", description: "한 학생의 최근 활동을 시간순으로: 활동 응답·성찰·브레인스토밍 아이디어·게임 결과·칭찬(보냄/받음)·경험치. student 는 학생 코드(S01) 또는 이름.",
+    title: "학생 한 명의 활동 이력", description: "한 학생의 최근 활동을 시간순으로: 활동 응답·성찰·브레인스토밍 아이디어·게임 결과·칭찬(보냄/받음)·경험치·주식 거래·마켓 구매·만보 지갑·메시지·댓글. student 는 학생 코드(S01) 또는 이름.",
     inputSchema: { classId: z.string(), student: z.string(), days: z.number().int().min(1).max(365).optional() }, annotations: RO,
   }, async ({ classId, student, days }) => {
     try {
@@ -463,6 +529,17 @@ export function buildServer(ctx: Ctx) {
       for (const d of pFrom.docs) if (ms(d.data().createdAt) >= since) items.push({ at: ms(d.data().createdAt), type: "칭찬 보냄", to: who(ctx, r, d.data().toUid, d.data().toName), reason: clean(d.data().reason, ctx, r), status: d.data().status });
       const xp = await db().collection(`classes/${classId}/xp/${target}/log`).orderBy("at", "desc").limit(100).get().catch(() => null);
       for (const d of xp?.docs ?? []) if (ms(d.data().at) >= since) items.push({ at: ms(d.data().at), type: "경험치", ...(clean({ ...d.data(), at: undefined }, ctx, r) as object) });
+      // 주식 거래·마켓 구매·만보 지갑·메시지·댓글
+      const extra: [string, string][] = [["trades", "주식 거래"], ["purchases", "마켓 구매"], ["manbo_log", "만보 지갑"], ["messages", "선생님과 메시지"], ["comments", "댓글"], ["xp_requests", "경험치 요청"], ["presentation_requests", "발표 신청"]];
+      for (const [k, label] of extra) {
+        const rows: Row[] = await classRecords(classId, k, r, target).catch(() => [] as Row[]);
+        for (const x of rows) {
+          if (x._t < since) continue;
+          if (!["manbo_log", "messages"].includes(k) && !JSON.stringify(x.v).includes(target)) continue;
+          const { type: sub, ...rest } = x.v;
+          items.push({ at: x._t, ...(clean(withStock({ ...rest, id: undefined, studentUid: undefined, at: undefined, createdAt: undefined }), ctx, r) as object), type: sub ? `${label}(${sub === "spend" ? "씀" : sub === "earn" ? "받음" : sub})` : label });
+        }
+      }
       items.sort((a, b) => a.at - b.at);
       return json({ student: who(ctx, r, target), days: days ?? 30, count: items.length, timeline: items.map(({ at, ...x }) => ({ at: kst(at), ...x })) });
     } catch (e) { return fail(e); }
@@ -517,6 +594,72 @@ export function buildServer(ctx: Ctx) {
         title: v.title, detail: v.detail, totalIdeas: ideas.size,
         participants: [...by.values()].map(p => ({ nickname: p.name, count: p.ideas.length, ideas: p.ideas.sort((a, b) => a.at - b.at).map(i => ({ at: kst(i.at), text: i.text })) })).sort((a, b) => b.count - a.count),
       });
+    } catch (e) { return fail(e); }
+  });
+
+  /* ---------- 학급 생활 기록: 트레이딩·경제·칭찬·피드백·상호작용 ---------- */
+
+  s.registerTool("get_class_records", {
+    title: "학급 기록 꺼내기",
+    description: "학급의 활동·상호작용 기록을 종류별로(최근 순). kind: "
+      + "trades(주식 매수·매도), positions(학생별 보유 주식), trading_config(거래 시간 설정), stock_contests(주식 대회), "
+      + "purchases(러닝마켓 구매), market_items(마켓 상품), fundings(크라우드펀딩), manbo_log(학생별 만보 지갑 입출금), manbo_wallets(만보 잔액), "
+      + "xp_log(경험치 내역), xp_totals(경험치 합계), xp_requests(경험치 요청·승인), praises(칭찬), praise_inbox(학생이 받은 칭찬함), "
+      + "feedback(학생 의견·오류 신고), comments(응답에 달린 댓글), messages(선생님-학생 메시지), presentation_requests(발표 신청), "
+      + "attendance(출석), badges(배지), quests(퀘스트), groups(모둠), projects(프로젝트). days 로 기간(기본 30일), student 로 한 학생만.",
+    inputSchema: {
+      classId: z.string(),
+      kind: z.enum(["trades", "positions", "trading_config", "stock_contests", "purchases", "market_items", "fundings", "manbo_log", "manbo_wallets",
+        "xp_log", "xp_totals", "xp_requests", "praises", "praise_inbox", "feedback", "comments", "messages", "presentation_requests",
+        "attendance", "badges", "quests", "groups", "projects"]),
+      days: z.number().int().min(1).max(730).optional(),
+      student: z.string().optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
+    },
+    annotations: RO,
+  }, async ({ classId, kind, days, student, limit }) => {
+    try {
+      await assertTeacherOf(ctx, classId); const r = await roster(classId);
+      const target = student ? studentUid(r, student) : null;
+      if (student && !target) throw new Error("학생을 찾지 못했어요. list_students 의 학생 코드를 써 주세요.");
+      const rows = await classRecords(classId, kind, r, target);
+      const since = Date.now() - (days ?? 30) * 86400_000;
+      const timeless = ["positions", "trading_config", "market_items", "manbo_wallets", "xp_totals", "badges", "groups", "projects", "quests"].includes(kind);
+      const kept = rows.filter(x => timeless || x._t === 0 || x._t >= since)
+        .filter(x => !target || timeless || JSON.stringify(x.v).includes(target))
+        .sort((a, b) => b._t - a._t).slice(0, limit ?? 300);
+      return json({ kind, days: timeless ? null : days ?? 30, count: kept.length, rows: kept.map(x => clean(withStock(x.v), ctx, r)) });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("get_class_summary", {
+    title: "학급 활동 한눈에", description: "기간(기본 7일) 동안 학급에서 일어난 일을 숫자로: 주식 매수·매도(종목별), 마켓 구매, 칭찬, 피드백, 경험치 요청, 댓글·메시지, 학생별 활동량 순위.",
+    inputSchema: { classId: z.string(), days: z.number().int().min(1).max(365).optional() }, annotations: RO,
+  }, async ({ classId, days }) => {
+    try {
+      await assertTeacherOf(ctx, classId); const r = await roster(classId);
+      const since = Date.now() - (days ?? 7) * 86400_000;
+      const kinds = ["trades", "purchases", "praises", "feedback", "xp_requests", "comments", "messages", "fundings", "presentation_requests"] as const;
+      const per: Record<string, number> = {}; const byStudent = new Map<string, Record<string, number>>();
+      const stocks: Record<string, { buy: number; sell: number; qty: number }> = {};
+      for (const k of kinds) {
+        const rows = (await classRecords(classId, k, r, null)).filter(x => x._t >= since);
+        per[k] = rows.length;
+        for (const x of rows) {
+          const u = String(x.v.uid ?? x.v.buyerUid ?? x.v.fromUid ?? x.v.byUid ?? x.v.authorUid ?? x.v.studentUid ?? "");
+          if (r.codeOf.has(u)) { const e = byStudent.get(u) ?? {}; e[k] = (e[k] ?? 0) + 1; byStudent.set(u, e); }
+          if (k === "trades") {
+            const name = TRADING_ALIAS[String(x.v.symbol)] ?? String(x.v.symbol);
+            const e = stocks[name] ?? { buy: 0, sell: 0, qty: 0 };
+            if (x.v.side === "sell") e.sell++; else e.buy++;
+            e.qty += Number(x.v.qty ?? 0); stocks[name] = e;
+          }
+        }
+      }
+      const ranking = [...byStudent.entries()].map(([u, c]) => ({ student: who(ctx, r, u), total: Object.values(c).reduce((a, b) => a + b, 0), ...c }))
+        .sort((a, b) => b.total - a.total);
+      const quiet = [...r.codeOf.keys()].filter(u => !byStudent.has(u)).map(u => who(ctx, r, u));
+      return json({ days: days ?? 7, students: r.codeOf.size, counts: per, tradesByStock: stocks, activeStudents: ranking, noActivity: quiet });
     } catch (e) { return fail(e); }
   });
 
