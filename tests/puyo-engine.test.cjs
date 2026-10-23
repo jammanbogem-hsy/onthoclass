@@ -48,3 +48,13 @@ test('3+ player games halve incoming garbage; 1:1 keeps it; cumulative value nev
   for(const total of [0,1,2,3,5,8,13,13,40]){E.receive(s,E.incomingGarbage(total,3));assert.ok(s.pending>=last);last=s.pending;}
   assert.equal(s.pending,20);
 });
+test('landing preview shows where each half really stops (split pairs drop into their own columns)',()=>{
+  // 0열은 바닥까지 비고 1열은 3칸 쌓임 — 가로 쌍이면 1열 쪽은 9줄, 0열 쪽은 12줄까지 내려간다
+  const s=E.createState(3);s.board.fill(0);for(let y=10;y<=12;y++)s.board[cell(1,y)]=5;
+  s.active={x:0,y:1,r:1,a:1,b:2};
+  const L=E.landing(s).sort((p,q)=>p.x-q.x);
+  assert.equal(JSON.stringify(L.map(p=>[p.x,p.y,p.c])),JSON.stringify([[0,12,1],[1,9,2]]));
+  // 실제로 내려놓은 결과와 같다(무작위 상태 여러 개)
+  for(let seed=1;seed<300;seed++){const t=E.createState(seed);for(let k=0;k<40;k++){if(t.phase==='fall'&&t.active){E.input(t,['left','right','cw','ccw'][(seed*7+k)%4]);
+    const pv=E.landing(t);E.input(t,'drop');for(const p of pv)if(p.y>0)assert.equal(t.board[cell(p.x,p.y)],p.c,`seed ${seed}`);}E.tick(t,2000);if(t.phase==='over')break;}}
+});

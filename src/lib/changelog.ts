@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.27.0";
+export const APP_VERSION = "1.28.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.28.0",
+    date: "2026-10-23",
+    kind: "minor",
+    title: "답변 복사하기·뿌요 착지 표시 바로잡기",
+    items: [
+      "질문에 쓴 내 답변을 '복사하기' 버튼(그리기 옆)으로 한 번에 복사해 다른 곳에 붙여 넣을 수 있어요. 제출해서 잠긴 뒤에도 복사돼요.",
+      "뿌요뿌요에서 떨어질 자리를 알려 주는 표시가 실제로 멈출 칸에 작게 나와요. 예전에는 빈칸 위에 반투명 뿌요가 떠 있는 것처럼 보였어요.",
+    ],
+  },
   {
     version: "1.27.0",
     date: "2026-10-20",

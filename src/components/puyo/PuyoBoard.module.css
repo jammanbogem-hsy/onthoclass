@@ -158,3 +158,6 @@
 :global([data-puyo-player]) .fill .nextBox,:global([data-puyo-player]) .fill .pending,:global([data-puyo-player]) .fill .downs{background:var(--panel-bg);border-color:var(--player);color:#f4f7ff}
 :global([data-puyo-player]) .fill .railLabel,:global([data-puyo-player]) .fill .best{color:var(--player-ink)}
 :global([data-puyo-player]) .fill .best strong{color:var(--player-ink)}
+/* 착지 미리보기는 '진짜 뿌요'로 착각하지 않게 작게(표시 역할만) — 반투명한 실물 크기면 투명한 뿌요가 쌓인 것처럼 보였다 */
+.ghost .puyo,.ghost .sprite{transform:scale(.58);transform-origin:50% 60%}
+.ghost{opacity:.42}

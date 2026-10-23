@@ -1,5 +1,5 @@
 import { memo, useId, type CSSProperties } from "react";
-import { COLS, ROWS, fallMs, ghost, pairCells, type Cell, type PuyoState } from "@/lib/puyo-engine";
+import { COLS, ROWS, fallMs, landing as landingCells, pairCells, type Cell, type PuyoState } from "@/lib/puyo-engine";
 import styles from "./PuyoBoard.module.css";
 
 const SPRITES = ["", "gengar", "snorlax", "charmander", "squirtle", "nuisance"];
@@ -97,7 +97,8 @@ const GooLayer = memo(function GooLayer({ cells, popping, popKey }: { cells: str
 });
 
 export function PuyoBoard({ state, name, opponent = false, status, fill = false, arcade = false }: PuyoBoardProps) {
-  const landing = ghost(state);
+  // 착지 미리보기: 쌍째가 아니라 놓은 뒤 실제로 내려앉을 칸(갈라지는 쌍도 각자 바닥에)
+  const landing = state.phase === "fall" ? landingCells(state) : [];
   const clearing = new Set(state.clearing);
   const isBurst = state.effect === "clear" || state.effect === "attack";
   const isAllClear = state.effect === "allclear";
@@ -135,7 +136,7 @@ export function PuyoBoard({ state, name, opponent = false, status, fill = false,
               <div className={`${styles.pile} ${jiggle ? (state.event % 2 ? styles.jiggleA : styles.jiggleB) : ""}`} style={{ "--j": jiggle, "--sway": `${Math.min(1, height / 40) + .35}` } as CSSProperties}>
               <GooLayer cells={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) || c === 5 || (inFlight && (drops.get(k + COLS) ?? 0) > 0) ? 0 : c).join("")}
                 popping={state.board.slice(COLS).map((c, k) => clearing.has(k + COLS) && c !== 5 ? c : 0).join("")} popKey={state.event} />
-              {landing && !opponent && pairCells(landing).filter(({ y }) => y > 0).map(({ x, y, c }, i) => (
+              {!opponent && landing.filter(({ y }) => y > 0).map(({ x, y, c }, i) => (
                 <div key={`ghost-${i}`} className={`${styles.cell} ${styles.ghost}`} style={position(x, y, c)}><Puyo color={c} /></div>
               ))}
               {state.board.map((c, i) => c && i >= COLS ? (

@@ -52,6 +52,22 @@ export function ghost(s: PuyoState): Pair | null {
   while (fits(s, { ...p, y: p.y + 1 })) p.y++;
   return p;
 }
+/**
+ * 착지 미리보기 — 지금 바로 내리면 두 뿌요가 **실제로 멈출 칸**. 가로로 놓인 쌍이 높이가 다른 두 줄 위에 떨어지면
+ * 놓는 순간 갈라져 각자 아래로 내려가므로, 쌍째로 보여 주면(ghost) 한쪽이 빈칸 위에 떠 있는 것처럼 보였다.
+ */
+export function landing(s: PuyoState): { x: number; y: number; c: Cell }[] {
+  const g = ghost(s); if (!g) return [];
+  const cells = pairCells(g);
+  // 아래쪽 뿌요부터 그 줄의 맨 위 빈칸으로(세로 쌍이면 위 뿌요는 아래 뿌요 위에 얹힌다)
+  const taken = new Set<number>();
+  return cells.sort((p, q) => q.y - p.y).map(({ x, y, c }) => {
+    let to = y;
+    while (to + 1 < ROWS && !s.board[(to + 1) * COLS + x] && !taken.has((to + 1) * COLS + x)) to++;
+    taken.add(to * COLS + x);
+    return { x, y: to, c };
+  });
+}
 function effect(s: PuyoState, kind: PuyoState["effect"]) { s.event++; s.effect = kind; }
 /** 화면의 중력 낙하 시간(ms) — d줄 떨어질 때. 다음 연쇄 판정이 낙하가 끝난 뒤에 오도록 엔진도 같은 값을 쓴다. */
 export function fallMs(d: number) { return d > 0 ? Math.round(70 * Math.sqrt(d) + 80) : 0; }

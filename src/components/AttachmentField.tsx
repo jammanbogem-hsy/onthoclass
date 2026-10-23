@@ -85,6 +85,7 @@ export function AttachmentField({
   compact,
   imageLayout,
   allowDraw = true,
+  copyText,
 }: {
   target: UploadTarget;
   value: Attachment[];
@@ -101,6 +102,8 @@ export function AttachmentField({
   imageLayout?: "thumb" | "full";
   /** 그림판 버튼 노출(기본 켬). 좁은 위젯 등에서 끌 수 있다. */
   allowDraw?: boolean;
+  /** 주면 그리기 옆에 '복사하기' 버튼 — 지금 쓴 답변 글을 클립보드로(다른 곳에 붙여 넣기용). */
+  copyText?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -341,6 +344,7 @@ export function AttachmentField({
             그리기
           </button>
         )}
+        {copyText !== undefined && <CopyButton text={copyText} />}
         {busy && (
           <span className="flex items-center gap-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
             <Icon name="progress_activity" size={14} className="animate-spin" />
@@ -490,5 +494,31 @@ function Lightbox({ att, onClose }: { att: Attachment; onClose: () => void }) {
       />
     </div>,
     document.body
+  );
+}
+
+/** 답변 복사 — 지금 쓴 글 전체를 클립보드로. 붙여 넣을 곳(문서·다른 앱)에서 바로 쓸 수 있게 평문으로. */
+export function CopyButton({ text, label = "복사하기" }: { text: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "done" | "fail">("idle");
+  async function copy() {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        // 오래된 브라우저: 숨은 입력칸을 골라 복사
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); ta.remove();
+        if (!ok) throw new Error("copy");
+      }
+      setState("done");
+    } catch { setState("fail"); }
+    setTimeout(() => setState("idle"), 1800);
+  }
+  return (
+    <button type="button" disabled={!text.trim()} onClick={() => void copy()} className={ADD_BTN} aria-live="polite">
+      <Icon name={state === "done" ? "check" : state === "fail" ? "error" : "content_copy"} size={18} />
+      {state === "done" ? "복사했어요" : state === "fail" ? "복사하지 못했어요" : label}
+    </button>
   );
 }

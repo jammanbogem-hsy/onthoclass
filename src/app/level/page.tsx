@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GlassCard } from "@/components/Glass";
@@ -61,7 +62,7 @@ function LevelInner() {
   const lastLevelRef = useRef<number | null>(null);
   const lessonMeta = useLessonMeta(cid);
   const nameRef = useRef("");
-  nameRef.current = profile?.name || user?.displayName || "학생";
+  useEffect(() => { nameRef.current = profile?.name || user?.displayName || "학생"; }, [profile?.name, user?.displayName]);
   const [info, setInfo] = useState<{
     left: number;
     right: number;
@@ -249,6 +250,12 @@ function LevelInner() {
             </div>
           </div>
         </GlassCard>
+
+        <Link href="/jamworldmake/?view=profile" className="mt-4 flex items-center gap-3 rounded-2xl bg-white/60 p-4 text-[var(--md-sys-color-primary)] shadow-sm transition hover:bg-white/80">
+          <Icon name="account_circle" size={28} />
+          <span className="min-w-0 flex-1"><b className="block">모아 월드 아바타 설정</b><span className="text-sm text-black/60">공방에서 만든 인물을 내 캐릭터로 골라요.</span></span>
+          <Icon name="chevron_right" size={22} />
+        </Link>
 
         {/* 통계 */}
         <div className="mt-4 grid grid-cols-3 gap-3">

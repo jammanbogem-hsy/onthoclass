@@ -73,7 +73,7 @@ import {
 } from "@/lib/lessons";
 import { brainstormUrl } from "@/lib/brainstorm";
 import { LinkIslandsDialog } from "@/components/brainstorm/LinkIslandsDialog";
-import { AttachmentField, AttachmentList } from "@/components/AttachmentField";
+import { AttachmentField, AttachmentList, CopyButton } from "@/components/AttachmentField";
 import { GameFeedbackCard } from "@/components/GameFeedbackCard";
 import { SurveyBuilder } from "@/components/SurveyBuilder";
 import { SurveyResult, SurveyResponses } from "@/components/SurveyResult";
@@ -4286,9 +4286,14 @@ function StudentQuestionCard({
                   }}
                   value={atts}
                   onChange={setAtts}
+                  copyText={blocksToPlainText(content)}
                 />
               )}
             </div>
+          )}
+          {/* 수정이 잠겨도 내 답변은 복사할 수 있다 */}
+          {!isQuiz && ready && user && locked && blocksToPlainText(mine?.content ?? content).trim() && (
+            <div className="mt-2"><CopyButton text={blocksToPlainText(mine?.content ?? content)} /></div>
           )}
           {locked ? (
             <div className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-[var(--md-sys-color-tertiary-container)] px-5 py-3 text-sm font-semibold text-[var(--md-sys-color-on-tertiary-container)]">
