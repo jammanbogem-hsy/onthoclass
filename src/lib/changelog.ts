@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.28.0";
+export const APP_VERSION = "1.29.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.29.0",
+    date: "2026-10-24",
+    kind: "minor",
+    title: "AI 앱에서 지식맵 만들기",
+    items: [
+      "선생님이 Claude·ChatGPT에 연결한 러닝크루에서 “오늘 수업 지식맵 모두 만들어 줘”처럼 말하면 지식맵을 만들어 차시 화면에 저장해요.",
+      "특정 수업이나 질문만 골라 만들 수도 있고, 만들어 둔 지식맵을 AI 앱에서 읽어 볼 수도 있어요.",
+    ],
+  },
   {
     version: "1.28.0",
     date: "2026-10-23",

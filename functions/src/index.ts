@@ -21,6 +21,7 @@ import {
 } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
 import { TRADING_ALIAS } from "./tradingAlias";
+import { hashResponses, plain } from "./knowledgeMap";
 import { loadSharedCache, hasInvested, sumBuyTotal, type CacheClaim } from "./sharedCache";
 import { USAGE_FEATURES, usageDay, validateUsage, mergeUsage, type UsageEntry, type UsageCounts } from "./usage";
 import Anthropic from "@anthropic-ai/sdk";
@@ -319,98 +320,155 @@ export const extractOntology = onCall(
       );
     }
 
-    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+    return ontologyFromResponses(ANTHROPIC_API_KEY.value(), question, phase, responses);
+  }
+);
 
-    const responseBlock = responses
-      .map(
-        (r, i) =>
-          `[응답 ${i + 1} | 학생:${r.studentId ?? `익명${i + 1}`}] ${r.text}`
-      )
-      .join("\n");
-    const contextLine = question
-      ? `질문(${phase ?? "?"}): ${question}\n\n`
-      : "";
+/** 학생 응답 → 질문 리프 온톨로지(Claude). 화면의 “분석” 버튼(extractOntology)과 MCP 지식맵 작업(mcpMapTask)이 함께 쓴다. */
+async function ontologyFromResponses(apiKey: string, question: string | undefined, phase: string | undefined, responses: ResponseItem[]): Promise<Ontology> {
+  const client = new Anthropic({ apiKey });
 
-    // 후처리 필터용: 입력에 실재하는 학생ID 집합 (responseBlock 의 "학생:<id>" 와 동일 규칙)
-    const validStudentIds = new Set(
-      responses.map((r, i) => r.studentId ?? `익명${i + 1}`)
+  const responseBlock = responses
+    .map(
+      (r, i) =>
+        `[응답 ${i + 1} | 학생:${r.studentId ?? `익명${i + 1}`}] ${r.text}`
+    )
+    .join("\n");
+  const contextLine = question
+    ? `질문(${phase ?? "?"}): ${question}\n\n`
+    : "";
+
+  // 후처리 필터용: 입력에 실재하는 학생ID 집합 (responseBlock 의 "학생:<id>" 와 동일 규칙)
+  const validStudentIds = new Set(
+    responses.map((r, i) => r.studentId ?? `익명${i + 1}`)
+  );
+
+  try {
+    const message = await client.messages.create({
+      model: "claude-opus-4-7",
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      // 안정적인 시스템 프롬프트는 프롬프트 캐싱 (반복 호출 비용 절감)
+      system: [
+        {
+          type: "text",
+          text: SYSTEM_PROMPT,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: ONTOLOGY_SCHEMA,
+        },
+        effort: "high",
+      },
+      messages: [
+        {
+          role: "user",
+          content: `${contextLine}다음 학생 응답들에서 온톨로지를 추출하세요.\n\n${responseBlock}`,
+        },
+      ],
+    });
+
+    const jsonText = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+
+    if (!jsonText.trim()) {
+      throw new HttpsError(
+        "internal",
+        "모델이 빈 응답을 반환했습니다 (stop_reason: " +
+          message.stop_reason +
+          ")."
+      );
+    }
+    const parsed = JSON.parse(jsonText) as Ontology;
+
+    // ── 하드 후처리 필터 ──────────────────────────────────────────────
+    // 교사가 작성한 질문/활동 텍스트가 온톨로지 노드로 새어 들어가지 못하게
+    // 강제한다. 입력 responses 에 실재하는 학생ID 를 sources 에 최소 1개
+    // 이상 가진 노드만 남기고, 나머지는 모두 제거한다. 제거된 노드를
+    // 참조하는 엣지도 함께 제거한다.
+    const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+    const keptNodes = rawNodes.flatMap((n) => {
+      const validSources = Array.isArray(n.sources)
+        ? n.sources.filter((s) => validStudentIds.has(s))
+        : [];
+      if (validSources.length === 0) return [];
+      return [{ ...n, sources: validSources, sourceCount: validSources.length }];
+    });
+    const keptIds = new Set(keptNodes.map((n) => n.id));
+    const rawEdges = Array.isArray(parsed.edges) ? parsed.edges : [];
+    const keptEdges = rawEdges.filter(
+      (e) => keptIds.has(e.source) && keptIds.has(e.target)
     );
 
-    try {
-      const message = await client.messages.create({
-        model: "claude-opus-4-7",
-        max_tokens: 16000,
-        thinking: { type: "adaptive" },
-        // 안정적인 시스템 프롬프트는 프롬프트 캐싱 (반복 호출 비용 절감)
-        system: [
-          {
-            type: "text",
-            text: SYSTEM_PROMPT,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        output_config: {
-          format: {
-            type: "json_schema",
-            schema: ONTOLOGY_SCHEMA,
-          },
-          effort: "high",
-        },
-        messages: [
-          {
-            role: "user",
-            content: `${contextLine}다음 학생 응답들에서 온톨로지를 추출하세요.\n\n${responseBlock}`,
-          },
-        ],
-      });
-
-      const jsonText = message.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("");
-
-      if (!jsonText.trim()) {
-        throw new HttpsError(
-          "internal",
-          "모델이 빈 응답을 반환했습니다 (stop_reason: " +
-            message.stop_reason +
-            ")."
-        );
-      }
-      const parsed = JSON.parse(jsonText) as Ontology;
-
-      // ── 하드 후처리 필터 ──────────────────────────────────────────────
-      // 교사가 작성한 질문/활동 텍스트가 온톨로지 노드로 새어 들어가지 못하게
-      // 강제한다. 입력 responses 에 실재하는 학생ID 를 sources 에 최소 1개
-      // 이상 가진 노드만 남기고, 나머지는 모두 제거한다. 제거된 노드를
-      // 참조하는 엣지도 함께 제거한다.
-      const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
-      const keptNodes = rawNodes.flatMap((n) => {
-        const validSources = Array.isArray(n.sources)
-          ? n.sources.filter((s) => validStudentIds.has(s))
-          : [];
-        if (validSources.length === 0) return [];
-        return [{ ...n, sources: validSources, sourceCount: validSources.length }];
-      });
-      const keptIds = new Set(keptNodes.map((n) => n.id));
-      const rawEdges = Array.isArray(parsed.edges) ? parsed.edges : [];
-      const keptEdges = rawEdges.filter(
-        (e) => keptIds.has(e.source) && keptIds.has(e.target)
+    return {
+      ...parsed,
+      nodes: keptNodes,
+      edges: keptEdges,
+    };
+  } catch (err) {
+    if (err instanceof Anthropic.APIError) {
+      throw new HttpsError(
+        "internal",
+        `Claude API 오류 (${err.status}): ${err.message}`
       );
+    }
+    throw err;
+  }
+}
 
-      return {
-        ...parsed,
-        nodes: keptNodes,
-        edges: keptEdges,
-      };
-    } catch (err) {
-      if (err instanceof Anthropic.APIError) {
-        throw new HttpsError(
-          "internal",
-          `Claude API 오류 (${err.status}): ${err.message}`
-        );
+/* ===================================================================== *
+ *  MCP 지식맵 작업 — Claude·ChatGPT 의 build_knowledge_map 도구가 mcpJobs/{jobId}/tasks 에
+ *  질문(활동)마다 작업을 하나씩 넣으면, 여기서 하나씩(동시에 여럿) 분석해 화면과 같은 자리
+ *  (classes/{cid}/lessons/{lid}/ontology/q:{qid})에 저장한다. 그래서 /lesson 지식맵에 그대로 보인다.
+ * ===================================================================== */
+export const mcpMapTask = onDocumentCreated(
+  { document: "mcpJobs/{jobId}/tasks/{taskId}", secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: "512MiB", maxInstances: 6 },
+  async (event) => {
+    const ref = event.data?.ref;
+    const t = event.data?.data();
+    if (!ref || !t) return;
+    const fdb = getFirestore();
+    const lock = fdb.doc(`mcpMapLocks/${t.cid}_${t.lid}_${t.qid}`);
+    const finish = (v: Record<string, unknown>) => ref.update({ ...v, finishedAt: FieldValue.serverTimestamp() });
+    try {
+      await ref.update({ status: "running", startedAt: FieldValue.serverTimestamp() });
+      // 작업을 넣은 뒤 권한이 바뀌었을 수 있으니 다시 확인
+      if ((await fdb.doc(`classes/${t.cid}/members/${t.uid}`).get()).data()?.role !== "teacher") {
+        await finish({ status: "error", error: "이 학급의 선생님이 아니에요." });
+        return;
       }
-      throw err;
+      const base = `classes/${t.cid}/lessons/${t.lid}`;
+      const leafRef = fdb.doc(`${base}/ontology/q:${t.qid}`);
+      const [q, subs, leaf] = await Promise.all([
+        fdb.doc(`${base}/questions/${t.qid}`).get(),
+        fdb.collection(`${base}/questions/${t.qid}/submissions`).get(),
+        leafRef.get(),
+      ]);
+      if (!q.exists) { await finish({ status: "error", error: "활동을 찾을 수 없어요." }); return; }
+      // 화면(useLeaves)과 같은 입력·해시 — 같으면 화면에서도 '분석 필요'가 사라진다
+      const ans = subs.docs
+        .map((d) => { const v = d.data(); return { uid: String(v.uid ?? ""), content: String(v.content ?? "") }; })
+        .filter((a) => a.content.trim());
+      if (!ans.length) { await finish({ status: "skipped", note: "아직 응답이 없어요." }); return; }
+      const inputHash = hashResponses(ans);
+      if (!t.force && leaf.data()?.inputHash === inputHash) { await finish({ status: "skipped", note: "이미 최신 지식맵이에요." }); return; }
+      const qv = q.data() ?? {};
+      const result = await ontologyFromResponses(
+        ANTHROPIC_API_KEY.value(), plain(qv.text), qv.phase,
+        ans.map((a) => ({ studentId: a.uid, text: plain(a.content) }))
+      );
+      await leafRef.set({ ...result, inputHash, generatedAt: FieldValue.serverTimestamp() });
+      await finish({ status: "done", nodes: result.nodes.length, edges: result.edges.length, summary: String(result.summary ?? "").slice(0, 400) });
+    } catch (e) {
+      console.error("mcpMapTask", e);
+      await finish({ status: "error", error: (e instanceof Error ? e.message : "분석하지 못했어요.").slice(0, 300) }).catch(() => {});
+    } finally {
+      await lock.delete().catch(() => {});
     }
   }
 );

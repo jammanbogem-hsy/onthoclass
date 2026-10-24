@@ -9,7 +9,7 @@
  *   https://jammanboeng.web.app/mcp-auth/?req=…                       교사 로그인·허용 화면(Next 정적 페이지)
  *
  * 보안
- *   - 읽기 전용. 쓰기·지우기 도구는 없다.
+ *   - 쓰기는 지식맵 만들기(build_knowledge_map) 하나뿐 — 화면의 “분석” 버튼과 같은 자리에 저장한다. 응답 고치기·지우기·학생에게 보내기 도구는 없다.
  *   - 교사 계정(users/{uid}.role=="teacher")만 허용 화면에서 승인할 수 있고, 학급마다 members/{uid}.role=="teacher" 를 다시 확인한다.
  *   - 토큰은 무작위 32바이트, Firestore 에는 sha256 해시만 둔다(mcpTokens). 접근 1시간 / 갱신 60일.
  *   - 학생 이름은 기본으로 가린다(학생 코드 S01…). 허용 화면에서 교사가 "이름 함께"를 켰을 때만 이름을 보낸다.
@@ -19,12 +19,13 @@
  *   mcpClients/{clientId}  mcpAuthRequests/{id}  mcpCodes/{sha}  mcpTokens/{sha}
  */
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
-import { getFirestore, Timestamp, type DocumentData, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp, type DocumentData, type Firestore } from "firebase-admin/firestore";
 import { createHash, randomBytes } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { TRADING_ALIAS } from "./tradingAlias";
+import { hashResponses, mergeLeaves, MAP_KINDS, plain, type Leaf } from "./knowledgeMap";
 
 const BASE = "https://jammanboeng.web.app";
 const RESOURCE = `${BASE}/mcp`; // 함수 rewrite 주소는 호스팅의 trailingSlash 리디렉트를 받지 않는다
@@ -248,24 +249,6 @@ function clean(v: unknown, ctx: Ctx, r: Roster | null, depth = 0): unknown {
   return out;
 }
 
-/** 리치 에디터 JSON(또는 평문) → 평문 */
-function plain(text: unknown): string {
-  if (typeof text !== "string") return "";
-  try {
-    const out: string[] = [];
-    const walk = (n: unknown) => {
-      if (Array.isArray(n)) return n.forEach(walk);
-      if (n && typeof n === "object") {
-        const o = n as Record<string, unknown>;
-        if (typeof o.text === "string") out.push(o.text);
-        for (const [k, x] of Object.entries(o)) if (k !== "text" && typeof x === "object") walk(x);
-      }
-    };
-    walk(JSON.parse(text));
-    return out.join("\n").trim() || text;
-  } catch { return text; }
-}
-
 const ms = (v: unknown): number => {
   if (v instanceof Timestamp) return v.toMillis();
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -391,10 +374,81 @@ async function classRecords(cid: string, kind: string, r: Roster, only: string |
 }
 
 /** 요청마다 만드는 MCP 서버(테스트에서도 직접 불러 쓴다) */
+/* ====================================================================== */
+/* 지식맵 — 화면(/lesson)과 같은 저장 자리·같은 해시를 쓴다                   */
+/* ====================================================================== */
+
+const lessonUrl = (cid: string, lid: string) => `${BASE}/lesson/?class=${cid}&id=${lid}`;
+const todayKst = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+const MAP_STATE = { no_responses: "응답 없음", not_built: "아직 안 만듦", outdated: "새 응답이 있어 다시 만들어야 함", up_to_date: "최신" } as const;
+type MapState = keyof typeof MAP_STATE;
+
+/** 차시의 지식맵 활동(질문·보드)마다 응답 수·지식맵 상태 */
+async function mapStatus(cid: string, lid: string) {
+  const qs = (await questionsOf(cid, lid)).filter(q => MAP_KINDS.has(q.kind ?? "question"));
+  const base = `classes/${cid}/lessons/${lid}`;
+  return Promise.all(qs.map(async q => {
+    const [subs, leaf] = await Promise.all([db().collection(`${base}/questions/${q.id}/submissions`).get(), db().doc(`${base}/ontology/q:${q.id}`).get()]);
+    const ans = subs.docs.map(d => { const v = d.data(); return { uid: String(v.uid ?? ""), content: String(v.content ?? "") }; }).filter(a => a.content.trim());
+    const lv = leaf.data() as (Leaf & { generatedAt?: unknown }) | undefined;
+    const state: MapState = !ans.length ? "no_responses" : !lv ? "not_built" : lv.inputHash === hashResponses(ans) ? "up_to_date" : "outdated";
+    return { q, responses: ans.length, state, leaf: lv ?? null, generatedAt: lv ? kst(ms(lv.generatedAt)) : "" };
+  }));
+}
+
+/** 지식맵 → 내보낼 모양(학생은 코드로, 많이 나온 개념부터) */
+function mapOut(ctx: Ctx, r: Roster, o: Leaf, maxNodes = 80) {
+  const nodes = [...(o.nodes ?? [])].sort((a, b) => (b.sourceCount ?? 0) - (a.sourceCount ?? 0) || (b.weight ?? 0) - (a.weight ?? 0)).slice(0, maxNodes);
+  const keep = new Set(nodes.map(n => n.id));
+  const label = new Map((o.nodes ?? []).map(n => [n.id, n.label]));
+  return {
+    summary: clean(o.summary ?? "", ctx, r),
+    overallSentiment: o.overallSentiment ?? null,
+    concepts: nodes.map(n => ({ label: n.label, type: n.type, sentiment: n.sentiment, studentCount: n.sourceCount ?? n.sources?.length ?? 0, students: (n.sources ?? []).map(u => who(ctx, r, u)) })),
+    links: (o.edges ?? []).filter(e => keep.has(e.source) && keep.has(e.target))
+      .sort((a, b) => (b.sourceCount ?? 0) - (a.sourceCount ?? 0) || (b.weight ?? 0) - (a.weight ?? 0)).slice(0, 160)
+      .map(e => ({ from: label.get(e.source) ?? e.source, to: label.get(e.target) ?? e.target, relation: e.relation, studentCount: e.sourceCount ?? 0, evidence: clean(e.evidence ?? "", ctx, r) })),
+    ...((o.nodes?.length ?? 0) > maxNodes ? { omittedConcepts: o.nodes.length - maxNodes } : {}),
+  };
+}
+
+const JOB_WAIT = 45_000; // 도구 응답 안에서 기다리는 시간 — 넘으면 작업 id 로 나중에 확인
+const MAX_TASKS = 40;
+const LOCK_TTL = 15 * 60_000;
+
+/** 지식맵 작업 진행 상황 */
+async function jobView(ctx: Ctx, jobId: string) {
+  if (!idOk(jobId)) throw new Error("작업 id 가 올바르지 않아요.");
+  const job = await db().doc(`mcpJobs/${jobId}`).get();
+  if (!job.exists || job.data()?.uid !== ctx.uid) throw new Error("작업을 찾을 수 없어요.");
+  const tasks = (await db().collection(`mcpJobs/${jobId}/tasks`).get()).docs.map(d => d.data());
+  const rosters = new Map<string, Roster>();
+  for (const cid of new Set(tasks.map(t => String(t.cid)))) rosters.set(cid, await roster(cid));
+  const count = (s: string) => tasks.filter(t => t.status === s).length;
+  const finished = tasks.every(t => ["done", "skipped", "error"].includes(t.status));
+  const lessons = new Map<string, { class: string; lesson: string; date: string; viewUrl: string }>();
+  for (const t of tasks) lessons.set(`${t.cid}/${t.lid}`, { class: t.className, lesson: t.lessonTitle, date: t.date, viewUrl: lessonUrl(t.cid, t.lid) });
+  return {
+    jobId, finished,
+    progress: { total: tasks.length, waiting: count("queued"), running: count("running"), done: count("done"), skipped: count("skipped"), error: count("error") },
+    activities: tasks.map(t => ({
+      class: t.className, lesson: t.lessonTitle, classId: t.cid, lessonId: t.lid, activityId: t.qid, activity: t.title,
+      status: ({ queued: "기다리는 중", running: "분석 중", done: "완료", skipped: "건너뜀", error: "실패" } as Record<string, string>)[t.status] ?? t.status,
+      ...(t.nodes != null ? { concepts: t.nodes, links: t.edges } : {}),
+      ...(t.summary ? { summary: clean(t.summary, ctx, rosters.get(t.cid) ?? null) } : {}),
+      ...(t.note ? { note: t.note } : {}), ...(t.error ? { error: t.error } : {}),
+    })),
+    lessons: [...lessons.values()],
+    next: finished ? "get_knowledge_map 으로 차시별 지식맵(개념·관계)을 읽을 수 있어요. 러닝크루 차시 화면(viewUrl)에도 바로 보여요."
+      : "분석은 서버에서 계속돼요(질문 하나에 보통 20초~1분). 잠시 뒤 get_knowledge_map_job 으로 다시 확인하세요.",
+  };
+}
+
 export function buildServer(ctx: Ctx) {
-  const s = new McpServer({ name: "러닝크루", version: "1.1.0" } /* 도구를 바꾸면 올린다(1.1.0: 학급 생활 기록·요약) */, {
-    instructions: "러닝크루(초등 학급 LMS) 교사용 읽기 전용 도구. 먼저 list_classes 로 학급 id 를 얻고, list_lessons 로 차시·활동 id 를 얻은 뒤 응답을 읽으세요. "
+  const s = new McpServer({ name: "러닝크루", version: "1.2.0" } /* 도구를 바꾸면 올린다(1.1.0: 학급 생활 기록·요약, 1.2.0: 지식맵 읽기·만들기) */, {
+    instructions: "러닝크루(초등 학급 LMS) 교사용 도구. 먼저 list_classes 로 학급 id 를 얻고, list_lessons 로 차시·활동 id 를 얻은 뒤 응답을 읽으세요. "
       + "주식 거래·만보 경제·칭찬·피드백·댓글·메시지 같은 학급 생활 기록은 get_class_records(kind 로 종류 선택), 기간 요약은 get_class_summary 를 쓰세요. "
+      + "지식구조맵(지식맵)은 get_knowledge_map 으로 읽고, build_knowledge_map 으로 만들어 러닝크루에 저장합니다(예: 오늘 수업 모두 → date 생략, 특정 수업 → classId+lessonId). 만들기는 이 서버의 유일한 쓰기 도구입니다. "
       + "학생은 기본으로 학생 코드(S01…)로 표시됩니다. 결과를 학생·학부모에게 그대로 공유하지 말고, 분석은 한국어로 해 주세요.",
   });
 
@@ -664,6 +718,133 @@ export function buildServer(ctx: Ctx) {
   });
 
   // ChatGPT(딥 리서치·커넥터)가 기대하는 search / fetch
+  s.registerTool("get_knowledge_map", {
+    title: "지식맵 읽기",
+    description: "러닝크루에 저장된 지식구조맵(학생 응답에서 뽑은 개념·관계·감정). lessonId 를 주면 그 차시 전체 지식맵(질문별 지식맵을 합친 것, 화면의 '차시 전체 지식맵'과 같음)과 활동별 상태, "
+      + "activityId 까지 주면 그 질문(보드)의 지식맵. lessonId 를 빼면 최근 차시들의 지식맵 상태와 주요 개념. 상태가 '아직 안 만듦'·'다시 만들어야 함'이면 build_knowledge_map 으로 만드세요.",
+    inputSchema: { classId: z.string(), lessonId: z.string().optional(), activityId: z.string().optional(), limit: z.number().int().min(1).max(30).optional().describe("lessonId 없을 때 볼 최근 차시 수(기본 10)") },
+    annotations: RO,
+  }, async ({ classId, lessonId, activityId, limit }) => {
+    try {
+      await assertTeacherOf(ctx, classId); const r = await roster(classId);
+      if (!lessonId) {
+        const lessons = await lessonsOf(classId, limit ?? 10);
+        return json(await Promise.all(lessons.map(async l => {
+          const st = await mapStatus(classId, l.id);
+          const merged = mergeLeaves(st.map(x => x.leaf).filter(Boolean) as Leaf[]);
+          return {
+            lessonId: l.id, title: String(l.title ?? ""), date: String(l.date ?? ""), viewUrl: lessonUrl(classId, l.id),
+            activities: st.map(x => ({ activityId: x.q.id, title: String(x.q.title ?? ""), responses: x.responses, map: MAP_STATE[x.state] })),
+            topConcepts: merged.nodes.sort((a, b) => b.sourceCount - a.sourceCount).slice(0, 10).map(n => n.label),
+          };
+        })));
+      }
+      if (!idOk(lessonId)) throw new Error("차시 id 가 올바르지 않아요.");
+      const lesson = (await db().doc(`classes/${classId}/lessons/${lessonId}`).get()).data();
+      if (!lesson) throw new Error("차시를 찾을 수 없어요.");
+      const st = await mapStatus(classId, lessonId);
+      const head = { lesson: { title: String(lesson.title ?? ""), date: String(lesson.date ?? "") }, viewUrl: lessonUrl(classId, lessonId) };
+      if (activityId) {
+        const x = st.find(y => y.q.id === activityId);
+        if (!x) throw new Error("지식맵을 만드는 활동(질문·보드)이 아니거나 없는 활동이에요.");
+        return json({ ...head, activity: { activityId, title: String(x.q.title ?? ""), prompt: plain(x.q.text).slice(0, 500) }, responses: x.responses, state: MAP_STATE[x.state], generatedAt: x.generatedAt, map: x.leaf ? mapOut(ctx, r, x.leaf) : null });
+      }
+      const merged = mergeLeaves(st.map(x => x.leaf).filter(Boolean) as Leaf[]);
+      return json({
+        ...head,
+        activities: st.map(x => ({ activityId: x.q.id, title: String(x.q.title ?? ""), responses: x.responses, state: MAP_STATE[x.state], generatedAt: x.generatedAt })),
+        needsBuild: st.filter(x => x.state === "not_built" || x.state === "outdated").length,
+        map: merged.nodes.length ? mapOut(ctx, r, merged, 100) : null,
+      });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("build_knowledge_map", {
+    title: "지식맵 만들기",
+    description: "학생 응답으로 지식구조맵을 만들어 러닝크루에 저장해요(차시 화면의 '분석' 버튼과 같은 일). 저장하면 /lesson 지식맵에 바로 보여요. "
+      + "① 날짜로: date(YYYY-MM-DD, 기본 오늘)의 모든 차시 — classId 를 주면 그 학급만, 빼면 선생님의 모든 학급. ② 차시로: classId+lessonId(activityIds 로 일부 질문만). "
+      + "응답이 바뀐 질문만 분석하고 이미 최신이면 건너뛰어요(force=true 면 다시 만듦). 분석은 서버에서 돌고, 45초 안에 끝나지 않으면 jobId 로 get_knowledge_map_job 을 불러 확인하세요.",
+    inputSchema: {
+      date: z.string().optional().describe("YYYY-MM-DD 또는 today. lessonId 가 없을 때 쓰는 날짜(기본 오늘, 한국 시간)"),
+      classId: z.string().optional(), lessonId: z.string().optional(),
+      activityIds: z.array(z.string()).max(40).optional(), force: z.boolean().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ date, classId, lessonId, activityIds, force }) => {
+    try {
+      // 1) 대상 차시
+      const targets: { cid: string; className: string; lid: string; lesson: DocumentData }[] = [];
+      let day = "";
+      if (lessonId) {
+        if (!classId) throw new Error("lessonId 를 줄 때는 classId 도 함께 주세요.");
+        await assertTeacherOf(ctx, classId); if (!idOk(lessonId)) throw new Error("차시 id 가 올바르지 않아요.");
+        const l = (await db().doc(`classes/${classId}/lessons/${lessonId}`).get()).data();
+        if (!l) throw new Error("차시를 찾을 수 없어요.");
+        const c = (await db().doc(`classes/${classId}`).get()).data();
+        targets.push({ cid: classId, className: String(c?.name ?? ""), lid: lessonId, lesson: l });
+      } else {
+        day = !date || date === "today" ? todayKst() : date;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("date 는 YYYY-MM-DD 로 주세요.");
+        let classes: { id: string; name: string }[];
+        if (classId) { await assertTeacherOf(ctx, classId); classes = [{ id: classId, name: String((await db().doc(`classes/${classId}`).get()).data()?.name ?? "") }]; }
+        else classes = await myClasses(ctx);
+        for (const c of classes) {
+          const snap = await db().collection(`classes/${c.id}/lessons`).where("date", "==", day).get();
+          for (const d of snap.docs) targets.push({ cid: c.id, className: c.name, lid: d.id, lesson: d.data() });
+        }
+        if (!targets.length) return json({ date: day, message: `${day} 날짜의 차시가 없어요. list_lessons 로 차시 날짜를 확인하거나 lessonId 로 지정해 주세요.` });
+      }
+      // 2) 만들 질문 고르기
+      const want = activityIds?.length ? new Set(activityIds) : null;
+      const plan: { t: (typeof targets)[number]; qid: string; title: string }[] = [];
+      const already: { class: string; lesson: string; activity: string; state: string }[] = [];
+      for (const t of targets) {
+        for (const x of await mapStatus(t.cid, t.lid)) {
+          if (want && !want.has(x.q.id)) continue;
+          const row = { class: t.className, lesson: String(t.lesson.title ?? ""), activity: String(x.q.title ?? "") };
+          if (x.state === "no_responses" || (x.state === "up_to_date" && !force)) { already.push({ ...row, state: MAP_STATE[x.state] }); continue; }
+          plan.push({ t, qid: x.q.id, title: String(x.q.title ?? "") });
+        }
+      }
+      if (!plan.length) return json({ date: day || undefined, message: "새로 만들 지식맵이 없어요(모두 최신이거나 응답이 없어요).", activities: already, lessons: targets.map(t => ({ class: t.className, lesson: t.lesson.title, viewUrl: lessonUrl(t.cid, t.lid) })) });
+      if (plan.length > MAX_TASKS) throw new Error(`한 번에 ${MAX_TASKS}개 질문까지 만들 수 있어요(지금 ${plan.length}개). 학급이나 차시를 나눠 주세요.`);
+      // 3) 같은 질문이 이미 분석 중이면 겹쳐 돌리지 않는다(잠금)
+      const now = Date.now();
+      const busy: string[] = [];
+      const go: typeof plan = [];
+      for (const p of plan) {
+        const lock = db().doc(`mcpMapLocks/${p.t.cid}_${p.t.lid}_${p.qid}`);
+        const got = await db().runTransaction(async tx => {
+          const v = (await tx.get(lock)).data();
+          if (v && now - ms(v.at) < LOCK_TTL) return false;
+          tx.set(lock, { at: Timestamp.fromMillis(now), uid: ctx.uid });
+          return true;
+        });
+        if (got) go.push(p); else busy.push(p.title);
+      }
+      if (!go.length) return json({ message: "요청한 질문들은 이미 분석 중이에요. 1~2분 뒤 get_knowledge_map 으로 확인하세요.", busy });
+      // 4) 작업 넣기 → 서버(mcpMapTask)가 질문마다 동시에 분석
+      const job = db().collection("mcpJobs").doc();
+      await job.set({ uid: ctx.uid, createdAt: FieldValue.serverTimestamp(), date: day, total: go.length });
+      const batch = db().batch();
+      for (const p of go) batch.set(job.collection("tasks").doc(), {
+        uid: ctx.uid, cid: p.t.cid, lid: p.t.lid, qid: p.qid, force: !!force, status: "queued",
+        className: p.t.className, lessonTitle: String(p.t.lesson.title ?? ""), date: String(p.t.lesson.date ?? ""), title: p.title, createdAt: FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
+      // 5) 잠깐 기다렸다가 결과(또는 진행 상황) 돌려주기
+      const until = Date.now() + JOB_WAIT;
+      let view = await jobView(ctx, job.id);
+      while (!view.finished && Date.now() < until) { await new Promise(res => setTimeout(res, 3000)); view = await jobView(ctx, job.id); }
+      return json({ ...view, ...(already.length ? { notBuilt: already } : {}), ...(busy.length ? { alreadyRunning: busy } : {}) });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("get_knowledge_map_job", {
+    title: "지식맵 만들기 진행 상황", description: "build_knowledge_map 이 돌려준 jobId 의 진행 상황(질문별 완료·실패, 만든 개념 수·요약).",
+    inputSchema: { jobId: z.string() }, annotations: RO,
+  }, async ({ jobId }) => { try { return json(await jobView(ctx, jobId)); } catch (e) { return fail(e); } });
+
   s.registerTool("search", {
     title: "검색", description: "내 학급의 차시·활동 제목과 질문 글에서 찾기. 결과 id 를 fetch 에 넘기면 응답 전체를 읽는다.",
     inputSchema: { query: z.string() }, annotations: RO,
@@ -676,7 +857,7 @@ export function buildServer(ctx: Ctx) {
         for (const l of await lessonsOf(c.id, 60)) {
           const qs = await questionsOf(c.id, l.id);
           const text = `${c.name} ${l.title ?? ""} ${l.preQuestion ?? ""} ${l.postQuestion ?? ""} ${qs.map(q => `${q.title ?? ""} ${plain(q.text)}`).join(" ")}`;
-          if (hit(text)) results.push({ id: `lesson:${c.id}:${l.id}`, title: `[${c.name}] ${l.date ?? ""} ${l.title ?? ""}`.trim(), url: `${BASE}/lesson/?class=${c.id}&lesson=${l.id}` });
+          if (hit(text)) results.push({ id: `lesson:${c.id}:${l.id}`, title: `[${c.name}] ${l.date ?? ""} ${l.title ?? ""}`.trim(), url: lessonUrl(c.id, l.id) });
           if (results.length >= 20) break;
         }
         if (results.length >= 20) break;
@@ -705,7 +886,7 @@ export function buildServer(ctx: Ctx) {
           for (const d of subs.docs) { const v = d.data(); lines.push(`- ${who(ctx, r, d.id, v.studentName)}: ${clean(v.content ?? JSON.stringify(v.surveyAnswers ?? ""), ctx, r)}`); }
         }
       }
-      return json({ id, title: String(lesson.title ?? ""), text: lines.join("\n"), url: `${BASE}/lesson/?class=${cid}&lesson=${lid}`, metadata: { classId: cid, date: lesson.date ?? "" } });
+      return json({ id, title: String(lesson.title ?? ""), text: lines.join("\n"), url: lessonUrl(cid, lid), metadata: { classId: cid, date: lesson.date ?? "" } });
     } catch (e) { return fail(e); }
   });
 
