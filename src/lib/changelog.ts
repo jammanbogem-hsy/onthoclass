@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.29.0";
+export const APP_VERSION = "1.30.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.30.0",
+    date: "2026-10-25",
+    kind: "minor",
+    title: "학급 성과 공유 링크",
+    items: [
+      "선생님이 학급 화면의 ‘성과 공유’로 링크를 만들면, 링크가 있는 사람은 로그인 없이 우리 반의 수업 결과물·지식맵·보드·칭찬·게임 기록을 볼 수 있어요.",
+      "공유 화면에서 학생 이름은 모두 모자이크로 가려져요. 글 속에 쓴 친구 이름도 가려요.",
+      "선생님은 언제든 링크를 새로 바꾸거나 공유를 멈출 수 있어요.",
+    ],
+  },
   {
     version: "1.29.0",
     date: "2026-10-24",

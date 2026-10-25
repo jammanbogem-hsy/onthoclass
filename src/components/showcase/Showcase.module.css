@@ -1,0 +1,97 @@
+/* 학급 성과 공유 화면 — M3 토큰. 모자이크만 학생 번호 색(hue) */
+
+.page{min-height:100dvh;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)}
+.center{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px 16px;text-align:center;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface)}
+.center strong{font-size:20px}
+.center p{margin:8px 0 0;color:var(--md-sys-color-on-surface-variant);font-size:14px}
+
+.hero{background:linear-gradient(160deg,var(--md-sys-color-primary-container),var(--md-sys-color-surface-container));padding:40px 16px 28px}
+.heroIn{max-width:1080px;margin:0 auto}
+.kicker{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:800;color:var(--md-sys-color-primary)}
+.hero h1{margin:6px 0 0;font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:-.02em;color:var(--md-sys-color-on-primary-container);word-break:keep-all}
+.sub{margin:4px 0 0;font-size:16px;font-weight:700;color:var(--md-sys-color-on-surface-variant)}
+.desc{margin:10px 0 0;max-width:720px;font-size:15px;line-height:1.6;white-space:pre-line}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.stat{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background:var(--md-sys-color-surface-container-lowest);font-size:14px;color:var(--md-sys-color-on-surface-variant)}
+.stat b{font-size:17px;color:var(--md-sys-color-on-surface)}
+.privacy{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:16px 0 0;font-size:13px;color:var(--md-sys-color-on-surface-variant)}
+
+.tabs{position:sticky;top:0;z-index:5;display:flex;gap:4px;overflow-x:auto;padding:8px max(16px,calc((100% - 1080px)/2));background:color-mix(in srgb,var(--md-sys-color-surface) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--md-sys-color-outline-variant)}
+.tab{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:40px;padding:0 16px;border:0;border-radius:999px;background:none;color:var(--md-sys-color-on-surface-variant);font-size:15px;font-weight:700;cursor:pointer}
+.tab[aria-pressed="true"]{background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container)}
+.main{max-width:1080px;margin:0 auto;padding:20px 16px 48px}
+.foot{padding:24px 16px 40px;text-align:center;font-size:12px;color:var(--md-sys-color-on-surface-variant)}
+
+.section{margin-top:28px}
+.h2{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:20px;font-weight:900}
+.h3{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 8px;font-size:18px;font-weight:800;line-height:1.35;word-break:keep-all}
+.kind{display:inline-flex;padding:2px 10px;border-radius:999px;background:var(--md-sys-color-tertiary-container);color:var(--md-sys-color-on-tertiary-container);font-size:12px;font-weight:800}
+.prompt{margin:0 0 12px;padding:12px 14px;border-radius:14px;background:var(--md-sys-color-surface-container);font-size:15px;line-height:1.6;white-space:pre-line}
+.meta{margin:4px 0;font-size:13px;color:var(--md-sys-color-on-surface-variant)}
+.empty{padding:24px 0;text-align:center;font-size:14px;color:var(--md-sys-color-on-surface-variant)}
+.date{display:block;font-size:12px;font-weight:700;color:var(--md-sys-color-primary)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.lessonCard{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:100px;padding:16px;border-radius:20px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);color:inherit;text-align:left;font:inherit;cursor:pointer;transition:background .15s}
+.lessonCard:hover{background:var(--md-sys-color-surface-container-high)}
+.lessonCard strong{font-size:17px;line-height:1.35;word-break:keep-all}
+.back{display:inline-flex;align-items:center;gap:4px;margin-bottom:8px;padding:6px 0;border:0;background:none;color:var(--md-sys-color-primary);font-size:14px;font-weight:700;cursor:pointer}
+.lessonTitle{margin:0 0 12px;font-size:clamp(22px,4vw,30px);font-weight:900;word-break:keep-all}
+
+.cards{columns:280px;column-gap:12px}
+.card{display:flex;flex-direction:column;gap:8px;break-inside:avoid;margin-bottom:12px;padding:14px;border-radius:18px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-lowest)}
+.card[data-colored]{border-top-width:6px}
+.card strong{font-size:15px;line-height:1.4}
+.text{font-size:15px;line-height:1.6;white-space:pre-line;word-break:break-word}
+.author{display:flex;align-items:center;gap:6px}
+.imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+.imgBtn{padding:0;border:0;border-radius:12px;overflow:hidden;background:var(--md-sys-color-surface-container);cursor:zoom-in;aspect-ratio:1}
+.imgBtn img{width:100%;height:100%;object-fit:cover;display:block}
+.comments{margin:0;padding:8px 0 0;list-style:none;border-top:1px dashed var(--md-sys-color-outline-variant);display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.5}
+.comments li{display:flex;gap:6px;align-items:baseline}
+.ideas{display:flex;flex-wrap:wrap;gap:6px}
+.idea{padding:6px 10px;border-radius:12px;background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);font-size:14px;line-height:1.4}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}
+.chip{display:inline-flex;align-items:center;gap:4px;min-height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);color:var(--md-sys-color-on-surface);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+.chip[aria-pressed="true"]{background:var(--md-sys-color-secondary-container);border-color:transparent}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:hsl(var(--h) 70% 92%);color:hsl(var(--h) 60% 25%);font-size:14px;font-weight:700}
+.badge b{font-weight:900}
+
+.bars{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(80px,2fr) auto;align-items:center;gap:10px;font-size:14px}
+.bar[data-correct] .barLabel{color:var(--md-sys-color-primary);font-weight:800}
+.barLabel{display:flex;align-items:center;gap:4px;min-width:0;word-break:keep-all}
+.barTrack{display:block;height:12px;border-radius:999px;background:var(--md-sys-color-surface-container-highest);overflow:hidden}
+.barTrack span{display:block;height:100%;border-radius:inherit;background:var(--md-sys-color-primary)}
+.survey{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.survey .card{margin:0}
+.answers{margin:0;padding-left:18px;font-size:14px;line-height:1.6}
+
+.split{display:grid;grid-template-columns:minmax(0,240px) 1fr;gap:16px}
+.rank{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.rank li{display:flex;align-items:center;gap:8px;font-size:14px}
+.cloud{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-weight:800;color:var(--md-sys-color-primary)}
+
+.praises{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.praises li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 14px;border-radius:14px;background:var(--md-sys-color-surface-container-low);font-size:15px;line-height:1.5}
+.match{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px;font-variant-numeric:tabular-nums}
+.match span{display:inline-flex;align-items:center;gap:4px}
+.match span[data-win]{font-weight:900;color:var(--md-sys-color-primary)}
+
+/* 모자이크 — 학생 번호 색의 4색 픽셀 블록. 이름 자체는 서버가 보내지 않는다 */
+.mosaic,.mosaicInline{display:inline-block;flex:none;vertical-align:middle;border-radius:5px;
+  background:conic-gradient(hsl(var(--h) var(--sat) 72%) 25%,hsl(var(--h) var(--sat) 52%) 0 50%,hsl(var(--h) var(--sat) 63%) 0 75%,hsl(var(--h) var(--sat) 44%) 0) 0 0/8px 8px}
+.mosaic{width:56px;height:22px}
+.mosaicInline{width:36px;height:16px;margin:0 2px;background-size:6px 6px}
+.teacher{display:inline-flex;padding:2px 8px;border-radius:999px;background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container);font-size:12px;font-weight:800}
+
+.lightbox{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.85);cursor:zoom-out}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+
+@media (max-width:600px){
+  .split{grid-template-columns:1fr}
+  .bar{grid-template-columns:1fr auto;}
+  .bar .barTrack{grid-column:1/-1;grid-row:2}
+  .hero{padding-top:28px}
+}

@@ -10,6 +10,7 @@ import { TopBar } from "@/components/TopBar";
 import { ClassBuilder } from "@/components/ClassBuilder";
 import { GroupBuilder } from "@/components/GroupBuilder";
 import { Icon } from "@/components/Icon";
+import { ShowcaseShareDialog } from "@/components/showcase/ShowcaseShareDialog";
 import { MessagesFab } from "@/components/MessagesFab";
 import { PraiseModal } from "@/components/PraiseModal";
 import { PraiseManageModal } from "@/components/PraiseManageModal";
@@ -62,6 +63,7 @@ function ClassDetail() {
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
   const [leaderOpen, setLeaderOpen] = useState(false);
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
   const [leaderXp, setLeaderXp] = useState<Record<string, number>>({});
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -245,6 +247,16 @@ function ClassDetail() {
               <Icon name="dashboard" size={16} />
               캔버스
             </button>
+            {isTeacher && (
+              <button
+                onClick={() => setShowcaseOpen(true)}
+                title="링크가 있는 사람에게 학급 성과를 보여 줘요(학생 이름은 모자이크)"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--md-sys-color-outline)] px-3 py-2 text-sm font-medium text-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_8%,transparent)]"
+              >
+                <Icon name="share" size={16} />
+                성과 공유
+              </button>
+            )}
             {isTeacher && (
               <button
                 onClick={async () => {
@@ -486,6 +498,7 @@ function ClassDetail() {
       )}
 
       {/* 초대 코드 크게 보기 모달 */}
+      {showcaseOpen && isTeacher && <ShowcaseShareDialog classId={room.id} className={room.name} onClose={() => setShowcaseOpen(false)} />}
       {codeOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.6)] p-6"
