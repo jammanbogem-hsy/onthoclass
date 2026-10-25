@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.31.2";
+export const APP_VERSION = "1.32.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.32.0",
+    date: "2026-10-25",
+    kind: "minor",
+    title: "모아 월드 맵 도우미 강화",
+    items: [
+      "맵 도우미가 키보드·화면 버튼 입력, 물체 움직임, 공 날리기, 터지는 효과, 효과음, 타이머로 직접 놀이를 만들어요.",
+      "도우미 답이 조금 어긋나도 버리지 않고 고쳐서 적용해요('맵 작업을 제출하지 않았습니다' 오류 수정).",
+      "에셋 크기를 6×6칸, 높이 5까지 만들 수 있어요.",
+      "초대 코드(8자)가 생기고, 버튼이 머티리얼 디자인 모양으로 바뀌고 더 가벼워졌어요. 러닝크루 학생에게는 '선생님 공방 만들기'가 보이지 않아요.",
+    ],
+  },
   {
     version: "1.31.2",
     date: "2026-10-25",
