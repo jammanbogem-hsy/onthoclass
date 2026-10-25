@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.32.0";
+export const APP_VERSION = "1.33.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.33.0",
+    date: "2026-10-25",
+    kind: "minor",
+    title: "모아 월드 서버 저장 + AI 앱으로 월드 만들기",
+    items: [
+      "모아 월드 스페이스가 서버에 저장돼요. 다른 기기·브라우저에서도 이어서 만들 수 있어요(처음 열 때 자동으로 옮겨요).",
+      "ChatGPT·Claude 에 러닝크루를 연결하면 대화로 설계를 정한 뒤 모아 월드 맵·동작 코드·직접 만든 그림을 넣을 수 있어요. 고칠 때마다 버전이 남아 되돌릴 수 있어요.",
+      "에셋 그림을 한 번 받으면 기억해 두어 더 빨리 보여요.",
+    ],
+  },
   {
     version: "1.32.0",
     date: "2026-10-25",
