@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -186,6 +186,8 @@ type BoardProps = {
   shared?: boolean; onShare?: (v: boolean) => void;
   /** 응답 가리기 — 켜져 있으면 학생에게 다른 친구 응답 글은 안 보이고 개수만(선생님·자기 응답은 그대로) · 바꾸기(선생님) */
   hideIdeas?: boolean; onHide?: (v: boolean) => void;
+  /** 성과 공유 화면: 이름 대신 모자이크(글 속 가린 이름 \uE000 도) · 페이지 안에 끼워 넣기(높이 고정, 휠은 Ctrl 과 함께 확대) */
+  masked?: boolean; embedded?: boolean;
 };
 
 /** 여러 반 섬: 위쪽 탭으로 '모두' 또는 반 하나만 골라 그 섬만 크게 본다(다른 반 섬은 아예 그리지 않는다).
@@ -207,7 +209,7 @@ export function BrainstormBoard(props: BoardProps) {
 }
 
 function Board({ islands, home, uid, myName, teacher, canLink, question, members, now, error,
-  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare, hideIdeas, onHide,
+  grid = CLASS_GRID, store = classStore, kicker = "브레인스토밍", extraTools, overlay, composer = true, closedNote, startOnMe, shared, onShare, hideIdeas, onHide, masked, embedded,
   linkedCount = islands.length, homeIsland = islands[home], isleTabs, onIsle }: BoardProps & {
   /** 반 하나만 보기일 때: 이어진 섬 수 · 쓰기 칸이 쓸 우리 반 섬(지금 보는 섬이 다른 반이어도) · 섬 고르기 탭 · 이름표 눌러 그 반만 보기 */
   linkedCount?: number; homeIsland?: IslandData; isleTabs?: ReactNode; onIsle?: (n: number) => void;
@@ -250,8 +252,9 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     return clampView({ s, x: ux - (fx * WW) / s, y: uy - (fy * WH) / s });
   }), [WW, WH, zoomMax, clampView]);
   const seaRef = useRef<HTMLElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   // 판 바깥 바다 여백에서도 끌기·확대가 된다(좌표 계산은 판 기준)
-  usePanZoom(seaRef, boardRef, WW, WH, setView, zoomAt, clampView);
+  usePanZoom(seaRef, boardRef, WW, WH, setView, zoomAt, clampView, !!embedded);
   // 3D 로 그려지고 있는 학생들 / WebGL 을 못 쓰는 기기
   const [live3d, setLive3d] = useState<Set<string>>(() => new Set());
   const [no3d, setNo3d] = useState(false);
@@ -280,6 +283,9 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
   const actors: Actor[] = useMemo(() => everyone.flatMap(e => (e.home ? [{ uid: e.id, char: e.char, x: e.home.x, y: e.home.y + FEET, ideas: e.p.ideas.length }] : [])), [everyone]);
   const photo = useMemo(() => new Map(members.map(m => [m.uid, m.photoURL])), [members]);
   const nameOf = (n: number, id: string, fallback: string) => (n === home ? members.find(m => m.uid === id)?.displayName : "") || fallback;
+  // 성과 공유: 이름 자리·글 속 가린 이름(서버가 \uE000 으로 바꿔 보냄)을 모자이크로
+  const nameMask = <span className={styles.nameMask} role="img" aria-label="가려진 이름" />;
+  const shownText = (t: string): ReactNode => (masked && t.includes("\uE000") ? t.split("\uE000").map((x, i) => <Fragment key={i}>{i > 0 && nameMask}{x}</Fragment>) : t);
   const totalIdeas = islands.reduce((a, i) => a + i.ideas.length, 0);
   const select = (id: string) => { setFocus(f => (f === id ? null : id)); setPanel(true); };
   // AI 분석용 CSV — 보이는 섬(가려진 섬 제외)의 학생을 처음 쓴 순서대로
@@ -472,7 +478,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
             const more = n - lines.length;
             const in3d = live3d.has(id);
             const left = (pos.x / WW) * 100; const top = ((pos.y + (in3d ? FEET : 0)) / WH) * 100;
-            const name = nameOf(I.n, p.uid, p.name);
+            const name = masked ? "친구" : nameOf(I.n, p.uid, p.name);
             return <div key={id} className={`${styles.player} ${in3d ? styles.player3d : ""} ${fresh ? styles.fresh : ""} ${mine ? styles.me : ""} ${focus === id ? styles.focused : ""} ${open ? styles.opened : ""}`}
               style={{ left: `${left}%`, top: `${top}%`, "--ink": color, "--delay": `${-(k * 0.37) % 3}s`, zIndex: open ? 350 : focus === id ? 300 : fresh ? 200 : Math.round(top) } as CSSProperties}>
               {/* 겹침 풀기로 옮겨지는 껍데기 — 많이 비켜나면 캐릭터까지 가는 선(leader)이 생긴다 */}
@@ -484,7 +490,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                   aria-label={collapsible ? `${showNames ? name : "친구"}의 아이디어 ${n}개 ${open ? "접기" : "모두 보기"}` : undefined}>
                   <span className={styles.lines} data-scroll={open ? "" : undefined}>
                     {veiled ? <span className={`${styles.bubbleText} ${styles.veiled}`}><Icon name="visibility_off" size={14} />아이디어 {n}개</span>
-                      : lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{i.text}</span>)}
+                      : lines.map(i => <span key={i.id} className={`${styles.bubbleText} ${bubbleAll && fresh && i.id === latest.id ? styles.newLine : ""}`}>{shownText(i.text)}</span>)}
                   </span>
                   {collapsible && <small className={styles.more}>{open ? <><Icon name="expand_less" size={14} />접기</> : <><Icon name="expand_more" size={14} />{more}개 더 보기</>}</small>}
                   {n > 1 && !veiled && <em>{n}</em>}
@@ -498,7 +504,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
                 </span>}
               </button>
               <span className={styles.shadow} />
-              {showNames && <span className={styles.name}>{name}</span>}
+              {showNames && <span className={styles.name}>{masked ? nameMask : name}</span>}
             </div>;
           })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -547,19 +553,20 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     return () => { alive = false; clearTimeout(t); };
   }, [mapSvg, bakeScale, resizeTick, WW, WH, lowEnd]);
 
-  return <main className={styles.page}>
+  const Root = embedded ? "div" : "main";
+  return <Root ref={rootRef} className={styles.page} data-embed={embedded ? "" : undefined}>
     <header className={styles.top}>
-      <div className={styles.topic}>
+      {!embedded && <div className={styles.topic}>
         <span className={styles.kicker}><Icon name="tips_and_updates" size={16} />{kicker}{linked ? ` · ${linkedCount}개 반이 함께` : ""}</span>
         <h1>{topic}</h1>
         {detail && <p>{detail}</p>}
-      </div>
+      </div>}
       <div className={styles.stats}>
         <span><b>{everyone.length}</b>명 참여</span>
         <span><b>{totalIdeas}</b>개 아이디어</span>
       </div>
       <div className={styles.tools}>
-        <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>
+        {!masked && <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>}
         <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
         <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>
         {extraTools}
@@ -577,7 +584,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
           </span>}
         </span>}
         {canLink && <button type="button" className={styles.chip} onClick={() => setLinking(true)}><Icon name="travel_explore" size={18} />{linked ? "반 섬 관리" : "다른 반과 섬 잇기"}</button>}
-        <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
+        <button type="button" className={styles.chip} onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void (embedded ? rootRef.current : document.documentElement)?.requestFullscreen?.().catch(() => {}); }} aria-label="전체 화면"><Icon name="fullscreen" size={18} /></button>
       </div>
     </header>
     {error && <p role="alert" className={styles.error}>{error}</p>}
@@ -628,11 +635,11 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
               {ranking.map((p, i) => <li key={p.id} className={focus === p.id ? styles.rankOn : ""}>
                 <button type="button" onClick={() => setFocus(f => (f === p.id ? null : p.id))}>
                   <span className={styles.place}>{i + 1}</span><span className={styles.swatch} style={{ background: inkColor(p.k) }} />
-                  <span className={styles.rankName}>{showNames || (I.n === home && p.uid === uid) ? nameOf(I.n, p.uid, p.name) : `친구 ${i + 1}`}</span>
+                  <span className={styles.rankName}>{masked ? nameMask : showNames || (I.n === home && p.uid === uid) ? nameOf(I.n, p.uid, p.name) : `친구 ${i + 1}`}</span>
                   <span className={styles.rankNum}>{Math.round(p.share * 100)}% · {p.ideas.length}개</span>
                 </button>
                 {(focus === p.id || ranking.length <= 6) && !(hideIdeas && !teacher && !(I.n === home && p.uid === uid)) && <ul className={styles.ideaList}>
-                  {p.ideas.map(idea => <li key={idea.id}><span>{idea.text}</span>
+                  {p.ideas.map(idea => <li key={idea.id}><span>{shownText(idea.text)}</span>
                     {(teacher || (I.n === home && idea.uid === uid)) && <button type="button" onClick={() => void store.remove(I, idea.id)} aria-label="아이디어 지우기"><Icon name="delete" size={16} /></button>}
                   </li>)}
                 </ul>}
@@ -647,7 +654,7 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     {myIsle && composer && (closedNote ? <p className={styles.closedNote}><Icon name="lock" size={18} />{closedNote}</p>
       : <Composer teacher={teacher} island={myIsle} store={store} uid={uid} name={myName} mine={myIsle.ideas.filter(i => i.uid === uid)} color={inkColor(Math.max(0, myK))} joined={myK >= 0} />)}
     {linking && myIsle && <LinkIslandsDialog cid={myIsle.cid} lid={myIsle.lid} question={question as Question} onClose={() => setLinking(false)} />}
-  </main>;
+  </Root>;
 }
 
 /** 학생 아이디어 쓰기 칸 — 판 아래에 붙어 있다. */
@@ -687,7 +694,7 @@ function Notice({ title, body, action }: { title: string; body?: string; action?
  * 살짝 누른 것(6px 미만 이동)은 캐릭터·말풍선 클릭으로 그대로 둔다. 펼친 말풍선 안에서는 스크롤.
  */
 function usePanZoom(areaRef: React.RefObject<HTMLElement | null>, ref: React.RefObject<HTMLDivElement | null>, ww: number, wh: number, setView: (f: (v: BoardView) => BoardView) => void,
-  zoomAt: (factor: number, fx?: number, fy?: number) => void, clampView: (v: BoardView) => BoardView) {
+  zoomAt: (factor: number, fx?: number, fy?: number) => void, clampView: (v: BoardView) => BoardView, embedded = false) {
   useEffect(() => {
     const el = ref.current; const area = areaRef.current; if (!el || !area) return;
     // 말풍선 목록 스크롤·판 위 버튼 묶음(확대 막대·반 탭·QR)에서는 판을 움직이지 않는다
@@ -695,6 +702,8 @@ function usePanZoom(areaRef: React.RefObject<HTMLElement | null>, ref: React.Ref
     const frac = (cx: number, cy: number) => { const r = el.getBoundingClientRect(); return [(cx - r.left) / r.width, (cy - r.top) / r.height] as const; };
     const onWheel = (e: WheelEvent) => {
       if (inScroll(e.target)) return;
+      // 페이지 안에 끼운 판: 그냥 굴리면 페이지가 내려가고, Ctrl(⌘)·전체 화면일 때만 확대
+      if (embedded && !e.ctrlKey && !e.metaKey && !document.fullscreenElement) return;
       e.preventDefault();
       const [fx, fy] = frac(e.clientX, e.clientY);
       zoomAt(Math.exp(-e.deltaY * 0.0015), fx, fy);
@@ -727,5 +736,5 @@ function usePanZoom(areaRef: React.RefObject<HTMLElement | null>, ref: React.Ref
       area.removeEventListener("wheel", onWheel); area.removeEventListener("pointerdown", down); area.removeEventListener("pointermove", move);
       area.removeEventListener("pointerup", up); area.removeEventListener("pointercancel", up); area.removeEventListener("click", click, true);
     };
-  }, [areaRef, ref, ww, wh, setView, zoomAt, clampView]);
+  }, [areaRef, ref, ww, wh, setView, zoomAt, clampView, embedded]);
 }

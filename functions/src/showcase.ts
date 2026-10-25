@@ -24,7 +24,7 @@ import { TRADING_ALIAS } from "./tradingAlias";
 
 const db = () => getFirestore();
 /** 글 안에서 가린 이름 자리 — 화면이 모자이크로 그린다(유니코드 사용자 영역 문자) */
-export const MOSAIC = "";
+export const MOSAIC = "\uE000";
 const TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
 
@@ -206,7 +206,7 @@ async function lessonView(cid: string, lid: string, a: Anon) {
     const qref = lref.collection("questions").doc(q.id);
     if (q.kind === "brainstorm") {
       const ideas = await qref.collection("ideas").get();
-      return { ...base, ideas: ideas.docs.map(d => ({ by: who(a, d.data().uid), text: mask(a, d.data().text, 600), at: msOf(d.data().at) })).sort((x, y) => x.at - y.at) };
+      return { ...base, ideas: ideas.docs.map(d => ({ id: d.id, by: who(a, d.data().uid), text: mask(a, d.data().text, 600), at: msOf(d.data().at) })).sort((x, y) => x.at - y.at) };
     }
     if (q.kind === "game-result") {
       const g = (q.gameResult ?? {}) as DocumentData;

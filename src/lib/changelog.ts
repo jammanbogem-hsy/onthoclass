@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.30.0";
+export const APP_VERSION = "1.31.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.31.0",
+    date: "2026-10-25",
+    kind: "minor",
+    title: "성과 공유 화면에 브레인스토밍 맵",
+    items: [
+      "성과 공유 화면에서 브레인스토밍 활동을 섬 지도 그대로 볼 수 있어요. 이름은 모자이크로 가려져요.",
+      "활동 이름과 문제 내용을 크게, 눈에 잘 띄게 바꿨어요.",
+    ],
+  },
   {
     version: "1.30.0",
     date: "2026-10-25",

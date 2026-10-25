@@ -216,3 +216,15 @@
 .board[data-calm] .player{animation:none;will-change:auto}
 .board[data-calm] .player3d .bubble{animation:bubbleIn .45s cubic-bezier(.2,1.5,.4,1) both}
 .board[data-calm] .player3d.fresh .bubble{animation:bubbleIn .45s cubic-bezier(.2,1.5,.4,1) both,pop 1.2s ease-in-out .5s 2}
+
+/* 성과 공유(이름 모자이크) — 이름 자리는 학생 잉크 색 픽셀 블록. 이름 자체는 서버가 보내지 않는다 */
+.nameMask{display:inline-block;width:3.2em;height:1em;vertical-align:-.15em;border-radius:3px;
+  background:conic-gradient(#c4c4cc 25%,#8d8d99 0 50%,#ababb5 0 75%,#777783 0) 0 0/6px 6px}
+.name .nameMask{width:3em;background-image:conic-gradient(color-mix(in srgb,var(--ink) 45%,#fff) 25%,var(--ink) 0 50%,color-mix(in srgb,var(--ink) 70%,#fff) 0 75%,color-mix(in srgb,var(--ink) 75%,#000) 0)}
+/* 성과 공유 페이지 안에 끼운 판 — 높이를 고정하고, 세로 밀기는 페이지 스크롤로 */
+.page[data-embed]{height:min(78dvh,760px);border:1px solid var(--md-sys-color-outline-variant);border-radius:24px;overflow:hidden}
+.page[data-embed]:fullscreen{height:100dvh;border-radius:0}
+.page[data-embed] .sea{touch-action:pan-y}
+@media (max-width:760px){
+  .page[data-embed]{height:auto;min-height:0}
+}

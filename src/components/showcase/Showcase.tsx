@@ -3,6 +3,7 @@
 // 학급 성과 공유 화면(/showcase/?t=토큰) — 로그인 없이 읽기 전용. 데이터는 /api/showcase/data(functions/src/showcase.ts).
 // 학생 이름은 서버가 빼고 학생 번호만 보낸다 → 여기서는 번호 색의 모자이크로만 그린다.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExpandableGraph } from "@/components/ExpandableGraph";
 import { Icon } from "@/components/Icon";
@@ -10,7 +11,10 @@ import { BADGE_CATALOG } from "@/lib/badges";
 import type { Ontology } from "@/lib/lessons";
 import s from "./Showcase.module.css";
 
-const MOSAIC = "";
+const MOSAIC = "\uE000";
+// 브레인스토밍 섬 판(3D 캐릭터 포함)은 무거워서 그 활동이 있을 때만 불러온다
+const BrainstormBoard = dynamic(() => import("@/components/brainstorm/BrainstormRoom").then(m => m.BrainstormBoard), { ssr: false, loading: () => <p className={s.empty}>브레인스토밍 맵을 불러오는 중…</p> });
+const NO_STORE = { add: async () => {}, remove: async () => {} };
 type Tab = "lessons" | "maps" | "boards" | "life";
 
 /* ------------------------------------------------------------ 데이터 타입(서버와 같은 모양) */
@@ -29,7 +33,7 @@ type Activity = {
   options?: string[]; answerIndex?: number;
   surveyItems?: { id: string; type: string; prompt: string; options: string[]; scaleMax: number }[];
   links?: { title: string; url: string }[];
-  responses?: Resp[]; ideas?: { by: number; text: string }[];
+  responses?: Resp[]; ideas?: { id: string; by: number; text: string; at: number }[];
   game?: { name: string; ranks: { by: number; rank: number }[]; words: { word: string; count: number }[] };
 };
 type Board = { id: string; name: string; pages: { id: string; name: string }[]; cards: { text: string; link?: string; color: string | null; page: string | null; by: number; img: string[] }[] };
@@ -196,7 +200,7 @@ function LessonView({ token, lid, ctx, onBack }: { token: string; lid: string; c
       <h3 className={s.h3}><Icon name="hub" size={20} />이 차시 지식맵</h3>
       <Graph data={d.map} title={`${d.lesson.title} 지식맵`} />
     </section>}
-    {d.activities.map(a => <ActivityBlock key={a.id} a={a} ctx={ctx} />)}
+    {d.activities.map((a, i) => <ActivityBlock key={a.id} a={a} ctx={ctx} num={i + 1} />)}
     {d.reflections.length > 0 && <section className={s.section}>
       <h3 className={s.h3}><Icon name="self_improvement" size={20} />차시 성찰</h3>
       <div className={s.cards}>{d.reflections.map((r, i) => <div key={i} className={s.card}><Author n={r.by} /><Masked className={s.text} text={r.text} /></div>)}</div>
@@ -215,17 +219,27 @@ function Images({ list, ctx }: { list: string[]; ctx: Ctx }) {
   </button>)}</div>;
 }
 
-function ActivityBlock({ a, ctx }: { a: Activity; ctx: Ctx }) {
+function ActivityBlock({ a, ctx, num }: { a: Activity; ctx: Ctx; num: number }) {
   const [label, icon] = KIND[a.kind] ?? ["활동", "assignment"];
-  const head = <>
-    <h3 className={s.h3}><Icon name={icon} size={20} /><span className={s.kind}>{a.phase === "post" ? "수업 후" : a.phase === "pre" ? "수업 전" : ""} {label}</span>{a.title && <Masked text={a.title} />}</h3>
-    {a.prompt && <p className={s.prompt}><Masked text={a.prompt} /></p>}
-  </>;
+  const head = <header className={s.actHead}>
+    <div className={s.actTags}>
+      <span className={s.actNum}>활동 {num}</span>
+      <span className={s.kind}><Icon name={icon} size={16} />{a.phase === "post" ? "수업 후 " : a.phase === "pre" ? "수업 전 " : ""}{label}</span>
+    </div>
+    {a.title && <h3 className={s.actTitle}><Masked text={a.title} /></h3>}
+    {a.prompt && a.prompt.trim() !== a.title.trim() && <div className={s.question}><Icon name="help" size={22} fill /><Masked text={a.prompt} /></div>}
+  </header>;
   let body: ReactNode = null;
   if (a.kind === "brainstorm") {
     const by = new Map<number, string[]>();
     for (const i of a.ideas ?? []) by.set(i.by, [...(by.get(i.by) ?? []), i.text]);
-    body = by.size ? <div className={s.cards}>{[...by.entries()].map(([n, list]) => <div key={n} className={s.card}><Author n={n} /><div className={s.ideas}>{list.map((t, i) => <span key={i} className={s.idea}><Masked text={t} /></span>)}</div></div>)}</div> : <p className={s.empty}>아직 아이디어가 없어요.</p>;
+    body = by.size ? <>
+      <BrainstormMap a={a} />
+      <details className={s.more}>
+        <summary><Icon name="format_list_bulleted" size={18} />학생별 아이디어 글로 보기</summary>
+        <div className={s.cards}>{[...by.entries()].map(([n, list]) => <div key={n} className={s.card}><Author n={n} /><div className={s.ideas}>{list.map((t, i) => <span key={i} className={s.idea}><Masked text={t} /></span>)}</div></div>)}</div>
+      </details>
+    </> : <p className={s.empty}>아직 아이디어가 없어요.</p>;
   } else if (a.kind === "game-result" && a.game) {
     body = <div className={s.split}>
       <ol className={s.rank}>{a.game.ranks.slice().sort((x, y) => x.rank - y.rank).map((r, i) => <li key={i}><b>{r.rank}위</b><Mosaic n={r.by} /></li>)}</ol>
@@ -266,7 +280,7 @@ function ActivityBlock({ a, ctx }: { a: Activity; ctx: Ctx }) {
       </div>)}</div> : <p className={s.empty}>아직 응답이 없어요.</p>}
     </>;
   }
-  return <section className={s.section}>{head}{body}</section>;
+  return <section className={s.activity}>{head}<div className={s.actBody}>{body}</div></section>;
 }
 
 /* ------------------------------------------------------------ 보드 */
@@ -356,4 +370,17 @@ function LifeView({ token }: { token: string }) {
       <div className={s.cards}>{d.groups.map((g, i) => <div key={i} className={s.card}><strong><Masked text={g.name} /></strong><span className={s.ideas}>{g.members.map((n, j) => <Mosaic key={j} n={n} inline />)}</span></div>)}</div>
     </section>}
   </>;
+}
+
+/* ------------------------------------------------------------ 브레인스토밍 맵(섬 판, 이름은 모자이크) */
+function BrainstormMap({ a }: { a: Activity }) {
+  const [now, setNow] = useState(0);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  // 학생 번호를 가짜 계정 id 로 — 같은 학생은 같은 땅·캐릭터·색
+  const islands = useMemo(() => [{ cid: "showcase", lid: "", qid: a.id, name: "", ideas: (a.ideas ?? []).map(i => ({ id: i.id, uid: `s${i.by}`, name: "", text: i.text, at: i.at })) }], [a]);
+  return <div className={s.mapFrame}>
+    <BrainstormBoard islands={islands} home={0} uid="" myName="" teacher={false} question={{ title: a.title, text: "" }} members={[]} now={now} error=""
+      store={NO_STORE} composer={false} masked embedded />
+    <p className={s.meta}><Icon name="touch_app" size={14} />캐릭터를 누르면 그 학생의 아이디어를 모아 볼 수 있어요. 확대는 + 버튼이나 Ctrl(⌘)+휠.</p>
+  </div>;
 }
