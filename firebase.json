@@ -93,6 +93,13 @@
       "target": "main",
       "rewrites": [
         {
+          "source": "/api/jamworld/**",
+          "function": {
+            "functionId": "jamworldApi",
+            "region": "asia-northeast3"
+          }
+        },
+        {
           "source": "/s/**",
           "function": {
             "functionId": "showcase",

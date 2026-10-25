@@ -1,0 +1,85 @@
+{
+  "checkedDateKST": "2026-10-24",
+  "project": "jammanboeng",
+  "metricPeriod": {
+    "start": "2026-10-01T00:00:00+09:00",
+    "end": "2026-10-24T00:00:00+09:00"
+  },
+  "mainSite": {
+    "id": "jammanboeng",
+    "releaseCount": 376,
+    "keep10WouldRemove": 366,
+    "retainedReleaseCount": 2147483647
+  },
+  "hostingStorageBytesBySite": {
+    "jambrain": 228391733,
+    "jammanbo-claw": 90335095,
+    "jammanboeng": 15613349393,
+    "jammanboeng-claw": 16540527
+  },
+  "hostingTransferBytesByDomain": {
+    "jambrain.web.app": 162222717,
+    "jammanbo-claw.web.app": 18826572905,
+    "jammanboeng--puyo-review-lzrufthh.web.app": 2454265,
+    "jammanboeng.firebaseapp.com": 6749911,
+    "jammanboeng.web.app": 5408127121,
+    "jammanboeng-claw.web.app": 624652495
+  },
+  "jamworldApiBillableSeconds": 75078.84569355789,
+  "projectCloudRunBillableSecondsApprox": 84233,
+  "projectFirestoreDocumentReads": 4794533,
+  "nightRequestSample": {
+    "startKST": "2026-10-22 22:00",
+    "endKST": "2026-10-23 08:00",
+    "sampled": 1000,
+    "truncated": true
+  },
+  "nightClassroomGET": {
+    "requests": 701,
+    "totalSeconds": 14439.853131236998,
+    "over18Seconds": 700,
+    "statuses": {
+      "200": 701
+    }
+  },
+  "limitations": [
+    "Metrics describe usage, not invoice amounts or SKU attribution.",
+    "Firestore totals include every feature in this Firebase project.",
+    "Night logs are a 1000-entry sample, not all requests.",
+    "Hosting storage samples precede the latest release; version byte sums are not a substitute for billed storage.",
+    "Retention changes schedule deletion of old release history and require user approval."
+  ],
+  "officialReferences": [
+    "https://firebase.google.com/pricing",
+    "https://firebase.google.com/docs/hosting/manage-hosting-resources",
+    "https://cloud.google.com/run/pricing"
+  ],
+  "hostingPricingCheck": {
+    "currency": "USD",
+    "freeStorageGB": 10,
+    "additionalGBPerMonthUsd": 0.026,
+    "storageOnlyAtMeasuredUsagePerMonthUsd": 0.155,
+    "note": "Current-rate storage-only illustration, not a reconstruction of this month's invoice; network transfer must be checked separately."
+  },
+  "appliedCodeChanges": [
+    "Suspend classroom polling and presence in hidden tabs.",
+    "Connect classroom only on the lesson view or with chat open.",
+    "Student presence interval: 45 seconds; teacher does not send presence.",
+    "Compact unchanged revision avoids roster and presence reads.",
+    "Student snapshots do not query the full class roster or presence.",
+    "Workshop unchanged revision avoids requests, generations and roster reads; a full snapshot at least once a minute keeps stale job recovery.",
+    "Authorization remains fresh; revoked access stops automatic retries and presence."
+  ],
+  "hostingRetentionChanged": false,
+  "deployment": {
+    "function": "jamworldApi (asia-northeast3)",
+    "hosting": "sites/jammanboeng/versions/f2235dddbbbb7b45",
+    "retentionPolicyChanged": false,
+    "historyDeleted": false,
+    "tests": {
+      "serverAssertions": 14,
+      "browserScenarios": 3,
+      "productionBrowserVerification": "passed"
+    }
+  }
+}

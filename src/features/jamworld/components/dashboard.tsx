@@ -25,6 +25,7 @@ import {
   type TemplateKey,
 } from "@/features/jamworld/lib/world/storage";
 import type { MapDoc, Project } from "@/features/jamworld/lib/world/types";
+import { syncAll } from "./world-sync";
 
 /** 카드 썸네일: 실제 2.5D 렌더러로 맵 전체를 한 번 그린 뒤 캐시를 비운다 (아틀라스 로드 실패 시 미니맵) */
 function MiniMap({ doc }: { doc: MapDoc | null }) {
@@ -100,6 +101,13 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // 캐시로 먼저 보여 주고, 서버(원본)와 맞춘 뒤 바뀌었으면 다시 그린다
+  const [syncTick, setSyncTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    void syncAll().then(changed => { if (alive && changed) setSyncTick(n => n + 1); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     const list = listProjects();
     // Initialize the view from browser-local map storage after mount.
@@ -112,7 +120,7 @@ export default function Dashboard() {
     for (const b of SAMPLE_BUILDERS)
       t[b.key] = buildTemplate(b.key as TemplateKey, `preview-${b.key}`);
     setTemplatePreviews(t);
-  }, []);
+  }, [syncTick]);
 
   function create() {
     if (!naming) return;

@@ -42,6 +42,7 @@ export async function probeMapScript(doc: MapDoc, signal: AbortSignal): Promise<
       const point = points[i];
       if (point && !scene.world.collides(point.x + 0.5, point.y + 0.5)) player = { ...player, x: point.x + 0.5, y: point.y + 0.5 };
       if (interactions[i]) runtime.event({ kind: "interact", value: interactions[i] });
+      if (i === 1) runtime.event({ kind: "key", name: "Space", value: " " });
       const quiz = quizzes[i];
       if (quiz && !progress.completed.has(quiz.id)) {
         progress = answerQuiz(doc, progress, quiz.id, true);

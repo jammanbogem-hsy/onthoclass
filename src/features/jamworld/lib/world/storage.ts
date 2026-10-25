@@ -6,6 +6,12 @@ import type { ProjectState } from "./project";
 import type { MapDoc, Project } from "./types";
 
 let scope = "guest";
+/** 로컬이 바뀌면 서버 동기화(world-sync)에 알린다 — mapIds: 바뀐 맵, "all": 전부, "meta": 이름 등만, "deleted": 삭제 */
+type Change = { projectId: string; maps: string[] | "all" | "meta" | "deleted" };
+const listeners = new Set<(c: Change) => void>();
+export function onLocalChange(fn: (c: Change) => void) { listeners.add(fn); return () => { listeners.delete(fn); }; }
+const changed = (c: Change) => listeners.forEach((l) => { try { l(c); } catch { /* 동기화 실패가 저장을 막지 않게 */ } });
+export const storageScope = () => scope;
 export function setStorageScope(value: string) { scope = value; }
 export function agentSessionKey(projectId: string) { return `jamworld.${scope}.agent.v1.${projectId}`; }
 const indexKey = () => `jamworld.${scope}.projects.v1`;
@@ -46,6 +52,35 @@ export function getProject(id: string): Project | null {
 export function saveProject(p: Project) {
   const all = listProjects().filter((q) => q.id !== p.id);
   writeIndex([{ ...p, updatedAt: Date.now() }, ...all]);
+  changed({ projectId: p.id, maps: "meta" });
+}
+
+/** 서버에서 받은 스페이스를 그대로 캐시에 쓴다(알림 없음) */
+export function putSyncedProject(p: Project, maps: Record<string, MapDoc>) {
+  const s = store();
+  if (!s) return;
+  const old = getProject(p.id);
+  for (const doc of Object.values(maps)) s.setItem(MAP_KEY(doc.id), serializeMap(doc));
+  for (const id of old?.mapIds ?? []) if (!p.mapIds.includes(id)) s.removeItem(MAP_KEY(id));
+  writeIndex([p, ...listProjects().filter((q) => q.id !== p.id)]);
+}
+/** 서버에 저장된 판(rev) — 편집기 상태가 덮어쓰지 않게 프로젝트 목록과 따로 둔다. 없으면 아직 안 올린 스페이스 */
+const REV_KEY = (id: string) => `jamworld.${scope}.rev.v1.${id}`;
+export function syncedRev(id: string): number | null {
+  const v = store()?.getItem(REV_KEY(id));
+  return v == null ? null : Number(v);
+}
+export function markSynced(id: string, rev: number | null) {
+  if (rev === null) store()?.removeItem(REV_KEY(id));
+  else store()?.setItem(REV_KEY(id), String(rev));
+}
+/** 다른 곳(서버)에서 지워진 스페이스를 캐시에서도 지운다(알림 없음) */
+export function dropLocalProject(id: string) {
+  const p = getProject(id);
+  if (!p) return;
+  for (const m of p.mapIds) store()?.removeItem(MAP_KEY(m));
+  writeIndex(listProjects().filter((q) => q.id !== id));
+  markSynced(id, null);
 }
 
 export function loadMap(id: string): MapDoc | null {
@@ -87,6 +122,7 @@ export function createProject(name: string, template: TemplateKey): { project: P
   };
   saveMap(map);
   saveProject(project);
+  changed({ projectId: project.id, maps: "all" });
   return { project, map };
 }
 
@@ -96,6 +132,7 @@ export function addMapToProject(projectId: string, template: TemplateKey, name: 
   const map = buildTemplate(template, newId("map"), name);
   saveMap(map);
   saveProject({ ...p, mapIds: [...p.mapIds, map.id] });
+  changed({ projectId: p.id, maps: [map.id] });
   return map;
 }
 
@@ -105,6 +142,7 @@ export function importProjectFromMap(doc: MapDoc): Project {
   const now = Date.now();
   const project: Project = { id: newId("prj"), name: map.name, description: "JSON 에서 가져옴", mapIds: [map.id], createdAt: now, updatedAt: now };
   saveProject(project);
+  changed({ projectId: project.id, maps: "all" });
   return project;
 }
 
@@ -113,6 +151,7 @@ export function deleteProject(id: string) {
   if (!p) return;
   for (const m of p.mapIds) store()?.removeItem(MAP_KEY(m));
   writeIndex(listProjects().filter((q) => q.id !== id));
+  changed({ projectId: id, maps: "deleted" });
 }
 
 export function projectMaps(p: Project): MapDoc[] {
@@ -165,6 +204,8 @@ export function saveProjectState(project: Project, ps: ProjectState, saved: Proj
     }
     throw e;
   }
+  const touched = ps.order.filter((id) => !saved || saved.docs[id] !== ps.docs[id]);
+  changed({ projectId: project.id, maps: touched });
   return nextProject;
 }
 

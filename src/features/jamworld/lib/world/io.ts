@@ -102,8 +102,8 @@ function sanitizeEmbedded(raw: unknown): Record<string, EmbeddedAsset> | undefin
     const fp = obj(e.footprint ?? { w: 1, d: 1 }, `assets.${id}.footprint`);
     const fw = int(fp.w, `assets.${id}.footprint.w`);
     const fd = int(fp.d, `assets.${id}.footprint.d`);
-    if (fw < 1 || fw > 3 || fd < 1 || fd > 3) throw new SchemaError(`assets.${id}.footprint: 1~3 칸이어야 합니다`);
-    const height = typeof e.height === "number" && Number.isFinite(e.height) ? Math.max(0, Math.min(3, e.height)) : 1;
+    if (fw < 1 || fw > 6 || fd < 1 || fd > 6) throw new SchemaError(`assets.${id}.footprint: 1~6 칸이어야 합니다`);
+    const height = typeof e.height === "number" && Number.isFinite(e.height) ? Math.max(0, Math.min(5, e.height)) : 1;
     const views = obj(e.views ?? {}, `assets.${id}.views`);
     const url = (u: unknown) => (typeof u === "string" && SAFE_URL.test(u) && !u.includes("..") ? u : undefined);
     out[id] = {

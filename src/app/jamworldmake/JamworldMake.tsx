@@ -17,6 +17,8 @@ import {
   type Me,
 } from "@/features/jamworld/components/workshop-api";
 import { setStorageScope } from "@/features/jamworld/lib/world/storage";
+import { startWorldSync } from "@/features/jamworld/components/world-sync";
+import { lastInputAt } from "@/features/jamworld/components/use-page-visible";
 import GlassSurface, {
   WaterBackdrop,
 } from "@/features/jamworld/components/glass-surface";
@@ -36,6 +38,8 @@ const Dashboard = dynamic(
   () => import("@/features/jamworld/components/dashboard"),
   { ssr: false },
 );
+/** 학생 자동 나가기 — 이만큼 입력이 없으면 세션을 끝낸다 */
+const STUDENT_IDLE_MS = 30 * 60_000;
 const Editor = dynamic(() => import("@/features/jamworld/components/editor"), {
   ssr: false,
 });
@@ -68,6 +72,7 @@ export default function JamworldMake() {
       .then((m) => {
         setError("");
         setStorageScope(m.student?.id || m.teacher?.id || user?.uid || "guest");
+        if (m.role) startWorldSync(); // 로그인한 사람만 서버에 저장
         setMe(m);
       })
       .catch((e) => setError(e.message));
@@ -75,6 +80,26 @@ export default function JamworldMake() {
   useEffect(() => {
     if (!loading && !profileLoading) reload();
   }, [loading, profileLoading, reload]);
+  // 세션이 끝났다는 응답(401)이 오면 로그인 상태를 다시 확인한다 — 선생님이 내보냈거나 시간이 지난 경우
+  useEffect(() => {
+    const lost = () => reload();
+    window.addEventListener("jamworld:unauthorized", lost);
+    return () => window.removeEventListener("jamworld:unauthorized", lost);
+  }, [reload]);
+  // 학생은 STUDENT_IDLE_MS 동안 아무 입력이 없으면 자동으로 나간다(켜 둔 채 잊은 화면·공용 기기)
+  const isStudent = me?.role === "student";
+  useEffect(() => {
+    if (!isStudent) return;
+    const check = () => {
+      if (Date.now() - lastInputAt() < STUDENT_IDLE_MS) return;
+      void api("/api/jamworld/workshop/logout", { method: "POST" })
+        .catch(() => undefined)
+        .then(() => { window.location.href = "/jamworldmake/?left=idle"; });
+    };
+    const t = setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", check); };
+  }, [isStudent]);
   async function login() {
     setBusy(true);
     setError("");
@@ -107,6 +132,7 @@ export default function JamworldMake() {
     <ClassroomProvider
       me={me}
       routeClassId={route.view === "classroom" ? route.id : undefined}
+      inClassroom={route.view === "classroom"}
     >
       <div className={`jamworld ${inEditor ? "jamworld-canvas" : ""}`}>
         <WaterBackdrop />
@@ -218,6 +244,12 @@ export default function JamworldMake() {
                   <em>우리만의 월드.</em>
                 </h1>
                 <p>그림을 만들고, 나만의 세상에 놓아 보세요.</p>
+                {query.get("left") === "idle" && (
+                  <p className="ws-note" role="status">
+                    한동안 쓰지 않아 자동으로 나갔어요. 선생님이 준 링크로 별명과
+                    PIN 을 넣어 다시 들어오세요.
+                  </p>
+                )}
               </div>
               <div className="world-scene" aria-hidden="true">
                 <div className="bubble-orbit" />
@@ -248,7 +280,7 @@ export default function JamworldMake() {
                 </GlassSurface>
               </div>
             </section>
-            <div className="entry-grid">
+            <div className="entry-grid" data-single={profile?.role === "student" || undefined}>
               <GlassSurface className="entry-lens" frost={0.06}>
                 <section className="entry-card student-entry">
                   <span className="entry-icon">
@@ -294,7 +326,9 @@ export default function JamworldMake() {
                   <small>별명과 숫자 비밀번호만 있으면 돼요.</small>
                 </section>
               </GlassSurface>
-              <GlassSurface className="entry-lens" frost={0.06}>
+{/* 러닝크루 학생 계정이면 선생님 카드는 보이지 않는다 */}
+              {profile?.role !== "student" && (
+                            <GlassSurface className="entry-lens" frost={0.06}>
                 <section className="entry-card teacher-entry">
                   <span className="entry-icon">
                     <Icon name="school" size={25} />
@@ -326,6 +360,7 @@ export default function JamworldMake() {
                   </small>
                 </section>
               </GlassSurface>
+              )}
             </div>
             <footer className="world-footer">
               <Link href="/jamworldmake/?view=worlds">

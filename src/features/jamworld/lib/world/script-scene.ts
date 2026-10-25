@@ -3,10 +3,11 @@ import { objectCells, objectFootprint, tileAt } from "./map";
 import { PlayWorld, type PlayerState } from "./play";
 import type { MapDoc, PlacedObject } from "./types";
 import { validQuizLabel } from "./quiz";
+import { validateFxAction } from "./script-fx";
 
 export interface ScriptObject { id: string; assetId: string; name: string; x: number; y: number; visible: boolean; blocking: boolean }
 export interface ScriptContext { x: number; y: number; time: number; zones: string[]; objects?: ScriptObject[] }
-export interface ScriptEvent { kind: "interact" | "choice" | "quiz"; name?: string; value: unknown }
+export interface ScriptEvent { kind: "interact" | "choice" | "quiz" | "key" | "arrive"; name?: string; value: unknown }
 export interface ScriptChoice { id: string; title: string; choices: string[] }
 export interface ScriptAction { kind: string; value: unknown }
 export interface ScriptObjectPatch { x?: number; y?: number; visible?: boolean; blocking?: boolean }
@@ -33,7 +34,7 @@ export function validateScriptActions(actions: ScriptAction[]) {
       if (Object.keys(p).some(k => !["x", "y", "visible", "blocking"].includes(k)) ||
           ["x", "y"].some(k => p[k] !== undefined && !Number.isInteger(p[k])) ||
           ["visible", "blocking"].some(k => p[k] !== undefined && typeof p[k] !== "boolean")) throw Error("오브젝트 위치·통과 여부를 확인해 주세요");
-    } else throw Error(`지원하지 않는 맵 동작: ${kind}`);
+    } else if (!validateFxAction(kind, v)) throw Error(`지원하지 않는 맵 동작: ${kind}`);
   }
 }
 

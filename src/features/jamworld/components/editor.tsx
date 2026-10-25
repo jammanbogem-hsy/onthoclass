@@ -15,6 +15,7 @@ import { readView, saveView, VIEW_LABEL } from "@/features/jamworld/lib/render/v
 import { CATALOG, CATEGORY_LABEL, footprintOf, getAsset, SCALE_MAX, SCALE_MIN, userAssets } from "@/features/jamworld/lib/world/catalog";
 import { loadImagesFor } from "@/features/jamworld/lib/render/user-images";
 import { api } from "./workshop-api";
+import { syncOne } from "./world-sync";
 import { registerLibrary, syncEmbeddedAssets, type LibraryLike } from "@/features/jamworld/lib/world/user-assets";
 import { diffCells } from "@/features/jamworld/lib/world/diff";
 import { History } from "@/features/jamworld/lib/world/history";
@@ -94,6 +95,8 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const doc = ps?.docs[curId] ?? null;
   const dirty = !!ps && !!saved && (ps.order.join() !== saved.order.join() || ps.order.some((id) => ps.docs[id] !== saved.docs[id]));
+  const dirtyRef = useRef(false);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
   const [tool, setTool] = useState<Tool>("select");
   const [assetId, setAssetId] = useState("nature.tree");
   const [rot, setRot] = useState<Rot>(0);
@@ -155,12 +158,25 @@ export default function Editor({ projectId }: { projectId: string }) {
   }, []);
 
   // ---------- 로드 ----------
+  // 서버(원본)와 먼저 맞춘 뒤 브라우저 캐시에서 읽는다. 다른 곳(AI 연결 등)에서 바뀌면 창으로 돌아올 때 다시 불러온다.
+  const [loadTick, setLoadTick] = useState(0);
   useEffect(() => {
+    let alive = true;
+    void syncOne(projectId).catch(() => false).then(() => { if (alive) setLoadTick(n => n + 1); });
+    const back = () => {
+      if (document.hidden || dirtyRef.current) return; // 저장 안 한 편집이 있으면 건드리지 않음
+      void syncOne(projectId).catch(() => false).then(changed => { if (alive && changed) setLoadTick(n => n + 1); });
+    };
+    window.addEventListener("focus", back);
+    return () => { alive = false; window.removeEventListener("focus", back); };
+  }, [projectId]);
+  useEffect(() => {
+    if (!loadTick) return;
     const p = getProject(projectId);
     if (!p) {
-    // Initialize the view from browser-local map storage after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoadError("이 브라우저에서 월드를 찾을 수 없어요. 내 월드에서 다시 열어 주세요.");
+      // Initialize the view from browser-local map storage after the server sync.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLoadError("월드를 찾을 수 없어요. 내 월드에서 다시 열어 주세요.");
       return;
     }
     const loaded = loadProjectState(p);
@@ -179,7 +195,7 @@ export default function Editor({ projectId }: { projectId: string }) {
     setCurId(first);
     setViewState(readView());
     setViewReady(true);
-  }, [projectId]);
+  }, [projectId, loadTick]);
 
   // Saving in the workshop publishes to every world's placement palette.
   const [libVersion, setLibVersion] = useState(0);
@@ -198,7 +214,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         setLibVersion(n => n + 1);
       }).catch(() => undefined);
     };
-    load(); const timer = window.setInterval(load, 15000);
+    load(); const timer = window.setInterval(load, 60000); // 비용 절약: 1분마다 + 창으로 돌아올 때
     window.addEventListener("focus", load); window.addEventListener("jamworld-assets", load);
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", load); window.removeEventListener("jamworld-assets", load); };
   }, []);

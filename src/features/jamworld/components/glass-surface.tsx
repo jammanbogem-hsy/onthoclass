@@ -54,53 +54,13 @@ export default function GlassSurface({
   );
 }
 
-/** Keep native button/link semantics; the optical wrapper never handles clicks. */
-export function GlassButton({
-  className = "btn",
-  style,
-  children,
-  disabled,
-  ...props
-}: ComponentProps<"button">) {
-  return (
-    <GlassSurface
-      className={`glass-control ${className}`}
-      contentClassName="glass-control-content"
-      style={style}
-      radius={18}
-      bezel={9}
-      refraction={38}
-      frost={0.015}
-      data-disabled={disabled || undefined}
-    >
-      <button {...props} disabled={disabled} className="glass-control-action">
-        {children}
-      </button>
-    </GlassSurface>
-  );
+/** Material 3 버튼 — 렌즈(굴절 필터)를 버튼마다 만들지 않는 가벼운 네이티브 요소. 모양은 jamworld.css 의 .btn */
+export function GlassButton({ className = "btn", ...props }: ComponentProps<"button">) {
+  return <button {...props} className={className} />;
 }
 
-export function GlassLink({
-  className = "btn",
-  style,
-  children,
-  ...props
-}: ComponentProps<"a">) {
-  return (
-    <GlassSurface
-      className={`glass-control ${className}`}
-      contentClassName="glass-control-content"
-      style={style}
-      radius={18}
-      bezel={9}
-      refraction={38}
-      frost={0.015}
-    >
-      <a {...props} className="glass-control-action">
-        {children}
-      </a>
-    </GlassSurface>
-  );
+export function GlassLink({ className = "btn", ...props }: ComponentProps<"a">) {
+  return <a {...props} className={className} />;
 }
 
 export function WaterBackdrop() {

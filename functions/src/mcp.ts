@@ -26,6 +26,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { TRADING_ALIAS } from "./tradingAlias";
 import { hashResponses, mergeLeaves, MAP_KINDS, plain, type Leaf } from "./knowledgeMap";
+import { registerMoaTools } from "./jamworld/mcp-moa";
 
 const BASE = "https://jammanboeng.web.app";
 const RESOURCE = `${BASE}/mcp`; // 함수 rewrite 주소는 호스팅의 trailingSlash 리디렉트를 받지 않는다
@@ -445,10 +446,12 @@ async function jobView(ctx: Ctx, jobId: string) {
 }
 
 export function buildServer(ctx: Ctx) {
-  const s = new McpServer({ name: "러닝크루", version: "1.2.0" } /* 도구를 바꾸면 올린다(1.1.0: 학급 생활 기록·요약, 1.2.0: 지식맵 읽기·만들기) */, {
+  const s = new McpServer({ name: "러닝크루", version: "1.3.0" } /* 도구를 바꾸면 올린다(1.1.0: 학급 생활 기록·요약, 1.2.0: 지식맵 읽기·만들기, 1.3.0: 모아 월드 만들기) */, {
     instructions: "러닝크루(초등 학급 LMS) 교사용 도구. 먼저 list_classes 로 학급 id 를 얻고, list_lessons 로 차시·활동 id 를 얻은 뒤 응답을 읽으세요. "
       + "주식 거래·만보 경제·칭찬·피드백·댓글·메시지 같은 학급 생활 기록은 get_class_records(kind 로 종류 선택), 기간 요약은 get_class_summary 를 쓰세요. "
-      + "지식구조맵(지식맵)은 get_knowledge_map 으로 읽고, build_knowledge_map 으로 만들어 러닝크루에 저장합니다(예: 오늘 수업 모두 → date 생략, 특정 수업 → classId+lessonId). 만들기는 이 서버의 유일한 쓰기 도구입니다. "
+      + "지식구조맵(지식맵)은 get_knowledge_map 으로 읽고, build_knowledge_map 으로 만들어 러닝크루에 저장합니다(예: 오늘 수업 모두 → date 생략, 특정 수업 → classId+lessonId). "
+      + "모아 월드(학급 메타버스) 제작은 moa_ 도구: 먼저 moa_guide 를 읽고, 사용자와 충분히 묻고 답해 설계를 정한 뒤 moa_submit_brief, 그다음 moa_apply_ops(맵)·moa_set_script(동작·상호작용 코드)·moa_upload_asset(직접 만든 그림)으로 만듭니다. 쓰기마다 버전이 남아 moa_revert 로 되돌릴 수 있어요. "
+      + "쓰기 도구는 build_knowledge_map 과 moa_ 의 쓰기 도구뿐입니다. "
       + "학생은 기본으로 학생 코드(S01…)로 표시됩니다. 결과를 학생·학부모에게 그대로 공유하지 말고, 분석은 한국어로 해 주세요.",
   });
 
@@ -890,6 +893,7 @@ export function buildServer(ctx: Ctx) {
     } catch (e) { return fail(e); }
   });
 
+  registerMoaTools(s, ctx);
   return s;
 }
 

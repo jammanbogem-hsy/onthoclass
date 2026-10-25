@@ -54,7 +54,7 @@ export default function McpAuth() {
     <p className={styles.detail}><b>{info.clientName}</b>({info.redirectHost})이(가) <b>{user.displayName || user.email}</b> 선생님의 러닝크루에 연결하려고 해요.</p>
     <ul className={styles.detail} style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
       <li>선생님이 맡은 학급의 차시·활동 응답, 브레인스토밍, 게임 결과, 칭찬, 피드백, 아이디어 섬을 읽어요.</li>
-      <li>쓰는 일은 <b>지식맵 만들기</b> 하나뿐이에요(차시 화면의 ‘분석’ 버튼과 같아요). 응답을 고치거나 지우거나 학생에게 보내는 일은 할 수 없어요.</li>
+      <li>쓰는 일은 <b>지식맵 만들기</b>와 선생님의 <b>모아 월드 만들기</b>(맵·동작 코드·직접 만든 그림 올리기, 고칠 때마다 되돌릴 수 있는 버전 보관)뿐이에요. 학생 응답을 고치거나 지우거나 학생에게 보내는 일은 할 수 없어요.</li>
       <li>사진·첨부 파일과 이메일은 보내지 않아요.</li>
     </ul>
     <label className={styles.detail} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>

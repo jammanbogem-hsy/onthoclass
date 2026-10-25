@@ -53,61 +53,6 @@
   text-decoration: none;
 }
 
-.jamworld .btn:not(.glass-control) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  font-weight: 600;
-  white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s, transform 0.06s;
-}
-.jamworld .btn:not(.glass-control):hover {
-  background: var(--panel-2);
-}
-.jamworld .btn:not(.glass-control):active {
-  transform: translateY(1px);
-}
-.jamworld .btn:not(.glass-control):disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.jamworld .btn:not(.glass-control).primary {
-  background: var(--teal);
-  border-color: var(--teal);
-  color: #fff;
-}
-.jamworld .btn:not(.glass-control).primary:hover {
-  background: var(--teal-d);
-}
-.jamworld .btn:not(.glass-control).coral {
-  background: var(--coral);
-  border-color: var(--coral);
-  color: #fff;
-}
-.jamworld .btn:not(.glass-control).ghost {
-  background: transparent;
-  border-color: transparent;
-}
-.jamworld .btn:not(.glass-control).ghost:hover {
-  background: var(--panel-2);
-}
-.jamworld .btn:not(.glass-control).sm {
-  height: 30px;
-  padding: 0 10px;
-  font-size: 13px;
-  border-radius: 8px;
-}
-.jamworld .btn:not(.glass-control).icon {
-  width: 36px;
-  padding: 0;
-}
-
 .jamworld .input,
 .jamworld .textarea,
 .jamworld .select {
@@ -555,8 +500,10 @@
 }
 .jamworld .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 .jamworld .kv {
   display: grid;
@@ -1242,7 +1189,7 @@
 .jamworld .profile-save { width: 100%; }
 .jamworld .profile-cancel { margin-top: 10px; }
 .jamworld .profile-saved { color: #246555; font-size: 14px; line-height: 1.7; }
-.jamworld .profile-saved .glass-control { display: flex; margin-top: 12px; }
+.jamworld .profile-saved .btn { display: flex; margin-top: 12px; }
 .jamworld .profile-picker .character-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .jamworld .profile-picker .character-choice { min-height: 200px; padding: 14px 10px; border: 2px solid transparent; box-shadow: inset 0 1px 0 #fff, 0 4px 14px #28618412; }
 .jamworld .profile-picker .character-choice.on { border-color: #2987b5; background: #d8effbbf; }
@@ -1347,10 +1294,6 @@
 .jamworld .world-switch a { display: flex; align-items: center; gap: 7px; padding: 10px 18px; border-radius: 25px; font-size: 13px; font-weight: 650; color: #657089; }
 .jamworld .world-switch a[aria-current] { color: #2d447d; background: #ffffffd9; box-shadow: inset 0 1px 1px white, 0 2px 6px #3b527517; }
 .jamworld .world-account { display: flex; align-items: center; gap: 12px; font-size: 13px; }
-.jamworld .btn:not(.glass-control) { border-radius: 12px; border-color: #d9e2ef; min-height: 38px; height: auto; padding-top: 8px; padding-bottom: 8px; box-shadow: 0 1px 2px #1e315008; }
-.jamworld .btn:not(.glass-control).primary { background: #4776df; color: white; border-color: #4776df; box-shadow: inset 0 1px 1px #ffffff45, 0 4px 10px #4776df20; }
-.jamworld .btn:not(.glass-control).primary:hover { background: #365fc5; }
-.jamworld .btn:not(.glass-control).coral { background: #526ab4; color: white; border-color: #526ab4; }
 .jamworld button:focus-visible, .jamworld a:focus-visible, .jamworld input:focus-visible, .jamworld textarea:focus-visible, .jamworld select:focus-visible { outline: 3px solid #5582e5; outline-offset: 3px; }
 .jamworld .world-landing { max-width: 1176px; margin: 0 auto; padding: 0 36px; }
 .jamworld .world-hero { display: grid; grid-template-columns: 1fr 1fr; align-items: center; min-height: 365px; gap: 30px; padding: 50px 10px 32px; }
@@ -1381,7 +1324,7 @@
 .jamworld .entry-card p { font-size: 13px; line-height: 1.8; color: #69778a; margin: 0 0 22px; }
 .jamworld .entry-input { display: flex; align-items: center; gap: 10px; background: #f1f5fa; border: 1px solid #e1e8f2; padding: 5px 5px 5px 13px; border-radius: 14px; color: #8495ab; }
 .jamworld .entry-input input { background: transparent; border: none; outline: none; min-width: 0; width: 100%; font-size: 12px; color: #344764; }
-.jamworld .entry-input .btn:not(.glass-control) { flex-shrink: 0; font-size: 12px; }
+.jamworld .entry-input .btn { flex-shrink: 0; font-size: 12px; }
 .jamworld .entry-card small { display: block; font-size: 10px; margin-top: 12px; color: #7b8899; }
 .jamworld .teacher-login { width: 100%; min-height: 50px; justify-content: flex-start; gap: 12px; background: white; border-radius: 14px; font-size: 13px; }
 .jamworld .teacher-login .material-symbols-outlined { margin-left: auto; color: #8190a5; }
@@ -1438,7 +1381,7 @@
 .jamworld-canvas .editor, .jamworld-canvas .play { flex: 1; min-height: 0; height: auto; }
 .jamworld .asset-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
 .jamworld .asset-filters label { min-width: 130px; }.jamworld .asset-filters .input { width: min(260px, 100%); }
-.jamworld .asset-downloads { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }.jamworld .asset-downloads .btn:not(.glass-control) { font-size: 11px; }
+.jamworld .asset-downloads { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }.jamworld .asset-downloads .btn { font-size: 11px; }
 .jamworld .asset-library .grid-cards { grid-template-columns: repeat(auto-fill,minmax(min(220px,100%),1fr)); }
 .jamworld .asset-library .ws-lib-thumb { background: conic-gradient(#f1f4f8 25%, #fff 0 50%, #f1f4f8 0 75%, #fff 0) 0 0 / 20px 20px; }
 .jamworld .asset-library .ws-lib-thumb img { max-height: 100%; object-fit: contain; }
@@ -1449,7 +1392,7 @@
 .jamworld .character-choice.on { border: 2px solid #6289df; background: #edf3ff; }.jamworld .character-choice img { height: 110px; width: 100%; object-fit: contain; }.jamworld .character-choice b { font-size: 13px; }
 .jamworld .character-default { display: grid; place-items: center; height: 110px; color: #6f99db; font-size: 70px; }
 .jamworld .character-preview { display: flex; gap: 16px; justify-content: center; padding: 20px; background: #f2f7fc; border-radius: 18px; }.jamworld .character-preview img { width: 45%; max-height: 260px; object-fit: contain; }
-@media (max-width: 600px) { .jamworld .world-switch a { padding: 9px 6px; font-size: 11px; gap: 4px; }.jamworld .character-grid { grid-template-columns: 1fr 1fr; }.jamworld .asset-filters { gap: 8px; }.jamworld .character-option .asset-downloads .btn:not(.glass-control) { font-size: 10px; padding: 7px; } }
+@media (max-width: 600px) { .jamworld .world-switch a { padding: 9px 6px; font-size: 11px; gap: 4px; }.jamworld .character-grid { grid-template-columns: 1fr 1fr; }.jamworld .asset-filters { gap: 8px; }.jamworld .character-option .asset-downloads .btn { font-size: 10px; padding: 7px; } }
 
 /* Aqueous material — the SVG lens bends the backdrop; content is a separate layer. */
 .jamworld {
@@ -1486,12 +1429,6 @@
 .jamworld .world-switch a { font-size: 15px; color: #365c75; min-height: 44px; padding: 9px 20px; }
 .jamworld .world-switch a[aria-current] { background: linear-gradient(150deg,#ffffffd9,#eaf7ff8c); color: #105a92; box-shadow: inset 0 1px 1px white,inset 0 -1px 2px #7ba3bf77,0 3px 8px #25668e18; border: 1px solid #ffffffde; }
 .jamworld .world-account { font-size: 14px; }
-.jamworld .btn:not(.glass-control) { min-height: 43px; padding: 9px 15px; font-size: 14px; border-radius: 16px; border: 1px solid #ffffffb3; color: #214b6b; background: linear-gradient(150deg,#ffffffcf,#eaf6fd9c); box-shadow: inset 0 1px 1px #fff,inset 0 -1px 2px #6b96b12b,0 3px 8px #244c6b10; }
-.jamworld .btn:not(.glass-control):hover:not(:disabled) { background: linear-gradient(150deg,#fff,#d8effc); box-shadow: inset 0 1px 1px #fff,0 5px 14px #255e7b20; }
-.jamworld .btn:not(.glass-control).primary, .jamworld .btn:not(.glass-control).coral { color: #fff; border-color: #79c3ef; background: linear-gradient(150deg,#328dd0,#155fa4); box-shadow: inset 0 1px 2px #cdf0ffb8,inset 0 -2px 3px #004b8f80,0 5px 13px #1a699636; }
-.jamworld .btn:not(.glass-control).primary:hover:not(:disabled), .jamworld .btn:not(.glass-control).coral:hover:not(:disabled) { background: linear-gradient(150deg,#2583c6,#0b568f); }
-.jamworld .btn:not(.glass-control):disabled { opacity: .48; cursor: not-allowed; }
-.jamworld .btn:not(.glass-control).sm { min-height: 39px; font-size: 14px; }
 .jamworld .world-landing { max-width: 1180px; padding: 0 38px; }
 .jamworld .world-hero { grid-template-columns: 1.2fr .8fr; min-height: 345px; padding: 34px 10px 30px; }
 .jamworld .world-hero h1 { margin: 0 0 19px; font-size: clamp(40px,4.7vw,60px); letter-spacing: -2.5px; font-weight: 780; line-height: 1.25; }
@@ -1513,7 +1450,7 @@
 .jamworld .entry-card small { font-size: 13px; color: #405e75; margin-top: 13px; }
 .jamworld .entry-icon { background: #effbff96; border: 1px solid #fff; box-shadow: inset 0 1px 2px #fff,0 3px 7px #4988a517; top: 26px; right: 24px; }
 .jamworld .entry-input { min-height: 58px; padding: 5px 5px 5px 14px; background: #f6fcffde; border: 1px solid #a9cadd91; border-radius: 18px; box-shadow: inset 0 2px 4px #2c658c0a; }
-.jamworld .entry-input input { font-size: 15px; color: #1d4561; }.jamworld .entry-input .btn:not(.glass-control) { font-size: 15px; }
+.jamworld .entry-input input { font-size: 15px; color: #1d4561; }.jamworld .entry-input .btn { font-size: 15px; }
 .jamworld .teacher-login { min-height: 58px; font-size: 16px; }
 .jamworld .world-footer { justify-content: flex-end; padding: 26px 4px; font-size: 15px; color: #245476; }
 .jamworld .dash { padding: 30px 36px; }
@@ -1553,7 +1490,7 @@
 .jamworld .asset-tile .card-thumb { height: 220px; background: #f4fcff50; border-bottom: 1px solid #fff7; padding: 14px; }
 .jamworld .asset-tile .ws-lib-thumb { background-image: linear-gradient(135deg,#eefaff55,#d6ebf766); }
 .jamworld .asset-tile .card-body { padding: 23px; gap: 9px; }.jamworld .asset-tile h3 { font-size: 21px; }.jamworld .asset-tile p { font-size: 14px; color: #3c5d76; }
-.jamworld .asset-downloads .btn:not(.glass-control) { font-size: 13px; padding: 8px 12px; }
+.jamworld .asset-downloads .btn { font-size: 13px; padding: 8px 12px; }
 .jamworld .character-picker { background: #f2fbff9c; padding: 25px; }.jamworld .character-choice { background: #e8f5fc80; border-color: #fff; box-shadow: inset 0 1px 2px #fff,0 4px 11px #28618417; }
 .jamworld .character-choice.on { background: #d6edff; border-color: #3b93cf; }.jamworld .character-choice b { font-size: 16px; }
 .jamworld .character-preview { background: #e6f5fc88; }
@@ -1564,9 +1501,9 @@
 .jamworld .editor { box-shadow: 0 7px 28px #0d456b24; background: #d5e9f2; gap: 1px; border-radius: 24px; }
 .jamworld .editor .ed-left, .jamworld .editor .ed-right { background: none; border: 0; padding: 0; border-radius: 0; overflow: hidden; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .jamworld .editor-panel-content { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
-.jamworld .ed-top { background: #effaffbc; }.jamworld .ed-top .btn:not(.glass-control) { min-height: 35px; font-size: 13px; border-radius: 12px; }
+.jamworld .ed-top { background: #effaffbc; }.jamworld .ed-top .btn { min-height: 36px; font-size: 13px; }
 .jamworld .ed-top .ed-title { font-size: 15px; }.jamworld .ed-left .asset-grid { min-height: 0; flex: 1; overflow: auto; padding: 12px; }.jamworld .ed-right .tabs { flex-shrink: 0; }
-.jamworld .ed-right .tab-body { min-height: 0; }.jamworld .ed-right .textarea { font-size: 14px; }.jamworld .ed-right .btn:not(.glass-control) { font-size: 14px; }
+.jamworld .ed-right .tab-body { min-height: 0; }.jamworld .ed-right .textarea { font-size: 14px; }.jamworld .ed-right .btn { font-size: 14px; }
 .jamworld .editor .asset { background: #f2faffaa; border-color: #ffffffd9; border-radius: 16px; font-size: 13px; }.jamworld .editor .asset.on { background: #d2ecff; border-color: #5e9fc8; }
 @media (max-width: 1000px) {
   .jamworld .nav-lens { margin: 0 18px; }.jamworld .world-brand { font-size: 20px; }.jamworld .world-switch a { font-size: 14px; padding: 9px 13px; }
@@ -1577,7 +1514,7 @@
   .jamworld .nav-lens { margin: 0 12px; }.jamworld .world-nav { margin: 0; padding: 12px 14px; }.jamworld .world-brand { font-size: 19px; }.jamworld .world-switch a { font-size: 13px; }
   .jamworld .world-landing { padding: 0 20px; }.jamworld .world-hero { padding: 34px 4px 25px; min-height: 0; display: flex; gap: 0; }.jamworld .world-hero h1 { font-size: 40px; letter-spacing: -2px; }.jamworld .world-hero p { font-size: 16px; max-width: 280px; }
   .jamworld .world-scene { display: none; }.jamworld .entry-grid { gap: 20px; }.jamworld .entry-card { padding: 26px 22px; }.jamworld .entry-card h2 { font-size: 22px; margin-right: 35px; }.jamworld .entry-card p { font-size: 15px; }
-  .jamworld .entry-icon { right: 20px; top: 25px; width: 35px; height: 35px; }.jamworld .entry-input { flex-wrap: wrap; padding: 12px; gap: 12px; }.jamworld .entry-input input { flex: 1; width: calc(100% - 40px); font-size: 16px; }.jamworld .entry-input .btn:not(.glass-control) { width: 100%; }
+  .jamworld .entry-icon { right: 20px; top: 25px; width: 35px; height: 35px; }.jamworld .entry-input { flex-wrap: wrap; padding: 12px; gap: 12px; }.jamworld .entry-input input { flex: 1; width: calc(100% - 40px); font-size: 16px; }.jamworld .entry-input .btn { width: 100%; }
   .jamworld .entry-card small { font-size: 13px; }.jamworld .world-footer { align-items: flex-end; padding: 24px 0; font-size: 14px; }
   .jamworld .dash { padding: 26px 17px; }.jamworld .studio-heading h1 { font-size: 28px; }.jamworld .studio-heading p { font-size: 15px; }.jamworld .panel-pad { padding: 22px 18px; }.jamworld .ws-tabs button { padding: 10px 18px; font-size: 15px; }
   .jamworld .asset-library .section-title h2 { font-size: 27px; }.jamworld .asset-filters label { min-width: 0; }.jamworld .asset-filters .input { width: 100%; }.jamworld .asset-library .grid-cards { gap: 22px; }
@@ -1616,74 +1553,6 @@
 .jamworld .world-switch a { border: 0; }
 .jamworld .world-switch a[aria-current] { border: 0; background: #ffffff78; box-shadow: inset 0 1px 0 #fff9, 0 2px 5px #234f6710; }
 
-/* Controls have their own sized lens. The native control fills the surface,
-   so pointer, keyboard, form submission and download behavior stay native. */
-.jamworld .water-glass.glass-control,
-.jamworld .water-glass.glass-control:hover,
-.jamworld .water-glass.glass-control:active {
-  position: relative;
-  display: inline-flex;
-  align-items: stretch;
-  justify-content: stretch;
-  vertical-align: middle;
-  padding: 0;
-  min-height: 44px;
-  height: auto;
-  max-width: 100%;
-  gap: 0;
-  border: 0;
-  border-radius: var(--lq-radius);
-  background: none;
-  color: #214c65;
-  box-shadow: 0 4px 9px #244d6514, 0 1px 2px #174b6714;
-  font-size: 15px;
-  transform: none;
-  transition: box-shadow .16s;
-}
-.jamworld .glass-control-content { display: flex; align-items: stretch; width: 100%; border-radius: inherit; }
-.jamworld .glass-control-action {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  width: 100%;
-  min-height: inherit;
-  padding: 11px 19px;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 650;
-  line-height: 1.4;
-  white-space: inherit;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.jamworld .glass-control.primary,
-.jamworld .glass-control.coral,
-.jamworld .glass-control.teal {
-  --lq-tint: rgb(62 168 234 / 75%);
-  --lq-tint-deep: rgb(67 183 235 / 38%);
-  color: #064876;
-  box-shadow: 0 5px 12px #1b648420, 0 1px 2px #164c6717;
-}
-.jamworld .glass-control.sm { min-height: 40px; font-size: 14px; }
-.jamworld .glass-control.sm .glass-control-action { padding: 9px 15px; }
-.jamworld .glass-control.icon { min-width: 38px; width: 38px; }
-.jamworld .glass-control.icon .glass-control-action { padding: 8px; }
-.jamworld .glass-control.ghost { --lq-tint: #ffffff30; --lq-tint-deep: #e3f9ff08; box-shadow: 0 1px 4px #254e6510; }
-.jamworld .glass-control:hover:not([data-disabled]) { box-shadow: 0 5px 15px #244f6a28; }
-.jamworld .glass-control:has(.glass-control-action:active) { box-shadow: 0 2px 4px #244d6514; }
-.jamworld .glass-control:has(.glass-control-action:focus-visible) { outline: 3px solid #237bb4; outline-offset: 4px; }
-.jamworld .glass-control-action:focus-visible { outline: none; }
-.jamworld .glass-control[data-disabled] { opacity: .45; box-shadow: none; }
-.jamworld .glass-control-action:disabled { cursor: not-allowed; }
-.jamworld .entry-input .glass-control { flex-shrink: 0; }
-.jamworld .glass-control.teacher-login { width: 100%; min-height: 56px; font-size: 16px; }
 .jamworld .ws-form { background: #ffffff38; }
 .jamworld .ws .tabs.ws-tabs { border: 0; box-shadow: none; background: #a3c9d526; }
 .jamworld .ws-tabs button.on { box-shadow: inset 0 1px 0 #fff9,0 2px 6px #1d506a12; background: #ffffffe0; }
@@ -1709,12 +1578,9 @@
 .jamworld .asset-tile .ws-lib-thumb { background-image: none; }
 .jamworld .asset-tile .card-body { background: linear-gradient(#ffffff16,#f6fdff52); }
 .jamworld .asset-downloads { gap: 9px; }
-.jamworld .asset-downloads .glass-control { font-size: 13px; }
-.jamworld .asset-downloads .glass-control-action { padding: 9px 13px; }
-.jamworld .asset-remove.glass-control { margin-top: 8px; color: #923a42; --lq-tint: #fff7f7bb; }
-.jamworld .editor .glass-control { min-height: 35px; font-size: 13px; }
-.jamworld .editor .glass-control-action { padding: 7px 12px; }
-.jamworld .editor .glass-control.icon .glass-control-action { padding: 6px; }
+.jamworld .asset-remove.btn { margin-top: 8px; color: #923a42; background-color: #fbe3e4; }
+.jamworld .editor .btn { min-height: 36px; font-size: 13px; padding: 6px 14px; }
+.jamworld .editor .btn.icon { padding: 0; }
 
 @media (max-width: 800px) {
   .jamworld .world-dashboard .template-grid { gap: 18px; }
@@ -1727,16 +1593,16 @@
   .jamworld .world-dashboard { padding-top: 26px; }
   .jamworld .dash-top { flex-wrap: wrap; gap: 18px; }
   .jamworld .dash-top > .row { width: 100%; }
-  .jamworld .dash-top > .row > .glass-control { flex: 1; }
+  .jamworld .dash-top > .row > .btn { flex: 1; }
   .jamworld .world-intro .hero { display: flex; flex-direction: column; align-items: stretch; padding: 26px 24px; gap: 22px; }
   .jamworld .world-intro .hero-art { height: 160px; }
   .jamworld .world-dashboard .template-grid { grid-template-columns: 1fr; gap: 22px; }
   .jamworld .world-tile .card-thumb { height: 190px; }
-  .jamworld .entry-input .glass-control { width: 100%; }
+  .jamworld .entry-input .btn { width: 100%; }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   .jamworld .water-glass.water-glass-solid { background: #f7fcff; }
-  .jamworld .glass-control.primary { background: #d7edfa; color: #064876; }
+  
 }
 .jamworld { height: auto; }
 .jamworld .water-glass.world-modal { padding: 0; border: 0; background: none; }
@@ -1749,7 +1615,6 @@
 @media (max-width: 600px) { .jamworld .world-modal-form { padding: 26px 22px; } }
 .jamworld .water-glass > .liqui-glass__refract { filter: brightness(1.09); }
 .jamworld .glass-content { corner-shape: inherit; border-radius: inherit; }
-.jamworld .glass-control { flex-shrink: 0; white-space: nowrap; }
 .jamworld .glass-control-action { corner-shape: inherit; }
 /* The host page uses a flex body: keep long workshops at their natural height. */
 .jamworld { flex-shrink: 0; }
@@ -1858,3 +1723,75 @@
 .lesson-review li { margin: 8px 0; }
 .lesson-review details { font-size: 12px; }
 .lesson-sequence > li { padding: 8px; border-radius: 12px; background: #ecf8fc; }
+
+/* ---------------------------------------------------------------------------
+   버튼 — Material 3 (모양·상태 레이어). 렌즈 효과 없이 가벼운 네이티브 버튼.
+   .btn = 토널, .primary/.coral = 채움, .ghost = 텍스트, .sm = 작게, .icon = 원형 아이콘
+--------------------------------------------------------------------------- */
+.jamworld {
+  --m3-primary: #1f63a3;
+  --m3-on-primary: #fff;
+  --m3-secondary-container: #d7e6f5;
+  --m3-on-secondary-container: #0f2f4c;
+  --m3-outline: #74808c;
+}
+.jamworld .btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 40px;
+  padding: 8px 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--m3-secondary-container);
+  background-image: none;
+  color: var(--m3-on-secondary-container);
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: .01em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: none;
+  transition: box-shadow .15s, background-image .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.jamworld .btn:hover:not(:disabled) { background-image: linear-gradient(color-mix(in srgb, currentColor 8%, transparent) 0 0); }
+.jamworld .btn:focus-visible { outline: 3px solid var(--m3-primary); outline-offset: 2px; }
+.jamworld .btn:active:not(:disabled) { background-image: linear-gradient(color-mix(in srgb, currentColor 12%, transparent) 0 0); }
+.jamworld .btn.primary,
+.jamworld .btn.coral,
+.jamworld .btn.teal { background-color: var(--m3-primary); color: var(--m3-on-primary); }
+.jamworld .btn.primary:hover:not(:disabled),
+.jamworld .btn.coral:hover:not(:disabled) { box-shadow: 0 1px 2px #0000004d, 0 1px 3px 1px #00000026; }
+.jamworld .btn.ghost { background-color: transparent; color: var(--m3-primary); padding-left: 12px; padding-right: 12px; }
+.jamworld .btn.sm { min-height: 36px; padding: 6px 16px; font-size: 14px; }
+.jamworld .btn.ghost.sm { padding-left: 12px; padding-right: 12px; }
+.jamworld .btn.icon { width: 40px; min-width: 40px; height: 40px; padding: 0; }
+.jamworld .btn.icon.sm { width: 36px; min-width: 36px; height: 36px; }
+.jamworld .btn:disabled,
+.jamworld .btn[aria-disabled="true"] { background-color: color-mix(in srgb, #1b2440 12%, transparent); color: color-mix(in srgb, #1b2440 38%, transparent); box-shadow: none; cursor: not-allowed; opacity: 1; }
+.jamworld .btn.ghost:disabled { background-color: transparent; }
+.jamworld .btn .material-symbols-rounded,
+.jamworld .btn svg { flex: none; }
+.jamworld .btn.teacher-login { width: 100%; min-height: 56px; font-size: 16px; }
+.jamworld .entry-input .btn { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .jamworld .btn { white-space: normal; }
+}
+.jamworld .ws-invite-code { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.jamworld .ws-invite-code span { padding: 6px 12px; border-radius: 12px; background: #fff; border: 1px solid #c9d8e6; font: 800 26px/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .12em; color: #0f2f4c; }
+.jamworld .entry-grid[data-single] { grid-template-columns: minmax(0, 560px); justify-content: center; }
+.jamworld .row > .input, .jamworld .row > .select { flex: 1 1 140px; min-width: 0; width: auto; }
+.play-script-buttons { position: absolute; right: 18px; bottom: 120px; z-index: 6; display: flex; flex-direction: column; gap: 10px; }
+.play-script-button { min-width: 76px; min-height: 76px; padding: 10px; border: 0; border-radius: 999px; background: #1f63a3; color: #fff; font: 800 16px/1.2 inherit; box-shadow: 0 6px 16px #0f2f4c40; touch-action: manipulation; user-select: none; cursor: pointer; }
+.play-script-button:active { transform: scale(.94); background: #174f84; }

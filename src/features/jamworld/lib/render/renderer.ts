@@ -3,6 +3,7 @@
 // 카메라는 셀 좌표로 저장해 시점을 바꿔도 같은 지점을 본다.
 import { footprintOf, getAsset } from "../world/catalog";
 import { tileAt } from "../world/map";
+import { fxTransform, projectileAt, type ObjectFx, type Particle, type Projectile } from "../world/script-fx";
 import type { AssetDef, MapDoc, PlacedObject, Rot, Zone } from "../world/types";
 import { resolveSprite } from "./atlas";
 import { QUALITY, type Quality } from "./constants";
@@ -96,6 +97,10 @@ export interface SceneState {
   } | null;
   /** 편집 화면 포털 도착 라벨 */
   portalTags?: Array<{ x: number; y: number; text: string }>;
+  /** 맵 코드 연출(플레이) — 오브젝트 움직임·날아가는 물체·효과 입자 */
+  objectFx?: ReadonlyMap<string, ObjectFx>;
+  projectiles?: readonly Projectile[];
+  particles?: readonly Particle[];
 }
 
 export interface RenderStats {
@@ -540,9 +545,11 @@ export class WorldRenderer {
         this.occludes(o, a, fw, fd, player)
       )
         alpha = 0.42;
-      this.drawObject(o, alpha, scene.selectedId === o.id, scene.quizLabels?.get(o.id));
+      this.drawObject(o, alpha, scene.selectedId === o.id, scene.quizLabels?.get(o.id), fxTransform(scene.objectFx?.get(o.id), scene.time));
     }
     if (player && !playerDrawn) this.drawPlayer(player, scene.time);
+    if (scene.projectiles?.length) for (const p of scene.projectiles) this.drawProjectile(p, scene.time);
+    if (scene.particles?.length) this.drawParticles(scene.particles, scene.time);
 
     if (scene.portalTags)
       for (const t of scene.portalTags)
@@ -853,9 +860,68 @@ export class WorldRenderer {
     return entry;
   }
 
-  private drawObject(o: PlacedObject, alpha: number, selected: boolean, quizLabel?: string) {
+  private drawObject(o: PlacedObject, alpha: number, selected: boolean, quizLabel?: string, fx?: ReturnType<typeof fxTransform>) {
     const s = this.sprite(o.assetId, o.rot, quizLabel);
     if (!s) return;
+    const ctx = this.ctx;
+    if (fx) {
+      // 바닥 가운데를 축으로 흔들기·돌리기·키우기(그림 원본은 그대로)
+      const a = getAsset(o.assetId)!;
+      const fp = footprintOf(a, o.rot, o.scale ?? 1);
+      const base = this.worldToScreen(o.x + fp.w / 2, o.y + fp.d / 2);
+      const z = this.camera.zoom;
+      ctx.save();
+      ctx.translate(base.x + fx.dx * z, base.y + fx.dy * z);
+      if (fx.rot) ctx.rotate(fx.rot);
+      if (fx.scale !== 1) ctx.scale(fx.scale, fx.scale);
+      ctx.translate(-base.x, -base.y);
+      if (fx.alpha < 1) alpha *= fx.alpha;
+    }
+    try { this.drawObjectBody(o, s, alpha, selected, quizLabel); } finally { if (fx) ctx.restore(); }
+  }
+
+  /** 날아가는 물체 — 카탈로그 에셋이면 그 그림, 아니면 글자(이모지) */
+  private drawProjectile(p: Projectile, t: number) {
+    const at = projectileAt(p, t);
+    const ctx = this.ctx, zoom = this.camera.zoom;
+    const shadow = this.worldToScreen(at.x, at.y), pos = this.worldToScreen(at.x, at.y, at.z);
+    ctx.save();
+    ctx.globalAlpha = 0.25; ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(shadow.x, shadow.y, 9 * zoom * p.size, 4 * zoom * p.size, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    const asset = getAsset(p.sprite);
+    const s = asset ? this.sprite(p.sprite, 0) : null;
+    ctx.translate(pos.x, pos.y - 10 * zoom);
+    if (p.spin) ctx.rotate((t - p.start) * 12);
+    if (s) {
+      const k = (p.size * 36 * zoom) / Math.max(s.w, s.h);
+      ctx.drawImage(s.canvas, (-s.w * k) / 2, (-s.h * k) / 2, s.w * k, s.h * k);
+    } else {
+      ctx.font = `${Math.round(26 * zoom * p.size)}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.sprite, 0, 0);
+    }
+    ctx.restore();
+  }
+
+  private drawParticles(list: readonly Particle[], t: number) {
+    const ctx = this.ctx, zoom = this.camera.zoom;
+    ctx.save();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const p of list) {
+      const age = t - p.born, u = age / p.life;
+      const z = Math.max(0, p.z + p.vz * age - 4.5 * age * age);
+      const pos = this.worldToScreen(p.x + p.vx * age * 0.6, p.y + p.vy * age * 0.6, z);
+      ctx.globalAlpha = Math.max(0, 1 - u);
+      ctx.fillStyle = p.color;
+      const size = p.size * zoom * (p.glyph ? 2 : 1) * (p.color === "#c9d2dc" ? 1 + u * 1.5 : 1);
+      if (p.glyph) { ctx.font = `${Math.round(size * 1.6)}px system-ui, sans-serif`; ctx.fillText(p.glyph, pos.x, pos.y); }
+      else { ctx.beginPath(); ctx.arc(pos.x, pos.y, size / 2, 0, Math.PI * 2); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+
+  private drawObjectBody(o: PlacedObject, s: NonNullable<ReturnType<WorldRenderer["sprite"]>>, alpha: number, selected: boolean, quizLabel?: string) {
     const ctx = this.ctx;
     const { zoom } = this.camera;
     const k = o.scale ?? 1;

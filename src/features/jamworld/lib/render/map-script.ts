@@ -6,15 +6,22 @@ const WORKER = `
 (()=>{
 const send=globalThis.postMessage.bind(globalThis);
 for(const key of ['postMessage','Worker','importScripts'])Object.defineProperty(globalThis,key,{value:undefined,writable:false,configurable:false});
-let handlers={enter:[],leave:[],update:[],interact:[],choice:[],quiz:[]}, previous=new Set(), commands=[];
+let handlers={enter:[],leave:[],update:[],interact:[],choice:[],quiz:[],key:[],arrive:[]}, previous=new Set(), commands=[], timers=[], now=0, launched=0;
 const add=(kind,name,fn)=>{if(typeof fn!=='function'||handlers[kind].length>=32)throw Error('이벤트를 확인해 주세요');handlers[kind].push({name,fn});};
 const emit=(kind,value,ms=1000)=>{if(commands.length>=32)throw Error('한 번에 요청할 수 있는 동작은 32개예요');commands.push({kind,value,ms});};
 const World=Object.freeze({
  onEnter:(name,fn)=>add('enter',name,fn),onLeave:(name,fn)=>add('leave',name,fn),onUpdate:fn=>add('update',null,fn),
  onInteract:(name,fn)=>add('interact',name,fn),onChoice:(name,fn)=>add('choice',name,fn),onQuiz:fn=>add('quiz',null,fn),
  shake:(v,ms)=>emit('shake',v,ms),reverseControls:(v,ms)=>emit('reverseControls',v,ms),vision:(v,ms)=>emit('vision',v,ms),speed:(v,ms)=>emit('speed',v,ms),message:(v,ms)=>emit('message',v,ms),
- hud:(id,label,value)=>emit('hud',{id,label,value}),choose:(id,title,choices)=>emit('choose',{id,title,choices}),object:(id,patch)=>emit('object',{id,patch}),teleport:(x,y)=>emit('teleport',{x,y}),completeQuiz:(id,label)=>emit('completeQuiz',{id,label})
+ hud:(id,label,value)=>emit('hud',{id,label,value}),choose:(id,title,choices)=>emit('choose',{id,title,choices}),object:(id,patch)=>emit('object',{id,patch}),teleport:(x,y)=>emit('teleport',{x,y}),completeQuiz:(id,label)=>emit('completeQuiz',{id,label}),
+ onKey:(name,fn)=>add('key',String(name),fn),onArrive:(id,fn)=>add('arrive',String(id),fn),
+ after:(ms,fn)=>timer(ms,fn,0),every:(ms,fn)=>timer(ms,fn,Math.max(100,+ms||0)),cancel:id=>{timers=timers.filter(t=>t.id!==id);},
+ button:(id,label)=>emit('button',{id,label}),animate:(id,type,ms)=>emit('animate',{id,type,ms:ms===undefined?1500:ms}),
+ launch:(id,o)=>{o=o||{};emit('launch',{id,from:o.from,to:o.to,ms:o.ms===undefined?1000:o.ms,sprite:o.sprite===undefined?'⚾':String(o.sprite),arc:o.arc,size:o.size});launched++;},
+ effect:(type,x,y)=>emit('effect',{type,x,y}),sound:name=>emit('sound',{name})
 });
+let nextTimer=1;
+const timer=(ms,fn,repeat)=>{if(typeof fn!=='function'||!(+ms>=0)||timers.length>=64)throw Error('타이머를 확인해 주세요');const id=nextTimer++;timers.push({id,at:now+(+ms)/1000,fn,repeat});return id;};
 const reply=type=>{send({type,commands,bindings:handlers.interact.map(h=>h.name)});commands=[];};
 addEventListener('message',e=>{if(!e.isTrusted)return;try{
  const d=e.data;
@@ -27,7 +34,11 @@ addEventListener('message',e=>{if(!e.isTrusted)return;try{
   if(ev.kind==='interact'&&[ev.value.id,ev.value.name,ev.value.assetId].includes(h.name))h.fn(ctx,ev.value);
   else if(ev.kind==='choice'&&h.name===ev.name)h.fn(ev.value,ctx);
   else if(ev.kind==='quiz')h.fn(ev.value,ctx);
+  else if(ev.kind==='key'&&(h.name==='*'||[ev.name,ev.value].some(k=>typeof k==='string'&&k.toLowerCase()===h.name.toLowerCase())))h.fn(ctx,ev.name);
+  else if(ev.kind==='arrive'&&h.name===ev.name)h.fn(ctx,ev.value);
  }}
+ now=ctx.time;
+ for(const t of timers.filter(t=>t.at<=now)){if(t.repeat)t.at=now+t.repeat/1000;else timers=timers.filter(x=>x!==t);t.fn(ctx);}
  for(const h of handlers.update)h.fn(ctx);
  previous=current;reply('effects');
  }catch(e){send({type:'error',message:String(e.message||e).slice(0,150)});}});
@@ -108,7 +119,7 @@ export class MapScriptRuntime {
         return;
       }
       try {
-        const actions: ScriptAction[] = data.commands.filter((c: ScriptAction) => ["hud", "choose", "object", "teleport", "completeQuiz"].includes(c.kind));
+        const actions: ScriptAction[] = data.commands.filter((c: ScriptAction) => ["hud", "choose", "object", "teleport", "completeQuiz", "button", "animate", "launch", "effect", "sound"].includes(c.kind));
         validateScriptActions(actions);
         if (this.actions.length + actions.length > 64) throw Error("맵 동작이 너무 많이 쌓였어요");
         for (const cmd of data.commands) {

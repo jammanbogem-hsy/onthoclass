@@ -725,7 +725,7 @@ function DraftForm({
                       })
                     }
                   >
-                    {[1, 2, 3].map((n) => (
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
                       <option key={n}>{n}</option>
                     ))}
                   </select>
@@ -743,7 +743,7 @@ function DraftForm({
                       })
                     }
                   >
-                    {[1, 2, 3].map((n) => (
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
                       <option key={n}>{n}</option>
                     ))}
                   </select>
@@ -757,7 +757,7 @@ function DraftForm({
                   value={draft.height}
                   onChange={(e) => set({ height: Number(e.target.value) })}
                 >
-                  {[0.3, 0.6, 1, 1.5, 2, 2.5].map((n) => (
+                  {[0.3, 0.6, 1, 1.5, 2, 2.5, 3, 4, 5].map((n) => (
                     <option key={n}>{n}</option>
                   ))}
                 </select>
@@ -844,7 +844,7 @@ function TeacherHome({ me }: { me: Me }) {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
-  const [invite, setInvite] = useState<{ classId: string; url: string } | null>(
+  const [invite, setInvite] = useState<{ classId: string; url: string; code: string } | null>(
     null,
   );
   const [requests, setRequests] = useState<RequestView[]>([]);
@@ -1002,7 +1002,7 @@ function TeacherHome({ me }: { me: Me }) {
                 { method: "POST", json: { name: newName } },
               );
               setNewName("");
-              setInvite({ classId: r.class.id, url: inviteUrl(r.invite) });
+              setInvite({ classId: r.class.id, url: inviteUrl(r.invite), code: r.invite });
               setSel(r.class.id);
               window.dispatchEvent(
                 new CustomEvent("jamworld-classes", { detail: r.class.id }),
@@ -1027,9 +1027,25 @@ function TeacherHome({ me }: { me: Me }) {
         </form>
         {sel && (
           <div style={{ marginTop: 14 }}>
-            <b style={{ fontSize: 13 }}>초대 링크</b>
+            <b style={{ fontSize: 13 }}>초대 코드·링크</b>
             {invite?.classId === sel ? (
               <div className="ws-invite">
+                {/^[A-Z0-9]{8}$/.test(invite.code) && (
+                  <div className="ws-invite-code" aria-label={`초대 코드 ${invite.code}`}>
+                    <span>{invite.code.slice(0, 4)}</span>
+                    <span>{invite.code.slice(4)}</span>
+                    <GlassButton
+                      className="btn sm"
+                      onClick={() =>
+                        navigator.clipboard
+                          ?.writeText(invite.code)
+                          .then(() => show("코드를 복사했어요"))
+                      }
+                    >
+                      코드 복사
+                    </GlassButton>
+                  </div>
+                )}
                 <input
                   className="input"
                   readOnly
@@ -1048,13 +1064,15 @@ function TeacherHome({ me }: { me: Me }) {
                   복사
                 </GlassButton>
                 <p className="ws-note">
-                  이 링크는 지금만 보여요. 잃어버리면 새로 만드세요(이전 링크는
-                  막혀요).
+                  학생은 첫 화면 &lsquo;학생 공방에 들어가기&rsquo;에 코드를 넣거나 링크로
+                  들어와요. 코드와 링크는 지금만 보여요. 잃어버리면 새로
+                  만드세요(이전 코드는 막혀요).
                 </p>
               </div>
             ) : (
               <p className="ws-note">
-                보안을 위해 링크 원문은 저장하지 않아요.
+                보안을 위해 코드는 저장하지 않아요. &lsquo;새 코드 만들기&rsquo;를 누르면
+                새 코드가 보여요(이전 코드는 막혀요).
               </p>
             )}
             <div className="row">
@@ -1065,10 +1083,10 @@ function TeacherHome({ me }: { me: Me }) {
                     `/api/jamworld/workshop/classes/${sel}/invite`,
                     { method: "POST", json: { active: true } },
                   );
-                  setInvite({ classId: sel, url: inviteUrl(r.invite) });
+                  setInvite({ classId: sel, url: inviteUrl(r.invite), code: r.invite });
                 }}
               >
-                새 링크 만들기
+                새 코드 만들기
               </GlassButton>
               <GlassButton
                 className="btn sm ghost"
@@ -1084,7 +1102,28 @@ function TeacherHome({ me }: { me: Me }) {
               >
                 초대 멈춤
               </GlassButton>
+              <GlassButton
+                className="btn sm ghost"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "이 학급 학생을 모두 내보낼까요? 학생은 별명과 PIN 으로 다시 들어올 수 있어요.",
+                    )
+                  )
+                    return;
+                  await api(`/api/jamworld/workshop/classes/${sel}/sessions`, {
+                    method: "DELETE",
+                  });
+                  show("학생을 모두 내보냈어요");
+                }}
+              >
+                학생 모두 내보내기
+              </GlassButton>
             </div>
+            <p className="ws-note">
+              학생은 30분 동안 아무것도 하지 않거나 들어온 지 8시간이 지나면
+              자동으로 나가요.
+            </p>
             <p className="ws-note">
               학생{" "}
               {classes

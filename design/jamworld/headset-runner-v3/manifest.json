@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "id": "ast_mW0VNq0ulXJIlAcC",
+  "name": "헤드셋 러너",
+  "category": "character",
+  "tags": [
+    "남자",
+    "선글라스",
+    "헤드셋",
+    "런닝복",
+    "운동화",
+    "음악"
+  ],
+  "appearance": {
+    "kind": "views",
+    "td": "cls/cls_zUNfe60_5rGt6IB_/gen/gen_iVoIVbe0jBWACgxr/direction-v3-f3d938254459-td.webp",
+    "iso": "cls/cls_zUNfe60_5rGt6IB_/gen/gen_iVoIVbe0jBWACgxr/direction-v3-f3d938254459-iso.webp",
+    "sprites": {
+      "td": {
+        "image": "cls/cls_zUNfe60_5rGt6IB_/gen/gen_iVoIVbe0jBWACgxr/direction-v3-f3d938254459-td-sprite.png",
+        "columns": 5,
+        "rows": 4,
+        "frameWidth": 128,
+        "frameHeight": 160,
+        "directions": [
+          "s",
+          "w",
+          "n",
+          "e"
+        ],
+        "construction": "canonical-mirrored-v1"
+      },
+      "iso": {
+        "image": "cls/cls_zUNfe60_5rGt6IB_/gen/gen_iVoIVbe0jBWACgxr/direction-v3-f3d938254459-iso-sprite.png",
+        "columns": 5,
+        "rows": 8,
+        "frameWidth": 128,
+        "frameHeight": 160,
+        "directions": [
+          "s",
+          "sw",
+          "w",
+          "nw",
+          "n",
+          "ne",
+          "e",
+          "se"
+        ],
+        "construction": "canonical-mirrored-v1"
+      }
+    }
+  },
+  "behavior": {
+    "footprint": {
+      "w": 1,
+      "d": 1
+    },
+    "blocking": false,
+    "height": 1,
+    "character": "sprite",
+    "actions": []
+  },
+  "provenance": {
+    "requestId": "req_5WWT9ww2B6-5FEqp",
+    "approvedVersion": 1,
+    "generationId": "gen_iVoIVbe0jBWACgxr",
+    "model": "gpt-image-2.5-flare",
+    "createdBy": "stu_YbGMOdTb36wPEUGm"
+  }
+}

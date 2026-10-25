@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type RequestView } from "./workshop-api";
+import { api, ApiError, type RequestView } from "./workshop-api";
+import { usePageVisible } from "./use-page-visible";
 
 export interface WorkshopFeed {
   requests?: RequestView[];
@@ -21,6 +22,7 @@ export function useWorkshopFeed(
     handlers.current = { onChange, onError };
   }, [onChange, onError]);
   const [restart, setRestart] = useState(0);
+  const live = usePageVisible();
   const refresh = useCallback(() => setRestart((n) => n + 1), []);
   useEffect(() => {
     const wake = () => refresh();
@@ -32,7 +34,7 @@ export function useWorkshopFeed(
     };
   }, [refresh]);
   useEffect(() => {
-    if (!path || !active || document.hidden) return;
+    if (!path || !active || !live) return;
     const ctrl = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined,
       resolveRetry: (() => void) | undefined;
@@ -43,17 +45,21 @@ export function useWorkshopFeed(
       });
     const run = async () => {
       let rev = -1;
+      let lastSnapshot = 0;
       while (!ctrl.signal.aborted) {
         try {
           const suffix =
-            rev < 0
+            rev < 0 || Date.now() - lastSnapshot >= 60000
               ? ""
               : `${path.includes("?") ? "&" : "?"}after=${rev}&wait=1`;
           const data = await api<WorkshopFeed>(path + suffix, {
             signal: ctrl.signal,
           });
           if (ctrl.signal.aborted) return;
-          if (data.requests) handlers.current.onChange(data);
+          if (data.requests) {
+            handlers.current.onChange(data);
+            lastSnapshot = Date.now();
+          }
           if (Number.isSafeInteger(data.rev)) rev = data.rev!;
           else await delay(3000); // Compatibility while an older server is being replaced.
         } catch (error) {
@@ -63,6 +69,7 @@ export function useWorkshopFeed(
               ? error.message
               : "공방 연결을 확인해 주세요",
           );
+          if (error instanceof ApiError && (error.status === 401 || error.status === 403)) break;
           await delay(2500);
         }
       }
@@ -73,6 +80,6 @@ export function useWorkshopFeed(
       if (retry) clearTimeout(retry);
       resolveRetry?.();
     };
-  }, [path, active, restart]);
+  }, [path, active, restart, live]);
   return refresh;
 }

@@ -4544,3 +4544,5 @@ export const getClassUsage = onCall({ memory: "256MiB", maxInstances: 10 }, asyn
   const snap = await db.collection(`classes/${cid}/usageDays`).where("day", ">=", from).where("day", "<=", to).orderBy("day").limit(2001).select("uid", "day", "counts", "activeSeconds", "updatedAt").get();
   return { rows: snap.docs.slice(0, 2000).map(d => { const value = d.data(); return { uid: value.uid, day: value.day, counts: value.counts, activeSeconds: value.activeSeconds, updatedAt: value.updatedAt?.toMillis?.() ?? null }; }), truncated: snap.size > 2000 };
 });
+
+export { jamworldApi, jamworldGenerate } from "./jamworld";

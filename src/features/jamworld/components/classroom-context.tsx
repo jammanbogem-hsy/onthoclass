@@ -8,7 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, type Me } from "./workshop-api";
+import { api, ApiError, type Me } from "./workshop-api";
+import { usePageVisible } from "./use-page-visible";
 import { serializeProject } from "../lib/world/bundle";
 import type { ProjectState } from "../lib/world/project";
 import { getProject, loadMap } from "../lib/world/storage";
@@ -71,10 +72,12 @@ export function useClassroom() {
 export function ClassroomProvider({
   me,
   routeClassId,
+  inClassroom = false,
   children,
 }: {
   me: Me | null;
   routeClassId?: string;
+  inClassroom?: boolean;
   children: ReactNode;
 }) {
   const [classes, setClasses] = useState<Array<{ id: string; name: string }>>(
@@ -85,6 +88,8 @@ export function ClassroomProvider({
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
   const [open, setOpen] = useState(false);
+  const visible = usePageVisible();
+  const streaming = visible && (inClassroom || open);
   const classId =
     me?.student?.classId ||
     (me?.role === "teacher" ? routeClassId || selected : "");
@@ -158,20 +163,24 @@ export function ClassroomProvider({
     );
   }, []);
   useEffect(() => {
-    if (!classId) return;
+    if (!classId || !streaming) return;
     const ctrl = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;
     let resolveRetry: (() => void) | undefined;
     const poll = async () => {
       let rev = -1;
-      while (!ctrl.signal.aborted) {
+      let lastSnapshot = 0;
+      while (!ctrl.signal.aborted && !document.hidden) {
         try {
-          const data = await api<LessonState>(
-            `/api/jamworld/classroom/${encodeURIComponent(classId)}?after=${rev}${rev >= 0 ? "&wait=1" : ""}`,
+          const data = await api<LessonState | { unchanged: true; rev: number }>(
+            `/api/jamworld/classroom/${encodeURIComponent(classId)}?compact=1&after=${rev}${rev >= 0 ? "&wait=1" : ""}&roster=${Date.now() - lastSnapshot >= 30000 ? "1" : "0"}`,
             { signal: ctrl.signal },
           );
           if (ctrl.signal.aborted) return;
-          apply(data);
+          if (!("unchanged" in data)) {
+            apply(data);
+            lastSnapshot = Date.now();
+          }
           rev = data.rev;
           setConnected(true);
           setError("");
@@ -181,6 +190,10 @@ export function ClassroomProvider({
           setError(
             e instanceof Error ? e.message : "수업 연결을 확인해 주세요",
           );
+          if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+            ctrl.abort();
+            break;
+          }
           await new Promise<void>((resolve) => {
             resolveRetry = resolve;
             retry = setTimeout(resolve, 2500);
@@ -189,21 +202,23 @@ export function ClassroomProvider({
       }
     };
     void poll();
-    const presence = () =>
+    const presence = () => {
+      if (me?.role !== "student" || document.hidden || ctrl.signal.aborted) return;
       void api(`/api/jamworld/classroom/${encodeURIComponent(classId)}`, {
         method: "POST",
         json: { action: "presence" },
         signal: ctrl.signal,
       }).catch(() => undefined);
+    };
     presence();
-    const heartbeat = setInterval(presence, 20000);
+    const heartbeat = setInterval(presence, 45000);
     return () => {
       ctrl.abort();
       clearInterval(heartbeat);
       clearTimeout(retry);
       resolveRetry?.();
     };
-  }, [classId, identity, apply]);
+  }, [classId, identity, apply, streaming, me?.role]);
   const current =
     room?.classId === classId && `${room.role}:${room.selfId}` === identity
       ? room
@@ -253,7 +268,7 @@ export function ClassroomProvider({
         selectClass,
         room: current,
         error,
-        connected: connected && !!current,
+        connected: connected && !!current && streaming,
         open,
         setOpen,
         command,

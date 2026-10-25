@@ -46,6 +46,8 @@ import {
   type QuizProgress,
 } from "@/features/jamworld/lib/world/quiz";
 import { getProject, loadMap } from "@/features/jamworld/lib/world/storage";
+import { syncOne } from "./world-sync";
+import { burst, playSound, projectileAt, type EffectType, type ObjectFx, type Particle, type Projectile, type SoundName } from "@/features/jamworld/lib/world/script-fx";
 import type {
   Interaction,
   MapDoc,
@@ -130,6 +132,11 @@ export default function Play({
     zoneMessageRef = useRef<HTMLDivElement>(null);
   const [scriptError, setScriptError] = useState("");
   const [scriptHud, setScriptHud] = useState<ScriptHud>({});
+  // 맵 코드 연출(개인 플레이 전용): 오브젝트 움직임·날아가는 물체·터지는 효과·화면 버튼
+  const fxRef = useRef(new Map<string, ObjectFx>());
+  const projectilesRef = useRef<Projectile[]>([]);
+  const particlesRef = useRef<Particle[]>([]);
+  const [scriptButtons, setScriptButtons] = useState<Array<{ id: string; label: string }>>([]);
   const [scriptChoice, setScriptChoice] = useState<ScriptChoice | null>(null);
   const scriptChoiceRef = useRef<ScriptChoice | null>(null);
   const sceneRef = useRef<ScriptScene | null>(null);
@@ -176,8 +183,16 @@ export default function Play({
   const rendererRef = useRef<WorldRenderer | null>(null);
   dialogRef.current = dialog;
 
-  // 맵 로드
+  // 맵 로드 — 이 브라우저에 없으면 서버(원본)에서 한 번 받아 온다
+  const [fetched, setFetched] = useState(false);
   useEffect(() => {
+    if (sharedWorld || fetched || getProject(projectId)) return;
+    let alive = true;
+    void syncOne(projectId).catch(() => false).then(() => { if (alive) setFetched(true); });
+    return () => { alive = false; };
+  }, [projectId, sharedWorld, fetched]);
+  useEffect(() => {
+    if (!sharedWorld && !fetched && !getProject(projectId)) return;
     const p = sharedWorld?.project || getProject(projectId);
     const mapId =
       new URLSearchParams(window.location.search).get("map") ?? p?.mapIds[0];
@@ -210,7 +225,7 @@ export default function Play({
     setViewReady(true);
     const t = window.setTimeout(() => setShowHint(false), 6000);
     return () => { live = false; window.clearTimeout(t); };
-  }, [projectId, sharedWorld?.project, sharedWorld?.docs]);
+  }, [projectId, sharedWorld?.project, sharedWorld?.docs, fetched]);
 
   useEffect(() => {
     Promise.resolve().then(() => { setScriptHud({}); setScriptChoice(null); setNearObject(null); setScriptError(""); });
@@ -282,7 +297,8 @@ export default function Play({
         scriptResetRef.current = false; scene = new ScriptScene(doc); sceneRef.current = scene;
         world = scene.world; worldRef.current = world; r.setDoc(doc);
         if (world.collides(playerRef.current!.x, playerRef.current!.y)) playerRef.current = world.spawnState();
-        setScriptHud({}); setScriptChoice(null);
+        setScriptHud({}); setScriptChoice(null); setScriptButtons([]);
+        fxRef.current.clear(); projectilesRef.current = []; particlesRef.current = [];
       }
       if (!lockedRef.current) {
         try {
@@ -303,6 +319,32 @@ export default function Play({
                 quizRef.current.value = next; quizSessions.current.set(doc.id, next); setQuizProgress(next);
                 if (dialogRef.current?.kind === "quiz" && dialogRef.current.i.id === v.id && dialogRef.current.picked === null) { dialogRef.current = null; setDialog(null); }
               }
+            } else if (action.kind === "animate") {
+              const v = action.value as { id: string; type: ObjectFx["type"]; ms: number };
+              const targets = scene.objects().filter(o => o.id === v.id || o.name === v.id || o.assetId === v.id);
+              if (!targets.length) throw Error(`‘${v.id}’ 오브젝트를 찾지 못했어요`);
+              for (const o of targets) {
+                if (v.type === "none") fxRef.current.delete(o.id);
+                else fxRef.current.set(o.id, { type: v.type, start: t, until: v.ms === 0 ? Infinity : t + v.ms / 1000 });
+              }
+            } else if (action.kind === "launch") {
+              const v = action.value as Omit<Projectile, "start" | "spin" | "arc" | "size"> & { arc?: number; size?: number };
+              const list = projectilesRef.current.filter(p => p.id !== v.id);
+              if (list.length >= 24) list.shift();
+              list.push({ ...v, start: t, arc: v.arc ?? 1.2, size: v.size ?? 1, spin: /⚾|⚽|🏀|🎾|●|ball/i.test(v.sprite) });
+              projectilesRef.current = list;
+            } else if (action.kind === "effect") {
+              const v = action.value as { type: EffectType; x: number; y: number };
+              if (!motionPreference.matches) particlesRef.current = [...particlesRef.current, ...burst(v.type, v.x, v.y, t)].slice(-240);
+            } else if (action.kind === "sound") {
+              playSound((action.value as { name: SoundName }).name);
+            } else if (action.kind === "button") {
+              const v = action.value as { id: string; label: string };
+              setScriptButtons(old => {
+                const rest = old.filter(b => b.id !== v.id);
+                const next = v.label ? (rest.length < 4 || rest.length < old.length ? [...rest, v] : old) : rest;
+                return JSON.stringify(next) === JSON.stringify(old) ? old : next;
+              });
             } else if (action.kind === "hud") {
               const v = action.value as { id: string; label: string; value: string | number };
               setScriptHud(old => {
@@ -413,8 +455,20 @@ export default function Play({
           setNear(n);
         }
       }
+      if (projectilesRef.current.length) {
+        const flying: Projectile[] = [];
+        for (const p of projectilesRef.current) {
+          if (projectileAt(p, t).u >= 1) scriptRef.current?.event({ kind: "arrive", name: p.id, value: { x: p.to.x, y: p.to.y } });
+          else flying.push(p);
+        }
+        projectilesRef.current = flying;
+      }
+      if (particlesRef.current.length) particlesRef.current = particlesRef.current.filter(p => t - p.born < p.life);
       const n = nearRef.current;
       lastStats = r.render({
+        objectFx: fxRef.current,
+        projectiles: projectilesRef.current,
+        particles: particlesRef.current,
         mode: "play",
         time: t,
         player: {
@@ -565,6 +619,8 @@ export default function Play({
         return;
       if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k))
         e.preventDefault();
+      // 맵 코드의 World.onKey 로 — 이동 키는 계속 이동에도 쓰인다
+      if (!e.repeat && !lockedRef.current) scriptRef.current?.event({ kind: "key", name: e.code, value: e.key });
       if (k === " " || k === "e" || k === "enter") {
         interact();
         return;
@@ -696,6 +752,7 @@ export default function Play({
           일부 맵 효과를 잠시 껐어요.
         </div>
       )}
+      {scriptButtons.length > 0 && <div className="play-script-buttons">{scriptButtons.map(b => <button key={b.id} type="button" className="play-script-button" onPointerDown={e => { e.preventDefault(); if (!lockedRef.current) scriptRef.current?.event({ kind: "key", name: b.id, value: b.id }); }}>{b.label}</button>)}</div>}
       {Object.keys(scriptHud).length > 0 && <div className="play-script-hud" aria-label="활동 진행 상황">{Object.entries(scriptHud).map(([id, item]) => <div key={id}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div>}
       {scriptChoice && <GlassSurface {...PLAY_GLASS} frost={0.8} className="play-dialog" contentClassName="play-dialog-content" role="dialog" aria-label="선택하기">
         <h4>{scriptChoice.title}</h4><div className="play-answers">{scriptChoice.choices.map((choice, index) => <button className="play-answer" key={index} onClick={() => closeScriptChoice(index)}>{choice}</button>)}</div>

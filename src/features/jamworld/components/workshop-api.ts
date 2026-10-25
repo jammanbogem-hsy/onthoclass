@@ -117,6 +117,9 @@ export async function api<T>(
     error?: string;
     code?: string;
   };
+  // 세션이 끝났으면(시간이 지났거나 선생님이 내보냄) 화면이 로그인 상태를 다시 확인한다
+  if (res.status === 401 && typeof window !== "undefined")
+    window.dispatchEvent(new Event("jamworld:unauthorized"));
   if (!res.ok)
     throw new ApiError(
       data.error ?? `요청 실패 (${res.status})`,
