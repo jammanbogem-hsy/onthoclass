@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.34.0";
+export const APP_VERSION = "1.34.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.34.1",
+    date: "2026-10-25",
+    kind: "patch",
+    title: "모아 월드 그림 올리기 링크",
+    items: [
+      "AI 앱(ChatGPT·Claude)이 그림 올리기 링크를 주면, 그 페이지에 그림 파일을 끌어다 놓아 모아 월드 에셋으로 넣을 수 있어요.",
+      "코드로 그린 납작한 그림(SVG)은 받지 않고, 브롤스타즈풍 2.5D 스타일 기준을 AI 에게 알려 줘요.",
+    ],
+  },
   {
     version: "1.34.0",
     date: "2026-10-25",

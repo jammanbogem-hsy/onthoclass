@@ -10,20 +10,18 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
 import { randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import sharp from "sharp";
 import { applyOps } from "./lib/world/ops";
 import { createMap } from "./lib/world/map";
 import { CATALOG, scopedUserAssets, withAssetScope } from "./lib/world/catalog";
 import { embeddedFromLibrary } from "./lib/world/user-assets";
 import { mapContext, SYSTEM_PROMPT } from "./lib/agent/prompt";
-import { bustCatalog, publishedAssets } from "./lib/server/workshop/catalog";
+import { publishedAssets } from "./lib/server/workshop/catalog";
+import { cleanSpec, createUploadedAsset, startUpload, TOKEN_RE } from "./lib/server/asset-upload";
 import { scriptSyntaxError } from "./lib/server/map-script";
 import { getWorld, getWorldMeta, listVersions, listWorlds, revertWorld, saveWorld } from "./lib/server/worlds";
 import type { EmbeddedAsset } from "./lib/world/types";
-import type { LibraryManifest } from "./lib/server/workshop/types";
 
 type Ctx = { uid: string };
 const BASE = "https://jammanboeng.web.app";
@@ -102,32 +100,13 @@ async function fetchImage(raw: string): Promise<Buffer> {
   if (buf.length > 8 * 1024 * 1024) throw new Error("이미지가 너무 커요(8MB 이하).");
   return buf;
 }
-async function readImage(src: z.infer<typeof ImageInput>, minSide = 384): Promise<Buffer> {
-  const buf = src.base64 ? Buffer.from(src.base64.replace(/^data:[^,]+,/, ""), "base64")
-    : src.download_url ? await fetchImage(src.download_url)
-    : src.url ? await fetchImage(src.url)
-    : null;
-  if (!buf) throw new Error("그림 파일(download_url·url·base64 중 하나)을 주세요.");
-  const m = await sharp(buf).metadata().catch(() => null);
-  if (!m || m.format === "svg") throw new Error("SVG·코드로 그린 그림은 받지 않아요. 이미지 생성 모델(예: ChatGPT 이미지 만들기)로 그린 PNG/WebP 를 주세요.");
-  if ((m.width ?? 0) < minSide || (m.height ?? 0) < minSide) throw new Error(`그림이 너무 작아요(${minSide}px 이상). 이미지 생성 모델이 그린 원본 크기 그대로 주세요.`);
-  return buf;
+async function readImage(src: z.infer<typeof ImageInput> | undefined): Promise<Buffer | undefined> {
+  if (!src) return undefined;
+  if (src.base64) return Buffer.from(src.base64.replace(/^data:[^,]+,/, ""), "base64");
+  if (src.download_url) return fetchImage(src.download_url);
+  if (src.url) return fetchImage(src.url);
+  throw new Error("그림 파일(download_url·url·base64 중 하나)을 주세요.");
 }
-/** 물체 그림: 투명 여백을 자르고 512px 정사각 안에 바닥 가운데 맞춤(모아 월드 생성 그림과 같은 구도) */
-async function objectSprite(buf: Buffer) {
-  const trimmed = await sharp(buf).ensureAlpha().trim({ threshold: 2 }).png().toBuffer().catch(() => sharp(buf).ensureAlpha().png().toBuffer());
-  const fit = await sharp(trimmed).resize({ width: 460, height: 460, fit: "inside" }).png().toBuffer({ resolveWithObject: true });
-  const left = Math.round((512 - fit.info.width) / 2), top = 512 - 26 - fit.info.height;
-  return sharp({ create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: fit.data, left, top: Math.max(0, top) }]).webp({ quality: 90, alphaQuality: 100 }).toBuffer();
-}
-const texture = (buf: Buffer) => sharp(buf).resize(256, 256, { fit: "cover" }).webp({ quality: 88 }).toBuffer();
-async function sheet(buf: Buffer, view: "td" | "iso") {
-  const m = await sharp(buf).metadata(), rows = view === "td" ? 4 : 8;
-  if (m.height !== rows * 160 || (m.width !== 640 && m.width !== 512)) throw new Error(`${view} 걷기 시트는 ${640}×${rows * 160}px(5열×${rows}행, 칸 128×160)이어야 해요.`);
-  return { data: await sharp(buf).webp({ lossless: true }).toBuffer(), columns: (m.width === 640 ? 5 : 4) as 4 | 5 };
-}
-
 /* ------------------------------------------------------------- 도구 */
 
 export function registerMoaTools(s: McpServer, ctx: Ctx) {
@@ -309,45 +288,41 @@ ${refs}
     _meta: { "openai/fileParams": ["td", "iso", "texture", "sheetTd", "sheetIso"] },
   }, async (a) => {
     try {
-      const id = `ast_${randomBytes(8).toString("base64url")}`, gen = `gen_${randomBytes(8).toString("base64url")}`;
-      const dir = `cls/_moa_${ctx.uid}/gen/${gen}`, bucket = getStorage().bucket();
-      const put = (name: string, data: Buffer) => bucket.file(`jamworld/${dir}/${name}`).save(data, { contentType: "image/webp", resumable: false }).then(() => `${dir}/${name}`);
-      let appearance: LibraryManifest["appearance"];
-      if (a.kind === "tile") {
-        if (!a.texture && !a.td) throw new Error("바닥은 texture 그림이 필요해요.");
-        appearance = { kind: "texture", texture: await put("texture.webp", await texture(await readImage((a.texture ?? a.td)!, 256))) };
-      } else {
-        const tdSrc = a.td ?? a.iso, isoSrc = a.iso ?? a.td;
-        if (!tdSrc || !isoSrc) throw new Error("td 나 iso 그림 중 하나는 있어야 해요.");
-        const td = await put("td.webp", await objectSprite(await readImage(tdSrc)));
-        const iso = tdSrc === isoSrc ? td : await put("iso.webp", await objectSprite(await readImage(isoSrc)));
-        let sprites: Extract<LibraryManifest["appearance"], { kind: "views" }>["sprites"];
-        if (a.kind === "character" && a.sheetTd && a.sheetIso) {
-          const st = await sheet(await readImage(a.sheetTd, 512), "td"), si = await sheet(await readImage(a.sheetIso, 512), "iso");
-          sprites = {
-            td: { image: await put("sheet-td.webp", st.data), columns: st.columns, rows: 4, frameWidth: 128, frameHeight: 160, directions: ["s", "w", "n", "e"] },
-            iso: { image: await put("sheet-iso.webp", si.data), columns: si.columns, rows: 8, frameWidth: 128, frameHeight: 160, directions: ["s", "sw", "w", "nw", "n", "ne", "e", "se"] },
-          };
-        }
-        appearance = { kind: "views", td, iso, ...(sprites ? { sprites } : {}) };
-      }
-      const tile = a.kind === "tile", person = a.kind === "character";
-      const manifest: LibraryManifest = {
-        schema: 1, id, name: a.name, category: tile ? "terrain" : person ? "character" : a.category, tags: a.tags, appearance,
-        behavior: {
-          footprint: tile || person ? { w: 1, d: 1 } : (a.footprint ?? { w: 1, d: 1 }),
-          blocking: tile ? false : person ? false : !(a.passable ?? false),
-          height: tile ? 0 : Math.max(0.2, a.height ?? 1),
-          ...(person ? { character: appearance.kind === "views" && appearance.sprites ? "sprite" as const : "static" as const } : {}),
-          actions: [],
-        },
-        provenance: { requestId: "", approvedVersion: 0, generationId: gen, model: "mcp-upload", createdBy: `teacher:${ctx.uid}` },
-      };
-      await getFirestore().collection("jamworldLibrary").doc(id).create({
-        id, classId: `_moa_${ctx.uid}`, ownerStudentId: "", requestId: "", generationId: gen, manifest: JSON.stringify(manifest), shared: 1, createdAt: Date.now(), removedAt: null,
-      });
-      bustCatalog();
-      return json({ assetId: `u:${id}`, name: a.name, footprint: manifest.behavior.footprint, next: "moa_apply_ops 의 place{assetId,x,y} 로 놓으세요(바닥은 paint{tileId}). 에셋 모음에 바로 보여요." });
+      const spec = cleanSpec(a);
+      const [td, iso, texture, sheetTd, sheetIso] = await Promise.all([a.td, a.iso, a.texture, a.sheetTd, a.sheetIso].map(readImage));
+      const r = await createUploadedAsset(ctx.uid, spec, { td, iso, texture, sheetTd, sheetIso }, "mcp-upload");
+      return json({ ...r, next: "moa_apply_ops 의 place{assetId,x,y} 로 놓으세요(바닥은 paint{tileId}). 에셋 모음에 바로 보여요." });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("moa_start_upload", {
+    title: "업로드 링크 만들기",
+    description: "그림 파일을 도구로 바로 넘길 수 없을 때(예: ChatGPT 가 만든 그림, Claude 사용자) 쓰세요. 에셋 정보(이름·종류·크기)를 정해 링크를 만들면, 사용자가 그 페이지에 그림 파일을 끌어다 놓아 올려요(2시간 유효, 로그인 불필요, 한 번만). 사용자에게 링크를 주고, 올렸다고 하면 moa_check_upload 로 에셋 id 를 받으세요.",
+    inputSchema: {
+      name: z.string().min(1).max(30), kind: z.enum(["object", "tile", "character"]),
+      category: z.enum(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]),
+      tags: z.array(z.string().min(1).max(12)).min(1).max(8),
+      footprint: z.object({ w: z.number().int().min(1).max(6), d: z.number().int().min(1).max(6) }).optional(),
+      height: z.number().min(0).max(5).optional(), passable: z.boolean().optional(),
+    },
+    annotations: WRITE,
+  }, async (a) => {
+    try {
+      const token = await startUpload(ctx.uid, cleanSpec(a));
+      return json({ uploadId: token, uploadUrl: `${BASE}/moa-upload/?t=${token}`, expiresInMinutes: 120, next: "사용자에게 uploadUrl 을 열어 그림 파일(PNG/WebP, 이미지 생성 모델이 그린 것)을 올려 달라고 하세요. 올렸다고 하면 moa_check_upload 를 부르세요." });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("moa_check_upload", {
+    title: "업로드 확인", description: "업로드 링크로 그림을 올렸는지 확인하고, 올렸으면 에셋 id('u:…')를 줘요.",
+    inputSchema: { uploadId: z.string() }, annotations: RO,
+  }, async ({ uploadId }) => {
+    try {
+      if (!TOKEN_RE.test(uploadId)) throw new Error("업로드 id 가 올바르지 않아요.");
+      const d = (await getFirestore().doc(`jamworldUploads/${uploadId}`).get()).data();
+      if (!d || d.uid !== ctx.uid) throw new Error("업로드를 찾지 못했어요.");
+      if (d.status === "done") return json({ done: true, assetId: d.assetId, name: d.spec?.name, next: "moa_apply_ops 의 place{assetId,x,y} 로 놓으세요." });
+      return json({ done: false, expired: Date.now() > d.expiresAt, next: Date.now() > d.expiresAt ? "링크가 만료됐어요. moa_start_upload 로 새로 만드세요." : "아직 안 올렸어요. 사용자에게 링크에서 올려 달라고 하세요." });
     } catch (e) { return fail(e); }
   });
 }
