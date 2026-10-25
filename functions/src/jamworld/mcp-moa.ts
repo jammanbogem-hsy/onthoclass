@@ -70,11 +70,13 @@ async function requireBrief(ctx: Ctx, pid: string) {
 
 /* ------------------------------------------------------------- 에셋 올리기 */
 
+// 그림은 '이미지 생성 모델이 그린 래스터 그림'만 받는다. 코드(SVG)로 그린 그림은 아이콘처럼 납작해서 모아 월드 스타일이 안 나온다.
 const ImageInput = z.object({
-  url: z.string().url().optional().describe("https 이미지 주소(PNG/WebP/JPEG, 8MB 이하)"),
-  svg: z.string().max(200_000).optional().describe("SVG 원문(코드로 그린 그림)"),
-  base64: z.string().max(1_500_000).optional().describe("작은 PNG/WebP base64(약 1MB 이하)"),
-}).describe("셋 중 하나");
+  download_url: z.string().url().optional().describe("ChatGPT 가 넘기는 파일 주소(대화에서 만든·올린 그림)"),
+  file_id: z.string().optional(),
+  url: z.string().url().optional().describe("https 이미지 주소(PNG/WebP, 8MB 이하)"),
+  base64: z.string().max(1_500_000).optional().describe("PNG/WebP base64(약 1MB 이하)"),
+}).describe("이미지 생성 모델이 그린 그림 파일 — download_url·url·base64 중 하나(SVG 안 받음)");
 
 function privateIp(ip: string) {
   return /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|::1$|fc|fd|fe80)/i.test(ip);
@@ -86,28 +88,40 @@ async function fetchImage(raw: string): Promise<Buffer> {
   if (host === "localhost" || host.endsWith(".internal") || /^[\d.]+$|:/.test(host)) throw new Error("이 주소의 이미지는 받을 수 없어요.");
   const ips = await lookup(host, { all: true });
   if (!ips.length || ips.some(a => privateIp(a.address))) throw new Error("이 주소의 이미지는 받을 수 없어요.");
-  const res = await fetch(u, { redirect: "error", signal: AbortSignal.timeout(20_000) });
+  let res = await fetch(u, { redirect: "manual", signal: AbortSignal.timeout(20_000) });
+  for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.headers.get("location"); hop++) {
+    const next = new URL(res.headers.get("location")!, u);
+    if (next.protocol !== "https:" || /^[\d.]+$|:/.test(next.hostname)) throw new Error("이 주소의 이미지는 받을 수 없어요.");
+    const hopIps = await lookup(next.hostname, { all: true });
+    if (!hopIps.length || hopIps.some(a => privateIp(a.address))) throw new Error("이 주소의 이미지는 받을 수 없어요.");
+    res = await fetch(next, { redirect: "manual", signal: AbortSignal.timeout(20_000) });
+  }
   if (!res.ok) throw new Error(`이미지를 받지 못했어요(${res.status}).`);
   if (!/^image\//.test(res.headers.get("content-type") ?? "")) throw new Error("이미지 파일이 아니에요.");
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length > 8 * 1024 * 1024) throw new Error("이미지가 너무 커요(8MB 이하).");
   return buf;
 }
-async function readImage(src: z.infer<typeof ImageInput>): Promise<Buffer> {
-  if (src.svg) return Buffer.from(src.svg);
-  if (src.base64) return Buffer.from(src.base64.replace(/^data:[^,]+,/, ""), "base64");
-  if (src.url) return fetchImage(src.url);
-  throw new Error("그림(url·svg·base64 중 하나)을 주세요.");
+async function readImage(src: z.infer<typeof ImageInput>, minSide = 384): Promise<Buffer> {
+  const buf = src.base64 ? Buffer.from(src.base64.replace(/^data:[^,]+,/, ""), "base64")
+    : src.download_url ? await fetchImage(src.download_url)
+    : src.url ? await fetchImage(src.url)
+    : null;
+  if (!buf) throw new Error("그림 파일(download_url·url·base64 중 하나)을 주세요.");
+  const m = await sharp(buf).metadata().catch(() => null);
+  if (!m || m.format === "svg") throw new Error("SVG·코드로 그린 그림은 받지 않아요. 이미지 생성 모델(예: ChatGPT 이미지 만들기)로 그린 PNG/WebP 를 주세요.");
+  if ((m.width ?? 0) < minSide || (m.height ?? 0) < minSide) throw new Error(`그림이 너무 작아요(${minSide}px 이상). 이미지 생성 모델이 그린 원본 크기 그대로 주세요.`);
+  return buf;
 }
 /** 물체 그림: 투명 여백을 자르고 512px 정사각 안에 바닥 가운데 맞춤(모아 월드 생성 그림과 같은 구도) */
 async function objectSprite(buf: Buffer) {
-  const trimmed = await sharp(buf, { density: 288 }).ensureAlpha().trim({ threshold: 2 }).png().toBuffer().catch(() => sharp(buf, { density: 288 }).ensureAlpha().png().toBuffer());
+  const trimmed = await sharp(buf).ensureAlpha().trim({ threshold: 2 }).png().toBuffer().catch(() => sharp(buf).ensureAlpha().png().toBuffer());
   const fit = await sharp(trimmed).resize({ width: 460, height: 460, fit: "inside" }).png().toBuffer({ resolveWithObject: true });
   const left = Math.round((512 - fit.info.width) / 2), top = 512 - 26 - fit.info.height;
   return sharp({ create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite([{ input: fit.data, left, top: Math.max(0, top) }]).webp({ quality: 90, alphaQuality: 100 }).toBuffer();
 }
-const texture = (buf: Buffer) => sharp(buf, { density: 288 }).resize(256, 256, { fit: "cover" }).webp({ quality: 88 }).toBuffer();
+const texture = (buf: Buffer) => sharp(buf).resize(256, 256, { fit: "cover" }).webp({ quality: 88 }).toBuffer();
 async function sheet(buf: Buffer, view: "td" | "iso") {
   const m = await sharp(buf).metadata(), rows = view === "td" ? 4 : 8;
   if (m.height !== rows * 160 || (m.width !== 640 && m.width !== 512)) throw new Error(`${view} 걷기 시트는 ${640}×${rows * 160}px(5열×${rows}행, 칸 128×160)이어야 해요.`);
@@ -123,7 +137,26 @@ export function registerMoaTools(s: McpServer, ctx: Ctx) {
     inputSchema: { topic: z.enum(["all", "design", "map", "script", "assets"]).optional() }, annotations: RO,
   }, async ({ topic = "all" }) => {
     const design = `# 설계 대화(필수)\n사용자와 충분히 묻고 답하세요. 한 번에 2~3개씩 구체적으로 물어보고, 답을 요약해 확인받으세요. 아래 항목이 모두 정해지면 moa_submit_brief 로 내고, 그 뒤에만 맵을 쓸 수 있어요.\n${Object.entries(BRIEF_FIELDS).map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n애매한 항목은 openQuestions 에 넣으면 쓰기가 막혀요. 작업 후에는 editUrl/playUrl 을 사용자에게 주고 플레이해 본 느낌을 물어 다듬으세요.`;
-    const assets = `# 에셋 규격(moa_upload_asset)\n- 스타일: 밝고 귀여운 캐주얼 게임 그림, 두꺼운 어두운 외곽선, 부드러운 명암, 배경 투명, 글자 없음. 기존 에셋과 비슷한 크기감.\n- 물체(object): 시점 두 장 — td(위에서 비스듬히 내려다본 탑다운) / iso(쿼터뷰 45°). 하나만 주면 둘 다에 써요. 서버가 여백을 자르고 512px 정사각에 바닥 가운데로 맞춰요.\n- 바닥(tile): 이음매 없는 정사각 텍스처 한 장(256px로 맞춤), footprint 1×1.\n- 인물(character): 정지 그림 td/iso + (선택) 걷기 시트. 시트 = 칸 128×160, 5열(0=서 있기, 1~4=걷기), 행=방향 — td 4행[s,w,n,e] 640×640, iso 8행[s,sw,w,nw,n,ne,e,se] 640×1280.\n- 크기: footprint 1~6칸, height 0.2~5. 막히는 물체는 passable=false.\n- 그림은 이미지 주소(url)·SVG·작은 base64 중 하나. 올리면 '에셋 모음'에 공개돼 모든 월드에서 쓸 수 있고, id 는 'u:…' 입니다.\n- 이미 있는 에셋은 moa_get_catalog 로 찾아 재사용하고, 꼭 필요한 것만 새로 만드세요.`;
+    const refs = (await publishedAssets()).filter(a => a.provenance?.model !== "mcp-upload").slice(0, 6)
+      .map(a => `  - ${a.name}: ${BASE}${(a.urls as { iso?: string | null; texture?: string | null }).iso ?? (a.urls as { texture?: string | null }).texture ?? ""}`).join("\n");
+    const assets = `# 에셋 규격·스타일(moa_upload_asset) — 반드시 지키세요
+## 그림은 이미지 생성 모델로
+- SVG·코드로 그린 그림은 받지 않아요(아이콘처럼 납작해져 모아 월드와 안 맞음). 이미지 생성 모델(ChatGPT 이미지 만들기 등)로 그린 PNG를 주세요.
+- 이미지를 직접 그릴 수 없는 AI(예: Claude)는 사용자에게 아래 프롬프트로 이미지 생성 도구에서 그림을 만들어 달라고 하고, 받은 파일·주소로 올리세요.
+## 모아 월드 스타일(기준)
+- 브롤스타즈 같은 2.5D 카툰: 머리가 크고 몸이 짧은 통통한 비율, 비비드하고 채도 높은 색, 두꺼운 어두운 외곽선, 부드러운 셀 셰이딩과 하이라이트, 입체감 있는 덩어리.
+- 시점: 위에서 약 35~45° 내려다본 쿼터뷰(iso). td 는 더 위에서 본 탑다운.
+- 배경 완전 투명, 그림자·바닥·글자·테두리 없음, 대상 하나만 화면 가운데 꽉 차게(전신·전체가 다 보이게), 1024px 정사각.
+- 기준 그림(이 느낌·두께·색감에 맞추세요. 열어 보고 비교하세요):
+${refs}
+## 생성 프롬프트 틀(영어가 더 잘 맞아요)
+"A single [대상], 2.5D isometric game asset in the style of Brawl Stars / Supercell, chunky cute proportions, vivid saturated colors, thick dark outline, soft cel shading with glossy highlights, full body centered, 3/4 top-down view at 40 degrees, transparent background, no ground shadow, no text, 1024x1024"
+## 종류별
+- 물체(object): iso 한 장(필수에 가깝게) + 가능하면 td(위에서 본 것). 하나만 주면 둘 다에 써요. 서버가 여백을 자르고 512px 정사각, 바닥 가운데로 맞춰요.
+- 바닥(tile): 이음매 없는 정사각 텍스처(위에서 본 평면, 같은 스타일 색감) — 256px로 맞춤.
+- 인물(character): iso 전신 + td. 걷기 시트(sheetTd/sheetIso)는 칸 128×160, 5열(0=서 있기, 1~4=걷기), 행=방향 — td 4행[s,w,n,e] 640×640, iso 8행[s,sw,w,nw,n,ne,e,se] 640×1280. 시트가 없으면 정지 그림으로 움직여요.
+- 크기: footprint 1~6칸(건물·경기장은 4~6), height 0.2~5, 막히는 물체 passable=false.
+- 올리기 전에 사용자에게 그림을 보여 주고 확인받으세요. 올리면 '에셋 모음'에 공개되고 id 는 'u:…' 입니다. 있는 에셋은 moa_get_catalog 로 찾아 재사용하세요.`;
     const map = SYSTEM_PROMPT.split("작업 형식(op 필드로 구분):")[1] ?? "";
     const rules = SYSTEM_PROMPT.replace(/^[\s\S]*?규칙:\n/, "").split("\n작업 형식")[0];
     const text = topic === "design" ? design : topic === "assets" ? assets
@@ -261,7 +294,7 @@ export function registerMoaTools(s: McpServer, ctx: Ctx) {
 
   s.registerTool("moa_upload_asset", {
     title: "에셋 올리기",
-    description: "AI 가 만든 그림을 모아 월드 에셋으로 넣어요(서버 이미지 생성 비용 없음). 규격·스타일은 moa_guide topic=assets. 물체는 td/iso(하나만 줘도 됨), 바닥은 texture, 인물은 td/iso + 선택 걷기 시트(sheets). 올린 에셋은 '에셋 모음'에 공개되고 'u:…' id 로 moa_apply_ops 에 쓸 수 있어요.",
+    description: "이미지 생성 모델이 그린 그림을 모아 월드 에셋으로 넣어요(서버 이미지 생성 비용 없음). 먼저 moa_guide topic=assets 의 스타일·기준 그림·프롬프트를 지키세요. SVG·코드 그림은 거절돼요. 물체는 iso(+td), 바닥은 texture, 인물은 iso/td + 선택 걷기 시트(sheetTd/sheetIso). 올린 에셋은 '에셋 모음'에 공개되고 'u:…' id 로 moa_apply_ops 에 쓸 수 있어요.",
     inputSchema: {
       name: z.string().min(1).max(30), kind: z.enum(["object", "tile", "character"]),
       category: z.enum(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]),
@@ -269,9 +302,11 @@ export function registerMoaTools(s: McpServer, ctx: Ctx) {
       footprint: z.object({ w: z.number().int().min(1).max(6), d: z.number().int().min(1).max(6) }).optional(),
       height: z.number().min(0).max(5).optional(), passable: z.boolean().optional(),
       td: ImageInput.optional(), iso: ImageInput.optional(), texture: ImageInput.optional(),
-      sheets: z.object({ td: ImageInput, iso: ImageInput }).optional(),
+      sheetTd: ImageInput.optional(), sheetIso: ImageInput.optional(),
     },
     annotations: WRITE,
+    // ChatGPT: 대화의 그림 파일(만든 것·올린 것)을 이 칸들로 넘길 수 있게
+    _meta: { "openai/fileParams": ["td", "iso", "texture", "sheetTd", "sheetIso"] },
   }, async (a) => {
     try {
       const id = `ast_${randomBytes(8).toString("base64url")}`, gen = `gen_${randomBytes(8).toString("base64url")}`;
@@ -280,15 +315,15 @@ export function registerMoaTools(s: McpServer, ctx: Ctx) {
       let appearance: LibraryManifest["appearance"];
       if (a.kind === "tile") {
         if (!a.texture && !a.td) throw new Error("바닥은 texture 그림이 필요해요.");
-        appearance = { kind: "texture", texture: await put("texture.webp", await texture(await readImage((a.texture ?? a.td)!))) };
+        appearance = { kind: "texture", texture: await put("texture.webp", await texture(await readImage((a.texture ?? a.td)!, 256))) };
       } else {
         const tdSrc = a.td ?? a.iso, isoSrc = a.iso ?? a.td;
         if (!tdSrc || !isoSrc) throw new Error("td 나 iso 그림 중 하나는 있어야 해요.");
         const td = await put("td.webp", await objectSprite(await readImage(tdSrc)));
         const iso = tdSrc === isoSrc ? td : await put("iso.webp", await objectSprite(await readImage(isoSrc)));
         let sprites: Extract<LibraryManifest["appearance"], { kind: "views" }>["sprites"];
-        if (a.kind === "character" && a.sheets) {
-          const st = await sheet(await readImage(a.sheets.td), "td"), si = await sheet(await readImage(a.sheets.iso), "iso");
+        if (a.kind === "character" && a.sheetTd && a.sheetIso) {
+          const st = await sheet(await readImage(a.sheetTd, 512), "td"), si = await sheet(await readImage(a.sheetIso, 512), "iso");
           sprites = {
             td: { image: await put("sheet-td.webp", st.data), columns: st.columns, rows: 4, frameWidth: 128, frameHeight: 160, directions: ["s", "w", "n", "e"] },
             iso: { image: await put("sheet-iso.webp", si.data), columns: si.columns, rows: 8, frameWidth: 128, frameHeight: 160, directions: ["s", "sw", "w", "nw", "n", "ne", "e", "se"] },
