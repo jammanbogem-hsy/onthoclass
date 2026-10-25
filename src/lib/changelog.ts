@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.31.1";
+export const APP_VERSION = "1.31.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.31.2",
+    date: "2026-10-25",
+    kind: "patch",
+    title: "모아 월드 학생 자동 나가기",
+    items: [
+      "모아 월드에서 30분 동안 아무것도 하지 않거나 들어온 지 8시간이 지나면 학생이 자동으로 나가요.",
+      "선생님이 공방의 학급 카드에서 '수업 끝'을 누르면 그 학급 학생을 모두 내보낼 수 있어요.",
+      "켜 둔 채 쓰지 않는 화면은 15분 뒤 실시간 연결을 멈춰요.",
+    ],
+  },
   {
     version: "1.31.1",
     date: "2026-10-25",
