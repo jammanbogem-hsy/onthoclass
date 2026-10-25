@@ -20,7 +20,7 @@ export function ShowcaseShareDialog({ classId, className, onClose }: { classId: 
   const [copied, setCopied] = useState(false);
   useEffect(() => { call(classId, "get").then(setToken).catch(() => { setToken(null); setErr("공유 상태를 불러오지 못했어요."); }); }, [classId]);
 
-  const url = token ? `${window.location.origin}/showcase/?t=${token}` : "";
+  const url = token ? `${window.location.origin}/s/${token}` : "";
   async function run(action: Action) {
     if (action === "reset" && !(await dialog.confirm({ title: "새 링크로 바꾸기", body: "지금 링크는 더 이상 열리지 않아요. 새 링크를 다시 나눠 줘야 해요.", okLabel: "바꾸기" }))) return;
     if (action === "revoke" && !(await dialog.confirm({ title: "공유 멈추기", body: "링크를 가진 사람이 더 이상 볼 수 없어요. 나중에 다시 만들면 새 주소가 생겨요.", okLabel: "멈추기", danger: true }))) return;

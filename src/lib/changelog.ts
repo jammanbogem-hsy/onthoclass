@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.31.0";
+export const APP_VERSION = "1.31.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.31.1",
+    date: "2026-10-25",
+    kind: "patch",
+    title: "성과 공유 링크 미리보기",
+    items: [
+      "성과 공유 링크를 카카오톡·문자로 보내면 학급 이름과 대표 그림이 담긴 미리보기 카드가 떠요.",
+      "공유 링크 주소가 짧아졌어요. 예전 링크도 그대로 열려요.",
+    ],
+  },
   {
     version: "1.31.0",
     date: "2026-10-25",

@@ -3,6 +3,7 @@
  *
  * 주소(호스팅 rewrite 로 이 함수 하나에 모인다)
  *   https://jammanboeng.web.app/showcase/?t=<토큰>      보는 화면(Next 정적 페이지)
+ *   /s/<토큰>                                           나눠 주는 짧은 주소(카카오톡 미리보기 OG 태그 → 보는 화면으로)
  *   /api/showcase/data?t=&v=overview|lesson|maps|board|life&l=&b=   데이터(JSON)
  *   /api/showcase/file?t=&p=<Storage 경로>              첨부 사진·그림(이 학급 경로의 이미지만)
  *
@@ -295,6 +296,41 @@ async function boardView(cid: string, bid: string, a: Anon) {
 
 /* ---------------------------------------------------------------- HTTP 입구 */
 
+/* 카카오톡·문자 등 링크 미리보기 — /s/<토큰>. 미리보기 봇은 JS 를 돌리지 않으니 OG 태그를 서버에서 채우고,
+   사람은 곧바로 /showcase/?t= 로 넘긴다(리디렉트 대신 HTML 이라야 봇이 이 태그를 읽는다). */
+const SITE = "https://jammanboeng.web.app";
+const esc = (v: string) => v.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+async function sharePage(t: string, res: import("express").Response) {
+  const target = `${SITE}/showcase/?t=${t}`;
+  let title = "학급 성과 · 러닝크루";
+  let desc = "로그인 없이 보는 학급 성과예요. 학생 이름은 모자이크로 가려져요.";
+  try {
+    const link = (await db().doc(`showcaseLinks/${t}`).get()).data();
+    if (link) {
+      const cid = String(link.cid);
+      const [c, lessons] = await Promise.all([db().doc(`classes/${cid}`).get(), db().collection(`classes/${cid}/lessons`).count().get()]);
+      const name = String(c.data()?.name ?? "").slice(0, 60);
+      const n = lessons.data().count;
+      if (name) title = `${name} 학급 성과 · 러닝크루`;
+      desc = `${n ? `수업 ${n}차시의 ` : ""}활동·학생 응답·브레인스토밍·지식맵을 실시간으로 함께 봐요. 학생 이름은 모자이크로 가려져요.`;
+    } else desc = "공유가 멈췄거나 없는 링크예요.";
+  } catch (e) { console.error("showcase share", e); }
+  const img = `${SITE}/og/showcase.png`;
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=300, s-maxage=600");
+  res.status(200).send(`<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>${esc(title)}</title><meta name="description" content="${esc(desc)}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="러닝크루">
+<meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+<meta property="og:url" content="${SITE}/s/${t}"><meta property="og:image" content="${img}">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${img}">
+<meta http-equiv="refresh" content="0;url=${target}"><script>location.replace(${JSON.stringify(target)})</script>
+</head><body style="font-family:sans-serif;text-align:center;padding:40px 16px"><a href="${target}">${esc(title)} 열기</a></body></html>`);
+}
+
 // 같은 인스턴스에서 잠깐(20초) 기억 — 여러 사람이 동시에 열어도 Firestore 를 반복해 읽지 않게
 const memo = new Map<string, { at: number; body: string }>();
 
@@ -304,6 +340,8 @@ export const showcase = onRequest({ memory: "512MiB", maxInstances: 10, timeoutS
   if (req.method === "OPTIONS") return void res.status(204).end();
   if (req.method !== "GET") return void res.status(405).end();
   const path = req.path.replace(/\/+$/, "");
+  const short = /^\/s\/([A-Za-z0-9_-]{32})$/.exec(path);
+  if (short) return void sharePage(short[1], res);
   const t = String(req.query.t ?? "");
   try {
     if (!TOKEN_RE.test(t)) return void res.status(404).json({ error: "링크가 올바르지 않아요." });

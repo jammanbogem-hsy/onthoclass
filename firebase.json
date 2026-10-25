@@ -93,6 +93,13 @@
       "target": "main",
       "rewrites": [
         {
+          "source": "/s/**",
+          "function": {
+            "functionId": "showcase",
+            "region": "asia-northeast3"
+          }
+        },
+        {
           "source": "/api/showcase/**",
           "function": {
             "functionId": "showcase",
