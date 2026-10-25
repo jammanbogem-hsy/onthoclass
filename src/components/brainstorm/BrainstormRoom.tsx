@@ -5,13 +5,15 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
-import { getMemberProfile, watchMembers, type Member } from "@/lib/classes";
+import { getMemberProfile, setMoaChar, watchMembers, type Member } from "@/lib/classes";
+import { createPortal } from "react-dom";
+import { MoaAssetPicker } from "@/components/MoaAssetPicker";
 import { updateQuestion, watchQuestion, type Question } from "@/lib/lessons";
 import { addIdea, deleteIdea, ensureSeat, setWorldShared, watchIdeas, watchWorld, IDEA_MAX_LEN, IDEAS_PER_STUDENT, type BrainWorld, type Idea } from "@/lib/brainstorm";
 import { reloadOnce } from "@/lib/chunk-reload";
 import { CELL_R, CLASS_GRID, inkColor, LABEL_H, LIFT_MAX, liftFor, paintTerritory, worldLayout, type Cell, type Grid, type Painter, type Territory } from "@/lib/brainstorm-map";
 import { downloadBrainstormCsv, type ExportMode } from "@/lib/brainstorm-export";
-import { assignChars, charThumb } from "@/lib/brainstorm-chars";
+import { assignChars, charThumb, moaChar } from "@/lib/brainstorm-chars";
 import { spreadBubbles } from "@/lib/bubble-spread";
 import { blocksToPlainText } from "@/components/BlockEditor";
 import type { Actor, BoardView } from "./CharacterLayer";
@@ -232,6 +234,8 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
   }, [layout, WW, WH, VIEW_W, VIEW_H, clampView]);
 
   const [showNames, setShowNames] = useState(true);
+  const [charPick, setCharPick] = useState(false);
+  const isMember = !masked && !!uid && members.some(m => m.uid === uid);
   const [panel, setPanel] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
@@ -276,10 +280,13 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
     return { ...is, n, key: `${is.cid}/${is.qid}`, people, map, chars, lifts, order, off: layout.offsets[n] ?? { x: 0, y: 0 }, props: propsFor(is.qid, map.cells, grid) };
   }), [islands, layout, grid]);
   // 판 위 모든 학생(섬 여럿이면 같은 사람도 섬마다 따로 — 선생님이 여러 반에 쓴 경우)
+  // 모아 월드에서 만든 캐릭터를 고른 친구는 그 그림으로(우리 반 섬만 — 멤버 정보가 있는 곳)
+  const moaOf = useMemo(() => new Map(members.flatMap(m => (m.moaChar ? [[m.uid, m.moaChar] as const] : []))), [members]);
   const everyone = useMemo(() => isles.flatMap(I => I.people.map((p, k) => {
     const h = I.map.homes[k];
-    return { id: `${I.n}:${p.uid}`, k, p, I, char: I.chars[k], color: inkColor(k), home: h ? { x: I.off.x + h.x, y: I.off.y + h.y - I.lifts[k] } : null };
-  })), [isles]);
+    const mine = I.n === home && !masked ? moaOf.get(p.uid) : undefined;
+    return { id: `${I.n}:${p.uid}`, k, p, I, char: mine ? moaChar(mine) : I.chars[k], color: inkColor(k), home: h ? { x: I.off.x + h.x, y: I.off.y + h.y - I.lifts[k] } : null };
+  })), [isles, moaOf, home, masked]);
   const actors: Actor[] = useMemo(() => everyone.flatMap(e => (e.home ? [{ uid: e.id, char: e.char, x: e.home.x, y: e.home.y + FEET, ideas: e.p.ideas.length }] : [])), [everyone]);
   const photo = useMemo(() => new Map(members.map(m => [m.uid, m.photoURL])), [members]);
   const nameOf = (n: number, id: string, fallback: string) => (n === home ? members.find(m => m.uid === id)?.displayName : "") || fallback;
@@ -566,6 +573,9 @@ function Board({ islands, home, uid, myName, teacher, canLink, question, members
         <span><b>{totalIdeas}</b>개 아이디어</span>
       </div>
       <div className={styles.tools}>
+        {isMember && <button type="button" className={styles.chip} onClick={() => setCharPick(true)}><Icon name="deployed_code" size={18} />내 캐릭터</button>}
+        {charPick && createPortal(<MoaAssetPicker title="브레인스토밍 캐릭터 고르기" prefer="character" onClose={() => setCharPick(false)} onPick={a => setMoaChar(uid, a.image)}
+          extra={<button type="button" className={styles.chip} style={{ marginTop: 12 }} onClick={() => { void setMoaChar(uid, null).then(() => setCharPick(false)); }}><Icon name="restart_alt" size={18} />기본 캐릭터로 돌아가기</button>} />, document.body)}
         {!masked && <button type="button" className={styles.chip} aria-pressed={showNames} onClick={() => setShowNames(v => !v)}><Icon name={showNames ? "badge" : "visibility_off"} size={18} />{showNames ? "이름 보임" : "이름 숨김"}</button>}
         <button type="button" className={styles.chip} aria-pressed={bubbleAll} onClick={() => setBubbleAll(v => !v)}><Icon name="chat_bubble" size={18} />{bubbleAll ? "말풍선 모두" : "말풍선 하나씩"}</button>
         <button type="button" className={styles.chip} aria-pressed={panel} onClick={() => setPanel(v => !v)}><Icon name="format_list_bulleted" size={18} />아이디어 모아 보기</button>

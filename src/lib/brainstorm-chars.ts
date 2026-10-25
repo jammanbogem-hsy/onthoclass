@@ -50,7 +50,10 @@ export const BRAIN_CHARS: BrainChar[] = [
 ];
 
 export const charUrl = (id: string) => `/brainstorm/chars/${id}.glb?v=1`;
-export const charThumb = (id: string) => `/brainstorm/chars/${id}.png?v=1`;
+export const charThumb = (id: string) => (id.startsWith(MOA_PREFIX) ? id.slice(MOA_PREFIX.length) : `/brainstorm/chars/${id}.png?v=1`);
+/** 모아 월드에서 만든 캐릭터 — id = "moa:" + 그림 주소(3D 대신 판 위에 서 있는 그림) */
+export const MOA_PREFIX = "moa:";
+export const moaChar = (url: string): BrainChar => ({ id: `${MOA_PREFIX}${url}`, name: "내 캐릭터", kind: "still" });
 
 function hash(s: string) {
   let h = 2166136261;

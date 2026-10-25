@@ -79,7 +79,7 @@ export const jamworldApi = onRequest({ region: "asia-northeast3", secrets, timeo
     }
     response ??= Response.json({ error: "경로를 찾을 수 없어요" }, { status: 404 });
     if (abort.signal.aborted) return;
-    res.status(response.status); response.headers.forEach((value, name) => res.setHeader(name, value)); res.send(Buffer.from(await response.arrayBuffer()));
+    res.status(response.status); if (!response.headers.has("cache-control")) res.setHeader("cache-control", "private, no-store"); response.headers.forEach((value, name) => res.setHeader(name, value)); res.send(Buffer.from(await response.arrayBuffer()));
   } catch (e) { const r = errorResponse(e); res.status(r.status).set("cache-control", "private, no-store").json(await r.json()); }
 });
 export const jamworldGenerate = onDocumentCreated({ document: "jamworldGenerations/{generationId}", region: "asia-northeast3", secrets: [defineSecret("OPENAI_API_KEY")], timeoutSeconds: 540, memory: "512MiB", maxInstances: 3, retry: false }, async event => {

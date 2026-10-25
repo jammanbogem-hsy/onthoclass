@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { AVATAR_PAGES } from "@/lib/users";
+import { MoaAssetPicker } from "@/components/MoaAssetPicker";
 
 /** 아바타 선택 모달 — 페이지 탭으로 이동, 고르면 팝 애니메이션 후 onSelect */
 export function AvatarPicker({
@@ -23,6 +24,7 @@ export function AvatarPicker({
   onCustomUpload?: (file: File) => Promise<string>;
 }) {
   const [picked, setPicked] = useState<string | null>(null);
+  const [moaOpen, setMoaOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [previewURL, setPreviewURL] = useState("");
@@ -214,6 +216,24 @@ export function AvatarPicker({
               </p>
             )}
           </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setMoaOpen(true)}
+          disabled={busy}
+          className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--md-sys-color-outline)] px-3 py-2.5 text-sm font-bold text-[var(--md-sys-color-primary)] hover:bg-black/5"
+        >
+          <Icon name="deployed_code" size={18} />
+          모아 월드에서 만든 캐릭터로
+        </button>
+        {moaOpen && (
+          <MoaAssetPicker
+            title="모아 월드 캐릭터로 프로필 바꾸기"
+            prefer="character"
+            onClose={() => setMoaOpen(false)}
+            onPick={(a) => choose(a.image)}
+          />
         )}
 
         {error && (

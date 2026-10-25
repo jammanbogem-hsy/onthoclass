@@ -28,7 +28,7 @@
       "cleanUrls": false,
       "headers": [
         {
-          "source": "**",
+          "regex": "^/(?:[^a].*|a(?:[^p].*)?|ap(?:[^i].*)?|api(?:[^/].*)?)?$",
           "headers": [
             {
               "key": "Cache-Control",
@@ -178,7 +178,7 @@
       ],
       "headers": [
         {
-          "source": "**",
+          "regex": "^/(?:[^a].*|a(?:[^p].*)?|ap(?:[^i].*)?|api(?:[^/].*)?)?$",
           "headers": [
             {
               "key": "Cache-Control",

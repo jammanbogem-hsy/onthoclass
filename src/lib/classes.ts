@@ -18,6 +18,8 @@ import {
   setDoc,
   updateDoc,
   where,
+  deleteField,
+  writeBatch,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import type { User } from "firebase/auth";
@@ -56,6 +58,8 @@ export type Member = {
   displayName: string;
   photoURL: string;
   joinedAt: number | null;
+  /** 모아 월드에서 만든 내 캐릭터 그림 주소(브레인스토밍 판 캐릭터) */
+  moaChar?: string;
 };
 
 /** 학급 그룹(폴더) — 교사가 학급을 묶어 정리. classes 데이터와 독립. */
@@ -421,6 +425,7 @@ export async function listMembers(classId: string): Promise<Member[]> {
       displayName: (v.displayName as string) ?? "이름없음",
       photoURL: (v.photoURL as string) ?? "",
       joinedAt: ts?.toMillis ? ts.toMillis() : null,
+      ...(typeof v.moaChar === "string" && v.moaChar ? { moaChar: v.moaChar } : {}),
     };
   });
   return list.sort(
@@ -447,6 +452,7 @@ export function watchMembers(
           displayName: (v.displayName as string) ?? "이름없음",
           photoURL: (v.photoURL as string) ?? "",
           joinedAt: ts?.toMillis ? ts.toMillis() : null,
+          ...(typeof v.moaChar === "string" && v.moaChar ? { moaChar: v.moaChar } : {}),
         };
       });
       cb(
@@ -475,4 +481,15 @@ function mapClass(id: string, v: Record<string, unknown>): ClassRoom {
     archived: Boolean(v.archived),
     createdAt: ts?.toMillis ? ts.toMillis() : null,
   };
+}
+
+/** 브레인스토밍 판에서 쓸 내 캐릭터(모아 월드 에셋 그림) — 내가 속한 모든 학급 멤버 문서에. null 이면 기본 캐릭터 */
+export async function setMoaChar(uid: string, url: string | null): Promise<void> {
+  const db = getDbClient();
+  const user = await getDoc(doc(db, "users", uid));
+  const ids = ((user.data()?.classIds as string[]) ?? []).filter(Boolean);
+  if (!ids.length) return;
+  const batch = writeBatch(db);
+  for (const cid of ids) batch.update(doc(db, "classes", cid, "members", uid), { moaChar: url ?? deleteField() });
+  await batch.commit();
 }

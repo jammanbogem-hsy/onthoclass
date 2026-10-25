@@ -479,7 +479,11 @@ service cloud.firestore {
         allow update: if isTeacher(classId)
           || (signedIn() && memberId == uid()
             && request.resource.data.diff(resource.data)
-                .affectedKeys().hasOnly(['photoURL']));
+                .affectedKeys().hasOnly(['photoURL', 'moaChar'])
+            // 모아 월드 캐릭터는 우리 사이트의 모아 월드 에셋 그림 주소만
+            && (!('moaChar' in request.resource.data)
+              || (request.resource.data.moaChar is string
+                && request.resource.data.moaChar.matches('^https://jammanboeng[.]web[.]app/api/jamworld/workshop/files/[A-Za-z0-9_%./-]{1,300}$'))));
       }
 
       // Lesson 7 여름 앨범: 같은 학급은 완성본을 함께 읽고,

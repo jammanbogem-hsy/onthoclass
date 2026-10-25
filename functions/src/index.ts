@@ -31,6 +31,7 @@ setGlobalOptions({ region: "asia-northeast3" }); // 서울 리전
 export { puyoStart, puyoFinish, puyoClock } from "./puyo";
 export { mcp, mcpAuthInfo, mcpApprove } from "./mcp";
 export { showcase, showcaseLink } from "./showcase";
+export { moaAssets } from "./moaBridge";
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");

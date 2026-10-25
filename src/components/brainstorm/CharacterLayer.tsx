@@ -9,13 +9,13 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { charUrl, type BrainChar } from "@/lib/brainstorm-chars";
+import { charUrl, MOA_PREFIX, type BrainChar } from "@/lib/brainstorm-chars";
 
 export type Actor = { uid: string; char: BrainChar; x: number; y: number; ideas: number };
 /** 판 확대·이동 상태 — 화면 왼쪽 위 판 좌표(x, y)와 배율(s) */
 export type BoardView = { x: number; y: number; s: number };
 
-type Template = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; scale: number; lift: number };
+type Template = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; scale: number; lift: number; flat?: boolean };
 type Live = {
   uid: string; charId: string; kind: BrainChar["kind"]; root: THREE.Group; body: THREE.Object3D;
   mixer: THREE.AnimationMixer | null; actions: Record<string, THREE.AnimationAction>;
@@ -115,6 +115,19 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
 
     const loadTemplate = (id: string) => {
       let p = templates.get(id);
+      if (!p && id.startsWith(MOA_PREFIX)) {
+        // 모아 월드 캐릭터: 그림 한 장을 판 위에 세운다(바닥 가운데 기준, 외곽선은 그림에 이미 있음)
+        p = new THREE.TextureLoader().loadAsync(id.slice(MOA_PREFIX.length)).then(tex => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          const img = tex.image as { width: number; height: number };
+          const h = charH * 1.35, w = h * (img.width / Math.max(1, img.height));
+          const geo = new THREE.PlaneGeometry(w, h); geo.translate(0, h / 2, 0);
+          const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false }));
+          const g = new THREE.Group(); g.add(mesh);
+          return { scene: g, clips: [], scale: 1, lift: 0, flat: true } as Template;
+        }).catch(() => null);
+        templates.set(id, p);
+      }
       if (!p) {
         p = loader.loadAsync(charUrl(id)).then((g: GLTF) => {
           const box = new THREE.Box3().setFromObject(g.scene); const size = box.getSize(new THREE.Vector3());
@@ -130,8 +143,8 @@ export function CharacterLayer({ actors, viewW, viewH, charH, view, onLoaded, on
     const spawn = async (a: Actor) => {
       const t = await loadTemplate(a.char.id);
       if (disposed || !t || lives.has(a.uid)) return;
-      const body = cloneSkinned(t.scene);
-      addOutline(body, t.scale);
+      const body = t.flat ? t.scene.clone() : cloneSkinned(t.scene);
+      if (!t.flat) addOutline(body, t.scale);
       body.scale.setScalar(t.scale); body.position.y = t.lift;
       const root = new THREE.Group(); root.add(body);
       root.rotation.x = 0.18; // 판을 살짝 내려다보는 느낌

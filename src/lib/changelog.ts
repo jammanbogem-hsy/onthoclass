@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.33.0";
+export const APP_VERSION = "1.34.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,19 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.34.0",
+    date: "2026-10-25",
+    kind: "minor",
+    title: "모아 월드 에셋을 러닝크루에서",
+    items: [
+      "모아 월드에서 만든 내 그림을 응답·보드의 '모아 월드' 버튼으로 넣을 수 있어요.",
+      "프로필 사진을 모아 월드에서 만든 캐릭터로 바꿀 수 있어요.",
+      "브레인스토밍 판의 '내 캐릭터'에서 모아 월드 캐릭터를 고르면 섬 위에 그 캐릭터가 서요.",
+      "러닝크루로 로그인한 채 마이페이지에서 모아 월드에 들어가면 두 계정이 자동으로 이어져요.",
+      "그림·공유 화면이 더 빨리 열려요(한 번 받은 그림을 기억).",
+    ],
+  },
   {
     version: "1.33.0",
     date: "2026-10-25",

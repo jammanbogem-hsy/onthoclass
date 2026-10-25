@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DrawingPad } from "@/components/DrawingPad";
+import { MoaAssetPicker } from "@/components/MoaAssetPicker";
+import { attachMoaAsset } from "@/lib/moaAssets";
 import { Icon } from "@/components/Icon";
 import { IconButton } from "@/components/ui";
 import {
@@ -111,6 +113,7 @@ export function AttachmentField({
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [drawing, setDrawing] = useState(false);
+  const [moaOpen, setMoaOpen] = useState(false);
 
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
@@ -343,6 +346,28 @@ export function AttachmentField({
             <Icon name="draw" size={18} />
             그리기
           </button>
+        )}
+        {target.kind !== "feedback" && (
+          <button
+            type="button"
+            disabled={disabled || busy || full || recording}
+            onClick={() => setMoaOpen(true)}
+            className={ADD_BTN}
+          >
+            <Icon name="deployed_code" size={18} />
+            모아 월드
+          </button>
+        )}
+        {moaOpen && target.kind !== "feedback" && createPortal(
+          <MoaAssetPicker
+            title="모아 월드 에셋 넣기"
+            onClose={() => setMoaOpen(false)}
+            onPick={async (a) => {
+              const att = await attachMoaAsset(a.id, target.kind === "submission" ? { kind: "submission", cid: target.cid, lid: target.lid, qid: target.qid } : { kind: "canvas", cid: target.cid });
+              commitAdd([att]);
+            }}
+          />,
+          document.body,
         )}
         {copyText !== undefined && <CopyButton text={copyText} />}
         {busy && (
