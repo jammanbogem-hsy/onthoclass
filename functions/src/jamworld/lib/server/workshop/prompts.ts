@@ -47,15 +47,16 @@ export function characterPrompt(
 }
 
 /** MCP(ChatGPT 등)가 앱과 똑같은 프롬프트로 그리게 — 앱의 제작 순서(위에서 본 그림 → 그것을 참고해 입체)를 그대로 단계로 준다. */
-export function assetRecipe(d: Omit<ApprovedSnapshot["draft"], "tags" | "passable">) {
+export function assetRecipe(d: Omit<ApprovedSnapshot["draft"], "tags" | "passable">, reference?: string) {
   const snap = { version: 1, draft: { ...d, tags: [], passable: true }, uploadKey: null, uploadSha256: null, outputs: [] } as ApprovedSnapshot;
-  if (d.category === "terrain") return [{ step: 1, output: "texture", background: "opaque", prompt: texturePrompt(snap) }];
+  const ref = !!reference;
+  if (d.category === "terrain") return [{ step: 1, output: "texture", background: "opaque", ...(ref ? { reference } : {}), prompt: texturePrompt(snap, ref) }];
   if (d.category === "character") return [
-    { step: 1, output: "sheetTd", background: "transparent", prompt: characterPrompt(snap, "td", false), rows: CANONICAL_CHARACTER_DIRECTIONS.td },
+    { step: 1, output: "sheetTd", background: "transparent", ...(ref ? { reference } : {}), prompt: characterPrompt(snap, "td", ref), rows: CANONICAL_CHARACTER_DIRECTIONS.td },
     { step: 2, output: "sheetIso", background: "transparent", reference: "1단계 그림(같은 인물)", prompt: characterPrompt(snap, "iso", true), rows: CANONICAL_CHARACTER_DIRECTIONS.iso },
   ];
   return [
-    { step: 1, output: "td", background: "transparent", prompt: topDownPrompt(snap, false) },
+    { step: 1, output: "td", background: "transparent", ...(ref ? { reference } : {}), prompt: topDownPrompt(snap, ref) },
     { step: 2, output: "iso", background: "transparent", reference: "1단계 그림(같은 물체)", prompt: isoPrompt(snap) },
   ];
 }

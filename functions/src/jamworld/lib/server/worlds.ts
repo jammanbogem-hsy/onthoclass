@@ -146,3 +146,10 @@ export async function revertWorld(owner: string, pid: string, versionId: string,
   return saveWorld(owner, pid, { name: d.project.name, description: d.project.description, mapIds: d.project.mapIds, maps, force: true, version: `되돌리기 전(${new Date(Number(d.at)).toISOString().slice(0, 16)} 버전으로)`, by });
 }
 
+
+/** 맵 코드 지문(FNV-1a) — 플레이 보고가 지금 코드에 대한 것인지 가린다. 클라이언트 play.tsx 와 같은 식 */
+export function scriptHash(src: string | undefined) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < (src ?? "").length; i++) h = Math.imul(h ^ (src as string).charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16);
+}

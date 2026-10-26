@@ -132,6 +132,8 @@ export default function Play({
     zoneMessageRef = useRef<HTMLDivElement>(null);
   const [scriptError, setScriptError] = useState("");
   const [scriptHud, setScriptHud] = useState<ScriptHud>({});
+  const hudRef = useRef<ScriptHud>({});
+  const reportedRef = useRef(new Set<string>());
   // 맵 코드 연출(개인 플레이 전용): 오브젝트 움직임·날아가는 물체·터지는 효과·화면 버튼
   const fxRef = useRef(new Map<string, ObjectFx>());
   const projectilesRef = useRef<Projectile[]>([]);
@@ -246,6 +248,31 @@ export default function Play({
       if (scriptRef.current === runtime) scriptRef.current = null;
     };
   }, [doc?.script, doc?.id]);
+
+  useEffect(() => { hudRef.current = scriptHud; }, [scriptHud]);
+
+  // 주인이 플레이할 때 맵 코드가 돌았는지 서버에 남긴다 → AI(MCP)가 moa_play_report 로 읽고 고친다. 같은 코드·같은 결과는 한 번만
+  const reportScript = doc?.script, reportMap = doc?.id;
+  useEffect(() => {
+    const script = reportScript;
+    if (sharedWorld || !reportMap || !script?.trim()) return;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < script.length; i++) h = Math.imul(h ^ script.charCodeAt(i), 0x01000193);
+    const hash = (h >>> 0).toString(16), mapId = reportMap;
+    const send = (ok: boolean, message?: string) => {
+      const key = `${mapId}:${hash}:${ok ? "ok" : message}`;
+      if (reportedRef.current.has(key)) return;
+      reportedRef.current.add(key);
+      const hud = JSON.stringify(hudRef.current);
+      void fetch(`/api/jamworld/worlds/${projectId}/report`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mapId, ok, hash, ...(message ? { message } : {}), ...(hud !== "{}" ? { hud } : {}) }),
+      }).catch(() => undefined);
+    };
+    if (scriptError) { send(false, scriptError); return; }
+    const t = window.setTimeout(() => send(true), 8000);
+    return () => window.clearTimeout(t);
+  }, [scriptError, reportScript, reportMap, projectId, sharedWorld]);
 
   // 게임 루프 (플레이 중에만 rAF)
   useEffect(() => {

@@ -110,8 +110,8 @@ async function sheet(buf: Buffer, view: "td" | "iso", key: string, rows?: string
 }
 
 /** 그림을 다듬어 저장하고 '에셋 모음'에 공개 에셋으로 넣는다 */
-export async function createUploadedAsset(uid: string, spec: AssetSpec, img: AssetImages, via: "mcp-upload" | "link-upload", sheetRows?: SheetRows) {
-  const id = `ast_${randomBytes(8).toString("base64url")}`, gen = `gen_${randomBytes(8).toString("base64url")}`;
+export async function createUploadedAsset(uid: string, spec: AssetSpec, img: AssetImages, via: "mcp-upload" | "link-upload", sheetRows?: SheetRows, replaceId?: string) {
+  const id = replaceId ?? `ast_${randomBytes(8).toString("base64url")}`, gen = `gen_${randomBytes(8).toString("base64url")}`;
   const dir = `cls/_moa_${uid}/gen/${gen}`, bucket = getStorage().bucket();
   const put = (name: string, data: Buffer, contentType = "image/webp") => bucket.file(`jamworld/${dir}/${name}`).save(data, { contentType, resumable: false }).then(() => `${dir}/${name}`);
   let appearance: LibraryManifest["appearance"];
@@ -148,7 +148,10 @@ export async function createUploadedAsset(uid: string, spec: AssetSpec, img: Ass
     },
     provenance: { requestId: "", approvedVersion: 0, generationId: gen, model: via, createdBy: `teacher:${uid}` },
   };
-  await getFirestore().collection("jamworldLibrary").doc(id).create({
+  const ref = getFirestore().collection("jamworldLibrary").doc(id);
+  // 고치기는 같은 id 그대로(맵에 놓인 것도 새 그림으로 바뀐다). 옛 그림 파일은 열려 있는 화면을 위해 남겨 둔다
+  if (replaceId) await ref.update({ generationId: gen, manifest: JSON.stringify(manifest), updatedAt: Date.now() });
+  else await ref.create({
     id, classId: `_moa_${uid}`, ownerStudentId: "", requestId: "", generationId: gen, manifest: JSON.stringify(manifest), shared: 1, createdAt: Date.now(), removedAt: null,
   });
   bustCatalog();

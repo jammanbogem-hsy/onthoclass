@@ -29,6 +29,7 @@ import * as route15 from "./routes/workshop/requests/[id]/upload/route";
 import * as route16 from "./routes/workshop/requests/route";
 import * as worlds from "./routes/worlds/route";
 import * as worldItem from "./routes/worlds/[id]/route";
+import * as worldReport from "./routes/worlds/[id]/report/route";
 import * as uploadLink from "./routes/upload/[token]/route";
 const secrets = [defineSecret("OPENAI_API_KEY"), defineSecret("ANTHROPIC_API_KEY")];
 type Handler = (req: Request, ctx: { params: Promise<Record<string, string | string[]>> }) => Promise<Response>;
@@ -58,6 +59,7 @@ const routes: Array<[string, object]> = [
   ["workshop/requests/[id]/upload", route15],
   ["workshop/requests", route16],
   ["worlds", worlds],
+  ["worlds/[id]/report", worldReport],
   ["worlds/[id]", worldItem],
   ["upload/[token]", uploadLink],
 ];

@@ -21,7 +21,10 @@ import { publishedAssets } from "./lib/server/workshop/catalog";
 import { cleanSpec, createUploadedAsset, startUpload, TOKEN_RE } from "./lib/server/asset-upload";
 import { assetRecipe } from "./lib/server/workshop/prompts";
 import { scriptSyntaxError } from "./lib/server/map-script";
-import { getWorld, getWorldMeta, listVersions, listWorlds, revertWorld, saveWorld } from "./lib/server/worlds";
+import { getWorld, getWorldMeta, listVersions, listWorlds, revertWorld, saveWorld, scriptHash } from "./lib/server/worlds";
+import { getStorage } from "firebase-admin/storage";
+import sharp from "sharp";
+import type { LibraryManifest } from "./lib/server/workshop/types";
 import type { EmbeddedAsset } from "./lib/world/types";
 
 type Ctx = { uid: string };
@@ -108,6 +111,37 @@ async function readImage(src: z.infer<typeof ImageInput> | undefined): Promise<B
   if (src.url) return fetchImage(src.url);
   throw new Error("그림 파일(download_url·url·base64 중 하나)을 주세요.");
 }
+/* ------------------------------------------------------------- 플레이 보고 */
+const PLAY_NEXT = "사용자에게 playUrl 을 열어 10초쯤 플레이해 달라고 하세요. 그러면 실제로 돌려 본 결과(오류·점수판 상태)가 서버에 남아요 → moa_play_report 로 확인해 오류가 있으면 고치세요. 앱 에이전트처럼 '고치기 → 다시 플레이 → 보고 확인'을 되풀이하세요.";
+function playReport(data: FirebaseFirestore.DocumentData | undefined, mapId: string, script: string | undefined) {
+  if (!script?.trim()) return { status: "맵 코드 없음" };
+  const r = (data?.playReports ?? {})[mapId] as { ok: boolean; at: number; hash: string; message?: string; hud?: string } | undefined;
+  if (!r) return { status: "아직 플레이 안 함", next: "사용자에게 playUrl 을 열어 플레이해 달라고 하세요." };
+  const current = r.hash === scriptHash(script);
+  return {
+    status: !current ? "지금 코드로는 아직 플레이 안 함(이전 코드 결과)" : r.ok ? "정상 실행(8초 이상 오류 없음)" : "오류",
+    ...(r.message ? { error: r.message } : {}), ...(r.hud ? { hud: r.hud } : {}),
+    playedAt: new Date(r.at).toISOString(), current,
+  };
+}
+
+/* ------------------------------------------------------------- 에셋 읽기 */
+const fileUrl = (k: string) => `${BASE}/api/jamworld/workshop/files/${k}`;
+async function ownAsset(ctx: Ctx, assetId: string) {
+  const id = assetId.replace(/^u:/, "");
+  if (!/^ast_[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error("에셋 id 는 'u:ast_…' 형식이에요. 기본 에셋은 고칠 수 없어요 — 새로 그려 올리고 맵에서 바꾸세요.");
+  const d = (await getFirestore().doc(`jamworldLibrary/${id}`).get()).data();
+  if (!d || d.removedAt) throw new Error("에셋을 찾지 못했어요.");
+  return { id, row: d, manifest: JSON.parse(d.manifest) as LibraryManifest, mine: d.classId === `_moa_${ctx.uid}` };
+}
+async function imageBlock(key: string) {
+  try {
+    const [buf] = await getStorage().bucket().file(`jamworld/${key}`).download();
+    const png = await sharp(buf).resize(384, 384, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
+    return { type: "image" as const, data: png.toString("base64"), mimeType: "image/png" };
+  } catch { return null; }
+}
+
 /* ------------------------------------------------------------- 도구 */
 
 export function registerMoaTools(s: McpServer, ctx: Ctx) {
@@ -116,7 +150,12 @@ export function registerMoaTools(s: McpServer, ctx: Ctx) {
     description: "모아 월드(학급용 2D/쿼터뷰 메타버스)를 만들기 전에 꼭 먼저 읽으세요. 맵 작업(ops) 형식, 맵 코드 World API(입력·타이머·움직임·날리기·효과·소리·HUD·선택창·오브젝트 제어), 에셋 그림 규격·스타일, 설계서 항목을 알려 줘요.",
     inputSchema: { topic: z.enum(["all", "design", "map", "script", "assets"]).optional() }, annotations: RO,
   }, async ({ topic = "all" }) => {
-    const design = `# 설계 대화(필수)\n사용자와 충분히 묻고 답하세요. 한 번에 2~3개씩 구체적으로 물어보고, 답을 요약해 확인받으세요. 아래 항목이 모두 정해지면 moa_submit_brief 로 내고, 그 뒤에만 맵을 쓸 수 있어요.\n${Object.entries(BRIEF_FIELDS).map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n애매한 항목은 openQuestions 에 넣으면 쓰기가 막혀요. 작업 후에는 editUrl/playUrl 을 사용자에게 주고 플레이해 본 느낌을 물어 다듬으세요.`;
+    const design = `# 설계 대화(필수)\n사용자와 충분히 묻고 답하세요. 한 번에 2~3개씩 구체적으로 물어보고, 답을 요약해 확인받으세요. 아래 항목이 모두 정해지면 moa_submit_brief 로 내고, 그 뒤에만 맵을 쓸 수 있어요.\n${Object.entries(BRIEF_FIELDS).map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n애매한 항목은 openQuestions 에 넣으면 쓰기가 막혀요.
+
+# 당신은 모아 월드 앱의 제작 에이전트와 같은 역할이에요
+'지원 안 됨'이라고 하지 말고 필요한 건 직접 만드세요: 없는 에셋은 그려서 올리고(moa_asset_recipe → 이미지 생성 → moa_upload_asset), 있는 에셋은 다듬고(moa_get_asset → moa_asset_recipe(referenceAssetId) → moa_update_asset), 움직임·상호작용·연출은 맵 코드(moa_set_script: 입력·타이머·animate·launch·effect·sound·HUD·선택창)로 만드세요.
+작업 고리: 설계서 → 맵(moa_apply_ops) → 에셋 → 코드 → 사용자에게 playUrl 플레이 부탁 → moa_play_report 로 실제 실행 결과 확인 → 오류·아쉬운 점 고치기 → 다시 플레이. 앱 에이전트가 코드를 미리 돌려 보고 고치는 것과 같은 확인을 이렇게 하세요.
+한 번에 너무 많이 바꾸지 말고, 단계마다 무엇을 했는지와 editUrl/playUrl 을 알려 주세요.`;
     const refs = (await publishedAssets()).filter(a => a.provenance?.model !== "mcp-upload").slice(0, 6)
       .map(a => `  - ${a.name}: ${BASE}${(a.urls as { iso?: string | null; texture?: string | null }).iso ?? (a.urls as { texture?: string | null }).texture ?? ""}`).join("\n");
     const assets = `# 에셋 만들기 — 모아 월드 앱과 같은 품질로(반드시 이 순서)
@@ -154,9 +193,10 @@ ${refs}`;
       const w = await getWorld(owner(ctx), worldId, [mid]);
       const doc = w?.maps[mid];
       if (!doc) throw new Error("맵을 찾지 못했어요.");
-      const brief = (await getFirestore().doc(`jamworldWorlds/${worldId}`).get()).data()?.brief ?? null;
+      const data = (await getFirestore().doc(`jamworldWorlds/${worldId}`).get()).data();
+      const brief = data?.brief ?? null;
       const text = withAssetScope({ ...(await library()), ...(doc.assets ?? {}) }, () => mapContext(doc));
-      return json(`# ${meta.name} (rev ${meta.rev})\nmaps: ${meta.mapIds.join(", ")}\n${JSON.stringify(links(worldId, mid))}\n설계서: ${brief ? JSON.stringify(brief) : "(아직 없음 — moa_submit_brief)"}\n\n${text}`);
+      return json(`# ${meta.name} (rev ${meta.rev})\nmaps: ${meta.mapIds.join(", ")}\n${JSON.stringify(links(worldId, mid))}\n설계서: ${brief ? JSON.stringify(brief) : "(아직 없음 — moa_submit_brief)"}\n플레이 보고: ${JSON.stringify(playReport(data, mid, doc.script))}\n\n${text}`);
     } catch (e) { return fail(e); }
   });
 
@@ -216,7 +256,7 @@ ${refs}`;
       const r = applyOps(doc, ops, { maxOps: 600, extraAssets: await library() });
       if (!r.ok) return json({ applied: false, errors: r.errors.slice(0, 12).map(e => e.message), hint: "고친 ops 로 다시 부르세요(맵은 그대로예요)." });
       const meta = await saveWorld(owner(ctx), worldId, { maps: { [mapId]: r.doc }, baseRev: w.project.rev, force: true, version: `AI 작업 전: ${note}`, by: "AI(MCP)" });
-      return json({ applied: true, rev: meta.rev, summary: r.summary, warnings: r.warnings.slice(0, 12).map(e => e.message), ...links(worldId, mapId), next: "사용자에게 playUrl 로 플레이해 보라고 하고 느낌을 물어 다듬으세요. 편집기를 열어 둔 상태면 창으로 돌아올 때 새로 불러와요." });
+      return json({ applied: true, rev: meta.rev, summary: r.summary, warnings: r.warnings.slice(0, 12).map(e => e.message), ...links(worldId, mapId), next: `${PLAY_NEXT} 편집기를 열어 둔 상태면 창으로 돌아올 때 새로 불러와요.` });
     } catch (e) { return fail(e); }
   });
 
@@ -236,7 +276,7 @@ ${refs}`;
       const r = applyOps(doc, [{ op: "setScript", source }], { extraAssets: await library() });
       if (!r.ok) return json({ applied: false, errors: r.errors.map(e => e.message) });
       const meta = await saveWorld(owner(ctx), worldId, { maps: { [mapId]: r.doc }, baseRev: w.project.rev, force: true, version: `AI 코드 전: ${note}`, by: "AI(MCP)" });
-      return json({ applied: true, rev: meta.rev, ...links(worldId, mapId), next: "편집기 '검사' 탭이나 플레이로 실제 동작을 확인해 달라고 하세요. 오류 문구를 알려 주면 고칠 수 있어요." });
+      return json({ applied: true, rev: meta.rev, ...links(worldId, mapId), next: PLAY_NEXT });
     } catch (e) { return fail(e); }
   });
 
@@ -274,11 +314,21 @@ ${refs}`;
       category: z.enum(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]).optional(),
       footprint: z.object({ w: z.number().int().min(1).max(6), d: z.number().int().min(1).max(6) }).optional(),
       height: z.number().min(0).max(5).optional(),
+      referenceAssetId: z.string().optional().describe("이미 있는 에셋을 고도화·다시 그릴 때 그 id('u:…'). 그 그림을 참고 이미지로 써요(예: 정지 인물 → 걷는 인물)"),
     },
     annotations: RO,
   }, async (a) => {
+    let reference: string | undefined;
+    if (a.referenceAssetId) {
+      try {
+        const { manifest } = await ownAsset(ctx, a.referenceAssetId);
+        const ap = manifest.appearance;
+        reference = `기존 에셋 그림 ${fileUrl(ap.kind === "texture" ? ap.texture : ap.iso)} (moa_get_asset 으로 본 그림) — 같은 모습·색·비율로`;
+      } catch (e) { return fail(e); }
+    }
     const category = a.kind === "tile" ? "terrain" : a.kind === "character" ? "character" : (a.category && a.category !== "terrain" && a.category !== "character" ? a.category : "decor");
-    const steps = assetRecipe({ name: a.name, description: a.description, category, footprint: a.footprint ?? { w: 1, d: 1 }, height: a.height ?? 1 });
+    const description = a.description.trim() || (reference ? "참고 그림과 같은 외형·옷·색으로, 방향별 대기와 걷기 동작이 있게 다시 그려 주세요." : "");
+    const steps = assetRecipe({ name: a.name, description, category, footprint: a.footprint ?? { w: 1, d: 1 }, height: a.height ?? 1 }, reference);
     return json({
       steps,
       rules: [
@@ -289,9 +339,10 @@ ${refs}`;
         a.kind === "character"
           ? "두 시트를 moa_upload_asset 의 sheetTd·sheetIso 에 함께 넘기세요(td·iso 대표 그림은 시트에서 자동). 행 방향이 rows 와 다르게 그려졌으면 sheetRows 로 실제 순서를 알려 주세요(예: td ['s','n','w','e'])."
           : a.kind === "tile" ? "texture 에 넘기세요." : "td·iso 에 함께 넘기세요.",
+        reference ? "기존 에셋을 고치는 거면 moa_upload_asset 대신 moa_update_asset(assetId) 으로 올려 같은 id 를 유지하세요(맵에 놓인 것도 함께 바뀌어요). 내가 올린 에셋이 아니면 새로 올리고 맵에서 바꿔 놓으세요." : "",
         "올린 뒤 preview 주소를 사용자에게 보여 주고 확인받으세요.",
       ],
-      upload: { tool: "moa_upload_asset", name: a.name, kind: a.kind, category, ...(a.footprint ? { footprint: a.footprint } : {}), ...(a.height !== undefined ? { height: a.height } : {}) },
+      upload: { tool: reference ? "moa_update_asset 또는 moa_upload_asset" : "moa_upload_asset", name: a.name, kind: a.kind, category, ...(a.footprint ? { footprint: a.footprint } : {}), ...(a.height !== undefined ? { height: a.height } : {}) },
     });
   });
 
@@ -318,6 +369,71 @@ ${refs}`;
       const [td, iso, texture, sheetTd, sheetIso] = await Promise.all([a.td, a.iso, a.texture, a.sheetTd, a.sheetIso].map(readImage));
       const r = await createUploadedAsset(ctx.uid, spec, { td, iso, texture, sheetTd, sheetIso }, "mcp-upload", a.sheetRows);
       return json({ ...r, next: `preview 주소의 그림을 사용자에게 보여 주세요. ${a.kind === "character" && !r.animated ? "걷기 시트가 없어 정지 그림으로 움직여요 — 걸어 다니게 하려면 moa_asset_recipe 의 시트 2장을 그려 다시 올리세요. " : ""}moa_apply_ops 의 place{assetId,x,y} 로 놓으세요(바닥은 paint{tileId}).` });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("moa_get_asset", {
+    title: "에셋 자세히 보기",
+    description: "에셋('u:…')의 그림을 직접 보고(이미지), 그림 주소·크기·걷기 동작 여부·고칠 수 있는지(mine)를 알려 줘요. 기존 에셋을 고도화하거나 같은 스타일로 새 에셋을 그릴 때 먼저 보세요.",
+    inputSchema: { assetId: z.string() }, annotations: RO,
+  }, async ({ assetId }) => {
+    try {
+      const { id, manifest: m, mine } = await ownAsset(ctx, assetId);
+      const ap = m.appearance;
+      const images = ap.kind === "texture" ? { texture: fileUrl(ap.texture) }
+        : { iso: fileUrl(ap.iso), td: fileUrl(ap.td), ...(ap.sprites ? { sheetTd: fileUrl(ap.sprites.td.image), sheetIso: fileUrl(ap.sprites.iso.image) } : {}) };
+      const info = {
+        assetId: `u:${id}`, name: m.name, category: m.category, tags: m.tags, footprint: m.behavior.footprint, height: m.behavior.height, blocking: m.behavior.blocking,
+        animated: ap.kind === "views" && !!ap.sprites, images, mine,
+        next: mine ? "고치려면 moa_asset_recipe(referenceAssetId) → 이미지 생성 → moa_update_asset." : "다른 사람이 만든 에셋이라 직접 고칠 수는 없어요. moa_asset_recipe(referenceAssetId) 로 새로 그려 moa_upload_asset 으로 올리고 맵에서 바꿔 놓으세요.",
+      };
+      const pics = (await Promise.all((ap.kind === "texture" ? [ap.texture] : [ap.iso, ...(ap.sprites ? [ap.sprites.iso.image] : [])]).map(imageBlock))).filter(x => !!x);
+      return { content: [{ type: "text" as const, text: JSON.stringify(info, null, 1) }, ...pics] };
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("moa_update_asset", {
+    title: "에셋 고치기",
+    description: "내가(MCP·업로드 링크로) 올린 에셋의 그림을 새 그림으로 바꿔요. id 가 그대로라 맵에 놓인 것도 함께 바뀌어요(예: 정지 인물에 걷기 시트 붙이기, 그림 다시 그리기). 그림은 moa_upload_asset 과 같은 방식(원본 그대로)으로 주세요. 이름·크기 등은 주지 않으면 그대로예요.",
+    inputSchema: {
+      assetId: z.string(),
+      name: z.string().min(1).max(30).optional(), tags: z.array(z.string().min(1).max(12)).min(1).max(8).optional(),
+      footprint: z.object({ w: z.number().int().min(1).max(6), d: z.number().int().min(1).max(6) }).optional(),
+      height: z.number().min(0).max(5).optional(), passable: z.boolean().optional(),
+      td: ImageInput.optional(), iso: ImageInput.optional(), texture: ImageInput.optional(),
+      sheetTd: ImageInput.optional(), sheetIso: ImageInput.optional(),
+      sheetRows: z.object({ td: z.array(z.enum(["s", "w", "n", "e"])).optional(), iso: z.array(z.enum(["s", "sw", "w", "nw", "n", "ne", "e", "se"])).optional() }).optional(),
+    },
+    annotations: { ...WRITE, destructiveHint: true },
+    _meta: { "openai/fileParams": ["td", "iso", "texture", "sheetTd", "sheetIso"] },
+  }, async (a) => {
+    try {
+      const { id, manifest: m, mine } = await ownAsset(ctx, a.assetId);
+      if (!mine) throw new Error("내가 올린 에셋만 고칠 수 있어요. 새로 그려 moa_upload_asset 으로 올리고 맵에서 바꿔 놓으세요.");
+      const kind = m.appearance.kind === "texture" ? "tile" : m.category === "character" ? "character" : "object";
+      const spec = cleanSpec({
+        name: a.name ?? m.name, kind, category: m.category, tags: a.tags ?? m.tags,
+        footprint: a.footprint ?? m.behavior.footprint, height: a.height ?? m.behavior.height, passable: a.passable ?? !m.behavior.blocking,
+      });
+      const [td, iso, texture, sheetTd, sheetIso] = await Promise.all([a.td, a.iso, a.texture, a.sheetTd, a.sheetIso].map(readImage));
+      if (![td, iso, texture, sheetTd, sheetIso].some(Boolean)) throw new Error("새 그림을 하나 이상 주세요.");
+      const r = await createUploadedAsset(ctx.uid, spec, { td, iso, texture, sheetTd, sheetIso }, "mcp-upload", a.sheetRows, id);
+      return json({ ...r, updated: true, next: "preview 를 사용자에게 보여 주세요. 열려 있는 편집기·플레이는 1분 안에 새 그림으로 바뀌어요(새로고침하면 바로)." });
+    } catch (e) { return fail(e); }
+  });
+
+  s.registerTool("moa_play_report", {
+    title: "플레이 결과 보기",
+    description: "사용자가 playUrl 로 플레이했을 때 맵 코드가 실제로 돌았는지(오류 문구·점수판 상태)를 알려 줘요. 앱 에이전트가 코드를 미리 돌려 보는 것과 같은 확인이에요. 코드를 쓴 뒤 꼭 확인하고, 오류면 고쳐서 다시 플레이를 부탁하세요.",
+    inputSchema: { worldId: z.string(), mapId: z.string().optional() }, annotations: RO,
+  }, async ({ worldId, mapId }) => {
+    try {
+      const meta = await getWorldMeta(owner(ctx), worldId);
+      if (!meta) throw new Error("스페이스를 찾지 못했어요.");
+      const ids = mapId ? [mapId] : meta.mapIds;
+      const w = await getWorld(owner(ctx), worldId, ids);
+      const data = (await getFirestore().doc(`jamworldWorlds/${worldId}`).get()).data();
+      return json(Object.fromEntries(ids.map(id => [id, { name: w?.maps[id]?.name, ...playReport(data, id, w?.maps[id]?.script), ...links(worldId, id) }])));
     } catch (e) { return fail(e); }
   });
 

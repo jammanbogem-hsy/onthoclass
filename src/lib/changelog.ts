@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.34.2";
+export const APP_VERSION = "1.34.3";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.34.3",
+    date: "2026-10-26",
+    kind: "patch",
+    title: "AI 앱이 모아 월드 제작 에이전트처럼 일해요",
+    items: [
+      "AI 앱(ChatGPT 등)이 이미 있는 에셋을 직접 보고 다듬어요. 가만히 서 있던 인물을 걷게 만들 수도 있어요.",
+      "선생님이 플레이하면 맵 코드가 잘 돌았는지 AI 가 확인하고, 문제가 있으면 스스로 고쳐요.",
+    ],
+  },
   {
     version: "1.34.2",
     date: "2026-10-26",
