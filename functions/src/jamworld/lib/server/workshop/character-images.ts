@@ -1,6 +1,21 @@
 import sharp from "sharp";
 import { createHash } from "node:crypto";
-import { CANONICAL_CHARACTER_DIRECTIONS, canonicalCharacterDirection, characterSheet, type CharacterView } from "./character-sprite";
+import { CANONICAL_CHARACTER_DIRECTIONS, CHARACTER_DIRECTIONS, characterSheet, type CharacterView } from "./character-sprite";
+
+const PARTNER: Record<string, string> = { w: "e", e: "w", sw: "se", se: "sw", nw: "ne", ne: "nw" };
+/** 게임이 쓰는 방향마다 원본의 어느 행을 (뒤집어) 쓸지. 앱 기본 순서면 w·sw·nw 를 e·se·ne 에서 뒤집는다. */
+export function sourcePlan(view: CharacterView, rows: readonly string[]) {
+  const all: readonly string[] = CHARACTER_DIRECTIONS[view];
+  if (!rows.length || new Set(rows).size !== rows.length || rows.some(d => !all.includes(d)))
+    throw new Error(`캐릭터 동작 그림을 확인해 주세요: 행 방향은 ${all.join("·")} 중에서 겹치지 않게 골라 주세요`);
+  const plan: Record<string, { row: number; mirror: boolean }> = {};
+  for (const d of all) {
+    const own = rows.indexOf(d), other = PARTNER[d] ? rows.indexOf(PARTNER[d]) : -1;
+    if (own < 0 && other < 0) throw new Error(`캐릭터 동작 그림을 확인해 주세요: '${d}' 방향(또는 좌우 반대 방향) 줄이 없어요`);
+    plan[d] = own >= 0 ? { row: own, mirror: false } : { row: other, mirror: true };
+  }
+  return plan;
+}
 import { checkCanonicalCharacterDirections } from "./character-direction-check";
 
 /** 정해진 격자를 검사하고, 전체 동작에 같은 배율과 발 기준점을 적용한다. */
@@ -10,9 +25,12 @@ export async function prepareCharacterSheet(
   image: string,
   columns: 4 | 5 = 5,
   layout: "full" | "canonical" = "full",
+  /** canonical 일 때 원본 그림의 실제 행 방향(기본: 앱 생성 순서). 없는 방향은 반대쪽을 좌우로 뒤집어 만든다. */
+  rows?: readonly string[],
 ) {
   const sheet = characterSheet(view, image, columns);
-  const sourceDirections: readonly string[] = layout === "canonical" ? CANONICAL_CHARACTER_DIRECTIONS[view] : sheet.directions;
+  const sourceDirections: readonly string[] = layout === "canonical" ? (rows ?? CANONICAL_CHARACTER_DIRECTIONS[view]) : sheet.directions;
+  if (layout === "canonical") sourcePlan(view, sourceDirections);
   const sourceRows = sourceDirections.length;
   if (layout === "canonical") sheet.construction = "canonical-mirrored-v1";
   const { data, info } = await sharp(bytes, { limitInputPixels: 16_777_216 })
@@ -234,11 +252,12 @@ export async function prepareCharacterSheet(
     .png()
     .toBuffer();
   if (layout === "canonical") {
-    await checkCanonicalCharacterDirections(png, view, columns, Math.ceil(Math.max(...cells.map(c => c.h)) * scale));
+    await checkCanonicalCharacterDirections(png, view, columns, Math.ceil(Math.max(...cells.map(c => c.h)) * scale), sourceDirections);
     const width = columns * 128, sourcePixels = await sharp(png).ensureAlpha().raw().toBuffer();
     const expanded = Buffer.alloc(width * sheet.rows * 160 * 4);
+    const plan = sourcePlan(view, sourceDirections);
     sheet.directions.forEach((direction, row) => {
-      const source = canonicalCharacterDirection(direction), sourceRow = sourceDirections.indexOf(source.direction);
+      const source = plan[direction], sourceRow = source.row;
       for (let y = 0; y < 160; y++) {
         const from = (sourceRow * 160 + y) * width * 4, to = (row * 160 + y) * width * 4;
         if (!source.mirror) { sourcePixels.copy(expanded, to, from, from + width * 4); continue; }

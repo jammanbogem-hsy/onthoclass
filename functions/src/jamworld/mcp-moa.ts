@@ -3,8 +3,8 @@
  *
  * 흐름(grill-me): moa_guide 로 엔진·스타일을 읽고 → 사용자와 충분히 묻고 답한 뒤 moa_submit_brief 로 설계서를 낸다
  *   → 설계서가 완성된 스페이스에만 moa_apply_ops / moa_set_script 로 쓴다. 쓰기마다 이전 상태를 버전으로 남긴다(moa_revert).
- * 에셋: AI 가 만든 그림(이미지 주소·SVG·작은 이미지)을 moa_upload_asset 으로 올리면 서버가 모아 월드 규격으로 다듬어
- *   '에셋 모음'에 넣는다. 서버 이미지 생성(유료)은 쓰지 않는다.
+ * 에셋: moa_asset_recipe 가 앱과 똑같은 생성 프롬프트·순서를 주고, AI 가 자기 이미지 생성으로 그린 원본을 moa_upload_asset 으로
+ *   넘기면 서버가 앱과 같은 후처리(배경 지우기·걷기 시트 자르기·발 맞춤·좌우 뒤집기)로 '에셋 모음'에 넣는다. 서버 이미지 생성(유료)은 쓰지 않는다.
  * 비용: 맵은 스페이스 문서·맵 문서만 읽고 쓴다. 카탈로그는 인스턴스 메모(publishedAssets).
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -19,6 +19,7 @@ import { embeddedFromLibrary } from "./lib/world/user-assets";
 import { mapContext, SYSTEM_PROMPT } from "./lib/agent/prompt";
 import { publishedAssets } from "./lib/server/workshop/catalog";
 import { cleanSpec, createUploadedAsset, startUpload, TOKEN_RE } from "./lib/server/asset-upload";
+import { assetRecipe } from "./lib/server/workshop/prompts";
 import { scriptSyntaxError } from "./lib/server/map-script";
 import { getWorld, getWorldMeta, listVersions, listWorlds, revertWorld, saveWorld } from "./lib/server/worlds";
 import type { EmbeddedAsset } from "./lib/world/types";
@@ -73,7 +74,7 @@ const ImageInput = z.object({
   download_url: z.string().url().optional().describe("ChatGPT 가 넘기는 파일 주소(대화에서 만든·올린 그림)"),
   file_id: z.string().optional(),
   url: z.string().url().optional().describe("https 이미지 주소(PNG/WebP, 8MB 이하)"),
-  base64: z.string().max(1_500_000).optional().describe("PNG/WebP base64(약 1MB 이하)"),
+  base64: z.string().max(16_000_000).optional().describe("PNG/WebP base64(12MB 이하)"),
 }).describe("이미지 생성 모델이 그린 그림 파일 — download_url·url·base64 중 하나(SVG 안 받음)");
 
 function privateIp(ip: string) {
@@ -118,24 +119,17 @@ export function registerMoaTools(s: McpServer, ctx: Ctx) {
     const design = `# 설계 대화(필수)\n사용자와 충분히 묻고 답하세요. 한 번에 2~3개씩 구체적으로 물어보고, 답을 요약해 확인받으세요. 아래 항목이 모두 정해지면 moa_submit_brief 로 내고, 그 뒤에만 맵을 쓸 수 있어요.\n${Object.entries(BRIEF_FIELDS).map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n애매한 항목은 openQuestions 에 넣으면 쓰기가 막혀요. 작업 후에는 editUrl/playUrl 을 사용자에게 주고 플레이해 본 느낌을 물어 다듬으세요.`;
     const refs = (await publishedAssets()).filter(a => a.provenance?.model !== "mcp-upload").slice(0, 6)
       .map(a => `  - ${a.name}: ${BASE}${(a.urls as { iso?: string | null; texture?: string | null }).iso ?? (a.urls as { texture?: string | null }).texture ?? ""}`).join("\n");
-    const assets = `# 에셋 규격·스타일(moa_upload_asset) — 반드시 지키세요
-## 그림은 이미지 생성 모델로
-- SVG·코드로 그린 그림은 받지 않아요(아이콘처럼 납작해져 모아 월드와 안 맞음). 이미지 생성 모델(ChatGPT 이미지 만들기 등)로 그린 PNG를 주세요.
-- 이미지를 직접 그릴 수 없는 AI(예: Claude)는 사용자에게 아래 프롬프트로 이미지 생성 도구에서 그림을 만들어 달라고 하고, 받은 파일·주소로 올리세요.
-## 모아 월드 스타일(기준)
-- 브롤스타즈 같은 2.5D 카툰: 머리가 크고 몸이 짧은 통통한 비율, 비비드하고 채도 높은 색, 두꺼운 어두운 외곽선, 부드러운 셀 셰이딩과 하이라이트, 입체감 있는 덩어리.
-- 시점: 위에서 약 35~45° 내려다본 쿼터뷰(iso). td 는 더 위에서 본 탑다운.
-- 배경 완전 투명, 그림자·바닥·글자·테두리 없음, 대상 하나만 화면 가운데 꽉 차게(전신·전체가 다 보이게), 1024px 정사각.
-- 기준 그림(이 느낌·두께·색감에 맞추세요. 열어 보고 비교하세요):
-${refs}
-## 생성 프롬프트 틀(영어가 더 잘 맞아요)
-"A single [대상], 2.5D isometric game asset in the style of Brawl Stars / Supercell, chunky cute proportions, vivid saturated colors, thick dark outline, soft cel shading with glossy highlights, full body centered, 3/4 top-down view at 40 degrees, transparent background, no ground shadow, no text, 1024x1024"
-## 종류별
-- 물체(object): iso 한 장(필수에 가깝게) + 가능하면 td(위에서 본 것). 하나만 주면 둘 다에 써요. 서버가 여백을 자르고 512px 정사각, 바닥 가운데로 맞춰요.
-- 바닥(tile): 이음매 없는 정사각 텍스처(위에서 본 평면, 같은 스타일 색감) — 256px로 맞춤.
-- 인물(character): iso 전신 + td. 걷기 시트(sheetTd/sheetIso)는 칸 128×160, 5열(0=서 있기, 1~4=걷기), 행=방향 — td 4행[s,w,n,e] 640×640, iso 8행[s,sw,w,nw,n,ne,e,se] 640×1280. 시트가 없으면 정지 그림으로 움직여요.
+    const assets = `# 에셋 만들기 — 모아 월드 앱과 같은 품질로(반드시 이 순서)
+1. moa_get_catalog 로 이미 있는 에셋을 먼저 찾아 재사용하세요.
+2. 새로 만들 때는 moa_asset_recipe 를 부르세요. 앱이 이미지 모델에 보내는 것과 똑같은 영어 프롬프트와 단계(위에서 본 그림 → 그것을 참고한 입체 그림, 인물은 걷기 시트 2장)를 줘요.
+3. 각 단계를 '이미지 생성 도구'로 그리세요. 프롬프트를 줄이거나 바꾸지 말고 그대로 쓰세요(스타일·격자·방향 규칙이 들어 있어요). 2단계는 1단계 그림을 참고 이미지로 붙여 같은 대상으로 그리세요.
+4. 그린 원본 파일을 moa_upload_asset 에 바로 넘기세요(ChatGPT 는 파일 칸에 그림 그대로). Python 으로 자르기·크기 바꾸기·합치기·배경 지우기를 하지 마세요 — 서버가 앱과 똑같이 해요(배경 지우기, 걷기 시트 인물 찾기·발 높이 맞춤·왼쪽 방향은 오른쪽을 뒤집어 만들기, 512px 맞춤).
+5. 결과의 preview 주소를 열어 사용자에게 보여 주고, 마음에 안 들면 같은 레시피로 다시 그리세요.
+- SVG·코드로 그린 그림, 384px 보다 작은 그림은 거절돼요.
+- 그림을 도구로 넘길 수 없을 때만 moa_start_upload 로 링크를 만들어 사용자에게 파일을 올려 달라고 하세요. 이미지를 그릴 수 없는 AI(예: Claude)는 레시피 프롬프트를 사용자에게 주고 이미지 생성 도구로 그려 링크에 올려 달라고 하세요.
 - 크기: footprint 1~6칸(건물·경기장은 4~6), height 0.2~5, 막히는 물체 passable=false.
-- 올리기 전에 사용자에게 그림을 보여 주고 확인받으세요. 올리면 '에셋 모음'에 공개되고 id 는 'u:…' 입니다. 있는 에셋은 moa_get_catalog 로 찾아 재사용하세요.`;
+- 기준 그림(앱에서 만든 에셋 — 느낌 비교용):
+${refs}`;
     const map = SYSTEM_PROMPT.split("작업 형식(op 필드로 구분):")[1] ?? "";
     const rules = SYSTEM_PROMPT.replace(/^[\s\S]*?규칙:\n/, "").split("\n작업 형식")[0];
     const text = topic === "design" ? design : topic === "assets" ? assets
@@ -271,9 +265,39 @@ ${refs}
     try { const m = await revertWorld(owner(ctx), worldId, versionId, "AI(MCP)"); return json({ reverted: true, rev: m.rev, ...links(worldId) }); } catch (e) { return fail(e); }
   });
 
+  s.registerTool("moa_asset_recipe", {
+    title: "에셋 그리기 레시피",
+    description: "새 에셋을 그리기 전에 꼭 부르세요. 모아 월드 앱이 이미지 모델에 보내는 것과 똑같은 프롬프트와 순서를 줘요(물체: td → iso, 바닥: texture, 인물: 걷기 시트 sheetTd → sheetIso). 각 단계를 이미지 생성 도구로 프롬프트 그대로 그리고, 원본 파일을 손대지 말고 moa_upload_asset 으로 넘기세요.",
+    inputSchema: {
+      name: z.string().min(1).max(30), description: z.string().max(300).describe("모습 설명(색·옷·특징). 사용자 말을 살려 구체적으로"),
+      kind: z.enum(["object", "tile", "character"]),
+      category: z.enum(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]).optional(),
+      footprint: z.object({ w: z.number().int().min(1).max(6), d: z.number().int().min(1).max(6) }).optional(),
+      height: z.number().min(0).max(5).optional(),
+    },
+    annotations: RO,
+  }, async (a) => {
+    const category = a.kind === "tile" ? "terrain" : a.kind === "character" ? "character" : (a.category && a.category !== "terrain" && a.category !== "character" ? a.category : "decor");
+    const steps = assetRecipe({ name: a.name, description: a.description, category, footprint: a.footprint ?? { w: 1, d: 1 }, height: a.height ?? 1 });
+    return json({
+      steps,
+      rules: [
+        "각 단계를 이미지 생성 도구로 그리세요(코드·SVG·Python 그림 금지). prompt 는 한 글자도 줄이지 말고 그대로 쓰세요.",
+        "background 가 transparent 면 투명 배경으로 생성하세요(안 되면 흰 단색 배경도 서버가 지워요).",
+        "reference 가 있는 단계는 앞 단계 그림을 참고 이미지로 붙여 같은 대상으로 그리세요.",
+        "생성된 원본 파일을 자르거나 크기를 바꾸거나 합치지 마세요. 서버가 앱과 똑같이 다듬어요.",
+        a.kind === "character"
+          ? "두 시트를 moa_upload_asset 의 sheetTd·sheetIso 에 함께 넘기세요(td·iso 대표 그림은 시트에서 자동). 행 방향이 rows 와 다르게 그려졌으면 sheetRows 로 실제 순서를 알려 주세요(예: td ['s','n','w','e'])."
+          : a.kind === "tile" ? "texture 에 넘기세요." : "td·iso 에 함께 넘기세요.",
+        "올린 뒤 preview 주소를 사용자에게 보여 주고 확인받으세요.",
+      ],
+      upload: { tool: "moa_upload_asset", name: a.name, kind: a.kind, category, ...(a.footprint ? { footprint: a.footprint } : {}), ...(a.height !== undefined ? { height: a.height } : {}) },
+    });
+  });
+
   s.registerTool("moa_upload_asset", {
     title: "에셋 올리기",
-    description: "이미지 생성 모델이 그린 그림을 모아 월드 에셋으로 넣어요(서버 이미지 생성 비용 없음). 먼저 moa_guide topic=assets 의 스타일·기준 그림·프롬프트를 지키세요. SVG·코드 그림은 거절돼요. 물체는 iso(+td), 바닥은 texture, 인물은 iso/td + 선택 걷기 시트(sheetTd/sheetIso). 올린 에셋은 '에셋 모음'에 공개되고 'u:…' id 로 moa_apply_ops 에 쓸 수 있어요.",
+    description: "moa_asset_recipe 대로 이미지 생성 도구가 그린 원본 그림 파일을 그대로 넘기면, 앱과 같은 후처리(배경 지우기·걷기 시트 자르기·발 맞춤·좌우 방향 만들기)를 해서 모아 월드 에셋으로 넣어요(서버 이미지 생성 비용 없음). 물체는 td+iso, 바닥은 texture, 인물은 걷기 시트 sheetTd+sheetIso(움직이는 캐릭터). 미리 자르거나 크기를 바꾸지 마세요. SVG·코드 그림은 거절돼요. 결과의 preview 를 사용자에게 보여 주세요. 'u:…' id 로 moa_apply_ops 에 놓을 수 있어요.",
     inputSchema: {
       name: z.string().min(1).max(30), kind: z.enum(["object", "tile", "character"]),
       category: z.enum(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]),
@@ -282,6 +306,8 @@ ${refs}
       height: z.number().min(0).max(5).optional(), passable: z.boolean().optional(),
       td: ImageInput.optional(), iso: ImageInput.optional(), texture: ImageInput.optional(),
       sheetTd: ImageInput.optional(), sheetIso: ImageInput.optional(),
+      sheetRows: z.object({ td: z.array(z.enum(["s", "w", "n", "e"])).optional(), iso: z.array(z.enum(["s", "sw", "w", "nw", "n", "ne", "e", "se"])).optional() }).optional()
+        .describe("걷기 시트의 실제 행 방향(위→아래). 레시피대로 그렸으면 비워 두세요. s=앞(정면) n=뒤 e=화면 오른쪽 w=화면 왼쪽"),
     },
     annotations: WRITE,
     // ChatGPT: 대화의 그림 파일(만든 것·올린 것)을 이 칸들로 넘길 수 있게
@@ -290,14 +316,14 @@ ${refs}
     try {
       const spec = cleanSpec(a);
       const [td, iso, texture, sheetTd, sheetIso] = await Promise.all([a.td, a.iso, a.texture, a.sheetTd, a.sheetIso].map(readImage));
-      const r = await createUploadedAsset(ctx.uid, spec, { td, iso, texture, sheetTd, sheetIso }, "mcp-upload");
-      return json({ ...r, next: "moa_apply_ops 의 place{assetId,x,y} 로 놓으세요(바닥은 paint{tileId}). 에셋 모음에 바로 보여요." });
+      const r = await createUploadedAsset(ctx.uid, spec, { td, iso, texture, sheetTd, sheetIso }, "mcp-upload", a.sheetRows);
+      return json({ ...r, next: `preview 주소의 그림을 사용자에게 보여 주세요. ${a.kind === "character" && !r.animated ? "걷기 시트가 없어 정지 그림으로 움직여요 — 걸어 다니게 하려면 moa_asset_recipe 의 시트 2장을 그려 다시 올리세요. " : ""}moa_apply_ops 의 place{assetId,x,y} 로 놓으세요(바닥은 paint{tileId}).` });
     } catch (e) { return fail(e); }
   });
 
   s.registerTool("moa_start_upload", {
     title: "업로드 링크 만들기",
-    description: "그림 파일을 도구로 바로 넘길 수 없을 때(예: ChatGPT 가 만든 그림, Claude 사용자) 쓰세요. 에셋 정보(이름·종류·크기)를 정해 링크를 만들면, 사용자가 그 페이지에 그림 파일을 끌어다 놓아 올려요(2시간 유효, 로그인 불필요, 한 번만). 사용자에게 링크를 주고, 올렸다고 하면 moa_check_upload 로 에셋 id 를 받으세요.",
+    description: "그림 파일을 moa_upload_asset 으로 넘길 수 없을 때만 쓰세요(예: 이미지를 그릴 수 없는 AI). ChatGPT 가 그린 그림은 moa_upload_asset 의 파일 칸으로 바로 넘기세요. 에셋 정보(이름·종류·크기)를 정해 링크를 만들면, 사용자가 그 페이지에 그림 파일을 끌어다 놓아 올려요(2시간 유효, 로그인 불필요, 한 번만). 사용자에게 링크를 주고, 올렸다고 하면 moa_check_upload 로 에셋 id 를 받으세요.",
     inputSchema: {
       name: z.string().min(1).max(30), kind: z.enum(["object", "tile", "character"]),
       category: z.enum(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]),

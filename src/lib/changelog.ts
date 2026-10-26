@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.34.1";
+export const APP_VERSION = "1.34.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.34.2",
+    date: "2026-10-26",
+    kind: "patch",
+    title: "AI 앱으로 만든 에셋도 모아 월드 앱과 같은 품질로",
+    items: [
+      "AI 앱(ChatGPT 등)이 모아 월드 앱과 똑같은 그림 지시문과 순서로 에셋을 그려요.",
+      "AI 가 그린 원본 그림을 그대로 넘기면 배경 지우기, 걷기 동작 자르기, 발 높이 맞추기를 앱과 똑같이 해 줘요. 걸어 다니는 캐릭터도 만들 수 있어요.",
+    ],
+  },
   {
     version: "1.34.1",
     date: "2026-10-25",

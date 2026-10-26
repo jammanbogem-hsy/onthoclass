@@ -12,14 +12,14 @@ function difference(a: Buffer, b: Buffer) {
 }
 
 /** Conservative pixel checks for duplicate headings and obvious row swaps, not semantic vision. */
-export async function checkCanonicalCharacterDirections(png: Buffer, view: CharacterView, columns: number, contentHeight: number) {
-  const directions = CANONICAL_CHARACTER_DIRECTIONS[view];
+export async function checkCanonicalCharacterDirections(png: Buffer, view: CharacterView, columns: number, contentHeight: number, rows?: readonly string[]) {
+  const directions: readonly string[] = rows ?? CANONICAL_CHARACTER_DIRECTIONS[view];
   const top = Math.max(0, 152 - contentHeight), height = Math.max(1, Math.min(160 - top, Math.ceil(contentHeight * 0.6)));
   const heads = await Promise.all(directions.map((_, row) => Promise.all(Array.from({ length: columns }, (_, col) =>
     sharp(png).extract({ left: col * 128, top: row * 160 + top, width: 128, height }).resize(32, 24).ensureAlpha().raw().toBuffer(),
   ))));
   const front = directions.indexOf("s"), back = directions.indexOf("n");
-  for (let col = 0; col < columns; col++) {
+  for (let col = 0; front >= 0 && back >= 0 && col < columns; col++) {
     if (difference(heads[front][col], heads[back][col]) < 0.012) throw Error("캐릭터 동작 그림을 확인해 주세요: 앞쪽과 뒤쪽 모습이 너무 비슷하거나 중복됐어요");
   }
   for (let row = 0; row < directions.length; row++) for (let col = 1; col < columns; col++) {
