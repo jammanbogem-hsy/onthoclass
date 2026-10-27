@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.34.3";
+export const APP_VERSION = "1.35.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,19 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.35.0",
+    date: "2026-10-27",
+    kind: "minor",
+    title: "모아 월드 아바타·이름표·물가",
+    items: [
+      "마이페이지에서 인물을 고르면 바로 내 아바타가 돼요(저장 버튼 없음).",
+      "맵에 들어가자마자 내 아바타로 시작해요(예전 캐릭터가 잠깐 보이던 문제 해결).",
+      "캐릭터 이름표가 더 크고 또렷해졌어요.",
+      "선생님이 수업 채팅의 학생 관리에서 '이름 숨기기'를 켜면 이름표 없이 익명으로 참여해요.",
+      "연못 둘레가 네모난 띠 없이 풀밭과 자연스럽게 이어지고, 물가가 구불구불·둥글게 바뀌었어요.",
+    ],
+  },
   {
     version: "1.34.3",
     date: "2026-10-26",

@@ -12,6 +12,8 @@ export interface TerrainEdges {
   e?: boolean;
   s?: boolean;
   neighbors?: Partial<Record<Side, AssetDef>>;
+  /** 대각선 이웃 — 물 안쪽 모서리를 둥글게 메우는 데 쓴다 */
+  corners?: Partial<Record<"ne" | "se" | "sw" | "nw", AssetDef>>;
 }
 
 /** Look up all four banks, including cells in the next render chunk. */
@@ -31,12 +33,21 @@ export function terrainEdges(doc: MapDoc, x: number, y: number): TerrainEdges {
       ];
     }),
   );
+  const corners = Object.fromEntries(
+    (["ne", "se", "sw", "nw"] as const).map((k, i) => {
+      const nx = x + [1, 1, -1, -1][i],
+        ny = y + [-1, 1, 1, -1][i];
+      const out = nx < 0 || ny < 0 || nx >= doc.width || ny >= doc.height;
+      return [k, getAsset(out ? id : tileAt(doc, nx, ny))];
+    }),
+  );
   return {
     n: neighbors.n?.id !== id,
     e: neighbors.e?.id !== id,
     s: neighbors.s?.id !== id,
     w: neighbors.w?.id !== id,
     neighbors,
+    corners,
   };
 }
 
@@ -318,47 +329,60 @@ function wood(ctx: C, cx: number, cy: number) {
 
 /** A water boundary is a shallow, rounded inlet, with a bank coloured by its actual neighbor. */
 function water(ctx: C, cx: number, cy: number, edges: TerrainEdges) {
-  const U = UNIT;
+  const U = UNIT,
+    B = 24;
+  // 물가는 이웃 땅을 그 무늬 그대로 이어 그린다 — 납작한 단색 띠가 연못 둘레에 네모로 보이지 않게
   for (const side of SIDES) {
     if (!edges[side]) continue;
-    ctx.fillStyle = terrainColor(edges.neighbors?.[side]);
-    if (side === "n") ctx.fillRect(-1, -1, U + 2, 22);
-    if (side === "s") ctx.fillRect(-1, U - 22, U + 2, 23);
-    if (side === "w") ctx.fillRect(-1, -1, 22, U + 2);
-    if (side === "e") ctx.fillRect(U - 22, -1, 23, U + 2);
+    const nb = edges.neighbors?.[side];
+    ctx.save();
+    ctx.beginPath();
+    if (side === "n") ctx.rect(-1, -1, U + 2, B);
+    if (side === "s") ctx.rect(-1, U - B, U + 2, B + 1);
+    if (side === "w") ctx.rect(-1, -1, B, U + 2);
+    if (side === "e") ctx.rect(U - B, -1, B + 1, U + 2);
+    ctx.clip();
+    ctx.fillStyle = terrainColor(nb);
+    ctx.fillRect(-1, -1, U + 2, U + 2);
+    if (nb?.id.startsWith("tile.grass")) grass(ctx, cx, cy, nb.id === "tile.grass_dark");
+    else if (nb?.id === "tile.dirt" || nb?.id === "tile.sand") earth(ctx, cx, cy, nb.id === "tile.sand");
+    ctx.restore();
   }
-  const depth = (side: Side, t: number) =>
-    edges[side]
-      ? 6.5 +
-        Math.sin(((side === "n" || side === "s" ? cx : cy) * U + t) / 17) * 1.3
-      : -1;
+  // 물가 선은 세상 좌표로 출렁여 이웃 칸과 이어지고, 변마다 다른 굽이를 가진다
+  const wave = (side: Side, t: number) => {
+    const along = (side === "n" || side === "s" ? cx : cy) * U + t,
+      across = (side === "n" ? cy : side === "s" ? cy + 1 : side === "w" ? cx : cx + 1) * 2.3 + (side === "n" || side === "s" ? 0 : 5.1);
+    return 9 + Math.sin(along / 29 + across) * 3.4 + Math.sin(along / 11.5 + across * 1.7) * 1.6;
+  };
+  const depth = (side: Side, t: number) => (edges[side] ? wave(side, t) : -1);
   const n = (t: number) => depth("n", t),
     e = (t: number) => U - depth("e", t),
     s = (t: number) => U - depth("s", t),
     w = (t: number) => depth("w", t);
   const r = {
-    nw: edges.n && edges.w ? 16 : 0,
-    ne: edges.n && edges.e ? 16 : 0,
-    se: edges.s && edges.e ? 16 : 0,
-    sw: edges.s && edges.w ? 16 : 0,
+    nw: edges.n && edges.w ? 22 : 0,
+    ne: edges.n && edges.e ? 22 : 0,
+    se: edges.s && edges.e ? 22 : 0,
+    sw: edges.s && edges.w ? 22 : 0,
   };
   const segments = () => {
-    const top = [[w(0) + r.nw, n(0)]];
-    for (let t = Math.max(8, w(0) + r.nw + 8); t < e(0) - r.ne; t += 8)
-      top.push([t, n(t)]);
-    top.push([e(0) - r.ne, n(U)]);
-    const right = [[e(0), n(U) + r.ne]];
-    for (let t = Math.max(8, n(U) + r.ne + 8); t < s(U) - r.se; t += 8)
-      right.push([e(t), t]);
-    right.push([e(U), s(U) - r.se]);
-    const bottom = [[e(U) - r.se, s(U)]];
-    for (let t = Math.min(56, e(U) - r.se - 8); t > w(U) + r.sw; t -= 8)
-      bottom.push([t, s(t)]);
-    bottom.push([w(U) + r.sw, s(0)]);
-    const left = [[w(U), s(0) - r.sw]];
-    for (let t = Math.min(56, s(0) - r.sw - 8); t > n(0) + r.nw; t -= 8)
-      left.push([w(t), t]);
-    left.push([w(0), n(0) + r.nw]);
+    // 각 변은 그 변의 출렁임을 끝점까지 정확히 따라가야 모서리 곡선과 이음매에서 꺾이지 않는다
+    const x0 = w(0) + r.nw, x1 = e(0) - r.ne;
+    const top = [[x0, n(x0)]];
+    for (let t = Math.ceil((x0 + 2) / 4) * 4; t < x1 - 2; t += 4) top.push([t, n(t)]);
+    top.push([x1, n(x1)]);
+    const y0 = n(U) + r.ne, y1 = s(U) - r.se;
+    const right = [[e(y0), y0]];
+    for (let t = Math.ceil((y0 + 2) / 4) * 4; t < y1 - 2; t += 4) right.push([e(t), t]);
+    right.push([e(y1), y1]);
+    const x2 = e(U) - r.se, x3 = w(U) + r.sw;
+    const bottom = [[x2, s(x2)]];
+    for (let t = Math.floor((x2 - 2) / 4) * 4; t > x3 + 2; t -= 4) bottom.push([t, s(t)]);
+    bottom.push([x3, s(x3)]);
+    const y2 = s(0) - r.sw, y3 = n(0) + r.nw;
+    const left = [[w(y2), y2]];
+    for (let t = Math.floor((y2 - 2) / 4) * 4; t > y3 + 2; t -= 4) left.push([w(t), t]);
+    left.push([w(y3), y3]);
     return [top, right, bottom, left];
   };
   const paths = segments();
@@ -395,6 +419,19 @@ function water(ctx: C, cx: number, cy: number, edges: TerrainEdges) {
     const g = ctx.createLinearGradient(
       ...(from as [number, number, number, number]),
     );
+    g.addColorStop(0, "rgba(153,236,197,.75)");
+    g.addColorStop(0.4, "rgba(84,219,212,.48)");
+    g.addColorStop(1, "rgba(84,219,212,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(-1, -1, U + 2, U + 2);
+  }
+  // 안쪽 모서리도 물가처럼 얕은 빛 — 옆 칸의 얕은 띠가 네모로 끊기지 않게
+  for (const [k, vs, hs] of [["ne", "n", "e"], ["se", "s", "e"], ["sw", "s", "w"], ["nw", "n", "w"]] as const) {
+    const land = edges.corners?.[k];
+    if (edges[vs] || edges[hs] || !land || land.id === "tile.water") continue;
+    const px = hs === "e" ? U : 0,
+      py = vs === "n" ? 0 : U;
+    const g = ctx.createRadialGradient(px, py, 0, px, py, 25);
     g.addColorStop(0, "rgba(153,236,197,.75)");
     g.addColorStop(0.4, "rgba(84,219,212,.48)");
     g.addColorStop(1, "rgba(84,219,212,0)");
@@ -448,6 +485,44 @@ function water(ctx: C, cx: number, cy: number, edges: TerrainEdges) {
       ctx.stroke();
     }
   ctx.restore();
+  // 안쪽 모서리(두 옆은 물, 대각선만 땅) — 이웃 칸의 물가 선 두 개를 둥근 곡선으로 이어 땅을 메운다
+  const inner: Array<["ne" | "se" | "sw" | "nw", Side, Side]> = [["ne", "n", "e"], ["se", "s", "e"], ["sw", "s", "w"], ["nw", "n", "w"]];
+  for (const [k, vs, hs] of inner) {
+    const land = edges.corners?.[k];
+    if (edges[vs] || edges[hs] || !land || land.id === "tile.water") continue;
+    // 세로로 이어지는 물가(위·아래 칸의 동·서 변)가 이 칸 경계에 닿는 x, 가로 물가가 닿는 y
+    const ex = hs === "e" ? U - wave("e", vs === "n" ? 0 : U) : wave("w", vs === "n" ? 0 : U),
+      ny = vs === "n" ? wave("n", hs === "e" ? U : 0) : U - wave("s", hs === "e" ? U : 0);
+    const cxp = hs === "e" ? U + 1 : -1,
+      cyp = vs === "n" ? -1 : U + 1;
+    const shore = () => {
+      ctx.beginPath();
+      ctx.moveTo(ex, cyp);
+      ctx.quadraticCurveTo(ex, ny, cxp, ny);
+    };
+    ctx.save();
+    shore();
+    ctx.lineTo(cxp, cyp);
+    ctx.closePath();
+    ctx.clip();
+    ctx.fillStyle = terrainColor(land);
+    ctx.fillRect(-1, -1, U + 2, U + 2);
+    if (land.id.startsWith("tile.grass")) grass(ctx, cx, cy, land.id === "tile.grass_dark");
+    else if (land.id === "tile.dirt" || land.id === "tile.sand") earth(ctx, cx, cy, land.id === "tile.sand");
+    ctx.restore();
+    shore();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(48,88,54,.22)";
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(92,74,44,.28)";
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(226,255,244,.42)";
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+  }
   // Draw only real banks, never shared water-cell edges.
   for (let i = 0; i < 4; i++) {
     if (!edges[SIDES[i]]) continue;
@@ -462,11 +537,17 @@ function water(ctx: C, cx: number, cy: number, edges: TerrainEdges) {
         next = paths[(i + 1) % 4][0];
       ctx.quadraticCurveTo(control[0], control[1], next[0], next[1]);
     }
-    ctx.strokeStyle = "rgba(68,104,72,.55)";
-    ctx.lineWidth = 3;
+    // 젖은 흙 그늘 + 옅은 물거품 — 스티커 같은 흰 테두리 대신
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(48,88,54,.22)";
+    ctx.lineWidth = 6;
     ctx.stroke();
-    ctx.strokeStyle = "rgba(216,251,214,.85)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(92,74,44,.28)";
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(226,255,244,.42)";
+    ctx.lineWidth = 1.3;
     ctx.stroke();
   }
 }

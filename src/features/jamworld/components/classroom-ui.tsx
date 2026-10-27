@@ -358,6 +358,25 @@ export function ClassroomChrome() {
                     </button>
                   ))}
                 </div>
+                {!target && (
+                  <button
+                    className="classroom-action classroom-reset"
+                    aria-pressed={!!c.room?.controls.hideNames}
+                    disabled={busy || !c.classId}
+                    onClick={() =>
+                      void run(() =>
+                        c.command("control", {
+                          field: "hideNames",
+                          value: !c.room?.controls.hideNames,
+                          studentId: null,
+                        }),
+                      )
+                    }
+                  >
+                    <Icon name={c.room?.controls.hideNames ? "badge" : "person_off"} size={19} />
+                    {c.room?.controls.hideNames ? "이름 다시 보이기" : "이름 숨기기(익명 참여)"}
+                  </button>
+                )}
                 <button
                   className="classroom-action classroom-reset"
                   disabled={busy || !c.classId}

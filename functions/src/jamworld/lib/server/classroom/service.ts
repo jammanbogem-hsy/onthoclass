@@ -11,6 +11,8 @@ interface Controls {
   paused: boolean;
   blackout: boolean;
   muted: boolean;
+  /** 이름표 가리기(익명 참여) — 수업 끝까지 유지, '모두 풀기'로도 안 풀림 */
+  hideNames?: boolean;
 }
 interface Message {
   id: string;
@@ -35,7 +37,7 @@ const defaults = (): Room => ({
   messages: [],
   world: null,
 });
-const fields = ["paused", "blackout", "muted"] as const;
+const fields = ["paused", "blackout", "muted", "hideNames"] as const;
 const roomRef = (id: string) =>
   getFirestore().collection("jamworldClassrooms").doc(id);
 const read = (snap: DocumentSnapshot): Room =>
@@ -316,7 +318,7 @@ export async function classroomPost(req: Request, classId: string) {
         const room = read(await tx.get(ref));
         if (body.action === "clearChat") room.messages = [];
         else if (body.action === "reset") {
-          room.controls = defaults().controls;
+          room.controls = { ...defaults().controls, ...(room.controls.hideNames ? { hideNames: true } : {}) };
           room.individual = {};
         } else {
           const key = field as (typeof fields)[number];

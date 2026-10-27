@@ -108,6 +108,7 @@ export async function api<T>(
         `Bearer ${await auth.currentUser.getIdToken()}`,
       );
   }
+  if (path.endsWith("/workshop/logout")) rememberLook(null);
   const res = await fetch(path, {
     ...init,
     headers,
@@ -118,8 +119,10 @@ export async function api<T>(
     code?: string;
   };
   // 세션이 끝났으면(시간이 지났거나 선생님이 내보냄) 화면이 로그인 상태를 다시 확인한다
-  if (res.status === 401 && typeof window !== "undefined")
+  if (res.status === 401 && typeof window !== "undefined") {
+    rememberLook(null);
     window.dispatchEvent(new Event("jamworld:unauthorized"));
+  }
   if (!res.ok)
     throw new ApiError(
       data.error ?? `요청 실패 (${res.status})`,
@@ -129,7 +132,21 @@ export async function api<T>(
   return data as T;
 }
 
-export const getMe = () => api<Me>("/api/jamworld/workshop/me");
+// 마지막 아바타를 이 기기에 기억 — 맵에 들어갈 때 서버 답을 기다리지 않고 바로 내 캐릭터로 시작(로그아웃·세션 만료 때 지움)
+const LOOK_KEY = "jamworld:look";
+export function rememberLook(look: AvatarLook | null | undefined) {
+  try {
+    if (look) localStorage.setItem(LOOK_KEY, JSON.stringify(look));
+    else localStorage.removeItem(LOOK_KEY);
+  } catch { /* 저장소를 못 써도 서버 값으로 동작 */ }
+}
+export function cachedLook(): AvatarLook | null {
+  try { return JSON.parse(localStorage.getItem(LOOK_KEY) ?? "null") as AvatarLook | null; } catch { return null; }
+}
+export const getMe = () => api<Me>("/api/jamworld/workshop/me").then(me => {
+  rememberLook(me.avatar ?? me.student?.avatar ?? null);
+  return me;
+});
 
 /** Approval can be committed with the durable generation request in one round trip. */
 export async function runGenerate(

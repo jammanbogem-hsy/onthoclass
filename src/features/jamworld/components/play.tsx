@@ -5,7 +5,7 @@ import { effectsAt, zonesAt, type ZoneEffects } from "../lib/world/effects";
 import { ScriptScene, type ScriptChoice, type ScriptHud, type ScriptObject, type ScriptObjectPatch } from "../lib/world/script-scene";
 import { MapScriptRuntime } from "../lib/render/map-script";
 import { GlassLink } from "./glass-surface";
-import { getMe } from "./workshop-api";
+import { cachedLook, getMe } from "./workshop-api";
 
 import GlassSurface from "./glass-surface";
 import { useEffect, useRef, useState } from "react";
@@ -126,6 +126,8 @@ export default function Play({
     (!classroom.connected ||
       !!classroom.room?.controls.paused ||
       !!classroom.room?.controls.blackout);
+  const hideNamesRef = useRef(false);
+  hideNamesRef.current = !!classroom?.room?.controls.hideNames;
   const scriptRef = useRef<MapScriptRuntime | null>(null);
   const effectsRef = useRef<ZoneEffects>({});
   const visionRef = useRef<HTMLDivElement>(null),
@@ -211,8 +213,8 @@ export default function Play({
     setQuality(readQuality());
     // 교사·학생 모두 같은 개인 기본 아바타를 사용한다.
     let live = true;
-    lookRef.current = null;
-    applyAvatarLook(null);
+    lookRef.current = cachedLook();
+    applyAvatarLook(lookRef.current);
     getMe()
       .then((me) => {
         if (!live) return;
@@ -506,7 +508,7 @@ export default function Play({
           face8: next.face8,
           walkPhase: walkPhase(next),
           style: AVATAR_COLORS[0],
-          name: nameRef.current,
+          name: hideNamesRef.current ? "" : nameRef.current,
           customSprite: lookRef.current?.asset?.[viewRef.current],
           customSheet: lookRef.current?.asset?.sprites?.[viewRef.current],
           assetColors: lookRef.current?.assetColors,

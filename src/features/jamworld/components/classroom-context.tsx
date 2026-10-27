@@ -18,6 +18,7 @@ export interface LessonControls {
   paused: boolean;
   blackout: boolean;
   muted: boolean;
+  hideNames?: boolean;
 }
 export interface LessonMessage {
   id: string;

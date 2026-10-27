@@ -1145,16 +1145,22 @@ export class WorldRenderer {
       drawAvatar(ctx, p.style, p.dir, t, p.moving);
     }
     ctx.globalAlpha = 1;
-    ctx.font = "bold 12px system-ui, sans-serif";
-    const tw = ctx.measureText(p.name).width + 14;
-    ctx.fillStyle = "rgba(27,36,64,0.85)";
-    ctx.beginPath();
-    ctx.roundRect(-tw / 2, -AVATAR_H - 18, tw, 20, 10);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(p.name, 0, -AVATAR_H - 8);
+    if (p.name) {
+      // 이름표 — 밝은 바닥에서도 읽히게 크게, 흰 테두리
+      ctx.font = "800 15px system-ui, sans-serif";
+      const tw = ctx.measureText(p.name).width + 20;
+      ctx.beginPath();
+      ctx.roundRect(-tw / 2, -AVATAR_H - 24, tw, 25, 12.5);
+      ctx.fillStyle = "rgba(14,22,48,0.92)";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(p.name, 0, -AVATAR_H - 11);
+    }
     ctx.restore();
   }
 

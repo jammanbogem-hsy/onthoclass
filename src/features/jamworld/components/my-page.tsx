@@ -7,7 +7,7 @@ import { Icon } from "@/components/Icon";
 import GlassSurface, { GlassButton, GlassLink } from "./glass-surface";
 import AvatarPreview from "./avatar-preview";
 import CharacterColorEditor from "./character-color-editor";
-import { api, type LibraryAsset, type Me } from "./workshop-api";
+import { api, rememberLook, type LibraryAsset, type Me } from "./workshop-api";
 import {
   AVATAR_COLORS, COLOR_HSL, COLOR_KO, DEFAULT_LOOK, type AvatarLook,
 } from "../lib/server/workshop/avatar";
@@ -82,28 +82,35 @@ export default function MyPage({ me, assetId, onSaved }: {
   } : { ...selection(look), ...(!missing && saved.assetId === look.assetId && saved.asset ? { asset: saved.asset } : {}) };
   const dirty = !sameLook(look, saved);
   const choose = (a?: LibraryAsset) => {
-    if (savingRef.current) return;
     if (a?.id === look.assetId || (!a && !look.assetId)) return;
     setLook(a ? (a.id === saved.assetId ? saved : { ...selection(look), assetId: a.id, assetColors: undefined }) : !saved.assetId ? saved : { ...DEFAULT_LOOK });
     setMessage("");
   };
-  const save = async () => {
-    if (savingRef.current || !dirty || missing) return;
-    savingRef.current = true;
-    setSaving(true); setError(""); setMessage("");
-    try {
-      const result = await api<{ look: AvatarLook }>("/api/jamworld/workshop/avatar", {
-        method: "PUT", json: { look: selection(look) },
-      });
-      setLook(result.look); setSaved(result.look); onSaved(result.look);
-      setMessage("내 아바타로 설정했어요. 맵에 들어가면 이 캐릭터로 시작해요.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "아바타를 저장하지 못했어요.");
-      void load();
-    } finally {
-      savingRef.current = false; setSaving(false);
-    }
-  };
+  // 고르면 바로 내 아바타 — 따로 저장 버튼 없이(색은 잠깐 멈췄을 때 한 번에)
+  const ready = dirty && !missing && (!look.assetId || !!selected);
+  useEffect(() => {
+    if (!ready || saving) return;
+    const want = selection(look);
+    const t = window.setTimeout(async () => {
+      if (savingRef.current) return;
+      savingRef.current = true;
+      setSaving(true); setError("");
+      try {
+        const result = await api<{ look: AvatarLook }>("/api/jamworld/workshop/avatar", {
+          method: "PUT", json: { look: want },
+        });
+        setSaved(result.look); onSaved(result.look); rememberLook(result.look);
+        setMessage("내 아바타로 바꿨어요. 맵에 들어가면 이 캐릭터로 시작해요.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "아바타를 바꾸지 못했어요.");
+        setLook(saved);
+        void load();
+      } finally {
+        savingRef.current = false; setSaving(false);
+      }
+    }, look.assetId === saved.assetId ? 600 : 0);
+    return () => window.clearTimeout(t);
+  }, [ready, saving, look, saved, onSaved, load]);
   const name = selected?.name || (!missing && look.assetId ? saved.asset?.name : "") || "기본 탐험가";
   const slot = (key: "top" | "pack" | "shoes", label: string) => (
     <div className="field" key={key}>
@@ -123,11 +130,11 @@ export default function MyPage({ me, assetId, onSaved }: {
         <h2>내 아바타</h2>
         <AvatarPreview key={look.assetId || "explorer"} look={preview} />
         <div className="profile-selection"><h3>{missing ? "다른 인물을 골라 주세요" : name}</h3>
-          <span className={`chip ${dirty ? "" : "teal"}`}>{dirty ? "선택 중" : "사용 중"}</span></div>
-        <p className="ws-note">저장하면 모든 맵에서 내 기본 캐릭터로 사용해요.</p>
+          <span className={`chip ${dirty || saving ? "" : "teal"}`}>{dirty || saving ? "바꾸는 중…" : "사용 중"}</span></div>
+        <p className="ws-note">고르면 바로 모든 맵에서 내 캐릭터가 돼요.</p>
         {missing && <p className="issue err" role="alert">이 인물은 삭제되었거나 사용할 수 없어요.</p>}
         {error && <p className="issue err" role="alert">{error}</p>}
-        <fieldset className="profile-options" disabled={saving}>
+        <fieldset className="profile-options">
           <details><summary>색 바꾸기</summary><div className="profile-colors">
             {look.assetId ? (selected && <CharacterColorEditor
               key={selected.id} td={selected.urls.tdSheet || selected.urls.td!}
@@ -136,10 +143,6 @@ export default function MyPage({ me, assetId, onSaved }: {
               : [slot("top", "옷"), slot("pack", "가방"), slot("shoes", "신발")]}
           </div></details>
         </fieldset>
-        <GlassButton className="btn primary profile-save" disabled={saving || !dirty || missing || (!!look.assetId && !selected)} onClick={() => void save()}>
-          {saving ? "저장 중…" : dirty ? "내 아바타로 저장" : "내 아바타로 사용 중"}
-        </GlassButton>
-        {dirty && <GlassButton className="btn ghost sm profile-cancel" disabled={saving} onClick={() => { setLook(saved); setMessage(""); }}>선택 취소</GlassButton>}
         {message && <div className="profile-saved" role="status"><p>{message}</p><GlassLink href="/jamworldmake/?view=worlds">내 월드로 가기 <Icon name="arrow_forward" size={16} /></GlassLink></div>}
       </GlassSurface>
       <GlassSurface className="card character-picker profile-picker" contentClassName="panel-pad" frost={0.06}>
@@ -149,14 +152,14 @@ export default function MyPage({ me, assetId, onSaved }: {
         {characters === null && !loadError && <p role="status">인물을 불러오고 있어요…</p>}
         {!!characters && characters.length > 8 && <input className="input" aria-label="인물 이름 검색" placeholder="인물 이름 검색" value={query} onChange={e => setQuery(e.target.value)} />}
         <div className="character-grid" role="group" aria-label="아바타 인물 선택">
-          <button className={`character-choice ${!look.assetId ? "on" : ""}`} aria-pressed={!look.assetId} disabled={saving} onClick={() => choose()}>
+          <button className={`character-choice ${!look.assetId ? "on" : ""}`} aria-pressed={!look.assetId} onClick={() => choose()}>
             <span className="profile-explorer" aria-hidden="true" /><b>기본 탐험가</b>
-            <span className="profile-choice-state">{!saved.assetId ? "사용 중" : !look.assetId ? "선택 중" : "기본 캐릭터"}</span>
+            <span className="profile-choice-state">{!look.assetId ? (!saved.assetId ? "사용 중" : "바꾸는 중…") : "기본 캐릭터"}</span>
           </button>
           {characters?.filter(a => a.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map(a => <button key={a.id}
-            className={`character-choice ${look.assetId === a.id ? "on" : ""}`} aria-pressed={look.assetId === a.id} disabled={saving} onClick={() => choose(a)}>
+            className={`character-choice ${look.assetId === a.id ? "on" : ""}`} aria-pressed={look.assetId === a.id} onClick={() => choose(a)}>
             <img src={a.urls.iso || a.urls.td || ""} alt="" loading="lazy" /><b>{a.name}</b>
-            <span className="profile-choice-state">{saved.assetId === a.id ? "사용 중" : look.assetId === a.id ? "선택 중" : a.appearance.kind === "views" && a.appearance.sprites ? "걷는 캐릭터" : "인물 그림"}</span>
+            <span className="profile-choice-state">{look.assetId === a.id ? (saved.assetId === a.id ? "사용 중" : "바꾸는 중…") : a.appearance.kind === "views" && a.appearance.sprites ? "걷는 캐릭터" : "인물 그림"}</span>
           </button>)}
         </div>
         {characters?.length === 0 && <p className="empty">아직 완성된 인물이 없어요. 공방에서 첫 캐릭터를 만들어 보세요.</p>}
