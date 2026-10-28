@@ -58,8 +58,9 @@
   @keyframes beat { 50% { transform: scale(1.18); } }
 
   .bite { position: fixed; left: 50%; top: 56%; transform: translate(-50%, -50%); z-index: 8; pointer-events: none; text-align: center; }
-  .bite b { display: block; font-family: var(--title);  font-size: clamp(64px, 15vw, 120px); color: var(--hot); text-shadow: var(--stroke); animation: biteShake .07s infinite alternate; }
-  .bite span { font-size: 22px; text-shadow: var(--stroke); }
+  .bite b { display: block; font-family: var(--title); font-size: clamp(130px, 34vw, 280px); line-height: 1; color: var(--hot); text-shadow: 6px 0 0 var(--ink), -6px 0 0 var(--ink), 0 6px 0 var(--ink), 0 -6px 0 var(--ink), 6px 6px 0 var(--ink), -6px 6px 0 var(--ink), 6px -6px 0 var(--ink), -6px -6px 0 var(--ink), 0 14px 0 var(--ink); animation: biteIn .25s steps(4), biteShake .07s .25s infinite alternate; }
+  .bite span { display: inline-block; margin-top: 10px; font-size: clamp(22px, 5vw, 34px); color: var(--sun); text-shadow: var(--stroke); animation: blink .35s steps(2) infinite; }
+  @keyframes biteIn { 0% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   @keyframes biteShake { from { transform: translate(-5px, 2px) rotate(-7deg) scale(1.06); } to { transform: translate(5px, -2px) rotate(7deg) scale(.96); } }
 
   /* ---------- 사투 화면: 픽셀 오락실 ---------- */
@@ -104,12 +105,12 @@
   .cur .key.k-reel { width: 170px; }
   .cur.urgent .key { animation: keyIn .2s steps(4), urgent .1s .2s steps(2) infinite; }
   .cur.pressed .key { transform: translateY(6px); box-shadow: 0 -6px 0 var(--ink), 0 6px 0 var(--ink), -6px 0 0 var(--ink), 6px 0 0 var(--ink), inset 0 -6px 0 rgba(255, 255, 255, .3); }
-  .cur .mashcv { position: absolute; left: 50%; top: 50%; width: 240px; height: 240px; transform: translate(-50%, -50%); image-rendering: pixelated; filter: drop-shadow(0 6px 0 rgba(19, 22, 46, .6)); }
+  .cur .mashcv { position: absolute; left: 50%; top: 50%; width: 340px; height: 340px; transform: translate(-50%, -50%); image-rendering: pixelated; filter: drop-shadow(0 6px 0 rgba(19, 22, 46, .6)); }
   .cur.mashing .key, .cur.mashing svg.frame { display: none; }
   .cur.mashing .burst { inset: -90px; animation-duration: .5s; }
-  .cur.mashing .count { top: -64px; right: -70px; font-size: 28px; min-width: 64px; height: 52px; }
-  .cur.mashing .mash { bottom: -96px; }
-  .cur .mash small { display: block; font-size: 14px; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); margin-top: 4px; text-align: center; }
+  .cur.mashing .count { top: -110px; right: -120px; font-size: 40px; min-width: 90px; height: 70px; }
+  .cur.mashing .mash { bottom: -150px; font-size: 52px; }
+  .cur .mash small { display: block; font-size: 20px; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); margin-top: 4px; text-align: center; }
   .k-mash { background: var(--hot); color: var(--cream); } .k-mash .kb { font-size: 14px; text-shadow: 2px 2px 0 var(--ink); }
   .cur .mash { position: absolute; bottom: -46px; left: 50%; transform: translateX(-50%); font-size: 30px; color: var(--sun); text-shadow: var(--pxs); white-space: nowrap; animation: mashBeat .2s steps(2) infinite; }
   @keyframes mashBeat { 50% { transform: translateX(-50%) translateY(-4px) scale(1.12); color: var(--cream); } }
@@ -190,12 +191,42 @@
   @media (max-width: 560px) {
     .dpad { grid-template-columns: repeat(3, 60px); grid-template-rows: repeat(2, 60px); gap: 10px; }
     .reelbtn { width: 104px; height: 76px; }
-    .cur .mashcv { width: 200px; height: 200px; } .cur.mashing .count { top: -52px; right: -56px; } .cur.mashing .mash { bottom: -84px; font-size: 24px; }
+    .cur .mashcv { width: 280px; height: 280px; } .cur.mashing .count { top: -96px; right: -60px; font-size: 32px; min-width: 70px; height: 58px; } .cur.mashing .mash { bottom: -128px; font-size: 36px; } .cur .mash small { font-size: 16px; }
+    .hitc { width: 92px; height: 92px; }
+    .bag .row { font-size: 11px; gap: 5px; padding: 2px 7px 2px 3px; } .bag .row img { width: 40px; height: 24px; } .bag .title { font-size: 11px; }
     .lane { top: 44%; gap: 16px; } .cur { width: 128px; height: 128px; } .cur .key { width: 84px; height: 84px; } .cur .key.k-reel { width: 120px; }
     .queue .key { width: 42px; height: 42px; } .queue .key.k-reel { width: 60px; } .queue .key:nth-child(3) { display: none; }
     .combo { left: 10px; top: 30%; } .combo b { font-size: 44px; }
     .chip b { font-size: 19px; }
   }
+  /* 원 터치 */
+  .lane.circling { display: none; }
+  .circles { position: fixed; inset: 0; pointer-events: none; }
+  .hitc { position: absolute; width: 110px; height: 110px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff8e8 0 18%, var(--right) 19% 100%);
+    box-shadow: 0 0 0 6px var(--ink), 0 0 0 11px var(--cream), 0 0 0 15px var(--ink), 0 12px 0 10px rgba(0, 0, 0, .35); display: grid; place-items: center; pointer-events: auto; cursor: pointer; animation: keyIn .2s steps(4); touch-action: none; }
+  .hitc b { font-size: 40px; color: var(--cream); text-shadow: var(--pxs); pointer-events: none; }
+  .hitc.ghost { opacity: .35; pointer-events: none; transform: translate(-50%, -50%) scale(.8); animation: none; }
+  .hitc .appr { position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; border-radius: 50%; border: 8px solid var(--sun); box-sizing: border-box; transform: translate(-50%, -50%) scale(3.3); pointer-events: none; box-shadow: 0 0 0 3px var(--ink), inset 0 0 0 3px var(--ink); }
+  .hitc .appr.now { border-color: var(--lime); }
+  .hitpop { position: fixed; transform: translate(-50%, -50%); font-size: 26px; color: var(--lime); text-shadow: var(--pxs); pointer-events: none; animation: hitpop .5s steps(5) forwards; z-index: 7; }
+  .hitpop.perfect { color: var(--sun); font-size: 32px; }
+  @keyframes hitpop { 0% { transform: translate(-50%, -50%) scale(.5); } 30% { transform: translate(-50%, -80%) scale(1.3); } 100% { transform: translate(-50%, -150%) scale(1); opacity: 0; } }
+  .k-circle { background: var(--right); } .k-circle i { width: 50%; height: 50%; border-radius: 50%; border: 4px solid var(--cream); box-sizing: border-box; }
+  /* 마지막 다다다다: 화면 가장자리가 빨갛게 고동치고 글씨가 덜덜 */
+  body.finale .danger { animation: finale .25s steps(2) infinite; }
+  @keyframes finale { 0% { box-shadow: inset 0 0 90px 40px rgba(255, 40, 70, .55); } 50% { box-shadow: inset 0 0 50px 20px rgba(255, 40, 70, .25); } }
+  body.finale .cur .mash { color: var(--hot); animation: finaleText .08s steps(2) infinite; }
+  @keyframes finaleText { 0% { transform: translateX(-52%) rotate(-3deg) scale(1.08); } 100% { transform: translateX(-48%) rotate(3deg) scale(1); } }
+  /* 잡은 물고기 (왼쪽 아래) */
+  .bag { position: fixed; left: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 5; pointer-events: none; display: flex; flex-direction: column-reverse; gap: 6px; max-height: 46vh; overflow: hidden; }
+  .bag .row { display: flex; align-items: center; gap: 8px; background: var(--panel); box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink); padding: 3px 10px 3px 4px; margin: 3px; font-size: 13px; animation: keyIn .25s steps(4); }
+  .bag .row img { width: 56px; height: 34px; image-rendering: pixelated; object-fit: contain; }
+  .bag .row .g { font-size: 11px; padding: 1px 5px; color: var(--cream); text-shadow: 1px 1px 0 var(--ink); }
+  .bag .row .n { color: var(--sun); }
+  .bag .title { font-size: 12px; color: var(--muted); text-shadow: 2px 2px 0 var(--ink); margin: 0 4px; }
+  body.fighting .bag { opacity: .25; }
+  .sound { pointer-events: auto; cursor: pointer; }
+  .sound b { font-size: 15px !important; }
   @media (prefers-reduced-motion: reduce) { .cur .burst, .bite b, .cur.urgent .key, .speed.on, .cur .mash, .fname .size.xl { animation: none; } }
 </style>
 <script type="importmap">
@@ -214,13 +245,15 @@
 <div class="top">
   <div class="chip timer" id="timerChip"><small>남은 시간</small><b id="timer">3:00</b></div>
   <div class="chips">
+    <button class="chip sound" id="soundBtn" aria-label="배경 음악 켜고 끄기"><small>음악</small><b id="soundTxt">ON</b></button>
     <div class="chip"><small>점수</small><b id="score">0</b></div>
     <div class="chip"><small>마리</small><b id="count">0</b></div>
   </div>
 </div>
 <div class="hint" id="hint" hidden></div>
+<div class="bag" id="bag"></div>
 <div class="shout" id="shout"></div>
-<div class="bite" id="bite" hidden><b>쏙!</b><span><i class="kb-desk">스페이스바로</i><i class="kb-touch">화면을 눌러</i> 챔기!</span></div>
+<div class="bite" id="bite" hidden><b>쏙!!</b><span><i class="kb-desk">스페이스바로</i><i class="kb-touch">화면을 눌러</i> 챔기!</span></div>
 
 <div class="fight" id="fight" hidden>
   <div class="fhead">
@@ -228,7 +261,7 @@
     <div class="hearts" id="hearts"></div>
     <div class="reelbar px"><i id="reelFill"></i><span id="reelText">10m</span></div>
   </div>
-  <div class="lane">
+  <div class="lane" id="lane">
     <div class="cur" id="cur">
       <div class="burst"></div>
       <svg class="frame" id="frame" viewBox="0 0 160 160"></svg>
@@ -240,6 +273,7 @@
     </div>
     <div class="queue" id="queue"></div>
   </div>
+  <div class="circles" id="circles"></div>
   <div class="judge" id="judge"></div>
   <div class="combo" id="combo" hidden><b id="comboN">0</b><span>COMBO</span></div>
   <button class="reelbtn k-reel px" data-dir="reel" aria-label="감기">감기</button>
@@ -289,6 +323,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=9"></script>
+<script type="module" src="game.js?v=11"></script>
 </body>
 </html>

@@ -46,6 +46,10 @@ const SPECIES = {
   tuna:      { water: "sea", name: "참치",        tier: "전설", points: 250, disp: 2.4,  len: [120, 280], ...T_LEGEND },
   marlin:    { water: "sea", name: "청새치",      tier: "전설", points: 320, disp: 2.8,  len: [180, 400], ...T_LEGEND, notes: 16, win: .75 },
 };
+// 어떤 물고기는 방향키 대신 화면에 뜨는 원을 터치(클릭)해서 잡는다. mix 는 방향키와 원이 번갈아
+const PLAY_STYLE = { bluegill: "circle", trout: "circle", eel: "circle", mandarin: "circle", sturgeon: "mix", goldkoi: "mix",
+  jack: "circle", puffer: "circle", cutlass: "circle", yellowtail: "circle", tuna: "mix", marlin: "mix" };
+for (const id in PLAY_STYLE) SPECIES[id].play = PLAY_STYLE[id];
 const TIER_ORDER = ["흔함", "보통", "희귀", "전설", "꽝"];
 const TIER_COLOR = { "꽝": "#6b7280", "흔함": "#3f8f5a", "보통": "#2f7fc0", "희귀": "#8a4fd8", "전설": "#d79a12" };
 const PLACES = {
@@ -268,8 +272,8 @@ function setPlace(place) {
   pondGroup.visible = place === "fresh"; seaGroup.visible = place === "sea";
   SKY.set(L.sky); scene.fog.color.copy(SKY); scene.fog.near = L.fog[0]; scene.fog.far = L.fog[1];
   waterMat.uniforms.sea.value = L.sea;
+  BGM.song = SONGS[place]; BGM.step = 0;
 }
-setPlace("fresh");
 
 // ------------------------------------------------------------------ 입자
 function makePoints(n, size) {
@@ -479,7 +483,7 @@ function bendMaterial(base, U, outline) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBend = U.bend; sh.uniforms.uFish = U.fish; sh.uniforms.uFishInv = U.fishInv;
     sh.vertexShader = "uniform vec4 uBend; uniform mat4 uFish; uniform mat4 uFishInv;\n" + sh.vertexShader.replace("#include <project_vertex>",
-      (outline ? "transformed += normalize(objectNormal) * 0.006;\n" : "") + BEND_GLSL + "#include <project_vertex>");
+      (outline ? "transformed += normalize(normal) * 0.006;\n" : "") + BEND_GLSL + "#include <project_vertex>");
   };
   m.customProgramCacheKey = () => (outline ? "fish-outline" : "fish-toon");
   return m;
@@ -623,8 +627,8 @@ function onBeat() {
   return w < .035 ? w : 0;
 }
 const MASH_RIFF = [0, 0, 7, 0, 3, 0, 10, 7, 0, 0, 12, 10, 7, 3, 5, 7]; // 연타할수록 이어지는 리프
-const NOTE_PITCH = { up: 784, right: 880, down: 659, left: 587, reel: 523 };
-const NOTE_SEMI = { up: 4, right: 7, down: 2, left: 0, reel: -5 };
+const NOTE_PITCH = { up: 784, right: 880, down: 659, left: 587, reel: 523, circle: 988 };
+const NOTE_SEMI = { up: 4, right: 7, down: 2, left: 0, reel: -5, circle: 9 };
 const SFX = {
   cast: () => sample("cast", { vol: .6 }) || (noise(.25, .06, 2500), tone(420, .3, "triangle", .07, 600)),
   plop: () => sample("plop") || (tone(330, .2, "sine", .22, -220), noise(.12, .05, 1500)),
@@ -651,6 +655,78 @@ const SFX = {
   legend: () => sample("legend") || [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, .2, "square", .07, 0, i * .08)),
   lose: () => { tone(400, .2, "triangle", .1); tone(300, .3, "triangle", .1, 0, .15); },
 };
+
+// ------------------------------------------------------------------ 배경 음악: 칩튠을 직접 연주(낚시터마다 다른 곡, 사투 중엔 줄이고 사투 박자를 깐다)
+const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
+function seeded(seed) { let x = seed; return () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648); }
+function makeMelody(seed, prog) { // 8분음표 32칸(4마디): 화음 음을 따라 걷고 가끔 쉰다
+  const r = seeded(seed), out = []; let cur = 0;
+  for (let i = 0; i < 32; i++) {
+    const chord = prog[Math.floor(i / 8)];
+    if (r() < .22 && i % 8 !== 0) { out.push(null); continue; }
+    const cand = [...chord, chord[0] + 12, chord[1] + 12];
+    cur = cand.reduce((b, c) => (Math.abs(c - cur - (r() * 6 - 3)) < Math.abs(b - cur) ? c : b), cand[Math.floor(r() * cand.length)]);
+    out.push(cur);
+  }
+  return out;
+}
+const SONGS = {
+  fresh: { bpm: 104, root: 60, lead: "triangle", prog: [[0, 4, 7], [-3, 0, 4], [-7, -3, 0], [-5, -1, 2]] }, // C Am F G
+  sea: { bpm: 118, root: 65, lead: "square", prog: [[0, 4, 7], [-5, -1, 2], [-3, 0, 4], [-7, -3, 0]] },     // F C Dm Bb
+};
+for (const [k, S] of Object.entries(SONGS)) S.mel = [makeMelody(k === "sea" ? 7 : 3, S.prog), makeMelody(k === "sea" ? 11 : 19, S.prog)];
+const BGM = { on: true, gain: null, next: 0, step: 0, song: SONGS.fresh, noise: null };
+try { BGM.on = localStorage.getItem("jamfish-bgm") !== "off"; } catch {}
+function bgmLevel() { return BGM.on ? (F ? 0 : .55) : 0; }
+function bgmStart() {
+  const a = audio(); if (!a) return;
+  if (!BGM.gain) {
+    BGM.gain = a.createGain(); BGM.gain.gain.value = 0; BGM.gain.connect(a.destination);
+    const b = a.createBuffer(1, a.sampleRate * .2, a.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    BGM.noise = b; BGM.next = a.currentTime + .1;
+  }
+  BGM.gain.gain.setTargetAtTime(bgmLevel(), a.currentTime, .3);
+}
+function bgmTone(m, dur, type, vol, when) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.value = midi(m);
+  g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(.001, when + dur);
+  o.connect(g).connect(BGM.gain); o.start(when); o.stop(when + dur + .02);
+}
+function bgmHit(dur, vol, hp, when) {
+  const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = BGM.noise; f.type = "highpass"; f.frequency.value = hp;
+  g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(.001, when + dur);
+  s.connect(f).connect(g).connect(BGM.gain); s.start(when); s.stop(when + dur);
+}
+function bgmTick() {
+  if (!BGM.gain || !ac) return;
+  BGM.gain.gain.setTargetAtTime(bgmLevel(), ac.currentTime, F ? .15 : .8);
+  const S = BGM.song, six = 60 / S.bpm / 4;
+  if (BGM.next < ac.currentTime - .5) BGM.next = ac.currentTime + .05; // 탭이 쉬다 돌아왔을 때
+  while (BGM.next < ac.currentTime + .15) {
+    const w = BGM.next, st = BGM.step % 64, bar = Math.floor(st / 16), chord = S.prog[bar], R = S.root;
+    if (bgmLevel() > 0 || BGM.gain.gain.value > .01) {
+      if (st % 16 === 0) bgmTone(R - 24 + chord[0], six * 7, "triangle", .32, w);
+      if (st % 16 === 8) bgmTone(R - 24 + chord[0] + 7, six * 5, "triangle", .24, w);
+      if (st % 16 === 12) bgmTone(R - 24 + chord[0] + 12, six * 3, "triangle", .2, w);
+      if (st % 2 === 0) bgmTone(R + 12 + chord[(st / 2) % 3], six * 1.4, "square", .025, w); // 반짝이는 분산화음
+      if (st % 2 === 0) { const note = S.mel[Math.floor(BGM.step / 64) % 2][st / 2]; if (note != null) bgmTone(R + note, six * 2.6, S.lead, S.lead === "square" ? .05 : .11, w); }
+      if (st % 8 === 0) bgmTone(48, .12, "sine", .22, w);       // 쿵
+      if (st % 8 === 4) bgmHit(.08, .05, 2000, w);             // 짝
+      if (st % 4 === 2) bgmHit(.03, .025, 7000, w);            // 츳
+    }
+    BGM.next += six; BGM.step++;
+  }
+}
+function setSound(on) {
+  BGM.on = on; $("soundTxt").textContent = on ? "ON" : "OFF";
+  try { localStorage.setItem("jamfish-bgm", on ? "on" : "off"); } catch {}
+  bgmStart();
+}
+$("soundTxt").textContent = BGM.on ? "ON" : "OFF";
+$("soundBtn").addEventListener("click", (e) => { e.stopPropagation(); setSound(!BGM.on); });
 
 // ------------------------------------------------------------------ 화면 효과 (사투 화면은 픽셀 그림)
 function pxSvg(rows, fill = "#13162e", rot = 0, extra = "") {
@@ -771,6 +847,20 @@ function makeChart(sp, sizeT) {
     if (i > 1 && Math.random() < .14) { notes.push({ type: "tap", dir: "reel", win }); continue; }
     notes.push({ type: "tap", dir: arrow(), win });
   }
+  // 원 터치: 리듬 게임처럼 바깥 고리가 줄어드는 동안 원을 누른다. 다음 원은 앞 원 근처에 뜬다
+  const style = sp.play || "arrow";
+  if (style !== "arrow") {
+    let on = style === "circle", run = 0, px = rand(.35, .65), py = rand(.42, .6), no = 0;
+    for (const n of notes) {
+      if (n.type !== "tap" || n.dir === "reel") { no = 0; continue; }
+      if (style === "mix" && run-- <= 0) { on = !on; run = 2 + Math.floor(rand(0, 3)); no = 0; }
+      if (!on) { no = 0; continue; }
+      let nx, ny, tries = 0;
+      do { nx = clamp(px + rand(-.3, .3), .16, .84); ny = clamp(py + rand(-.2, .2), .34, .72); } while (Math.hypot(nx - px, (ny - py) * .6) < .14 && ++tries < 12);
+      px = nx; py = ny;
+      Object.assign(n, { type: "circle", dir: "circle", x: px, y: py, no: ++no, win: n.win * (n.burst ? 1.5 : 1.3) + .2 });
+    }
+  }
   notes.push(mashNote(sp, sizeT, true)); // 마지막 끌어올리기
   return notes;
 }
@@ -785,7 +875,7 @@ function hook() {
   const fish = new Fish(R.species, sizeT);
   const chart = makeChart(sp, sizeT);
   const weight = chart.reduce((a, n) => a + (n.type === "mash" ? 3 : n.finisher ? 2 : 1), 0);
-  F = { fish, sp, sizeT, chart, i: 0, weight, got: 0, hearts: 3, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0, tapT: [], rate: 0, mood: "",
+  F = { fish, sp, sizeT, chart, i: 0, weight, got: 0, hearts: 3, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0, tapT: [], rate: 0, mood: "", tug: 0, tugSide: 1,
     from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1 };
   R.state = "fight"; hint(""); document.body.classList.add("fighting");
   $("fight").hidden = false;
@@ -804,8 +894,12 @@ function hook() {
 }
 function showNote() {
   const n = F.chart[F.i];
-  const cur = $("cur"), key = $("curKey"), mash = n.type === "mash";
+  const cur = $("cur"), key = $("curKey"), mash = n.type === "mash", circ = n.type === "circle";
   cur.classList.toggle("mashing", mash);
+  $("lane").classList.toggle("circling", circ);
+  document.body.classList.toggle("finale", mash && !!n.final);
+  showCircles(n);
+  if (circ && F.chart[F.i - 1]?.type !== "circle") shout("원을 터치!", "lime", .8);
   key.className = `key px k-${n.dir}`; key.innerHTML = mash ? "" : KEY_HTML(n.dir);
   cur.classList.remove("urgent", "pressed");
   key.style.animation = "none"; void key.offsetWidth; key.style.animation = ""; // 다시 튀어나오게
@@ -813,12 +907,13 @@ function showNote() {
   if (mash) {
     F.gauge = .35; F.taps = 0; F.tapT = []; F.rate = 0; F.mood = ""; $("curCount").textContent = "0";
     $("curMash").innerHTML = `계속 연타하세요!<small id="mashMood"><span class="kb-desk">아무 키나 · 스페이스를 빠르게</span><span class="kb-touch">화면을 빠르게 톡톡톡</span></small>`;
-    shout(n.final ? "마지막 한 방!!" : "버텨라!!", "hot", .9);
+    shout(n.final ? "다다다다다!!" : "버텨라!!", "hot", n.final ? 1.1 : .9);
+    if (n.final) { flash("red"); shake = .6; beatStart(Math.max(BEAT.bpm, 172)); }
   }
   if (n.zig && !F.chart[F.i - 1]?.zig) shout("좌우로 버텨!", "lime", .9);
   if (n.burst && !F.chart[F.i - 1]?.burst) shout("우다다다!", "hot", .8);
   if (n.finisher) shout("지금 감아!", "sun", .7);
-  $("queue").innerHTML = F.chart.slice(F.i + 1, F.i + 4).map((q) => q.type === "mash" ? `<div class="key px k-mash"><div class="kb">연타</div></div>` : `<div class="key px k-${q.dir}">${KEY_HTML(q.dir)}</div>`).join("");
+  $("queue").innerHTML = F.chart.slice(F.i + 1, F.i + 4).map((q) => q.type === "mash" ? `<div class="key px k-mash"><div class="kb">연타</div></div>` : q.type === "circle" ? `<div class="key px k-circle"><i></i></div>` : `<div class="key px k-${q.dir}">${KEY_HTML(q.dir)}</div>`).join("");
   F.noteT = 0; frameLit = -1;
 }
 function judge(text, cls) { const el = $("judge"); el.textContent = text; el.className = `judge ${cls}`; void el.offsetWidth; el.classList.add("go"); }
@@ -831,6 +926,7 @@ function press(dir) {
   const cur = $("cur"); cur.classList.add("pressed"); setTimeout(() => cur.classList.remove("pressed"), 70);
   const fp = F.fish.group.position;
   if (n.type === "mash") { // 무엇을 눌러도 된다. 원의 크기는 연타 속도로 정해진다(updateFight)
+    F.tugSide = -F.tugSide; F.tug = F.tugSide; // 누를 때마다 물고기가 좌우로 휘청이며 끌려온다
     F.taps++; F.tapT.push(F.t); F.gpop = 1; F.gauge = Math.min(1, F.gauge + .004);
     const c = $("curCount"); c.textContent = F.taps; c.classList.remove("tick"); void c.offsetWidth; c.classList.add("tick");
     SFX.mash(F.taps, n.hold > 4.4 ? 20 : 8);
@@ -839,8 +935,12 @@ function press(dir) {
     return;
   }
   if (dir === "tap") return; // 화면 톡톡은 연타 때만
+  if (n.type === "circle" && dir !== "circle") return; // 원 차례엔 키보드는 쉬고
+  if (dir === "circle" && n.type !== "circle") return;
   if (dir !== n.dir) return miss("틀렸어!");
-  const perfect = F.noteT < n.win * .45;
+  const perfect = n.type === "circle" ? F.noteT >= n.win * .55 : F.noteT < n.win * .45; // 원: 고리가 원에 닿을 때 누르면 PERFECT
+  F.tug = n.type === "circle" ? (n.x - .5) * 2.4 : dir === "left" ? -1 : dir === "right" ? 1 : (F.tugSide = -F.tugSide) * .6;
+  if (n.type === "circle") popCircle(n, perfect);
   F.got += 1; F.combo++; if (perfect) F.perfect++;
   punch = perfect ? 1 : .6; pxWave();
   judge(n.finisher ? (perfect ? "릴 감기 PERFECT!" : "릴 감기!") : perfect ? "PERFECT!" : "GOOD", perfect ? "perfect" : "good");
@@ -858,6 +958,52 @@ function nextNote() {
   F.i++;
   if (F.i >= F.chart.length) return endFight("caught");
   showNote();
+}
+// 잡은 물고기(왼쪽 아래): 종마다 한 줄, 썸네일은 모델을 작은 화면에 한 번 그려 둔다
+let thumbR = null; const thumbs = {};
+function fishThumb(id) {
+  if (id in thumbs) return thumbs[id];
+  const m = models[id]; if (!m) return "";
+  try {
+    if (!thumbR) { thumbR = new THREE.WebGLRenderer({ alpha: true, antialias: false, preserveDrawingBuffer: true }); thumbR.setPixelRatio(1); thumbR.setSize(112, 68); }
+    const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight("#ffffff", "#556070", 2.4));
+    const d = new THREE.DirectionalLight("#ffffff", 1.4); d.position.set(1, 2, 3); sc.add(d);
+    sc.add(SkeletonUtils.clone(m.holder));
+    const cam = new THREE.OrthographicCamera(-.66, .66, .4, -.4, .01, 10); cam.position.set(0, .1, 3); cam.lookAt(0, 0, 0);
+    thumbR.render(sc, cam); thumbs[id] = thumbR.domElement.toDataURL();
+  } catch { thumbs[id] = ""; }
+  return thumbs[id];
+}
+function updateBag() {
+  const by = new Map();
+  for (const c of G.caught) { const e = by.get(c.id) || { n: 0, top: null, at: 0 }; e.n++; e.at = by.size + G.caught.indexOf(c); if (!e.top || c.cm > e.top.cm) e.top = c; by.delete(c.id); by.set(c.id, e); }
+  const rows = [...by.entries()].slice(innerWidth < 560 ? -3 : -6); // 아래에서 위로 쌓여서 최근에 잡은 종이 맨 위
+  const total = G.caught.filter((c) => SPECIES[c.id].points).length;
+  $("bag").innerHTML = rows.length ? rows.map(([id, e]) => {
+    const g = GRADES.find((x) => x.name === e.top.grade);
+    return `<div class="row"><img alt="" src="${fishThumb(id)}"><span>${SPECIES[id].name}</span>${g ? `<span class="g" style="background:${g.color}">${g.name}</span>` : ""}<span class="n">×${e.n}</span></div>`;
+  }).join("") + `<div class="title">잡은 물고기 ${total}마리</div>` : "";
+}
+// 원 터치 화면: 지금 원(누를 수 있음) + 다음 원(흐릿하게 미리 보기)
+function showCircles(n) {
+  const box = $("circles"); box.innerHTML = "";
+  if (!n || n.type !== "circle") return;
+  const next = F.chart[F.i + 1];
+  if (next?.type === "circle") box.insertAdjacentHTML("beforeend", `<div class="hitc ghost" style="left:${next.x * 100}%;top:${next.y * 100}%"><b>${next.no}</b></div>`);
+  box.insertAdjacentHTML("beforeend", `<div class="hitc" id="hitc" style="left:${n.x * 100}%;top:${n.y * 100}%"><i class="appr" id="appr"></i><b>${n.no}</b></div>`);
+  $("hitc").addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); press("circle"); });
+}
+function ringCircle(n) {
+  const a = $("appr"); if (!a) return;
+  const k = clamp(F.noteT / n.win, 0, 1);
+  a.style.transform = `translate(-50%, -50%) scale(${(1 + 2.3 * (1 - k)).toFixed(3)})`;
+  a.classList.toggle("now", k >= .55);
+}
+function popCircle(n, perfect) {
+  const el = document.createElement("div");
+  el.className = `hitpop ${perfect ? "perfect" : ""}`; el.style.left = `${n.x * 100}%`; el.style.top = `${n.y * 100}%`;
+  el.textContent = perfect ? "PERFECT" : "GOOD";
+  $("fight").appendChild(el); setTimeout(() => el.remove(), 500);
 }
 function mashWin(n) {
   F.got += 3; F.combo += 3; F.perfect++;
@@ -917,7 +1063,7 @@ function miss(text) {
 }
 function endFight(result) {
   const f = F; if (!f) return;
-  F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting");
+  F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting", "finale"); showCircles(null); $("lane").classList.remove("circling");
   $("fight").hidden = true; $("danger").style.boxShadow = "";
   if (R.spot) R.spot.age = R.spot.life; // 그 자리 거품은 끝
   if (result === "caught") {
@@ -928,6 +1074,7 @@ function endFight(result) {
     const isNew = !G.book.has(f.fish.id) && !junk;
     G.book.add(f.fish.id); G.caught.push({ id: f.fish.id, cm, pts, grade: junk ? "" : gr.name }); G.score += pts;
     $("score").textContent = G.score; $("count").textContent = G.caught.filter((c) => SPECIES[c.id].points).length;
+    updateBag();
     $("cardTier").textContent = sp.tier; $("cardTier").style.background = TIER_COLOR[sp.tier];
     $("cardGrade").hidden = junk; $("cardGrade").textContent = gr.name; $("cardGrade").style.background = gr.color;
     $("cardName").textContent = sp.name; $("cardSize").textContent = `${cm}cm`;
@@ -1020,7 +1167,7 @@ function updateRodAndLine(dt, t) {
         R.state = "bite"; const sp = SPECIES[R.species];
         R.timer = sp.tier === "전설" ? .85 : sp.tier === "희귀" ? 1 : 1.2;
         SFX.bite(); splash(R.target.x, R.target.z, 14, .7); ripple(R.target.x, R.target.z, 1);
-        $("bite").hidden = false; flash("white"); shake = .25; hint("");
+        $("bite").hidden = false; flash("white"); shake = .5; punch = 1.2; hint("");
       }
     } else if (R.state === "nibble" && R.timer <= 0) { R.state = "waiting"; R.timer = rand(.6, 1.5); }
     else if (R.state === "bite" && R.timer <= 0) { shout("미끼만 뺏겼어요", "cream", 1.1); SFX.lose(); resetRod(); }
@@ -1048,6 +1195,7 @@ function updateFight(dt, t) {
   const cn = F.chart[F.i];
   let k = clamp(1 - F.noteT / cn.win, 0, 1);
   if (cn.type === "mash") { updateMash(cn, dt); if (!F) return; if (F.chart[F.i] === cn) drawMash(cn, k, t); }
+  else if (cn.type === "circle") ringCircle(cn);
   else setFrame(k);
   if (F.chart[F.i] !== cn) return;
   if (cn.type === "mash") k = F.gauge < .25 ? F.gauge / .25 * .4 : .4 + F.gauge * .6; // 원이 작아지면 화면이 빨갛게
@@ -1056,15 +1204,17 @@ function updateFight(dt, t) {
   // 끌어온 정도
   const prog = f.got / f.weight;
   $("reelFill").style.width = `${Math.round(prog * 100)}%`;
-  const dist = Math.max(3.2, f.dist0 * (1 - prog * .7));
+  f.tug = lerp(f.tug, 0, ease(5, dt));
+  const dist = Math.max(2.6, f.dist0 * (1 - prog * .7) - (cn.type === "mash" ? f.gauge * 1.4 : 0));
   $("reelText").textContent = `${dist.toFixed(1)}m`;
   // 물고기: 줄 끝에서 몸부림 (급할수록, 연타 중일수록 더 세게)
   const ax = angler.position.x, az = angler.position.z;
   const dir = _a.set(f.from.x - ax, 0, f.from.z - az).normalize();
-  const sway = Math.sin(t * 1.7) * 1.4 * (1 - prog * .6) + (cn.zig ? A.side * -1.4 : 0);
+  const sway = Math.sin(t * 1.7) * 1.4 * (1 - prog * .6) * (cn.type === "mash" ? .3 : 1) + (cn.zig ? A.side * -1.4 : 0) + f.tug * 1.1;
   const fx = ax + dir.x * dist + dir.z * sway, fz = az + dir.z * dist - dir.x * sway;
   f.pulse = Math.max(0, f.pulse - dt * 3);
   const mash = cn.type === "mash";
+  if (mash && cn.final) shake = Math.max(shake, .16 + f.gauge * .3); // 마지막 다다다다: 화면이 계속 흔들린다
   if (mash && Math.random() < dt * 1.6 && f.leap <= 0) f.leapV = 4.5; // 연타 중엔 물 밖으로 펄쩍
   f.leapV -= 15 * dt; f.leap = Math.max(0, f.leap + f.leapV * dt);
   if (f.leap === 0 && f.leapV < -3) { splash(fx, fz, 18, 1.1); ripple(fx, fz, 1.4); SFX.splash(); shake = Math.max(shake, .25); }
@@ -1072,7 +1222,7 @@ function updateFight(dt, t) {
   const g = f.fish.group;
   g.position.set(fx, f.fish.halfH * .35 + f.leap + Math.abs(Math.sin(t * 10)) * .05, fz);
   const away = Math.atan2(fz - az, fx - ax);
-  f.heading = lerp(f.heading, away + Math.sin(t * 2.3) * .7 + (mash ? Math.sin(t * 9) * .5 : 0), ease(4, dt));
+  f.heading = lerp(f.heading, away + Math.sin(t * 2.3) * .7 * (mash ? .3 : 1) - f.tug * .9, ease(mash ? 12 : 4, dt));
   g.rotation.order = "YXZ"; g.rotation.y = -f.heading; g.rotation.z = f.leap > 0 ? Math.sin(t * 8) * .6 : 0;
   const urg = 1 - k;
   f.phase += dt * (6 + urg * 10 + (mash ? 12 : 0) + f.pulse * 8) * Math.PI;
@@ -1110,7 +1260,7 @@ function start() {
   Object.assign(G, { playing: true, time: 180, score: 0, caught: [], book: new Set(), ending: false });
   $("score").textContent = 0; $("count").textContent = 0; $("timerChip").classList.remove("low");
   $("start").hidden = true; $("end").hidden = true; $("fight").hidden = true; $("card").hidden = true;
-  resetSpots(); resetRod();
+  resetSpots(); resetRod(); updateBag();
   shout("시작!", "sun", 1);
 }
 function finish() {
@@ -1129,7 +1279,7 @@ function finish() {
 async function choosePlace(place) {
   audio();
   document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = true; });
-  setPlace(place); renderLegend();
+  setPlace(place); renderLegend(); bgmStart();
   await loadPlace(place);
   document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = false; });
   start();
@@ -1158,18 +1308,25 @@ function frame(now) {
   stepDrops(dt); stepRings(dt);
   if (card > 0) { card -= dt; if (card <= 0) $("card").hidden = true; }
   waterMat.uniforms.t.value = t;
+  bgmTick();
   if (seaGroup.visible) buoys.forEach((b, i) => { b.position.y = .05 + Math.sin(t * 1.6 + i * 2) * .07; b.rotation.z = Math.sin(t * 1.2 + i) * .12; });
   // 카메라: 평소엔 연못 전체, 싸울 때는 낚시꾼 어깨 너머로 다가가 물고기를 본다
   const gp = _c.set(1.4, 6.4, STAND.z + 7.2), gl = _d.set(0, 0, POND.z + 1);
-  if (F) { const fp = F.fish.group.position; gp.set(fp.x * .35 + 1.2, 4.6, STAND.z + 5); gl.set(fp.x * .7, 0, (fp.z + STAND.z) / 2 - 1.2); }
+  if (F && F.chart[F.i]?.type === "mash") { // 연타: 물고기 코앞으로 클로즈업, 누를 때마다 같이 휘청
+    const fp = F.fish.group.position, bx = angler.position.x - fp.x, bz = angler.position.z - fp.z, bl = Math.hypot(bx, bz) || 1;
+    const back = 2.4 + F.fish.len * 1.1;
+    gp.set(fp.x + bx / bl * back + .6 + F.tug * .35, 1.5 + F.fish.len * .55, fp.z + bz / bl * back);
+    gl.set(fp.x + F.tug * .25, .35, fp.z);
+  } else if (F) { const fp = F.fish.group.position; gp.set(fp.x * .35 + 1.2, 4.6, STAND.z + 5); gl.set(fp.x * .7, 0, (fp.z + STAND.z) / 2 - 1.2); }
   else if (show) { const p = show.fish.group.position; gp.set(p.x + .8, 3.2, p.z + 4.2); gl.set(p.x - .3, .6, p.z - 1); }
   if (camera.aspect < .8) gp.sub(gl).multiplyScalar(1.15).add(gl);
-  CAM.pos.lerp(gp, ease(2.2, dt)); CAM.look.lerp(gl, ease(2.6, dt));
+  const mashCam = F && F.chart[F.i]?.type === "mash";
+  CAM.pos.lerp(gp, ease(mashCam ? 4 : 2.2, dt)); CAM.look.lerp(gl, ease(mashCam ? 6 : 2.6, dt));
   shake = Math.max(0, shake - dt * 1.6);
   camera.position.set(CAM.pos.x + Math.sin(t * 53) * shake * .35, CAM.pos.y + Math.cos(t * 47) * shake * .25, CAM.pos.z);
   punch = lerp(punch, 0, ease(9, dt));
   const baseFov = camera.aspect < .8 ? 58 : 40;
-  camera.fov = baseFov - punch * 4 - (F ? 2 + (F.chart[F.i]?.type === "mash" ? 3 : 0) : 0); camera.updateProjectionMatrix();
+  camera.fov = baseFov - punch * 4 - (F ? 2 : 0); camera.updateProjectionMatrix();
   camera.lookAt(CAM.look);
   // 집중선: 연타·우다다·급할 때
   const hype = F && (F.chart[F.i]?.type === "mash" || F.chart[F.i]?.burst || F.noteT / F.chart[F.i].win > .6);
@@ -1177,6 +1334,7 @@ function frame(now) {
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
+setPlace("fresh");
 resetSpots();
 requestAnimationFrame(frame);
 
@@ -1206,4 +1364,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
+window.__fish = { PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
