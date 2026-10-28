@@ -14,7 +14,7 @@ const ease = (k, dt) => Math.min(1, dt * k);
 // ------------------------------------------------------------------ 물고기 도감
 // notes: 눌러야 할 방향키 수, win: 한 칸 제한 시간(초), mash: 연타 구간 수, zig: 좌우 버티기 구간 수
 const SPECIES = {
-  boot:     { name: "낡은 장화", tier: "꽝",   points: 0,   disp: 0.75, len: [24, 30],   notes: 3,  win: 1.6,  mash: 0, zig: 0 },
+  boot:     { name: "낡은 장화", tier: "꽝",   points: 0,   disp: 0.42, len: [24, 30],   notes: 3,  win: 1.6,  mash: 0, zig: 0 },
   minnow:   { name: "송사리",   tier: "흔함", points: 10,  disp: 0.6,  len: [3, 6],     notes: 5,  win: 1.4,  mash: 0, zig: 0 },
   crucian:  { name: "붕어",     tier: "흔함", points: 20,  disp: 0.95, len: [15, 32],   notes: 7,  win: 1.25, mash: 0, zig: 0 },
   carp:     { name: "잉어",     tier: "보통", points: 45,  disp: 1.4,  len: [40, 85],   notes: 9,  win: 1.1,  mash: 1, zig: 0 },
@@ -434,6 +434,7 @@ class Fish {
 }
 
 // ------------------------------------------------------------------ 소리
+// assets/sfx 에 일레븐랩스로 만든 효과음이 있으면 그걸 쓰고, 없으면 칩튠 신스로 낸다.
 let ac = null;
 function audio() { if (!ac) try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { ac = null; } if (ac?.state === "suspended") ac.resume(); return ac; }
 function tone(freq, dur, type = "sine", vol = .15, slide = 0, delay = 0) {
@@ -443,41 +444,108 @@ function tone(freq, dur, type = "sine", vol = .15, slide = 0, delay = 0) {
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur);
 }
-function noise(dur, vol = .12, hp = 800) {
+function noise(dur, vol = .12, hp = 800, delay = 0) {
   const a = audio(); if (!a) return;
   const b = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
   const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
   f.type = "highpass"; f.frequency.value = hp; g.gain.value = vol;
-  s.buffer = b; s.connect(f).connect(g).connect(a.destination); s.start();
+  s.buffer = b; s.connect(f).connect(g).connect(a.destination); s.start(a.currentTime + delay);
 }
+const SAMPLES = {};
+fetch("assets/sfx/sfx.json").then((r) => (r.ok ? r.json() : {})).then((list) => {
+  const a = audio(); if (!a) return;
+  for (const [name, file] of Object.entries(list)) fetch(`assets/sfx/${file}`).then((r) => r.arrayBuffer()).then((buf) => a.decodeAudioData(buf)).then((b) => { SAMPLES[name] = b; }).catch(() => {});
+}).catch(() => {});
+function sample(name, { rate = 1, vol = .8, delay = 0 } = {}) {
+  const b = SAMPLES[name]; if (!b || !ac) return false;
+  const s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = b; s.playbackRate.value = rate; g.gain.value = vol;
+  s.connect(g).connect(ac.destination); s.start(ac.currentTime + delay);
+  return true;
+}
+const semi = (n) => Math.pow(2, n / 12);
+
+// 사투 중 깔리는 칩튠 박자. 연타 소리는 가까운 16분 박자에 붙여서 리듬이 맞게 들린다.
+const BEAT = { on: false, bpm: 132, next: 0, step: 0 };
+function beatStart(bpm) { const a = audio(); if (!a) return; BEAT.on = true; BEAT.bpm = bpm; BEAT.next = a.currentTime + .05; BEAT.step = 0; }
+function beatStop() { BEAT.on = false; }
+function beatTick() {
+  if (!BEAT.on || !ac) return;
+  const sixteenth = 60 / BEAT.bpm / 4;
+  while (BEAT.next < ac.currentTime + .12) {
+    const d = BEAT.next - ac.currentTime, st = BEAT.step % 16;
+    if (st % 4 === 0) tone(st === 0 ? 70 : 60, .16, "sine", .22, -30, d);         // 쿵
+    if (st === 4 || st === 12) noise(.09, .07, 1800, d);                             // 짝
+    if (st % 2 === 1) noise(.025, .025, 7000, d);                                    // 츳
+    if (st % 4 === 2) tone([110, 110, 131, 98][(BEAT.step >> 4) % 4], .1, "square", .03, 0, d); // 베이스
+    BEAT.next += sixteenth; BEAT.step++;
+  }
+}
+// 가장 가까운 16분 박자까지 남은 시간(35ms 안쪽이면 그 박자에 붙이고, 아니면 바로)
+function onBeat() {
+  if (!BEAT.on || !ac) return 0;
+  const sixteenth = 60 / BEAT.bpm / 4, wait = BEAT.next - ac.currentTime;
+  const w = ((wait % sixteenth) + sixteenth) % sixteenth;
+  return w < .035 ? w : 0;
+}
+const MASH_RIFF = [0, 0, 7, 0, 3, 0, 10, 7, 0, 0, 12, 10, 7, 3, 5, 7]; // 연타할수록 이어지는 리프
 const NOTE_PITCH = { up: 784, right: 880, down: 659, left: 587, reel: 523 };
+const NOTE_SEMI = { up: 4, right: 7, down: 2, left: 0, reel: -5 };
 const SFX = {
-  cast: () => { noise(.25, .06, 2500); tone(420, .3, "triangle", .07, 600); },
-  plop: () => { tone(330, .2, "sine", .22, -220); noise(.12, .05, 1500); },
+  cast: () => sample("cast", { vol: .6 }) || (noise(.25, .06, 2500), tone(420, .3, "triangle", .07, 600)),
+  plop: () => sample("plop") || (tone(330, .2, "sine", .22, -220), noise(.12, .05, 1500)),
   nibble: () => tone(760, .05, "square", .05),
-  bite: () => { tone(988, .09, "square", .1); tone(1318, .14, "square", .1, 0, .08); },
-  hook: () => { noise(.2, .14, 500); tone(220, .25, "sawtooth", .08, 400); },
-  hit: (dir, perfect) => { tone(NOTE_PITCH[dir] * (perfect ? 2 : 1), .09, "square", .07); noise(.06, .04, 3000); },
-  mash: (n) => tone(500 + n * 40, .05, "square", .05),
-  miss: () => { tone(160, .25, "sawtooth", .12, -60); noise(.2, .1, 300); },
-  splash: () => noise(.35, .12, 400),
-  snap: () => { noise(.3, .22, 2000); tone(1400, .25, "sawtooth", .07, -1200); },
-  catch: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, .16, "square", .07, 0, i * .09)),
-  legend: () => [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, .2, "square", .07, 0, i * .08)),
+  bite: () => sample("bite") || (tone(988, .09, "square", .1), tone(1318, .14, "square", .1, 0, .08)),
+  hook: () => sample("hook") || (noise(.2, .14, 500), tone(220, .25, "sawtooth", .08, 400)),
+  hit: (dir, perfect) => {
+    const d = onBeat();
+    if (dir === "reel") return sample("reel", { delay: d, rate: perfect ? 1.15 : 1 }) || (noise(.12, .08, 2500, d), tone(523, .14, "square", .08, 500, d));
+    if (!sample(perfect ? "perfect" : "tap", { delay: d, rate: semi(NOTE_SEMI[dir]) * .9, vol: .7 })) tone(NOTE_PITCH[dir] * (perfect ? 2 : 1), .09, "square", .07, 0, d);
+    noise(.05, .04, 3000, d);
+  },
+  mash: (n, need) => { // n번째 연타: 리프를 따라 올라가고, 큰 놈일수록 낮고 묵직하게
+    const d = onBeat(), up = MASH_RIFF[(n - 1) % 16] + Math.floor((n - 1) / 16) * 12, heavy = need > 14 ? -5 : 0;
+    const drum = n % 4 === 0 ? "snare" : "taiko";
+    if (!sample(drum, { delay: d, rate: semi((n * .4) | 0) })) { if (drum === "snare") noise(.08, .1, 1500, d); else tone(90, .1, "sine", .25, -40, d); }
+    tone(262 * semi(up + heavy), .07, "square", .06, 0, d);
+  },
+  mashDone: () => sample("perfect", { rate: 1.3 }) || [0, 4, 7, 12].forEach((k, i) => tone(523 * semi(k), .08, "square", .07, 0, i * .04)),
+  miss: () => sample("miss") || (tone(160, .25, "sawtooth", .12, -60), noise(.2, .1, 300)),
+  splash: () => sample("splash", { vol: .5, rate: rand(.9, 1.15) }) || noise(.35, .12, 400),
+  snap: () => sample("snap") || (noise(.3, .22, 2000), tone(1400, .25, "sawtooth", .07, -1200)),
+  catch: () => sample("catch") || [523, 659, 784, 1046].forEach((f, i) => tone(f, .16, "square", .07, 0, i * .09)),
+  legend: () => sample("legend") || [523, 659, 784, 1046, 1318, 1568, 2093].forEach((f, i) => tone(f, .2, "square", .07, 0, i * .08)),
   lose: () => { tone(400, .2, "triangle", .1); tone(300, .3, "triangle", .1, 0, .15); },
 };
 
-// ------------------------------------------------------------------ 화면 효과
-const ARROW_SVG = {
-  up: '<svg viewBox="0 0 24 24"><path d="M12 3 4 12h5v9h6v-9h5z" fill="#13162e"/></svg>',
-  down: '<svg viewBox="0 0 24 24"><path d="M12 21 4 12h5V3h6v9h5z" fill="#13162e"/></svg>',
-  left: '<svg viewBox="0 0 24 24"><path d="M3 12 12 4v5h9v6h-9v5z" fill="#13162e"/></svg>',
-  right: '<svg viewBox="0 0 24 24"><path d="M21 12 12 4v5H3v6h9v5z" fill="#13162e"/></svg>',
-  reel: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="#13162e" stroke-width="3"/><circle cx="12" cy="12" r="2.6" fill="#13162e"/><path d="M12 4v-2.5M18.5 7.5l2-1.5" stroke="#13162e" stroke-width="3" stroke-linecap="round"/></svg>',
-};
-const HEART = `<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.8-8 11-8 11z" fill="#ff4d6d" stroke="#13162e" stroke-width="2"/></svg>`;
-document.querySelectorAll(".dpad button, .reelbtn").forEach((b) => { b.innerHTML = ARROW_SVG[b.dataset.dir] + (b.dataset.dir === "reel" ? "<span>감기</span>" : ""); });
+// ------------------------------------------------------------------ 화면 효과 (사투 화면은 픽셀 그림)
+function pxSvg(rows, fill = "#13162e", rot = 0, extra = "") {
+  const h = rows.length, w = rows[0].length;
+  let r = "";
+  rows.forEach((row, y) => [...row].forEach((c, x) => { if (c === "#") r += `<rect x="${x}" y="${y}" width="1.02" height="1.02"/>`; }));
+  return `<svg viewBox="0 0 ${w} ${h}"><g fill="${fill}" transform="rotate(${rot} ${w / 2} ${h / 2})">${r}</g>${extra}</svg>`;
+}
+const UP_PX = ["....##....", "...####...", "..######..", ".########.", "##########", "...####...", "...####...", "...####...", "...####...", "...####..."];
+const ARROW_SVG = { up: pxSvg(UP_PX), right: pxSvg(UP_PX, undefined, 90), down: pxSvg(UP_PX, undefined, 180), left: pxSvg(UP_PX, undefined, 270) };
+const KEY_HTML = (dir) => dir === "reel" ? `<div class="kb"><span class="kb-desk">SPACE</span><span class="kb-touch">감기</span><small class="kb-desk">릴 감기!</small></div>` : ARROW_SVG[dir];
+const HEART = pxSvg([".##.##.", "#######", "#######", ".#####.", "..###..", "...#..."], "#ff4d6d", 0, '<rect x="1" y="1" width="1" height="1" fill="#fff8e8"/>');
+document.querySelectorAll(".dpad button").forEach((b) => { b.innerHTML = ARROW_SVG[b.dataset.dir]; });
+// 남은 시간 = 열쇠 둘레의 네모 칸(시계 방향으로 꺼진다)
+const FRAME_N = 24, frameRects = [];
+{
+  const svg = $("frame"), L = 142, o = 9, B = 14;
+  for (let i = 0; i < FRAME_N; i++) {
+    let d = ((i / FRAME_N) * 4 * L + L / 2) % (4 * L), x, y;
+    if (d < L) { x = o + d; y = o; } else if (d < 2 * L) { x = o + L; y = o + d - L; } else if (d < 3 * L) { x = o + L - (d - 2 * L); y = o + L; } else { x = o; y = o + L - (d - 3 * L); }
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("x", (x - B / 2).toFixed(0)); r.setAttribute("y", (y - B / 2).toFixed(0)); r.setAttribute("width", B); r.setAttribute("height", B);
+    svg.appendChild(r); frameRects.push(r);
+  }
+}
+let frameLit = -1;
+function setFrame(k) { const n = Math.ceil(k * FRAME_N); if (n === frameLit) return; frameLit = n; frameRects.forEach((r, i) => r.classList.toggle("on", i < n)); }
+function pxWave() { const w = $("wave"); w.classList.remove("go"); void w.offsetWidth; w.classList.add("go"); }
 function shout(text, cls = "sun", sec = .9) {
   const el = $("shout"); el.textContent = text; el.className = `shout ${cls}`;
   void el.offsetWidth; el.style.animationDuration = `${sec}s`; el.classList.add("pop");
@@ -521,27 +589,33 @@ function earlyStrike() {
   resetRod();
 }
 
-// 콤보 악보: 한 칸씩 + 우다다(빠른 방향키 묶음 → 감기로 마무리) + 연타(→ 감기) + 좌우 버티기 + 가끔 감기
+// 콤보 악보: 한 칸씩 + 우다다(빠른 방향키 묶음 → 감기로 마무리) + 좌우 버티기 + 가끔 감기
+// 결정적인 순간(중간 고비·마지막 끌어올리기)은 "계속 연타하세요!" — 누를수록 원이 커지고, 기준선을 넘으면 성공.
+// 같은 물고기라도 클수록(sizeT) 칸이 많고 빠르며, 연타 원이 덜 커지고 더 빨리 줄어든다.
 const DIRS = ["up", "down", "left", "right"];
-function makeChart(sp) {
+const SIZE_CLASS = (t) => (t < .3 ? ["S", "작은"] : t < .7 ? ["M", "보통"] : t < .92 ? ["L", "큰"] : ["XL", "왕"]);
+function mashNote(sp, sizeT, final) {
+  const need = Math.round((5 + sp.points / 320 * 10) * (.7 + sizeT * .75));   // 쉬지 않고 눌렀을 때 필요한 수
+  const hold = .8 + sizeT * 1.6 + (sp.tier === "전설" ? .6 : sp.tier === "희귀" ? .3 : 0); // 초당 이만큼 눌러야 원이 유지
+  return { type: "mash", dir: "any", need, hold, win: 2.2 + need / 4.5, final };
+}
+function makeChart(sp, sizeT) {
   const notes = [];
   let last = "";
   const arrow = () => { let d = DIRS[Math.floor(rand(0, 4))]; if (d === last && Math.random() < .6) d = DIRS[(DIRS.indexOf(d) + 1 + Math.floor(rand(0, 3))) % 4]; last = d; return d; };
-  const n = sp.notes, mashAt = new Set(), zigAt = new Set(), burstAt = new Set();
-  for (let i = 0; i < sp.mash; i++) mashAt.add(Math.floor(n * (i + 1) / (sp.mash + 1)) + 1);
+  const n = Math.max(3, sp.notes + Math.round(sizeT * 4) - 2), winK = 1.12 - sizeT * .26;
+  const mid = Math.max(0, sp.mash - 1) + (sizeT > .85 && sp.points >= 45 ? 1 : 0);
+  const mashAt = new Set(), zigAt = new Set(), burstAt = new Set();
+  for (let i = 0; i < mid; i++) mashAt.add(Math.floor(n * (i + 1) / (mid + 1)));
   for (let i = 0; i < sp.zig; i++) zigAt.add(Math.max(1, Math.floor(n * (i + .5) / (sp.zig + .5))));
-  const bursts = sp.tier === "흔함" || sp.tier === "꽝" ? (sp.notes >= 7 ? 1 : 0) : sp.tier === "보통" ? 1 : 2;
+  const bursts = sp.tier === "흔함" || sp.tier === "꽝" ? (n >= 7 ? 1 : 0) : sp.tier === "보통" ? 1 : 2;
   for (let i = 0; i < bursts; i++) burstAt.add(Math.floor(n * (i + .3) / (bursts + .3)) + 1);
   for (let i = 0; i < n; i++) {
-    const win = sp.win * Math.pow(.975, i);
-    if (zigAt.has(i) && !mashAt.has(i)) {
+    const win = sp.win * winK * Math.pow(.975, i);
+    if (mashAt.has(i)) { notes.push(mashNote(sp, sizeT, false)); last = ""; continue; }
+    if (zigAt.has(i)) {
       const first = Math.random() < .5 ? "left" : "right", other = first === "left" ? "right" : "left";
       for (let k = 0; k < 4; k++) notes.push({ type: "tap", dir: k % 2 ? other : first, win: win * .8, zig: true });
-      last = ""; continue;
-    }
-    if (mashAt.has(i)) {
-      notes.push({ type: "mash", dir: arrow(), need: Math.round(rand(8, 12) + (sp.tier === "전설" ? 4 : 0)), win: 2.8 });
-      notes.push({ type: "tap", dir: "reel", win: win * 1.1, finisher: true });
       last = ""; continue;
     }
     if (burstAt.has(i)) { // 우다다: 짧은 시간에 방향키 3~4개, 감기로 마무리
@@ -553,6 +627,7 @@ function makeChart(sp) {
     if (i > 1 && Math.random() < .14) { notes.push({ type: "tap", dir: "reel", win }); continue; }
     notes.push({ type: "tap", dir: arrow(), win });
   }
+  notes.push(mashNote(sp, sizeT, true)); // 마지막 끌어올리기
   return notes;
 }
 
@@ -564,33 +639,42 @@ function hook() {
   splash(R.target.x, R.target.z, 26, 1.2); ripple(R.target.x, R.target.z, 1.6);
   const sizeT = Math.random();
   const fish = new Fish(R.species, sizeT);
-  const chart = makeChart(sp);
-  const weight = chart.reduce((a, n) => a + (n.type === "mash" || n.finisher ? 2 : 1), 0);
-  F = { fish, sp, sizeT, chart, i: 0, weight, got: 0, hearts: 3, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, mashN: 0,
+  const chart = makeChart(sp, sizeT);
+  const weight = chart.reduce((a, n) => a + (n.type === "mash" ? 3 : n.finisher ? 2 : 1), 0);
+  F = { fish, sp, sizeT, chart, i: 0, weight, got: 0, hearts: 3, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0,
     from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1 };
-  R.state = "fight"; hint("");
+  R.state = "fight"; hint(""); document.body.classList.add("fighting");
   $("fight").hidden = false;
+  const [sz, szName] = SIZE_CLASS(sizeT), cm = Math.round(lerp(sp.len[0], sp.len[1], sizeT));
   $("ftier").textContent = sp.tier === "꽝" ? "???" : sp.tier; $("ftier").style.background = TIER_COLOR[sp.tier];
-  $("fnameText").textContent = sp.tier === "전설" ? "엄청난 힘이다!!" : sp.tier === "희귀" ? "묵직하다!" : "걸렸다!";
+  $("fsize").textContent = sp.tier === "꽝" ? "?" : `${sz} 약${cm}cm`; $("fsize").classList.toggle("xl", sz === "XL" && sp.tier !== "꽝");
+  $("fnameText").textContent = sz === "XL" ? "왕 사이즈다!!" : sp.tier === "전설" ? "엄청난 힘이다!!" : sp.tier === "희귀" || sz === "L" ? "묵직하다!" : "걸렸다!";
   $("hearts").innerHTML = HEART + HEART + HEART;
   $("combo").hidden = true;
-  shout(sp.tier === "전설" ? "대물이다!!" : "걸렸다!", sp.tier === "전설" ? "hot" : "sun", 1);
-  if (sp.tier === "전설") { flash("gold"); SFX.legend(); }
+  const big = sp.tier === "전설" || (sz === "XL" && sp.points >= 45);
+  shout(big ? "대물이다!!" : "걸렸다!", big ? "hot" : "sun", 1);
+  if (big) { flash("gold"); SFX.legend(); }
+  beatStart(sp.tier === "전설" ? 150 : sp.tier === "희귀" ? 140 : 128);
   showNote();
 }
 function showNote() {
   const n = F.chart[F.i];
-  const cur = $("cur"), key = $("curKey");
-  key.className = `key k-${n.dir}`; key.innerHTML = ARROW_SVG[n.dir];
+  const cur = $("cur"), key = $("curKey"), mash = n.type === "mash";
+  cur.classList.toggle("mashing", mash);
+  key.className = `key px k-${n.dir}`; key.innerHTML = mash ? "" : KEY_HTML(n.dir);
   cur.classList.remove("urgent", "pressed");
   key.style.animation = "none"; void key.offsetWidth; key.style.animation = ""; // 다시 튀어나오게
-  $("curMash").hidden = n.type !== "mash"; $("curCount").hidden = n.type !== "mash";
-  if (n.type === "mash") { F.mashN = n.need; $("curCount").textContent = F.mashN; shout("다다다다!", "sun", .8); }
+  $("curMash").hidden = !mash; $("curCount").hidden = !mash; $("mashCv").hidden = !mash;
+  if (mash) {
+    F.gauge = 0; F.taps = 0; $("curCount").textContent = "0";
+    $("curMash").innerHTML = `계속 연타하세요!<small><span class="kb-desk">아무 키나 · 스페이스</span><span class="kb-touch">화면을 마구 톡톡</span></small>`;
+    shout(n.final ? "마지막 한 방!!" : "버텨라!!", "hot", .9);
+  }
   if (n.zig && !F.chart[F.i - 1]?.zig) shout("좌우로 버텨!", "lime", .9);
   if (n.burst && !F.chart[F.i - 1]?.burst) shout("우다다다!", "hot", .8);
   if (n.finisher) shout("지금 감아!", "sun", .7);
-  $("queue").innerHTML = F.chart.slice(F.i + 1, F.i + 4).map((q) => `<div class="key k-${q.dir}">${ARROW_SVG[q.dir]}</div>`).join("");
-  F.noteT = 0;
+  $("queue").innerHTML = F.chart.slice(F.i + 1, F.i + 4).map((q) => q.type === "mash" ? `<div class="key px k-mash"><div class="kb">연타</div></div>` : `<div class="key px k-${q.dir}">${KEY_HTML(q.dir)}</div>`).join("");
+  F.noteT = 0; frameLit = -1;
 }
 function judge(text, cls) { const el = $("judge"); el.textContent = text; el.className = `judge ${cls}`; void el.offsetWidth; el.classList.add("go"); }
 function press(dir) {
@@ -600,18 +684,26 @@ function press(dir) {
   if (!F) return;
   const n = F.chart[F.i];
   const cur = $("cur"); cur.classList.add("pressed"); setTimeout(() => cur.classList.remove("pressed"), 70);
-  if (dir !== n.dir) return miss("틀렸어!");
   const fp = F.fish.group.position;
-  if (n.type === "mash") {
-    F.mashN--; $("curCount").textContent = Math.max(0, F.mashN); SFX.mash(n.need - F.mashN);
-    A.kick = .6; shake = Math.max(shake, .18); F.pulse = 1; punch = .5;
-    splash(fp.x, fp.z, 4, .7);
-    if (F.mashN <= 0) { F.got += 2; F.combo += 3; judge("연타 성공!", "perfect"); flash("white"); nextNote(); }
+  if (n.type === "mash") { // 무엇을 눌러도 원이 커진다
+    F.taps++; F.gauge += 1 / n.need; F.gpop = 1;
+    const c = $("curCount"); c.textContent = F.taps; c.classList.remove("tick"); void c.offsetWidth; c.classList.add("tick");
+    SFX.mash(F.taps, n.need);
+    A.kick = .7; shake = Math.max(shake, .14 + F.gauge * .12); F.pulse = 1; punch = .35 + F.gauge * .4;
+    splash(fp.x, fp.z, 4 + Math.round(F.gauge * 6), .6 + F.gauge * .5);
+    if (F.gauge >= 1) {
+      F.got += 3; F.combo += 3; F.perfect++;
+      judge(n.final ? "끌어올렸다!!" : "연타 성공!", "perfect"); flash("white"); SFX.mashDone(); pxWave();
+      shake = .5; punch = 1.4; A.kick = 1.6; F.leapV = 5;
+      nextNote();
+    }
     return;
   }
+  if (dir === "tap") return; // 화면 톡톡은 연타 때만
+  if (dir !== n.dir) return miss("틀렸어!");
   const perfect = F.noteT < n.win * .45;
   F.got += 1; F.combo++; if (perfect) F.perfect++;
-  punch = perfect ? 1 : .6;
+  punch = perfect ? 1 : .6; pxWave();
   judge(n.finisher ? (perfect ? "릴 감기 PERFECT!" : "릴 감기!") : perfect ? "PERFECT!" : "GOOD", perfect ? "perfect" : "good");
   if (n.finisher) { F.got += 1; flash("white"); A.kick = 1.4; }
   SFX.hit(dir, perfect);
@@ -628,6 +720,31 @@ function nextNote() {
   if (F.i >= F.chart.length) return endFight("caught");
   showNote();
 }
+// 연타 원(64×64 캔버스를 키워서 픽셀로 보이게): 안쪽 원 = 연타 힘, 점선 = 기준선, 바깥 점 = 남은 시간
+const mashCtx = $("mashCv").getContext("2d");
+function drawMash(n, k, t) {
+  const c = mashCtx, C = 32, target = 21;
+  c.clearRect(0, 0 , 64, 64);
+  const g = Math.min(1.15, F.gauge), r = Math.max(1.5, g * target * (1 + F.gpop * .08));
+  const hot = g > .75;
+  c.fillStyle = hot ? "#ff4d6d" : "#ffd23f";
+  c.beginPath(); c.arc(C, C, r, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "rgba(255,255,255,.55)"; c.beginPath(); c.arc(C - r * .3, C - r * .35, r * .32, 0, Math.PI * 2); c.fill();
+  // 기준선(깜빡이는 점선)
+  for (let i = 0; i < 36; i++) {
+    if (i % 2) continue;
+    const a = i / 36 * Math.PI * 2 + t * .8;
+    c.fillStyle = g >= .9 && Math.sin(t * 30) > 0 ? "#ffffff" : "#fff8e8";
+    c.fillRect(Math.round(C + Math.cos(a) * target) - 1, Math.round(C + Math.sin(a) * target) - 1, 2, 2);
+  }
+  // 남은 시간
+  const dots = 32, lit = Math.ceil(k * dots);
+  for (let i = 0; i < dots; i++) {
+    const a = -Math.PI / 2 + i / dots * Math.PI * 2;
+    c.fillStyle = i < lit ? (k < .35 ? "#ff4d6d" : "#9cf25a") : "rgba(19,22,46,.6)";
+    c.fillRect(Math.round(C + Math.cos(a) * 29) - 1, Math.round(C + Math.sin(a) * 29) - 1, 3, 3);
+  }
+}
 function miss(text) {
   F.hearts--; F.combo = 0; $("combo").hidden = true;
   judge(text || "MISS", "miss"); SFX.miss(); flash("red"); shake = .6; punch = -1.2;
@@ -639,7 +756,7 @@ function miss(text) {
 }
 function endFight(result) {
   const f = F; if (!f) return;
-  F = null; G.lastResult = result;
+  F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting");
   $("fight").hidden = true; $("danger").style.boxShadow = "";
   if (R.spot) R.spot.age = R.spot.life; // 그 자리 거품은 끝
   if (result === "caught") {
@@ -685,7 +802,8 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
   if (!G.playing) return;
   if (R.state === "bite") return hook();
   if (R.state === "waiting" || R.state === "nibble") return earlyStrike();
-  if (R.state !== "idle" || F || show) return;
+  if (F) return press("tap");
+  if (R.state !== "idle" || show) return;
   const p = waterPoint(e); if (!p) return;
   const s = spotAt(p.x, p.z);
   if (s) castTo(s);
@@ -762,17 +880,20 @@ function updateRodAndLine(dt, t) {
 function updateFight(dt, t) {
   if (!F) return;
   const f = F, n = f.chart[f.i];
-  f.t += dt; f.noteT += dt;
-  if (f.noteT >= n.win) { miss(n.type === "mash" ? "시간 초과!" : "늦었어!"); if (!F) return; }
+  f.t += dt; f.noteT += dt; beatTick();
+  if (f.noteT >= n.win) { miss(n.type === "mash" ? "힘이 모자라!" : "늦었어!"); if (!F) return; }
   const cn = F.chart[F.i];
   const k = clamp(1 - F.noteT / cn.win, 0, 1);
-  $("ringFg").style.strokeDashoffset = String(440 * (1 - k));
+  if (cn.type === "mash") { // 가만히 있으면 원이 줄어든다
+    F.gauge = Math.max(0, F.gauge - cn.hold / cn.need * dt); F.gpop = Math.max(0, F.gpop - dt * 8);
+    drawMash(cn, k, t);
+  } else setFrame(k);
   $("cur").classList.toggle("urgent", k < .4);
   $("danger").style.boxShadow = k < .4 ? `inset 0 0 ${60 + Math.sin(t * 30) * 20}px ${20 + (1 - k) * 30}px rgba(255, 40, 70, ${((.4 - k) * 1.3).toFixed(2)})` : "";
   // 끌어온 정도
   const prog = f.got / f.weight;
   $("reelFill").style.width = `${Math.round(prog * 100)}%`;
-  const dist = Math.max(1.6, f.dist0 * (1 - prog * .85));
+  const dist = Math.max(3.2, f.dist0 * (1 - prog * .7));
   $("reelText").textContent = `${dist.toFixed(1)}m`;
   // 물고기: 줄 끝에서 몸부림 (급할수록, 연타 중일수록 더 세게)
   const ax = angler.position.x, az = angler.position.z;
@@ -814,7 +935,7 @@ function updateShow(dt, t) {
 
 // ------------------------------------------------------------------ 진행
 function start() {
-  audio();
+  audio(); beatStop(); document.body.classList.remove("fighting");
   if (F) { F.fish.dispose(); F = null; }
   if (show) { show.fish.dispose(); show = null; }
   Object.assign(G, { playing: true, time: 180, score: 0, caught: [], book: new Set(), ending: false });
