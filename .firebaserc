@@ -10,6 +10,9 @@
         ],
         "idea": [
           "jambrain"
+        ],
+        "fish": [
+          "jammanbo-fish"
         ]
       }
     }

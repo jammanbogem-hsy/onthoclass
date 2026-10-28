@@ -1,0 +1,48 @@
+[
+  {
+    "id": "minnow",
+    "file": "assets/fish/minnow.glb?v=2",
+    "yaw": 90
+  },
+  {
+    "id": "crucian",
+    "file": "assets/fish/crucian.glb?v=2",
+    "yaw": 0
+  },
+  {
+    "id": "carp",
+    "file": "assets/fish/carp.glb?v=2",
+    "yaw": 90
+  },
+  {
+    "id": "catfish",
+    "file": "assets/fish/catfish.glb?v=2",
+    "yaw": 73
+  },
+  {
+    "id": "mandarin",
+    "file": "assets/fish/mandarin.glb?v=2",
+    "yaw": -90
+  },
+  {
+    "id": "sturgeon",
+    "file": "assets/fish/sturgeon.glb?v=2",
+    "yaw": 90
+  },
+  {
+    "id": "goldkoi",
+    "file": "assets/fish/goldkoi.glb?v=2",
+    "yaw": 14
+  },
+  {
+    "id": "boot",
+    "file": "assets/fish/boot.glb?v=2",
+    "yaw": 0,
+    "roll": 90
+  },
+  {
+    "id": "angler",
+    "file": "assets/angler.glb?v=1",
+    "yaw": 180
+  }
+]

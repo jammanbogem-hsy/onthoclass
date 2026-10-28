@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>잼만보 낚시터</title>
+<meta name="description" content="보글보글 거품에 낚싯대를 던지고, 방향키 콤보로 물고기와 한판 승부! 3분 낚시 대회">
+<meta property="og:title" content="잼만보 낚시터">
+<meta property="og:description" content="보글보글 거품에 낚싯대를 던지고, 방향키 콤보로 물고기와 한판 승부! 3분 낚시 대회">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Russo+One&display=swap">
+<style>
+  :root {
+    --ink: #13162e; --night: #1d2147; --panel: rgba(19, 22, 46, .84); --cream: #fff8e8; --muted: #b9c1e8;
+    --hot: #ff4d6d; --sun: #ffd23f; --lime: #9cf25a; --sky: #3ec7ff; --grape: #b26bff;
+    --up: #ffd23f; --down: #9cf25a; --left: #3ec7ff; --right: #ff6bb5;
+    --title: "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    --ui: "Do Hyeon", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    --num: "Russo One", "Black Han Sans", sans-serif;
+    --stroke: 0 3px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink), 2px 2px 0 var(--ink), -2px 2px 0 var(--ink), 2px -2px 0 var(--ink), -2px -2px 0 var(--ink);
+  }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--night); color: var(--cream); font-family: var(--ui); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; -webkit-touch-callout: none; }
+  button:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  .top { position: fixed; left: 0; right: 0; top: 0; display: flex; gap: 8px; justify-content: space-between; align-items: flex-start; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 0; pointer-events: none; z-index: 5; }
+  .chip { background: var(--panel); border: 3px solid var(--ink); box-shadow: 0 4px 0 var(--ink); border-radius: 14px; padding: 4px 12px 6px; display: flex; gap: 8px; align-items: baseline; }
+  .chip small { color: var(--muted); font-size: 14px; }
+  .chip b { font-family: var(--num); font-weight: 400; font-size: 24px; color: var(--sun); font-variant-numeric: tabular-nums; }
+  .chip.timer b { color: var(--cream); }
+  .chip.timer.low b { color: var(--hot); display: inline-block; animation: beat .5s infinite; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+  .hint { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); background: var(--panel); border: 3px solid var(--ink); border-radius: 14px; padding: 7px 14px; font-size: 18px; pointer-events: none; z-index: 5; white-space: nowrap; }
+  .hint em { font-style: normal; color: var(--sun); }
+
+  .shout { position: fixed; left: 50%; top: 36%; transform: translate(-50%, -50%); font-family: var(--title); font-size: clamp(40px, 10vw, 84px); text-shadow: var(--stroke), 0 8px 0 rgba(0,0,0,.25); pointer-events: none; z-index: 8; white-space: nowrap; letter-spacing: .02em; opacity: 0; }
+  .shout.pop { animation: shout .9s cubic-bezier(.2, 1.6, .4, 1) both; }
+  .shout.hot { color: var(--hot); } .shout.sun { color: var(--sun); } .shout.lime { color: var(--lime); } .shout.cream { color: var(--cream); }
+  @keyframes shout { 0% { transform: translate(-50%, -50%) scale(.2) rotate(-12deg); opacity: 0; } 25% { transform: translate(-50%, -50%) scale(1.25) rotate(4deg); opacity: 1; } 45% { transform: translate(-50%, -50%) scale(.95) rotate(-2deg); } 80% { opacity: 1; } 100% { transform: translate(-50%, -62%) scale(1); opacity: 0; } }
+  .flash { position: fixed; inset: 0; pointer-events: none; z-index: 7; opacity: 0; }
+  .flash.red { background: radial-gradient(ellipse at center, transparent 40%, rgba(255, 30, 60, .6)); animation: flash .45s ease-out; }
+  .flash.white { background: rgba(255, 255, 255, .7); animation: flash .3s ease-out; }
+  .flash.gold { background: radial-gradient(ellipse at center, rgba(255, 210, 63, .55), transparent 70%); animation: flash .7s ease-out; }
+  @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+  .danger { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
+  /* 만화 집중선 */
+  .speed { position: fixed; inset: -20%; pointer-events: none; z-index: 5; opacity: 0; transition: opacity .15s;
+    background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,.55) 0 1.2deg, transparent 1.2deg 7deg);
+    -webkit-mask: radial-gradient(circle at 50% 50%, transparent 32%, #000 62%); mask: radial-gradient(circle at 50% 50%, transparent 32%, #000 62%); }
+  .speed.on { opacity: .85; animation: speed .12s steps(2) infinite; }
+  @keyframes speed { 50% { transform: rotate(3deg) scale(1.02); } }
+  @keyframes beat { 50% { transform: scale(1.18); } }
+
+  .bite { position: fixed; left: 50%; top: 56%; transform: translate(-50%, -50%); z-index: 8; pointer-events: none; text-align: center; }
+  .bite b { display: block; font-family: var(--title); font-weight: 400; font-size: clamp(64px, 15vw, 120px); color: var(--hot); text-shadow: var(--stroke); animation: biteShake .07s infinite alternate; }
+  .bite span { font-size: 22px; text-shadow: var(--stroke); }
+  @keyframes biteShake { from { transform: translate(-5px, 2px) rotate(-7deg) scale(1.06); } to { transform: translate(5px, -2px) rotate(7deg) scale(.96); } }
+
+  .fight { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
+  .fhead { position: fixed; left: 50%; top: calc(60px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: min(520px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .fname { font-family: var(--title); font-size: 30px; text-shadow: var(--stroke); white-space: nowrap; }
+  .fname small { font-family: var(--ui); font-size: 15px; padding: 2px 10px; border-radius: 999px; border: 2px solid var(--ink); margin-right: 8px; vertical-align: 5px; text-shadow: none; }
+  .reelbar { position: relative; width: 100%; height: 22px; background: var(--ink); border-radius: 12px; border: 3px solid var(--ink); overflow: hidden; }
+  .reelbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, var(--sky), var(--lime)); border-radius: 9px; transition: width .15s; }
+  .reelbar span { position: absolute; right: 8px; top: 1px; font-family: var(--num); font-size: 13px; color: var(--cream); }
+  .hearts { display: flex; gap: 6px; }
+  .hearts svg { width: 32px; height: 32px; filter: drop-shadow(0 3px 0 var(--ink)); transition: transform .2s, opacity .2s; }
+  .hearts svg.lost { opacity: .25; transform: scale(.7) rotate(-20deg); }
+  .hearts svg.hit { animation: heartHit .5s; }
+  @keyframes heartHit { 30% { transform: scale(1.9) rotate(25deg); } }
+
+  .lane { position: fixed; left: 50%; top: 52%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 16px; }
+  .cur { position: relative; width: 150px; height: 150px; display: grid; place-items: center; }
+  .cur .burst { position: absolute; inset: -46px; border-radius: 50%; background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, .25) 0 10deg, transparent 10deg 30deg); animation: spin 2.4s linear infinite; -webkit-mask: radial-gradient(circle, #000 30%, transparent 70%); mask: radial-gradient(circle, #000 30%, transparent 70%); }
+  .cur svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .cur svg.ring circle { fill: none; stroke-width: 11; }
+  .cur svg.ring .bg { stroke: rgba(19, 22, 46, .75); }
+  .cur svg.ring .fg { stroke: var(--sun); stroke-linecap: round; }
+  .cur.urgent svg.ring .fg { stroke: var(--hot); }
+  .key { width: 96px; height: 96px; border-radius: 24px; display: grid; place-items: center; border: 4px solid var(--ink); box-shadow: 0 7px 0 var(--ink); box-sizing: border-box; }
+  .key svg { width: 62%; height: 62%; }
+  .cur .key { width: 110px; height: 110px; animation: keyIn .26s cubic-bezier(.2, 1.8, .4, 1); }
+  .cur.urgent .key { animation: keyIn .26s cubic-bezier(.2, 1.8, .4, 1), urgent .09s .26s infinite alternate; }
+  .cur.pressed .key { transform: scale(.86) translateY(5px); box-shadow: 0 2px 0 var(--ink); }
+  .cur .mash { position: absolute; bottom: -38px; left: 50%; transform: translateX(-50%); font-family: var(--title); font-size: 30px; color: var(--sun); text-shadow: var(--stroke); white-space: nowrap; animation: beat .16s infinite; }
+  .cur .count { position: absolute; top: -14px; right: -14px; min-width: 44px; height: 44px; padding: 0 6px; border-radius: 22px; background: var(--hot); border: 3px solid var(--ink); font-family: var(--num); font-size: 22px; display: grid; place-items: center; box-sizing: border-box; }
+  @keyframes keyIn { from { transform: scale(.2) rotate(-30deg); } to { transform: scale(1) rotate(0); } }
+  @keyframes urgent { from { transform: translateX(-4px) rotate(-4deg); } to { transform: translateX(4px) rotate(4deg); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .queue { display: flex; gap: 10px; align-items: center; }
+  .queue .key { width: 58px; height: 58px; border-radius: 16px; box-shadow: 0 5px 0 var(--ink); opacity: .9; }
+  .queue .key:nth-child(2) { opacity: .6; transform: scale(.88); } .queue .key:nth-child(3) { opacity: .35; transform: scale(.76); }
+  .k-reel { background: #fff8e8; border-radius: 50%; } .k-up { background: var(--up); } .k-down { background: var(--down); } .k-left { background: var(--left); } .k-right { background: var(--right); }
+  .judge { position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%); font-family: var(--num); font-size: clamp(32px, 7vw, 58px); text-shadow: var(--stroke); white-space: nowrap; opacity: 0; }
+  .judge.go { animation: judge .55s cubic-bezier(.2, 1.6, .4, 1) both; }
+  .judge.perfect { color: var(--sun); } .judge.good { color: var(--lime); } .judge.miss { color: var(--hot); }
+  @keyframes judge { 0% { transform: translate(-50%, -50%) scale(.3); opacity: 0; } 30% { transform: translate(-50%, -50%) scale(1.35) rotate(-4deg); opacity: 1; } 100% { transform: translate(-50%, -95%) scale(1); opacity: 0; } }
+  .combo { position: fixed; left: 18px; top: 44%; text-align: left; }
+  .combo b { display: block; font-family: var(--num); font-weight: 400; font-size: 64px; line-height: .9; color: var(--sun); text-shadow: var(--stroke); }
+  .combo span { font-family: var(--num); font-size: 18px; text-shadow: var(--stroke); letter-spacing: .1em; }
+  .combo.bump b { animation: bump .25s; }
+  @keyframes bump { 40% { transform: scale(1.6) rotate(-10deg); } }
+
+  .dpad { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: repeat(3, 70px); grid-template-rows: repeat(2, 70px); gap: 8px; pointer-events: auto; }
+  .dpad button { border-radius: 18px; border: 3px solid var(--ink); box-shadow: 0 5px 0 var(--ink); display: grid; place-items: center; }
+  .dpad button svg { width: 56%; height: 56%; }
+  .dpad button.on { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+  .dpad .u { grid-column: 2; grid-row: 1; } .dpad .l { grid-column: 1; grid-row: 2; } .dpad .d { grid-column: 2; grid-row: 2; } .dpad .r { grid-column: 3; grid-row: 2; }
+  .reelbtn { position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 112px; height: 112px; border-radius: 50%; border: 4px solid var(--ink); box-shadow: 0 6px 0 var(--ink); display: grid; place-items: center; pointer-events: auto; padding: 14px 0 22px; box-sizing: border-box; }
+  .reelbtn svg { width: 58%; height: 58%; }
+  .reelbtn span { position: absolute; bottom: 12px; font-family: var(--title); font-size: 17px; color: var(--ink); }
+  .reelbtn.on { transform: translateY(4px) rotate(30deg); box-shadow: 0 2px 0 var(--ink); }
+  @media (hover: hover) and (pointer: fine) { .dpad, .reelbtn { opacity: .7; } }
+
+  .card { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); background: var(--panel); border: 4px solid var(--ink); box-shadow: 0 8px 0 var(--ink); border-radius: 24px; padding: 16px 26px 18px; text-align: center; z-index: 9; min-width: 240px; pointer-events: none; animation: cardIn .5s cubic-bezier(.2, 1.6, .4, 1); }
+  @keyframes cardIn { from { transform: translate(-50%, -50%) scale(.3) rotate(-10deg); } }
+  .card .tier { display: inline-block; font-size: 16px; padding: 2px 12px; border-radius: 999px; border: 2px solid var(--ink); }
+  .card h2 { margin: 6px 0 0; font-family: var(--title); font-weight: 400; font-size: 42px; text-shadow: var(--stroke); }
+  .card p { margin: 0; font-family: var(--num); color: var(--muted); }
+  .card strong { display: block; margin-top: 4px; font-family: var(--num); font-weight: 400; font-size: 38px; color: var(--sun); text-shadow: var(--stroke); }
+  .card .new { color: var(--hot); font-size: 18px; }
+  .card .bonus { color: var(--lime); font-size: 16px; }
+
+  .screen { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: linear-gradient(180deg, rgba(19, 22, 46, .3), rgba(19, 22, 46, .85)); overflow-y: auto; }
+  .panel { width: min(540px, 100%); background: var(--panel); border: 4px solid var(--ink); box-shadow: 0 10px 0 var(--ink); border-radius: 28px; padding: 22px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box; }
+  .panel h1 { margin: 0; font-family: var(--title); font-weight: 400; font-size: clamp(46px, 12vw, 72px); line-height: .95; text-shadow: var(--stroke), 0 8px 0 rgba(0, 0, 0, .25); }
+  .panel h1 em { font-style: normal; color: var(--sun); display: inline-block; transform: rotate(-4deg); }
+  .panel p { margin: 0; color: var(--muted); font-size: 18px; line-height: 1.5; }
+  .how { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; font-size: 17px; align-items: center; }
+  .how b { font-family: var(--title); font-weight: 400; color: var(--sun); font-size: 18px; }
+  .how em { font-style: normal; color: var(--hot); }
+  .how .mini { display: inline-flex; gap: 4px; vertical-align: middle; }
+  .how .mini .key { width: 24px; height: 24px; border-radius: 7px; border-width: 2px; box-shadow: 0 2px 0 var(--ink); }
+  .bubbles { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bubbles span { display: inline-flex; align-items: center; gap: 5px; font-size: 15px; padding: 2px 10px 2px 4px; border-radius: 999px; background: rgba(255, 255, 255, .08); }
+  .bubbles i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--ink); }
+  .go { background: var(--sun); color: var(--ink); border: 4px solid var(--ink); box-shadow: 0 6px 0 var(--ink); border-radius: 18px; padding: 12px; font-family: var(--title); font-size: 30px; }
+  .go:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
+  .go:disabled { opacity: .5; }
+  .load { font-family: var(--num); font-size: 14px; color: var(--muted); text-align: center; }
+  .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .results div { background: rgba(255, 255, 255, .07); border-radius: 12px; padding: 8px 10px; display: flex; justify-content: space-between; gap: 8px; font-size: 17px; }
+  .results div span { font-family: var(--num); color: var(--sun); font-size: 14px; }
+  .results div.none { opacity: .35; }
+  .big { font-family: var(--num); font-size: 64px; color: var(--sun); line-height: 1; text-shadow: var(--stroke); }
+  .best { color: var(--muted); font-size: 18px; }
+
+  @media (max-width: 560px) {
+    .dpad { grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 64px); }
+    .reelbtn { width: 96px; height: 96px; }
+    .lane { top: 46%; } .cur { width: 124px; height: 124px; } .cur .key { width: 90px; height: 90px; }
+    .queue .key { width: 44px; height: 44px; } .queue .key:nth-child(3) { display: none; }
+    .combo { left: 10px; top: 30%; } .combo b { font-size: 44px; }
+    .chip b { font-size: 19px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .cur .burst, .bite b, .cur.urgent .key, .speed.on { animation: none; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div class="danger" id="danger"></div>
+<div class="speed" id="speed"></div>
+<div class="flash" id="flash"></div>
+
+<div class="top">
+  <div class="chip timer" id="timerChip"><small>남은 시간</small><b id="timer">3:00</b></div>
+  <div class="chips">
+    <div class="chip"><small>점수</small><b id="score">0</b></div>
+    <div class="chip"><small>마리</small><b id="count">0</b></div>
+  </div>
+</div>
+<div class="hint" id="hint" hidden></div>
+<div class="shout" id="shout"></div>
+<div class="bite" id="bite" hidden><b>쏙!</b><span>방향키나 화면을 눌러 챔기!</span></div>
+
+<div class="fight" id="fight" hidden>
+  <div class="fhead">
+    <div class="fname" id="fname"><small id="ftier">???</small><span id="fnameText">무언가 걸렸다!</span></div>
+    <div class="hearts" id="hearts"></div>
+    <div class="reelbar"><i id="reelFill"></i><span id="reelText">10m</span></div>
+  </div>
+  <div class="lane">
+    <div class="cur" id="cur">
+      <div class="burst"></div>
+      <svg class="ring" viewBox="0 0 160 160"><circle class="bg" cx="80" cy="80" r="70"/><circle class="fg" id="ringFg" cx="80" cy="80" r="70" stroke-dasharray="440" stroke-dashoffset="0"/></svg>
+      <div class="key" id="curKey"></div>
+      <div class="count" id="curCount" hidden></div>
+      <div class="mash" id="curMash" hidden>다다다다!</div>
+    </div>
+    <div class="queue" id="queue"></div>
+  </div>
+  <div class="judge" id="judge"></div>
+  <div class="combo" id="combo" hidden><b id="comboN">0</b><span>COMBO</span></div>
+  <button class="reelbtn k-reel" data-dir="reel" aria-label="감기 (스페이스바)"></button>
+  <div class="dpad" id="dpad">
+    <button class="u k-up" data-dir="up" aria-label="위"></button>
+    <button class="l k-left" data-dir="left" aria-label="왼쪽"></button>
+    <button class="d k-down" data-dir="down" aria-label="아래"></button>
+    <button class="r k-right" data-dir="right" aria-label="오른쪽"></button>
+  </div>
+</div>
+
+<div class="card" id="card" hidden>
+  <span class="tier" id="cardTier">흔함</span>
+  <h2 id="cardName">붕어</h2>
+  <p id="cardSize">23cm</p>
+  <strong id="cardPoints">+20</strong>
+  <div class="bonus" id="cardBonus"></div>
+  <div class="new" id="cardNew" hidden>새 물고기!</div>
+</div>
+
+<div class="screen" id="start">
+  <div class="panel">
+    <h1>잼만보<br><em>낚시터</em></h1>
+    <p>3분 동안 물고기를 잡아 점수를 모아요. 반짝이는 거품일수록 대물이 숨어 있어요.</p>
+    <div class="how">
+      <b>던지기</b><span>보글보글 거품을 눌러 낚싯대를 던져요</span>
+      <b>챔기</b><span>찌가 <em>쏙!</em> 들어가면 바로 눌러요. 톡톡은 가짜!</span>
+      <b>승부</b><span>나오는 방향키를 빠르게 <span class="mini"><i class="key k-up"></i><i class="key k-down"></i><i class="key k-left"></i><i class="key k-right"></i></span> 우다다 뒤엔 <b style="font-size:inherit">감기</b>(스페이스바)! 늦거나 틀리면 하트가 깎여요</span>
+    </div>
+    <div class="bubbles" id="legend"></div>
+    <p class="load" id="loadText">물고기 불러오는 중…</p>
+    <button class="go" id="startBtn" disabled>낚시 시작!</button>
+  </div>
+</div>
+
+<div class="screen" id="end" hidden>
+  <div class="panel">
+    <h1>대회 <em>끝!</em></h1>
+    <div class="big" id="endScore">0</div>
+    <p class="best" id="endBest">최고 기록 0</p>
+    <div class="results" id="endList"></div>
+    <button class="go" id="againBtn">한 판 더!</button>
+  </div>
+</div>
+
+<script type="module" src="game.js?v=3"></script>
+</body>
+</html>
