@@ -246,6 +246,8 @@
   .minidom .word { display: flex; gap: 8px; } .minidom .word.bad { animation: urgent .08s steps(2) 3; }
   .minidom .word span { width: clamp(40px, 10vw, 64px); height: clamp(52px, 13vw, 80px); display: grid; place-items: center; font-size: clamp(30px, 8vw, 50px); background: var(--panel); color: var(--muted); box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink); }
   .minidom .word span.ok { background: var(--lime); color: var(--ink); } .minidom .word span.now { background: var(--sun); color: var(--ink); animation: blink .4s steps(2) infinite; }
+  .minidom .typein { font-family: var(--px); font-weight: 700; font-size: 26px; text-align: center; width: min(320px, 80vw); padding: 10px; border: 0; outline: 0; background: var(--cream); color: var(--ink); box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), 0 10px 0 rgba(0, 0, 0, .35); -webkit-user-select: text; user-select: text; ime-mode: active; }
+  .minidom .typein::placeholder { color: #9aa0b8; }
   .minidom .letters { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 92vw; }
   .minidom .letters button { --pb: 4px; width: 54px; height: 54px; background: var(--cream); color: var(--ink); font-family: var(--px); font-weight: 700; font-size: 26px; }
   .minidom .phase { font-size: 26px; color: var(--sun); text-shadow: var(--pxs); }
@@ -425,6 +427,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=16"></script>
+<script type="module" src="game.js?v=17"></script>
 </body>
 </html>

@@ -1003,8 +1003,8 @@ function miniNote(type, sp, sizeT) {
   if (type === "bar") return { type, dir: "any", win: 5, zone: .27 - power * .08 - sizeT * .07, speed: .55 + power * .45 + sizeT * .35, need: sp.tier === "전설" || sp.boss ? 3 : 2 };
   if (type === "hold") return { type, dir: "hold", win: 16, need: 2.6 + power * 1.4 + sizeT * 1.2, pull: .5 + power * .5 + sizeT * .3, jerk: .5 + power * 1.2 + sizeT * .6 };
   if (type === "typing") { // 영어 단어 타자: 클수록 긴 단어
-    const L = clamp(Math.round(3 + power * 2 + sizeT * 1.4), 3, 6), list = WORDS.filter((w) => w.length === L);
-    return { type, dir: "typing", word: list[Math.floor(Math.random() * list.length)], win: 3 + L * 1.3 };
+    const L = clamp(Math.round(2 + power * 1.2 + sizeT * .9), 2, 4), list = WORDS.filter((w) => w.length === L);
+    return { type, dir: "typing", word: list[Math.floor(Math.random() * list.length)], win: 4 + L * 2.4 };
   }
   if (type === "simon") return { type, dir: "simon", len: 3 + Math.round(power * 1.5 + sizeT), win: 40 };
   if (type === "spin") { const need = 2 + Math.round(power * 1.5 + sizeT); return { type, dir: "spin", need, win: 4 + need * 2.6 }; }
@@ -1215,7 +1215,11 @@ function popCircle(n, perfect) {
 }
 // ------------------------------------------------------------------ 미니게임: 타이밍 바 · 줄 텐션 · 물고기 따라잡기
 const MINI_TYPES = new Set(["bar", "hold", "track", "typing", "simon", "spin", "whack"]);
-const WORDS = ["FIN", "NET", "SEA", "ROD", "EEL", "SUN", "BAIT", "FISH", "HOOK", "REEL", "WAVE", "POND", "BOAT", "CRAB", "SHARK", "WATER", "OCEAN", "CATCH", "SQUID", "TROUT", "SPLASH", "BUBBLE", "SALMON", "ANCHOR"];
+// 타자 낚시 단어(한글). 클수록 긴 단어
+const WORDS = ["낚시", "바다", "강물", "붕어", "잉어", "미끼", "파도", "거품", "연못", "고래", "조개", "그물", "바람", "노을", "수달", "문어", "모래", "등대",
+  "물고기", "낚싯대", "물방울", "소나기", "무지개", "물보라", "지렁이", "개구리", "해파리", "오징어", "갈매기", "뱃고동",
+  "낚시대회", "바닷바람", "물고기떼", "고기잡이", "여름방학", "파도소리", "갈매기떼", "보물상자"];
+const DECOY = [..."가나다라마바사아자차카타파하고누도루무부수우주"];
 // 모드가 바뀔 때 1.3초 동안 이름과 방법을 먼저 보여 준다
 const MODES = {
   arrow: { title: "방향키 콤보", tip: "나오는 화살표를 빠르게!", tipTouch: "나오는 화살표 버튼을 빠르게!", color: "#ffd23f" },
@@ -1223,7 +1227,7 @@ const MODES = {
   bar: { title: "타이밍 바", tip: "바늘이 초록 칸일 때 스페이스!", tipTouch: "바늘이 초록 칸일 때 톡!", color: "#9cf25a", short: "바" },
   hold: { title: "줄 버티기", tip: "스페이스를 꾹 — 빨개지면 떼요", tipTouch: "화면을 꾹 — 빨개지면 떼요", color: "#3ec7ff", short: "줄" },
   track: { title: "따라잡기", tip: "← → 로 상자를 물고기에!", tipTouch: "화면을 좌우로 끌어 상자를 물고기에!", color: "#3ec7ff", short: "추적" },
-  typing: { title: "타자 낚시", tip: "나온 영어 단어를 키보드로 쳐요", tipTouch: "글자를 순서대로 눌러요", color: "#b26bff", short: "ABC" },
+  typing: { title: "타자 낚시", tip: "나온 낱말을 한글로 쳐요", tipTouch: "글자를 순서대로 눌러요", color: "#b26bff", short: "가나" },
   simon: { title: "기억 낚시", tip: "보여준 화살표 순서를 기억해 똑같이!", tipTouch: "보여준 화살표 순서를 기억해 똑같이!", color: "#ffd23f", short: "기억" },
   spin: { title: "릴 돌리기", tip: "↑ → ↓ ← 순서로 빙글빙글!", tipTouch: "화면을 빙글빙글 돌려요!", color: "#9cf25a", short: "릴" },
   whack: { title: "튀어나온 물고기 잡기", tip: "튀어나온 물고기를 클릭! (키 Q W E / A S D / Z X C)", tipTouch: "튀어나온 물고기를 톡!", color: "#ff9f1c", short: "잡기" },
@@ -1242,13 +1246,14 @@ function showModeCard(mode, n) {
 }
 function endIntro() {
   $("modeCard").hidden = true; document.body.classList.remove("intro");
+  if (!TOUCH && F?.chart[F.i]?.type === "typing") $("typeIn")?.focus();
   const key = $("curKey"); key.style.animation = "none"; void key.offsetWidth; key.style.animation = "";
 }
 const HOLD = { space: false, left: false, right: false, ptr: false, px: .5 };
 const miniCtx = $("miniCv").getContext("2d");
 let tensionLoop = null;
 const MINI_CAP = {
-  typing: '<span class="kb-desk">키보드로 단어를 쳐요 (한/영 상관없어요)</span><span class="kb-touch">아래 글자를 순서대로 눌러요</span>',
+  typing: '<span class="kb-desk">입력칸에 한글로 쳐요 (영어가 나오면 <b style="color:var(--sun)">한/영</b> 키!)</span><span class="kb-touch">아래 글자를 순서대로 눌러요</span>',
   simon: '잘 보고 → 똑같은 순서로 <span class="kb-desk">방향키</span><span class="kb-touch">화살표 버튼</span>!',
   spin: '<span class="kb-desk">↑ → ↓ ← 순서로 계속 눌러 릴을 감아요</span><span class="kb-touch">릴 둘레를 손가락으로 빙글빙글 돌려요</span>',
   whack: '튀어나온 물고기를 <span class="kb-desk">클릭하거나 Q W E / A S D / Z X C</span><span class="kb-touch">톡!</span> 3마리 놓치면 실패',
@@ -1259,6 +1264,7 @@ const MINI_CAP = {
 function startMini(n) {
   const on = !!n && MINI_TYPES.has(n.type);
   $("mini").hidden = !on;
+  if (document.activeElement?.id === "typeIn") document.activeElement.blur();
   if (tensionLoop) { tensionLoop.stop(); tensionLoop = null; }
   if (!on) return;
   F.ms = n.type === "bar" ? { hits: 0, zc: rand(.3, .7), cool: 0, pos: 0 }
@@ -1291,11 +1297,18 @@ const WHACK_KEYS = ["KeyQ", "KeyW", "KeyE", "KeyA", "KeyS", "KeyD", "KeyZ", "Key
 function renderMiniDom(n) {
   const box = $("miniDom"), m = F.ms;
   if (n.type === "typing") {
-    const letters = [...new Set([...n.word, ...Array.from({ length: 2 }, () => "ABCDEFGHIJKLMNOPRSTUW"[Math.floor(Math.random() * 21)])])].sort(() => Math.random() - .5);
+    const decoys = DECOY.filter((c) => !n.word.includes(c)).sort(() => Math.random() - .5).slice(0, 2);
+    const letters = [...new Set([...n.word, ...decoys])].sort(() => Math.random() - .5);
     box.className = "minidom typing";
     box.innerHTML = `<div class="word">${[...n.word].map((c, i) => `<span class="${i < m.idx ? "ok" : i === m.idx ? "now" : ""}">${c}</span>`).join("")}</div>
+      <input class="typein kb-desk" id="typeIn" autocomplete="off" autocapitalize="off" spellcheck="false" lang="ko" placeholder="여기에 한글로!">
       <div class="letters kb-touch">${letters.map((c) => `<button class="px" data-letter="${c}">${c}</button>`).join("")}</div>`;
     box.querySelectorAll("[data-letter]").forEach((b) => b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); typeLetter(b.dataset.letter); }));
+    const inp = $("typeIn");
+    inp.addEventListener("input", (e) => typeCheck(e.isComposing));
+    inp.addEventListener("compositionend", () => typeCheck(false));
+    inp.addEventListener("pointerdown", (e) => e.stopPropagation());
+    if (!TOUCH && !(F.intro > 0)) setTimeout(() => inp.focus(), 0);
   } else if (n.type === "simon") {
     box.className = "minidom simon";
     box.innerHTML = `<div class="phase" id="simonPhase">잘 봐요!</div><div class="slots">${m.seq.map((d, i) => `<div class="key px slot" data-i="${i}"></div>`).join("")}</div>`;
@@ -1310,14 +1323,36 @@ function goodHit(perfect) {
   F.tug = (F.tugSide = -F.tugSide); A.kick = 1; shake = Math.max(shake, .18); punch = .7; F.pulse = 1; splash(fp.x, fp.z, 8, .7);
   if (perfect) F.perfect++;
 }
+// 컴퓨터: 입력칸의 한글을 낱말과 비교. 조합 중인 마지막 글자(곡→고기)는 아직 판정하지 않는다
+function typeCheck(composing) {
+  if (!F || F.intro > 0) return;
+  const n = F.chart[F.i], m = F.ms, inp = $("typeIn"); if (n.type !== "typing" || !inp) return;
+  const v = inp.value.replace(/\s/g, "");
+  if (/[a-z]/i.test(v)) { inp.value = n.word.slice(0, m.idx); toastHint("한/영 키를 눌러 한글로 바꿔요!"); return; }
+  if (v === n.word) { setTyped(n, n.word.length); F.perfect++; inp.blur(); return miniWin(n); }
+  const done = composing ? v.slice(0, -1) : v;
+  if (!n.word.startsWith(done)) { // 틀린 글자: 시간 조금 깎고 맞는 데까지 되돌린다
+    F.noteT += .8; shake = Math.max(shake, .2); SFX.nibble(); typoShake();
+    inp.blur(); inp.value = n.word.slice(0, m.idx); inp.focus();
+    return;
+  }
+  if (done.length > m.idx) setTyped(n, done.length);
+}
+function setTyped(n, k) {
+  const m = F.ms;
+  while (m.idx < k) { m.idx++; sample("ding", { rate: semi(m.idx * 2) * .9 }) || SFX.hit("up", true); goodHit(false); }
+  $("miniDom").querySelectorAll(".word span").forEach((s, i) => { s.className = i < m.idx ? "ok" : i === m.idx ? "now" : ""; });
+}
+function typoShake() { const w = $("miniDom").querySelector(".word"); if (!w) return; w.classList.remove("bad"); void w.offsetWidth; w.classList.add("bad"); }
+let hintT = 0;
+function toastHint(text) { if (performance.now() - hintT < 1500) return; hintT = performance.now(); toast(text); }
+// 휴대폰: 글자 버튼을 순서대로
 function typeLetter(c) {
   if (!F || F.intro > 0) return;
   const n = F.chart[F.i]; if (n.type !== "typing") return;
   const m = F.ms;
-  if (c !== n.word[m.idx]) { F.noteT += .6; shake = Math.max(shake, .2); SFX.nibble(); const w = $("miniDom").querySelector(".word"); w.classList.remove("bad"); void w.offsetWidth; w.classList.add("bad"); return; }
-  m.idx++; sample("ding", { rate: semi(m.idx * 2) * .9 }) || SFX.hit("up", true); goodHit(false);
-  const spans = $("miniDom").querySelectorAll(".word span");
-  spans.forEach((s, i) => { s.className = i < m.idx ? "ok" : i === m.idx ? "now" : ""; });
+  if (c !== n.word[m.idx]) { F.noteT += .6; shake = Math.max(shake, .2); SFX.nibble(); typoShake(); return; }
+  setTyped(n, m.idx + 1);
   if (m.idx >= n.word.length) { F.perfect++; miniWin(n); }
 }
 function simonPress(n, dir) {
@@ -1616,6 +1651,7 @@ addEventListener("keyup", (e) => {
   if (KEYMAP[e.code] === "right") HOLD.right = false;
 });
 addEventListener("keydown", (e) => {
+  if (e.target.id === "typeIn") return; // 한글 입력칸은 그대로 두고
   const dir = KEYMAP[e.code];
   if (dir || e.code === "Space") e.preventDefault();
   if (e.code === "Space") HOLD.space = true;
@@ -1623,7 +1659,7 @@ addEventListener("keydown", (e) => {
   if (dir === "right") HOLD.right = true;
   if (e.repeat || !G.playing) return;
   const cn = F?.chart[F.i];
-  if (cn?.type === "typing" && /^Key[A-Z]$/.test(e.code)) { e.preventDefault(); return typeLetter(e.code.slice(3)); }
+  if (cn?.type === "typing" && !TOUCH) { $("typeIn")?.focus(); return; } // 입력칸 밖에서 눌러도 입력칸으로
   if (cn?.type === "whack" && WHACK_KEYS.includes(e.code)) { e.preventDefault(); return whackCell(WHACK_KEYS.indexOf(e.code)); }
   if (!F && R.state === "idle" && BAIT_KEYS[e.key]) return setBait(BAIT_KEYS[e.key]);
   if (dir) { pressPad(dir); press(dir); }
