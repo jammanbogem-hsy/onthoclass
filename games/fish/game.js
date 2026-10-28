@@ -57,11 +57,19 @@ const MINIS = {
   jack: ["bar"], mackerel: ["track"], rockfish: ["hold"], puffer: ["bar"], cutlass: ["track"], seabream: ["bar", "hold"], flounder: ["hold"],
   yellowtail: ["track", "hold"], sunfish: ["bar", "hold"], tuna: ["track", "hold"], marlin: ["bar", "track", "hold"],
 };
+// 새 모드(타자·기억·릴·두더지)도 고르게 나눠 준다
+Object.assign(MINIS, {
+  minnow: ["bar", "whack"], pirami: ["typing"], crucian: ["hold", "spin"], bluegill: ["bar", "simon"], carp: ["hold", "typing"], bass: ["track", "whack"],
+  trout: ["bar", "simon"], catfish: ["spin", "track"], eel: ["track", "typing"], mandarin: ["whack", "bar"], snakehead: ["spin", "hold"],
+  sturgeon: ["hold", "simon", "spin"], goldkoi: ["bar", "typing", "whack"],
+  jack: ["bar", "typing"], mackerel: ["track", "whack"], rockfish: ["hold", "simon"], puffer: ["whack"], cutlass: ["track", "spin"],
+  seabream: ["bar", "typing"], flounder: ["hold", "whack"], yellowtail: ["spin", "simon"], sunfish: ["hold", "typing"], tuna: ["track", "spin", "simon"], marlin: ["bar", "whack", "hold"],
+});
 for (const id in MINIS) SPECIES[id].minis = MINIS[id];
 // 보스: 경기 후반에 한 번 나타나는 거대한 그림자. 모든 미니게임을 다 거친다
 Object.assign(SPECIES, {
-  bossFresh: { water: "fresh", name: "메기 대왕", tier: "보스", points: 800, disp: 3.4, len: [250, 320], model: "catfish", notes: 14, win: .85, mash: 2, zig: 1, play: "mix", minis: ["bar", "track", "hold"], boss: true },
-  bossSea: { water: "sea", name: "청새치 대왕", tier: "보스", points: 900, disp: 4.2, len: [450, 600], model: "marlin", notes: 14, win: .85, mash: 2, zig: 1, play: "mix", minis: ["bar", "track", "hold"], boss: true },
+  bossFresh: { water: "fresh", name: "메기 대왕", tier: "보스", points: 800, disp: 3.4, len: [250, 320], model: "catfish", notes: 14, win: .85, mash: 2, zig: 1, play: "mix", minis: ["bar", "typing", "track", "whack", "hold"], boss: true },
+  bossSea: { water: "sea", name: "청새치 대왕", tier: "보스", points: 900, disp: 4.2, len: [450, 600], model: "marlin", notes: 14, win: .85, mash: 2, zig: 1, play: "mix", minis: ["spin", "simon", "track", "whack", "hold"], boss: true },
 });
 // 미끼: 등급별로 잘 무는 정도가 다르다
 const BAITS = {
@@ -994,7 +1002,15 @@ function miniNote(type, sp, sizeT) {
   const power = Math.min(1, sp.points / 320);
   if (type === "bar") return { type, dir: "any", win: 5, zone: .27 - power * .08 - sizeT * .07, speed: .55 + power * .45 + sizeT * .35, need: sp.tier === "전설" || sp.boss ? 3 : 2 };
   if (type === "hold") return { type, dir: "hold", win: 16, need: 2.6 + power * 1.4 + sizeT * 1.2, pull: .5 + power * .5 + sizeT * .3, jerk: .5 + power * 1.2 + sizeT * .6 };
-  return { type: "track", dir: "track", win: 14, box: .34 - power * .08 - sizeT * .07, speed: .35 + power * .4 + sizeT * .3 };
+  if (type === "typing") { // 영어 단어 타자: 클수록 긴 단어
+    const L = clamp(Math.round(3 + power * 2 + sizeT * 1.4), 3, 6), list = WORDS.filter((w) => w.length === L);
+    return { type, dir: "typing", word: list[Math.floor(Math.random() * list.length)], win: 3 + L * 1.3 };
+  }
+  if (type === "simon") return { type, dir: "simon", len: 3 + Math.round(power * 1.5 + sizeT), win: 40 };
+  if (type === "spin") { const need = 2 + Math.round(power * 1.5 + sizeT); return { type, dir: "spin", need, win: 4 + need * 2.6 }; }
+  if (type === "whack") { const need = 5 + Math.round(power * 2 + sizeT * 2); return { type, dir: "whack", need, stay: 1.25 - power * .3 - sizeT * .2, win: 6 + need * 2 }; }
+  // 따라잡기: 물고기가 느긋하게 헤엄치고 상자는 넉넉하게
+  return { type: "track", dir: "track", win: 18, box: .38 - power * .07 - sizeT * .05, speed: .13 + power * .13 + sizeT * .09 };
 }
 function makeChart(sp, sizeT) {
   const notes = [];
@@ -1012,7 +1028,7 @@ function makeChart(sp, sizeT) {
     if (mashAt.has(i)) { notes.push(mashNote(sp, sizeT, false)); last = ""; continue; }
     if (zigAt.has(i)) {
       const first = Math.random() < .5 ? "left" : "right", other = first === "left" ? "right" : "left";
-      for (let k = 0; k < 4; k++) notes.push({ type: "tap", dir: k % 2 ? other : first, win: win * .8, zig: true });
+      for (let k = 0; k < 4; k++) notes.push({ type: "tap", dir: k % 2 ? other : first, win: win * 1.1, zig: true });
       last = ""; continue;
     }
     if (burstAt.has(i)) { // 우다다: 짧은 시간에 방향키 3~4개, 감기로 마무리
@@ -1082,7 +1098,6 @@ function showNote() {
   startMini(n);
   document.body.classList.toggle("finale", mash && !!n.final);
   showCircles(n);
-  if (circ && F.chart[F.i - 1]?.type !== "circle") shout("원을 터치!", "lime", .8);
   key.className = `key px k-${n.dir}`; key.innerHTML = mash ? "" : KEY_HTML(n.dir);
   cur.classList.remove("urgent", "pressed");
   key.style.animation = "none"; void key.offsetWidth; key.style.animation = ""; // 다시 튀어나오게
@@ -1090,13 +1105,18 @@ function showNote() {
   if (mash) {
     F.gauge = .35; F.taps = 0; F.tapT = []; F.rate = 0; F.mood = ""; $("curCount").textContent = "0";
     $("curMash").innerHTML = `계속 연타하세요!<small id="mashMood"><span class="kb-desk">아무 키나 · 스페이스를 빠르게</span><span class="kb-touch">화면을 빠르게 톡톡톡</span></small>`;
-    shout(n.final ? "다다다다다!!" : "버텨라!!", "hot", n.final ? 1.1 : .9);
-    if (n.final) { flash("red"); shake = .6; beatStart(Math.max(BEAT.bpm, 172)); }
+    if (n.final) { flash("red"); shake = .6; beatStart(Math.max(BEAT.bpm, 172)); } // 이름은 모드 카드가 알려 준다
   }
   if (n.zig && !F.chart[F.i - 1]?.zig) shout("좌우로 버텨!", "lime", .9);
   if (n.burst && !F.chart[F.i - 1]?.burst) shout("우다다다!", "hot", .8);
   if (n.finisher) shout("지금 감아!", "sun", .7);
-  $("queue").innerHTML = F.chart.slice(F.i + 1, F.i + 4).map((q) => q.type === "mash" ? `<div class="key px k-mash"><div class="kb">연타</div></div>` : q.type === "circle" ? `<div class="key px k-circle"><i></i></div>` : `<div class="key px k-${q.dir}">${KEY_HTML(q.dir)}</div>`).join("");
+  $("queue").innerHTML = F.chart.slice(F.i + 1, F.i + 4).map((q) => q.type === "mash" ? `<div class="key px k-mash"><div class="kb">연타</div></div>`
+    : q.type === "circle" ? `<div class="key px k-circle"><i></i></div>`
+    : MINI_TYPES.has(q.type) ? `<div class="key px k-mini" style="background:${MODES[q.type].color}"><div class="kb">${MODES[q.type].short}</div></div>`
+    : `<div class="key px k-${q.dir}">${KEY_HTML(q.dir)}</div>`).join("");
+  // 모드가 바뀌면 안내 카드
+  const mode = modeOf(n);
+  if (mode !== F.mode) { F.mode = mode; F.intro = 1.3; showModeCard(mode, n); }
   F.noteT = 0; frameLit = -1;
 }
 function judge(text, cls) { const el = $("judge"); el.textContent = text; el.className = `judge ${cls}`; void el.offsetWidth; el.classList.add("go"); }
@@ -1104,11 +1124,14 @@ function press(dir) {
   audio();
   if (R.state === "bite") return hook();
   if (R.state === "waiting" || R.state === "nibble") return earlyStrike();
-  if (!F) return;
+  if (!F || F.intro > 0) return; // 모드 안내 중에는 쉬어요
   const n = F.chart[F.i];
   const cur = $("cur"); cur.classList.add("pressed"); setTimeout(() => cur.classList.remove("pressed"), 70);
   const fp = F.fish.group.position;
   if (n.type === "bar") return barPress(n, fp);
+  if (n.type === "simon") return simonPress(n, dir);
+  if (n.type === "spin") return spinPress(n, dir);
+  if (n.type === "typing" || n.type === "whack") return; // 글자·칸은 따로 받는다
   if (n.type === "hold" || n.type === "track") return; // 누르고 있기·따라가기는 updateMini 가 본다
   if (n.type === "mash") { // 무엇을 눌러도 된다. 원의 크기는 연타 속도로 정해진다(updateFight)
     F.tugSide = -F.tugSide; F.tug = F.tugSide; // 누를 때마다 물고기가 좌우로 휘청이며 끌려온다
@@ -1191,11 +1214,44 @@ function popCircle(n, perfect) {
   $("fight").appendChild(el); setTimeout(() => el.remove(), 500);
 }
 // ------------------------------------------------------------------ 미니게임: 타이밍 바 · 줄 텐션 · 물고기 따라잡기
-const MINI_TYPES = new Set(["bar", "hold", "track"]);
+const MINI_TYPES = new Set(["bar", "hold", "track", "typing", "simon", "spin", "whack"]);
+const WORDS = ["FIN", "NET", "SEA", "ROD", "EEL", "SUN", "BAIT", "FISH", "HOOK", "REEL", "WAVE", "POND", "BOAT", "CRAB", "SHARK", "WATER", "OCEAN", "CATCH", "SQUID", "TROUT", "SPLASH", "BUBBLE", "SALMON", "ANCHOR"];
+// 모드가 바뀔 때 1.3초 동안 이름과 방법을 먼저 보여 준다
+const MODES = {
+  arrow: { title: "방향키 콤보", tip: "나오는 화살표를 빠르게!", tipTouch: "나오는 화살표 버튼을 빠르게!", color: "#ffd23f" },
+  circle: { title: "원 터치", tip: "고리가 원에 닿을 때 클릭!", tipTouch: "고리가 원에 닿을 때 톡!", color: "#ff6bb5" },
+  bar: { title: "타이밍 바", tip: "바늘이 초록 칸일 때 스페이스!", tipTouch: "바늘이 초록 칸일 때 톡!", color: "#9cf25a", short: "바" },
+  hold: { title: "줄 버티기", tip: "스페이스를 꾹 — 빨개지면 떼요", tipTouch: "화면을 꾹 — 빨개지면 떼요", color: "#3ec7ff", short: "줄" },
+  track: { title: "따라잡기", tip: "← → 로 상자를 물고기에!", tipTouch: "화면을 좌우로 끌어 상자를 물고기에!", color: "#3ec7ff", short: "추적" },
+  typing: { title: "타자 낚시", tip: "나온 영어 단어를 키보드로 쳐요", tipTouch: "글자를 순서대로 눌러요", color: "#b26bff", short: "ABC" },
+  simon: { title: "기억 낚시", tip: "보여준 화살표 순서를 기억해 똑같이!", tipTouch: "보여준 화살표 순서를 기억해 똑같이!", color: "#ffd23f", short: "기억" },
+  spin: { title: "릴 돌리기", tip: "↑ → ↓ ← 순서로 빙글빙글!", tipTouch: "화면을 빙글빙글 돌려요!", color: "#9cf25a", short: "릴" },
+  whack: { title: "튀어나온 물고기 잡기", tip: "튀어나온 물고기를 클릭! (키 Q W E / A S D / Z X C)", tipTouch: "튀어나온 물고기를 톡!", color: "#ff9f1c", short: "잡기" },
+  mash: { title: "연타!", tip: "아무 키나 빠르게 마구!", tipTouch: "화면을 빠르게 톡톡톡!", color: "#ff4d6d" },
+};
+const modeOf = (n) => (n.type === "tap" ? "arrow" : n.type);
+const TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches;
+function showModeCard(mode, n) {
+  const M = MODES[mode], el = $("modeCard");
+  el.style.setProperty("--mc", M.color);
+  $("modeTitle").textContent = mode === "mash" && n.final ? "마지막 한 방!" : M.title;
+  $("modeTip").textContent = TOUCH ? M.tipTouch : M.tip;
+  el.hidden = false; el.classList.remove("go"); void el.offsetWidth; el.classList.add("go");
+  document.body.classList.add("intro");
+  sample("bait", { rate: .8 });
+}
+function endIntro() {
+  $("modeCard").hidden = true; document.body.classList.remove("intro");
+  const key = $("curKey"); key.style.animation = "none"; void key.offsetWidth; key.style.animation = "";
+}
 const HOLD = { space: false, left: false, right: false, ptr: false, px: .5 };
 const miniCtx = $("miniCv").getContext("2d");
 let tensionLoop = null;
 const MINI_CAP = {
+  typing: '<span class="kb-desk">키보드로 단어를 쳐요 (한/영 상관없어요)</span><span class="kb-touch">아래 글자를 순서대로 눌러요</span>',
+  simon: '잘 보고 → 똑같은 순서로 <span class="kb-desk">방향키</span><span class="kb-touch">화살표 버튼</span>!',
+  spin: '<span class="kb-desk">↑ → ↓ ← 순서로 계속 눌러 릴을 감아요</span><span class="kb-touch">릴 둘레를 손가락으로 빙글빙글 돌려요</span>',
+  whack: '튀어나온 물고기를 <span class="kb-desk">클릭하거나 Q W E / A S D / Z X C</span><span class="kb-touch">톡!</span> 3마리 놓치면 실패',
   bar: '바늘이 <b style="color:var(--lime)">초록 칸</b>에 왔을 때 눌러요! <span class="kb-desk">(스페이스·방향키)</span><span class="kb-touch">(화면 톡)</span>',
   hold: '<span class="kb-desk">스페이스를</span><span class="kb-touch">화면을</span> 꾹 눌러 감고, <b style="color:var(--hot)">빨개지면 떼요!</b> 초록에서 버티기',
   track: '<span class="kb-desk">← → 를 눌러</span><span class="kb-touch">화면을 좌우로 끌어</span> 상자로 물고기를 따라가요!',
@@ -1207,9 +1263,15 @@ function startMini(n) {
   if (!on) return;
   F.ms = n.type === "bar" ? { hits: 0, zc: rand(.3, .7), cool: 0, pos: 0 }
     : n.type === "hold" ? { ten: .35, prog: 0, jerkT: rand(.8, 1.6), slack: 0 }
-    : { fx: .5, ft: rand(.15, .85), bx: .5, prog: .3, burst: 0 };
-  $("miniCap").innerHTML = MINI_CAP[n.type];
-  if (F.chart[F.i - 1]?.type !== n.type) shout(n.type === "bar" ? "타이밍!" : n.type === "hold" ? "줄을 지켜라!" : "따라잡아!", "lime", .8);
+    : n.type === "track" ? { fx: .5, ft: rand(.15, .85), bx: .5, prog: .3, burst: 0 }
+    : n.type === "typing" ? { idx: 0 }
+    : n.type === "simon" ? { seq: Array.from({ length: n.len }, () => DIRS[Math.floor(Math.random() * 4)]), phase: "watch", t: -.3, idx: 0, limit: 2.5 + n.len * 1.1 }
+    : n.type === "spin" ? { turns: 0, last: -1, pa: null }
+    : { cell: -1, t: 0, next: .5, hits: 0, esc: 0 };
+  const dom = ["typing", "simon", "whack"].includes(n.type);
+  $("miniCv").hidden = dom; $("miniDom").hidden = !dom;
+  $("miniCap").innerHTML = MINI_CAP[n.type] || "";
+  renderMiniDom(n);
 }
 const tri = (x) => { const f = x % 2; return f < 1 ? f : 2 - f; };
 function barPress(n, fp) {
@@ -1224,6 +1286,96 @@ function barPress(n, fp) {
   F.tug = (F.tugSide = -F.tugSide); A.kick = 1; shake = Math.max(shake, .2); punch = .8; F.pulse = 1; splash(fp.x, fp.z, 10, .8);
   if (m.hits >= n.need) miniWin(n);
 }
+// ---- 타자·기억·릴·두더지: 화면 그리기(DOM)와 입력
+const WHACK_KEYS = ["KeyQ", "KeyW", "KeyE", "KeyA", "KeyS", "KeyD", "KeyZ", "KeyX", "KeyC"];
+function renderMiniDom(n) {
+  const box = $("miniDom"), m = F.ms;
+  if (n.type === "typing") {
+    const letters = [...new Set([...n.word, ...Array.from({ length: 2 }, () => "ABCDEFGHIJKLMNOPRSTUW"[Math.floor(Math.random() * 21)])])].sort(() => Math.random() - .5);
+    box.className = "minidom typing";
+    box.innerHTML = `<div class="word">${[...n.word].map((c, i) => `<span class="${i < m.idx ? "ok" : i === m.idx ? "now" : ""}">${c}</span>`).join("")}</div>
+      <div class="letters kb-touch">${letters.map((c) => `<button class="px" data-letter="${c}">${c}</button>`).join("")}</div>`;
+    box.querySelectorAll("[data-letter]").forEach((b) => b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); typeLetter(b.dataset.letter); }));
+  } else if (n.type === "simon") {
+    box.className = "minidom simon";
+    box.innerHTML = `<div class="phase" id="simonPhase">잘 봐요!</div><div class="slots">${m.seq.map((d, i) => `<div class="key px slot" data-i="${i}"></div>`).join("")}</div>`;
+  } else if (n.type === "whack") {
+    box.className = "minidom whack";
+    box.innerHTML = `<div class="grid">${WHACK_KEYS.map((k, i) => `<button class="hole px" data-cell="${i}"><i class="kb-desk">${k.slice(3)}</i></button>`).join("")}</div><div class="whackinfo" id="whackInfo"></div>`;
+    box.querySelectorAll("[data-cell]").forEach((b) => b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); whackCell(+b.dataset.cell); }));
+  } else { box.className = "minidom"; box.innerHTML = ""; }
+}
+function goodHit(perfect) {
+  const fp = F.fish.group.position;
+  F.tug = (F.tugSide = -F.tugSide); A.kick = 1; shake = Math.max(shake, .18); punch = .7; F.pulse = 1; splash(fp.x, fp.z, 8, .7);
+  if (perfect) F.perfect++;
+}
+function typeLetter(c) {
+  if (!F || F.intro > 0) return;
+  const n = F.chart[F.i]; if (n.type !== "typing") return;
+  const m = F.ms;
+  if (c !== n.word[m.idx]) { F.noteT += .6; shake = Math.max(shake, .2); SFX.nibble(); const w = $("miniDom").querySelector(".word"); w.classList.remove("bad"); void w.offsetWidth; w.classList.add("bad"); return; }
+  m.idx++; sample("ding", { rate: semi(m.idx * 2) * .9 }) || SFX.hit("up", true); goodHit(false);
+  const spans = $("miniDom").querySelectorAll(".word span");
+  spans.forEach((s, i) => { s.className = i < m.idx ? "ok" : i === m.idx ? "now" : ""; });
+  if (m.idx >= n.word.length) { F.perfect++; miniWin(n); }
+}
+function simonPress(n, dir) {
+  const m = F.ms;
+  if (m.phase !== "input" || !DIRS.includes(dir)) return;
+  const slot = $("miniDom").querySelector(`[data-i="${m.idx}"]`);
+  if (dir !== m.seq[m.idx]) return miss("순서가 틀렸어!");
+  if (slot) { slot.className = `key px slot k-${dir}`; slot.innerHTML = ARROW_SVG[dir]; }
+  m.idx++; sample("ding", { rate: semi(m.idx * 2) }) || SFX.hit(dir, true); goodHit(true);
+  if (m.idx >= m.seq.length) miniWin(n);
+}
+const SPIN_ORDER = ["up", "right", "down", "left"];
+function spinPress(n, dir) {
+  const m = F.ms, i = SPIN_ORDER.indexOf(dir);
+  if (i < 0) return;
+  if (m.last < 0 || i === (m.last + 1) % 4) { if (m.last >= 0) spinAdd(n, .25); m.last = i; }
+  else shake = Math.max(shake, .08); // 거꾸로 돌리면 헛돈다
+}
+function spinAdd(n, d) {
+  const m = F.ms, before = Math.floor(m.turns * 4);
+  m.turns += d;
+  if (Math.floor(m.turns * 4) > before) { SFX.mash(Math.floor(m.turns * 4), 8); goodHit(false); }
+  if (m.turns >= n.need) miniWin(n);
+}
+function whackCell(i) {
+  if (!F || F.intro > 0) return;
+  const n = F.chart[F.i]; if (n.type !== "whack") return;
+  const m = F.ms;
+  if (i !== m.cell) return;
+  m.hits++; m.cell = -1; m.next = rand(.15, .4);
+  const b = $("miniDom").querySelector(`[data-cell="${i}"]`); if (b) { b.classList.remove("up"); b.classList.add("bonk"); setTimeout(() => b.classList.remove("bonk"), 200); }
+  sample("bait", { rate: 1.3 }) || SFX.hit("up", true); goodHit(true);
+  if (m.hits >= n.need) miniWin(n);
+}
+function updateDomMini(n, dt) {
+  const m = F.ms;
+  if (n.type === "typing") { m.danger = .4 + .6 * (1 - F.noteT / n.win); return; }
+  if (n.type === "simon") {
+    if (m.phase === "watch") {
+      F.noteT = 0; // 보여 주는 동안은 시간이 안 간다
+      m.t += dt;
+      const step = .75, i = Math.floor(m.t / step), on = m.t - i * step < .55;
+      $("miniDom").querySelectorAll(".slot").forEach((s, k) => {
+        const show = k === i && on && m.t >= 0;
+        s.className = `key px slot ${show ? `k-${m.seq[k]} lit` : ""}`; s.innerHTML = show ? ARROW_SVG[m.seq[k]] : k < i ? "?" : "";
+      });
+      if (i >= m.seq.length) { m.phase = "input"; F.noteT = 0; $("simonPhase").textContent = "따라 눌러요!"; $("miniDom").querySelectorAll(".slot").forEach((s) => { s.className = "key px slot"; s.innerHTML = "?"; }); }
+    } else if (F.noteT > m.limit) return miss("시간 초과!");
+    m.danger = m.phase === "input" ? .4 + .6 * (1 - F.noteT / m.limit) : 1;
+    return;
+  }
+  // whack
+  if (m.cell < 0) { m.next -= dt; if (m.next <= 0) { let c; do c = Math.floor(Math.random() * 9); while (c === m.last); m.cell = m.last = c; m.t = n.stay; } }
+  else { m.t -= dt; if (m.t <= 0) { m.esc++; m.cell = -1; m.next = rand(.2, .5); SFX.nibble(); if (m.esc >= 3) return miss("다 도망갔어!"); } }
+  $("miniDom").querySelectorAll(".hole").forEach((b, i) => b.classList.toggle("up", i === m.cell));
+  $("whackInfo").textContent = `${m.hits} / ${n.need}마리 · 놓침 ${m.esc}/3`;
+  m.danger = m.esc >= 2 ? .3 : 1;
+}
 function miniWin(n) {
   F.got += 3; F.combo += 2;
   judge(n.type === "bar" ? "명중!!" : n.type === "hold" ? "버텨냈다!" : "따라잡았다!", "perfect");
@@ -1231,7 +1383,20 @@ function miniWin(n) {
   nextNote();
 }
 function updateMini(n, dt, t) {
+  if (n.type === "typing" || n.type === "simon" || n.type === "whack") return updateDomMini(n, dt);
   const m = F.ms, holding = HOLD.space || HOLD.ptr;
+  if (n.type === "spin") {
+    if (HOLD.ptr) { // 화면을 릴 중심 둘레로 돌리면 감긴다(시계 방향)
+      const r = $("miniCv").getBoundingClientRect(), cx = r.left + r.width * (24 / 128), cy = r.top + r.height / 2;
+      const a = Math.atan2(HOLD.cy - cy, HOLD.cx - cx);
+      if (m.pa != null) { let d = a - m.pa; if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; if (d > 0) spinAdd(n, d / (Math.PI * 2)); }
+      m.pa = a;
+    } else m.pa = null;
+    if (!F || F.chart[F.i] !== n) return;
+    m.turns = Math.max(0, m.turns - .05 * dt); // 물고기가 조금씩 끌고 간다
+    m.danger = .4 + .6 * (1 - F.noteT / n.win);
+    return drawMini(n, t);
+  }
   if (n.type === "bar") {
     m.cool = Math.max(0, m.cool - dt);
     m.pos = tri(F.noteT * n.speed * 2);
@@ -1254,16 +1419,16 @@ function updateMini(n, dt, t) {
     if (m.prog >= n.need) return miniWin(n);
   } else {
     // 물고기: 목표 지점으로 헤엄치다 가끔 확 방향을 튼다
-    if (Math.abs(m.fx - m.ft) < .03 || Math.random() < dt * (.5 + n.speed)) m.ft = rand(.06, .94);
-    if (Math.random() < dt * .6) m.burst = .5;
+    if (Math.abs(m.fx - m.ft) < .03 || Math.random() < dt * .25) m.ft = clamp(m.fx + rand(-.45, .45), .08, .92);
+    if (Math.random() < dt * .3) m.burst = .5;
     m.burst = Math.max(0, m.burst - dt);
-    m.fx += Math.sign(m.ft - m.fx) * Math.min(Math.abs(m.ft - m.fx), n.speed * (1 + m.burst * 2.2) * dt);
+    m.fx += Math.sign(m.ft - m.fx) * Math.min(Math.abs(m.ft - m.fx), n.speed * (1 + m.burst * 1.2) * dt);
     // 상자: 방향키로 밀거나 화면을 끈 곳으로
     if (HOLD.ptr) { const r = $("miniCv").getBoundingClientRect(); const tx = clamp((HOLD.cx - r.left) / r.width, 0, 1); m.bx += clamp(tx - m.bx, -1.3 * dt, 1.3 * dt); }
-    else m.bx += ((HOLD.right ? 1 : 0) - (HOLD.left ? 1 : 0)) * 1.05 * dt;
+    else m.bx += ((HOLD.right ? 1 : 0) - (HOLD.left ? 1 : 0)) * .8 * dt;
     m.bx = clamp(m.bx, n.box / 2, 1 - n.box / 2);
     const inBox = Math.abs(m.fx - m.bx) < n.box / 2;
-    m.prog += (inBox ? .3 : -.2) * dt;
+    m.prog += (inBox ? .34 : -.15) * dt;
     if (inBox && Math.random() < dt * 5) splash(F.fish.group.position.x, F.fish.group.position.z, 3, .6);
     F.tug = lerp(F.tug, (m.fx - .5) * 2.4, ease(6, dt));
     m.danger = m.prog < .25 ? m.prog / .25 * .4 : 1;
@@ -1284,6 +1449,15 @@ function drawMini(n, t) {
     const x = 4 + m.pos * 120;
     box(x - 1, 8, 3, 24, "#13162e"); box(x, 9, 1, 22, "#ffffff");
     for (let i = 0; i < n.need; i++) { box(64 - n.need * 6 + i * 12, 1, 8, 8, "#13162e"); box(65 - n.need * 6 + i * 12, 2, 6, 6, i < m.hits ? "#ffd23f" : "rgba(255,248,232,.35)"); }
+  } else if (n.type === "spin") {
+    const cx = 24, cy = 20, a = m.turns * Math.PI * 2 - Math.PI / 2;
+    for (let i = 0; i < 24; i++) { const q = i / 24 * Math.PI * 2; box(cx + Math.cos(q) * 16 - 1, cy + Math.sin(q) * 16 - 1, 3, 3, "#13162e"); }
+    for (let i = 0; i < 20; i++) { const q = i / 20 * Math.PI * 2; box(cx + Math.cos(q) * 13 - 1, cy + Math.sin(q) * 13 - 1, 2, 2, "#fff8e8"); }
+    box(cx - 3, cy - 3, 6, 6, "#ffd23f");
+    for (let k = 0; k < 12; k++) box(cx + Math.cos(a) * k - 1, cy + Math.sin(a) * k - 1, 2, 2, "#ff4d6d");
+    box(cx + Math.cos(a) * 13 - 3, cy + Math.sin(a) * 13 - 3, 6, 6, "#ff4d6d");
+    box(48, 12, 76, 16, "#13162e"); box(50, 14, 72 * clamp(m.turns / n.need, 0, 1), 12, "#9cf25a");
+    for (let i = 1; i < n.need; i++) box(50 + 72 * i / n.need, 12, 1, 16, "#13162e");
   } else if (n.type === "hold") {
     box(2, 6, 124, 14, "#13162e"); box(4, 8, 120, 10, "#2a3160");
     box(4 + .45 * 120, 8, .35 * 120, 10, "#9cf25a"); box(4 + .8 * 120, 8, .2 * 120, 10, Math.sin(t * 20) > 0 ? "#ff4d6d" : "#c2324f");
@@ -1360,7 +1534,7 @@ function miss(text) {
 }
 function endFight(result) {
   const f = F; if (!f) return;
-  F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting", "finale"); showCircles(null); $("lane").classList.remove("circling"); startMini(null);
+  F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting", "finale"); showCircles(null); $("lane").classList.remove("circling"); startMini(null); endIntro();
   $("fight").hidden = true; $("danger").style.boxShadow = "";
   if (R.spot) R.spot.age = R.spot.life; // 그 자리 거품은 끝
   if (result === "caught") {
@@ -1420,7 +1594,7 @@ function waterPoint(e) {
 }
 renderer.domElement.addEventListener("pointerdown", (e) => {
   audio();
-  HOLD.ptr = true; HOLD.cx = e.clientX;
+  HOLD.ptr = true; HOLD.cx = e.clientX; HOLD.cy = e.clientY;
   if (!G.playing) return;
   if (R.state === "bite") return hook();
   if (R.state === "waiting" || R.state === "nibble") return earlyStrike();
@@ -1433,7 +1607,7 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
 });
 const KEYMAP = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", KeyW: "up", KeyS: "down", KeyA: "left", KeyD: "right" };
 // 누르고 있기(줄 텐션)·좌우 이동(따라잡기)용 상태
-addEventListener("pointermove", (e) => { if (HOLD.ptr) HOLD.cx = e.clientX; });
+addEventListener("pointermove", (e) => { if (HOLD.ptr) { HOLD.cx = e.clientX; HOLD.cy = e.clientY; } });
 for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, () => { HOLD.ptr = false; HOLD.space = false; HOLD.left = false; HOLD.right = false; });
 addEventListener("blur", () => { Object.assign(HOLD, { space: false, left: false, right: false, ptr: false }); });
 addEventListener("keyup", (e) => {
@@ -1448,6 +1622,9 @@ addEventListener("keydown", (e) => {
   if (dir === "left") HOLD.left = true;
   if (dir === "right") HOLD.right = true;
   if (e.repeat || !G.playing) return;
+  const cn = F?.chart[F.i];
+  if (cn?.type === "typing" && /^Key[A-Z]$/.test(e.code)) { e.preventDefault(); return typeLetter(e.code.slice(3)); }
+  if (cn?.type === "whack" && WHACK_KEYS.includes(e.code)) { e.preventDefault(); return whackCell(WHACK_KEYS.indexOf(e.code)); }
   if (!F && R.state === "idle" && BAIT_KEYS[e.key]) return setBait(BAIT_KEYS[e.key]);
   if (dir) { pressPad(dir); press(dir); }
   else if (e.code === "Space") { if (F) { pressPad("reel"); press("reel"); } else if (["bite", "waiting", "nibble"].includes(R.state)) press("up"); }
@@ -1520,11 +1697,14 @@ function updateRodAndLine(dt, t) {
 function updateFight(dt, t) {
   if (!F) return;
   const f = F, n = f.chart[f.i];
-  f.t += dt; f.noteT += dt; beatTick();
-  if (f.noteT >= n.win) { miss(n.type === "mash" ? "힘이 모자라!" : "늦었어!"); if (!F) return; }
+  const intro = f.intro > 0;
+  if (intro) { f.intro -= dt; if (f.intro <= 0) endIntro(); }
+  f.t += dt; if (!intro) f.noteT += dt; beatTick();
+  if (!intro && f.noteT >= n.win) { miss(n.type === "mash" ? "힘이 모자라!" : "늦었어!"); if (!F) return; }
   const cn = F.chart[F.i];
   let k = clamp(1 - F.noteT / cn.win, 0, 1);
-  if (cn.type === "mash") { updateMash(cn, dt); if (!F) return; if (F.chart[F.i] === cn) drawMash(cn, k, t); }
+  if (intro) { if (["bar", "hold", "track", "spin"].includes(cn.type)) drawMini(cn, t); }
+  else if (cn.type === "mash") { updateMash(cn, dt); if (!F) return; if (F.chart[F.i] === cn) drawMash(cn, k, t); }
   else if (cn.type === "circle") ringCircle(cn);
   else if (MINI_TYPES.has(cn.type)) { updateMini(cn, dt, t); if (!F || F.chart[F.i] !== cn) return; k = F.ms.danger ?? k; }
   else setFrame(k);
@@ -1727,4 +1907,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
+window.__fish = { jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };

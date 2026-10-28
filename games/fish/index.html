@@ -228,9 +228,37 @@
   .sound { pointer-events: auto; cursor: pointer; }
   .sound b { font-size: 15px !important; }
   /* 미니게임 판 */
-  .minigame { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: none; }
+  .minigame { position: fixed; left: 50%; top: 56%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: none; }
   .minigame canvas { width: min(560px, 92vw); aspect-ratio: 128 / 40; image-rendering: pixelated; filter: drop-shadow(0 8px 0 rgba(19, 22, 46, .55)); }
   .minigame p { margin: 0; font-size: clamp(15px, 3.6vw, 22px); text-align: center; text-shadow: var(--pxs); max-width: 92vw; line-height: 1.5; }
+  /* 모드 안내 카드: 1.3초 */
+  .modecard { --mc: #ffd23f; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 8; pointer-events: none; text-align: center; background: var(--panel); box-shadow: var(--pxbox); padding: 18px 34px 22px; min-width: min(420px, 86vw); box-sizing: border-box; }
+  .modecard.go { animation: modeIn .3s steps(4); }
+  @keyframes modeIn { 0% { transform: translate(-50%, -50%) scale(.3); } 70% { transform: translate(-50%, -50%) scale(1.1); } 100% { transform: translate(-50%, -50%) scale(1); } }
+  .modecard small { display: block; font-size: 13px; letter-spacing: .3em; color: var(--muted); }
+  .modecard b { display: block; font-size: clamp(34px, 8vw, 56px); color: var(--mc); text-shadow: var(--pxs); margin: 6px 0 10px; }
+  .modecard p { margin: 0; font-size: clamp(14px, 3.6vw, 19px); }
+  .modecard i { display: block; height: 8px; margin-top: 14px; background: var(--mc); transform-origin: left; animation: modeBar 1.3s steps(13) forwards; }
+  @keyframes modeBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  body.intro .lane, body.intro .minigame, body.intro .circles { visibility: hidden; }
+  /* 타자·기억·두더지 */
+  .minidom { display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: auto; }
+  .minidom .word { display: flex; gap: 8px; } .minidom .word.bad { animation: urgent .08s steps(2) 3; }
+  .minidom .word span { width: clamp(40px, 10vw, 64px); height: clamp(52px, 13vw, 80px); display: grid; place-items: center; font-size: clamp(30px, 8vw, 50px); background: var(--panel); color: var(--muted); box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink); }
+  .minidom .word span.ok { background: var(--lime); color: var(--ink); } .minidom .word span.now { background: var(--sun); color: var(--ink); animation: blink .4s steps(2) infinite; }
+  .minidom .letters { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 92vw; }
+  .minidom .letters button { --pb: 4px; width: 54px; height: 54px; background: var(--cream); color: var(--ink); font-family: var(--px); font-weight: 700; font-size: 26px; }
+  .minidom .phase { font-size: 26px; color: var(--sun); text-shadow: var(--pxs); }
+  .minidom .slots { display: flex; gap: 14px; } .minidom .slot { --pb: 4px; width: 64px; height: 64px; background: var(--panel); color: var(--muted); font-size: 26px; }
+  .minidom .slot.lit { transform: scale(1.15); }
+  .minidom .grid { display: grid; grid-template-columns: repeat(3, clamp(62px, 17vw, 82px)); gap: 12px; }
+  .minidom .hole { --pb: 4px; aspect-ratio: 1; background: #1d5f8a; position: relative; overflow: hidden; padding: 0; cursor: pointer; }
+  .minidom .hole i { position: absolute; left: 5px; top: 3px; font-style: normal; font-size: 12px; color: var(--muted); }
+  .minidom .hole::after { content: ""; position: absolute; left: 18%; right: 18%; top: 30%; bottom: 30%; background: #ffd23f; border-radius: 40% 60% 60% 40%; transform: translateY(260%); transition: transform .08s steps(2); box-shadow: inset -6px 0 0 #ff9f1c; }
+  .minidom .hole.up::after { transform: translateY(0); } .minidom .hole.up { background: #2a7fb3; }
+  .minidom .hole.bonk { background: var(--lime); }
+  .minidom .whackinfo { font-size: 16px; text-shadow: var(--pxs); }
+  .k-mini { color: var(--ink); } .k-mini .kb { font-size: 13px; }
   /* 위쪽 칩들 */
   .chips.left { justify-content: flex-start; }
   .chip.fever b { font-size: 16px !important; color: var(--cream) !important; }
@@ -332,7 +360,8 @@
     <div class="queue" id="queue"></div>
   </div>
   <div class="circles" id="circles"></div>
-  <div class="minigame" id="mini" hidden><canvas id="miniCv" width="128" height="40"></canvas><p id="miniCap"></p></div>
+  <div class="minigame" id="mini" hidden><canvas id="miniCv" width="128" height="40"></canvas><div class="minidom" id="miniDom" hidden></div><p id="miniCap"></p></div>
+  <div class="modecard" id="modeCard" hidden><small>MODE</small><b id="modeTitle">방향키 콤보</b><p id="modeTip"></p><i></i></div>
   <div class="judge" id="judge"></div>
   <div class="combo" id="combo" hidden><b id="comboN">0</b><span>COMBO</span></div>
   <button class="reelbtn k-reel px" data-dir="reel" aria-label="감기">감기</button>
@@ -396,6 +425,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=14"></script>
+<script type="module" src="game.js?v=16"></script>
 </body>
 </html>
