@@ -455,13 +455,20 @@ function noise(dur, vol = .12, hp = 800, delay = 0) {
 const SAMPLES = {};
 fetch("assets/sfx/sfx.json").then((r) => (r.ok ? r.json() : {})).then((list) => {
   const a = audio(); if (!a) return;
-  for (const [name, file] of Object.entries(list)) fetch(`assets/sfx/${file}`).then((r) => r.arrayBuffer()).then((buf) => a.decodeAudioData(buf)).then((b) => { SAMPLES[name] = b; }).catch(() => {});
+  for (const [name, file] of Object.entries(list)) fetch(`assets/sfx/${file}`).then((r) => r.arrayBuffer()).then((buf) => a.decodeAudioData(buf)).then((b) => { SAMPLES[name] = prepSample(b); }).catch(() => {});
 }).catch(() => {});
+// 앞쪽 무음은 건너뛰고(박자에 딱 붙게) 크기는 고르게 맞춘다
+function prepSample(b) {
+  const d = b.getChannelData(0); let peak = 0;
+  for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+  let on = 0; while (on < d.length && Math.abs(d[on]) < peak * .08) on++;
+  return { b, offset: Math.max(0, on / b.sampleRate - .004), gain: peak > 0 ? Math.min(3, .7 / peak) : 1 };
+}
 function sample(name, { rate = 1, vol = .8, delay = 0 } = {}) {
-  const b = SAMPLES[name]; if (!b || !ac) return false;
+  const S = SAMPLES[name]; if (!S || !ac) return false;
   const s = ac.createBufferSource(), g = ac.createGain();
-  s.buffer = b; s.playbackRate.value = rate; g.gain.value = vol;
-  s.connect(g).connect(ac.destination); s.start(ac.currentTime + delay);
+  s.buffer = S.b; s.playbackRate.value = rate; g.gain.value = vol * S.gain;
+  s.connect(g).connect(ac.destination); s.start(ac.currentTime + delay, S.offset);
   return true;
 }
 const semi = (n) => Math.pow(2, n / 12);
@@ -1015,4 +1022,4 @@ requestAnimationFrame(frame);
 })();
 
 // 점검용 훅
-window.__fish = { G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
+window.__fish = { SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };

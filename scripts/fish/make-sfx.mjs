@@ -11,19 +11,18 @@ let key = process.env.ELEVENLABS_API_KEY;
 if (!key) try { key = fs.readFileSync(path.join(root, ".env.elevenlabs"), "utf8").match(/ELEVENLABS_API_KEY\s*=\s*(\S+)/)?.[1]; } catch {}
 if (!key) { console.error("ELEVENLABS_API_KEY 가 없어요 (.env.elevenlabs 에 ELEVENLABS_API_KEY=... )"); process.exit(1); }
 
-// 연타 소리(taiko·snare)는 게임이 박자에 붙이고 음높이를 바꿔 쓰니 짧고 마른 한 방이어야 한다.
+// 스네어는 몇 번 만들어 봐도 거의 무음이라 게임 신스로 낸다. 연타 소리(taiko)는 게임이 박자에 붙이고 음높이를 바꿔 쓰니 짧고 마른 한 방이어야 한다.
 const SFX = {
-  taiko:   { sec: 0.5, text: "single punchy taiko drum hit, tight and dry, short decay, arcade game, no reverb" },
-  snare:   { sec: 0.5, text: "single snappy 8-bit arcade snare hit, short and crisp, no reverb" },
-  tap:     { sec: 0.5, text: "short retro 8-bit arcade button blip, single note, crisp" },
-  perfect: { sec: 0.6, text: "bright retro arcade perfect hit chime with sparkle, short 8-bit" },
+  taiko:   { sec: 0.8, text: "Japanese taiko drum, one powerful hit, loud and close" },
+  tap:     { sec: 0.5, text: "LOUD retro video game coin blip, square wave beep, immediate attack" },
+  perfect: { sec: 0.6, text: "LOUD bright video game power-up chime, rising sparkle ding, immediate attack" },
   reel:    { sec: 0.7, text: "fishing reel ratchet cranking fast, quick clicking spin, short" },
   miss:    { sec: 0.6, text: "retro arcade error buzzer, short descending 8-bit fail sound" },
-  splash:  { sec: 0.8, text: "big fish thrashing and splashing at the water surface, short" },
+  splash:  { sec: 0.8, text: "LOUD big water splash, fish jumping out of water, close up" },
   snap:    { sec: 0.7, text: "fishing line snapping with a sharp twang, cartoon" },
   bite:    { sec: 0.5, text: "cartoon fishing bobber plunk underwater, bloop" },
-  plop:    { sec: 0.5, text: "small lure plopping into a pond, soft water plop" },
-  cast:    { sec: 0.7, text: "fishing rod cast whoosh with line whizzing out" },
+  plop:    { sec: 0.8, text: "cartoon bloop sound of an object falling into water, loud" },
+  cast:    { sec: 0.7, text: "LOUD fast whoosh swish of a stick swung through the air" },
   hook:    { sec: 0.6, text: "strong rod jerk whoosh with water splash, impact" },
   catch:   { sec: 1.8, text: "short cheerful retro 8-bit arcade victory jingle" },
   legend:  { sec: 3.0, text: "epic retro arcade jackpot fanfare with coins and sparkles, chiptune" },
@@ -38,7 +37,7 @@ for (const [name, { sec, text }] of Object.entries(SFX)) {
   const res = await fetch("https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128", {
     method: "POST",
     headers: { "xi-api-key": key, "content-type": "application/json" },
-    body: JSON.stringify({ text, duration_seconds: sec, prompt_influence: 0.6 }),
+    body: JSON.stringify({ text, duration_seconds: sec, prompt_influence: 0.8 }),
   });
   if (!res.ok) { console.error(name, res.status, (await res.text()).slice(0, 200)); continue; }
   const file = `${name}.mp3`;
