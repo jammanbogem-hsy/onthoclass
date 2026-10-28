@@ -12,29 +12,62 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const ease = (k, dt) => Math.min(1, dt * k);
 
 // ------------------------------------------------------------------ 물고기 도감
-// notes: 눌러야 할 방향키 수, win: 한 칸 제한 시간(초), mash: 연타 구간 수, zig: 좌우 버티기 구간 수
+// notes: 눌러야 할 방향키 수, win: 한 칸 제한 시간(초), mash: 연타 구간 수(마지막 끌어올리기 포함), zig: 좌우 버티기 구간 수
+// water: fresh(민물) / sea(바다), disp: 화면 속 길이, len: 실제 크기(cm)
+const T_COMMON = { notes: 6, win: 1.35, mash: 0, zig: 0 }, T_NORMAL = { notes: 9, win: 1.1, mash: 1, zig: 0 };
+const T_RARE = { notes: 11, win: .95, mash: 1, zig: 1 }, T_LEGEND = { notes: 15, win: .8, mash: 2, zig: 2 };
 const SPECIES = {
-  boot:     { name: "낡은 장화", tier: "꽝",   points: 0,   disp: 0.42, len: [24, 30],   notes: 3,  win: 1.6,  mash: 0, zig: 0 },
-  minnow:   { name: "송사리",   tier: "흔함", points: 10,  disp: 0.6,  len: [3, 6],     notes: 5,  win: 1.4,  mash: 0, zig: 0 },
-  crucian:  { name: "붕어",     tier: "흔함", points: 20,  disp: 0.95, len: [15, 32],   notes: 7,  win: 1.25, mash: 0, zig: 0 },
-  carp:     { name: "잉어",     tier: "보통", points: 45,  disp: 1.4,  len: [40, 85],   notes: 9,  win: 1.1,  mash: 1, zig: 0 },
-  catfish:  { name: "메기",     tier: "희귀", points: 80,  disp: 1.7,  len: [45, 110],  notes: 11, win: 0.95, mash: 1, zig: 1 },
-  mandarin: { name: "쏘가리",   tier: "희귀", points: 95,  disp: 1.2,  len: [25, 55],   notes: 12, win: 0.9,  mash: 1, zig: 1 },
-  sturgeon: { name: "철갑상어", tier: "전설", points: 220, disp: 2.4,  len: [100, 190], notes: 15, win: 0.8,  mash: 2, zig: 2 },
-  goldkoi:  { name: "황금 잉어", tier: "전설", points: 320, disp: 1.7,  len: [60, 95],   notes: 16, win: 0.75, mash: 2, zig: 2 },
+  // 민물
+  boot:      { water: "fresh", name: "낡은 장화",  tier: "꽝",   points: 0,   disp: 0.42, len: [24, 30],   notes: 3, win: 1.6, mash: 0, zig: 0 },
+  minnow:    { water: "fresh", name: "송사리",    tier: "흔함", points: 10,  disp: 0.6,  len: [3, 6],     ...T_COMMON, notes: 5, win: 1.4 },
+  pirami:    { water: "fresh", name: "피라미",    tier: "흔함", points: 14,  disp: 0.7,  len: [8, 16],    ...T_COMMON },
+  crucian:   { water: "fresh", name: "붕어",      tier: "흔함", points: 20,  disp: 0.95, len: [15, 32],   ...T_COMMON, notes: 7, win: 1.25 },
+  bluegill:  { water: "fresh", name: "블루길",    tier: "흔함", points: 22,  disp: 0.8,  len: [10, 25],   ...T_COMMON, notes: 7, win: 1.25 },
+  carp:      { water: "fresh", name: "잉어",      tier: "보통", points: 45,  disp: 1.4,  len: [40, 85],   ...T_NORMAL },
+  bass:      { water: "fresh", name: "배스",      tier: "보통", points: 50,  disp: 1.2,  len: [25, 60],   ...T_NORMAL },
+  trout:     { water: "fresh", name: "송어",      tier: "보통", points: 55,  disp: 1.2,  len: [25, 60],   ...T_NORMAL, zig: 1 },
+  catfish:   { water: "fresh", name: "메기",      tier: "희귀", points: 80,  disp: 1.7,  len: [45, 110],  ...T_RARE },
+  eel:       { water: "fresh", name: "뱀장어",    tier: "희귀", points: 90,  disp: 1.9,  len: [40, 100],  ...T_RARE, zig: 2 },
+  mandarin:  { water: "fresh", name: "쏘가리",    tier: "희귀", points: 95,  disp: 1.2,  len: [25, 55],   ...T_RARE, notes: 12, win: .9 },
+  snakehead: { water: "fresh", name: "가물치",    tier: "희귀", points: 100, disp: 1.6,  len: [40, 90],   ...T_RARE, notes: 12, win: .9 },
+  sturgeon:  { water: "fresh", name: "철갑상어",  tier: "전설", points: 220, disp: 2.4,  len: [100, 190], ...T_LEGEND },
+  goldkoi:   { water: "fresh", name: "황금 잉어", tier: "전설", points: 320, disp: 1.7,  len: [60, 95],   ...T_LEGEND, notes: 16, win: .75 },
+  // 바다
+  can:       { water: "sea", name: "녹슨 깡통",   tier: "꽝",   points: 0,   disp: 0.4,  len: [8, 12],    notes: 3, win: 1.6, mash: 0, zig: 0 },
+  jack:      { water: "sea", name: "전갱이",      tier: "흔함", points: 14,  disp: 0.8,  len: [15, 35],   ...T_COMMON },
+  mackerel:  { water: "sea", name: "고등어",      tier: "흔함", points: 18,  disp: 1.0,  len: [25, 45],   ...T_COMMON },
+  rockfish:  { water: "sea", name: "우럭",        tier: "흔함", points: 25,  disp: 0.95, len: [20, 50],   ...T_COMMON, notes: 7, win: 1.25 },
+  puffer:    { water: "sea", name: "복어",        tier: "보통", points: 45,  disp: 0.75, len: [15, 40],   ...T_NORMAL },
+  cutlass:   { water: "sea", name: "갈치",        tier: "보통", points: 48,  disp: 2.2,  len: [60, 150],  ...T_NORMAL, zig: 1 },
+  seabream:  { water: "sea", name: "참돔",        tier: "보통", points: 50,  disp: 1.2,  len: [30, 80],   ...T_NORMAL },
+  flounder:  { water: "sea", name: "광어",        tier: "보통", points: 55,  disp: 1.2,  len: [35, 90],   ...T_NORMAL },
+  yellowtail:{ water: "sea", name: "방어",        tier: "희귀", points: 100, disp: 1.8,  len: [60, 110],  ...T_RARE },
+  sunfish:   { water: "sea", name: "개복치",      tier: "희귀", points: 120, disp: 1.8,  len: [100, 250], ...T_RARE, notes: 12, win: .9 },
+  tuna:      { water: "sea", name: "참치",        tier: "전설", points: 250, disp: 2.4,  len: [120, 280], ...T_LEGEND },
+  marlin:    { water: "sea", name: "청새치",      tier: "전설", points: 320, disp: 2.8,  len: [180, 400], ...T_LEGEND, notes: 16, win: .75 },
 };
-const ORDER = ["minnow", "crucian", "carp", "catfish", "mandarin", "sturgeon", "goldkoi", "boot"];
+const TIER_ORDER = ["흔함", "보통", "희귀", "전설", "꽝"];
 const TIER_COLOR = { "꽝": "#6b7280", "흔함": "#3f8f5a", "보통": "#2f7fc0", "희귀": "#8a4fd8", "전설": "#d79a12" };
-
-// 거품 등급 — 색이 화려할수록 대물. 보라·금빛·무지개는 가끔 가짜(물결이 없다)
-const SPOT_TYPES = {
-  white:   { name: "잔거품",     color: "#ffffff", weight: 38, life: [18, 26], r: 1.0,  rate: 9,  table: { boot: 14, minnow: 46, crucian: 40 } },
-  blue:    { name: "파란 거품",  color: "#4fc3ff", weight: 30, life: [16, 24], r: 1.1,  rate: 12, table: { boot: 5, minnow: 10, crucian: 28, carp: 47, catfish: 10 } },
-  purple:  { name: "보라 거품",  color: "#b26bff", weight: 18, life: [14, 20], r: 1.2,  rate: 15, table: { carp: 18, catfish: 36, mandarin: 36, sturgeon: 7, goldkoi: 3 }, fake: 0.3 },
-  gold:    { name: "금빛 거품",  color: "#ffd23f", weight: 10, life: [11, 15], r: 1.3,  rate: 19, table: { mandarin: 14, sturgeon: 46, goldkoi: 40 }, fake: 0.3 },
-  rainbow: { name: "무지개 거품", color: "rainbow", weight: 4, life: [9, 12],  r: 1.45, rate: 26, table: { goldkoi: 55, sturgeon: 45 }, fake: 0.3, bonus: 2 },
+const PLACES = {
+  fresh: { name: "민물 낚시터", junk: "boot" },
+  sea: { name: "바다 낚시터", junk: "can" },
 };
-const FAKE_TABLE = { boot: 70, minnow: 30 };
+let PLACE = "fresh";
+const placeIds = (w = PLACE) => Object.keys(SPECIES).filter((id) => SPECIES[id].water === w).sort((a, b) => TIER_ORDER.indexOf(SPECIES[a].tier) - TIER_ORDER.indexOf(SPECIES[b].tier) || SPECIES[a].points - SPECIES[b].points);
+
+// 거품 등급 — 색이 화려할수록 대물. 보라·금빛·무지개는 가끔 가짜(물결이 없다). table 은 등급별 확률(같은 등급 안에서는 고르게)
+const SPOT_TYPES = {
+  white:   { name: "잔거품",     color: "#ffffff", weight: 38, life: [18, 26], r: 1.0,  rate: 9,  table: { "꽝": 14, "흔함": 86 } },
+  blue:    { name: "파란 거품",  color: "#4fc3ff", weight: 30, life: [16, 24], r: 1.1,  rate: 12, table: { "꽝": 5, "흔함": 36, "보통": 49, "희귀": 10 } },
+  purple:  { name: "보라 거품",  color: "#b26bff", weight: 18, life: [14, 20], r: 1.2,  rate: 15, table: { "보통": 18, "희귀": 72, "전설": 10 }, fake: 0.3 },
+  gold:    { name: "금빛 거품",  color: "#ffd23f", weight: 10, life: [11, 15], r: 1.3,  rate: 19, table: { "희귀": 14, "전설": 86 }, fake: 0.3 },
+  rainbow: { name: "무지개 거품", color: "rainbow", weight: 4, life: [9, 12],  r: 1.45, rate: 26, table: { "전설": 100 }, fake: 0.3, bonus: 2 },
+};
+const FAKE_TABLE = { "꽝": 70, "흔함": 30 };
+function pickSpecies(tierTable) {
+  const tier = pick(tierTable), ids = placeIds().filter((id) => SPECIES[id].tier === tier);
+  return ids[Math.floor(Math.random() * ids.length)];
+}
 function pick(table) {
   let sum = 0; for (const k in table) sum += table[k];
   let r = Math.random() * sum;
@@ -76,24 +109,36 @@ function pondPoint(a, k = 1) {
   const n = shoreNoise(a) * k;
   return new THREE.Vector2(POND.x + Math.cos(a) * POND.rx * n, POND.z + Math.sin(a) * POND.rz * n);
 }
+const DECK_Z = POND.z + POND.rz * shoreNoise(Math.PI / 2); // 연못 아래쪽 물가(바다에서는 해변 끝)
+const pondGroup = new THREE.Group(), seaGroup = new THREE.Group();
+scene.add(pondGroup, seaGroup);
 const waterMat = new THREE.ShaderMaterial({
-  uniforms: { t: { value: 0 } },
+  uniforms: { t: { value: 0 }, sea: { value: 0 } },
   vertexShader: "varying vec2 vP; void main(){ vec4 w = modelMatrix*vec4(position,1.); vP = w.xz; gl_Position = projectionMatrix*viewMatrix*w; }",
-  fragmentShader: `uniform float t; varying vec2 vP;
+  fragmentShader: `uniform float t; uniform float sea; varying vec2 vP;
     void main(){
       float w = sin(vP.x*1.6 + t*1.1) + sin(vP.y*2.1 - t*0.8) + sin((vP.x+vP.y)*1.05 + t*.55);
       vec3 c = mix(vec3(.10,.45,.58), vec3(.20,.62,.72), smoothstep(-1.,2.,w));
       float band = step(2.35, w + sin(vP.x*7.+t)*.15);
       c = mix(c, vec3(.85,.98,.95), band*.5);
       float d = length((vP - vec2(${POND.x.toFixed(1)}, ${POND.z.toFixed(1)})) / vec2(${POND.rx.toFixed(1)}, ${POND.rz.toFixed(1)}));
-      c = mix(c, vec3(.06,.28,.42), smoothstep(.75,.0,d)*.35);
-      c = mix(c, vec3(.55,.85,.8), smoothstep(.8,1.0,d)*.45);
+      vec3 pc = mix(c, vec3(.06,.28,.42), smoothstep(.75,.0,d)*.35);
+      pc = mix(pc, vec3(.55,.85,.8), smoothstep(.8,1.0,d)*.45);
+      // 바다: 더 짙은 파랑, 멀수록 깊고, 해변 쪽은 옥빛 + 밀려오는 흰 물결
+      vec3 sc = mix(vec3(.05,.33,.62), vec3(.16,.55,.80), smoothstep(-1.,2.,w));
+      sc = mix(sc, vec3(.85,.97,1.), band*.45);
+      float shore = ${DECK_Z.toFixed(2)} - vP.y;
+      sc = mix(sc, vec3(.03,.18,.42), smoothstep(6., 30., shore)*.6);
+      sc = mix(sc, vec3(.35,.85,.82), smoothstep(5., .0, shore)*.55);
+      float foam = step(.6, sin(shore*2.2 - t*1.6 + sin(vP.x*.7)*.8)) * smoothstep(3., .4, shore);
+      sc = mix(sc, vec3(1.), foam*.6);
+      c = mix(pc, sc, sea);
       gl_FragColor = vec4(c,1.);
       #include <colorspace_fragment>
     }`,
 });
-const water = new THREE.Mesh(new THREE.PlaneGeometry(80, 60), waterMat);
-water.rotation.x = -Math.PI / 2; water.position.set(0, 0, -10); scene.add(water);
+const water = new THREE.Mesh(new THREE.PlaneGeometry(240, 150), waterMat);
+water.rotation.x = -Math.PI / 2; water.position.set(0, 0, -50); scene.add(water);
 
 // 땅: 큰 판에 연못 모양 구멍을 뚫고, 모서리를 둥글게 깎아(베벨) 모래 물가가 보이게
 {
@@ -105,19 +150,19 @@ water.rotation.x = -Math.PI / 2; water.position.set(0, 0, -10); scene.add(water)
   const geo = new THREE.ExtrudeGeometry(outer, { depth: 0.6, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.55, bevelSegments: 5, curveSegments: 12 });
   geo.rotateX(Math.PI / 2); // 위로 보이는 면 = 처음 면
   const land = new THREE.Mesh(geo, [toon("#7cc15a"), toon("#e2c98e")]);
-  land.position.y = 0.32; scene.add(land);
+  land.position.y = 0.32; pondGroup.add(land);
 }
 // 둥근 바위·덤불·부들·나무·꽃 (모두 둥근 도형)
-const rock = (x, z, s) => { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 7), toon(Math.random() < .5 ? "#a9b3b8" : "#8f9aa1")); m.scale.set(s * rand(1, 1.5), s * rand(.55, .8), s * rand(.9, 1.3)); m.position.set(x, 0.15, z); m.rotation.y = rand(0, 3); scene.add(m); };
-const bush = (x, z, s) => { const g = new THREE.Group(); for (let i = 0; i < 4; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(rand(.45, .7) * s, 10, 8), toon(i % 2 ? "#4f9a3f" : "#5fb048")); b.position.set(rand(-.5, .5) * s, rand(.3, .6) * s, rand(-.3, .3) * s); g.add(b); } g.position.set(x, 0.55, z); scene.add(g); };
+const rock = (x, z, s) => { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 7), toon(Math.random() < .5 ? "#a9b3b8" : "#8f9aa1")); m.scale.set(s * rand(1, 1.5), s * rand(.55, .8), s * rand(.9, 1.3)); m.position.set(x, 0.15, z); m.rotation.y = rand(0, 3); pondGroup.add(m); };
+const bush = (x, z, s) => { const g = new THREE.Group(); for (let i = 0; i < 4; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(rand(.45, .7) * s, 10, 8), toon(i % 2 ? "#4f9a3f" : "#5fb048")); b.position.set(rand(-.5, .5) * s, rand(.3, .6) * s, rand(-.3, .3) * s); g.add(b); } g.position.set(x, 0.55, z); pondGroup.add(g); };
 const tree = (x, z, s) => {
   const g = new THREE.Group();
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.18 * s, .26 * s, 1.6 * s, 8), toon("#8a5a32")); trunk.position.y = .8 * s; g.add(trunk);
   for (let i = 0; i < 5; i++) { const c = new THREE.Mesh(new THREE.SphereGeometry(rand(.7, 1.0) * s, 10, 8), toon(i % 2 ? "#3f8f3a" : "#52a944")); c.position.set(rand(-.6, .6) * s, (1.8 + rand(0, .9)) * s, rand(-.5, .5) * s); g.add(c); }
-  g.position.set(x, 0.6, z); scene.add(g);
+  g.position.set(x, 0.6, z); pondGroup.add(g);
 };
-const cattail = (x, z) => { const h = rand(.8, 1.5); const st = new THREE.Mesh(new THREE.CylinderGeometry(.03, .04, h, 5), toon("#8db04a")); st.position.set(x, h / 2 + .1, z); st.rotation.z = rand(-.15, .15); scene.add(st); const top = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .22, 3, 6), toon("#7a4a26")); top.position.set(x + st.rotation.z * -h / 2, h + .1, z); scene.add(top); };
-const flower = (x, z) => { const c = ["#ff8fb1", "#fff17a", "#ffffff", "#b38cff"][Math.floor(rand(0, 4))]; const f = new THREE.Mesh(new THREE.SphereGeometry(.09, 6, 5), toon(c)); f.position.set(x, .72, z); scene.add(f); };
+const cattail = (x, z) => { const h = rand(.8, 1.5); const st = new THREE.Mesh(new THREE.CylinderGeometry(.03, .04, h, 5), toon("#8db04a")); st.position.set(x, h / 2 + .1, z); st.rotation.z = rand(-.15, .15); pondGroup.add(st); const top = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .22, 3, 6), toon("#7a4a26")); top.position.set(x + st.rotation.z * -h / 2, h + .1, z); pondGroup.add(top); };
+const flower = (x, z) => { const c = ["#ff8fb1", "#fff17a", "#ffffff", "#b38cff"][Math.floor(rand(0, 4))]; const f = new THREE.Mesh(new THREE.SphereGeometry(.09, 6, 5), toon(c)); f.position.set(x, .72, z); pondGroup.add(f); };
 for (let i = 0; i < 64; i++) {
   const a = (i / 64) * Math.PI * 2 + rand(-.03, .03);
   if (Math.sin(a) > 0.82 && Math.abs(Math.cos(a)) < 0.3) continue; // 낚시꾼 자리 비우기
@@ -132,10 +177,9 @@ for (let i = 0; i < 64; i++) {
 for (let i = 0; i < 12; i++) {
   const a = rand(0, Math.PI * 2), p = pondPoint(a, rand(.6, .88));
   const pr = rand(.2, .34), pad = new THREE.Mesh(new THREE.CylinderGeometry(pr, pr, .04, 14, 1, false, 0.4, Math.PI * 2 - 0.4), toon("#63a94a"));
-  pad.position.set(p.x, .03, p.y); pad.rotation.y = rand(0, 6); scene.add(pad);
+  pad.position.set(p.x, .03, p.y); pad.rotation.y = rand(0, 6); pondGroup.add(pad);
 }
 // 나무 데크(낚시꾼 자리)
-const DECK_Z = POND.z + POND.rz * shoreNoise(Math.PI / 2); // 연못 아래쪽 물가
 const deck = new THREE.Group(); scene.add(deck);
 for (let i = 0; i < 6; i++) {
   const plank = new THREE.Mesh(new THREE.BoxGeometry(2.2, .14, .4), toon(i % 2 ? "#b07a44" : "#c38a50"));
@@ -145,6 +189,87 @@ for (const x of [-1, 1]) for (const k of [0, 1]) {
   const post = new THREE.Mesh(new THREE.CylinderGeometry(.11, .13, 1.2, 8), toon("#7a4f2a")); post.position.set(x, -.05, DECK_Z - .5 - k * 1.9); deck.add(post);
 }
 const STAND = new THREE.Vector3(0, .49, DECK_Z - 2.1);
+
+// ------------------------------------------------------------------ 바다 낚시터: 모래 해변(양옆이 앞으로 굽은 작은 만)·야자수·바위·먼 섬·등대·부표
+const seaFront = (x) => DECK_Z + .3 - Math.max(0, Math.abs(x) - 3.4) * 1.35 + .45 * Math.sin(x * .45 + 1);
+{
+  const sh = new THREE.Shape();
+  sh.moveTo(-60, 40);
+  for (let i = 0; i <= 120; i++) { const x = -60 + i; sh.lineTo(x, Math.max(-38, seaFront(x))); }
+  sh.lineTo(60, 40); sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: .6, bevelEnabled: true, bevelThickness: .3, bevelSize: .7, bevelSegments: 5, curveSegments: 8 });
+  geo.rotateX(Math.PI / 2);
+  const beach = new THREE.Mesh(geo, [toon("#f2dca2"), toon("#d6b97c")]);
+  beach.position.y = .3; seaGroup.add(beach);
+}
+const seaRock = (x, z, sc) => { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 1), toon(Math.random() < .5 ? "#8c96a0" : "#727e8a")); m.scale.set(sc * rand(1, 1.5), sc * rand(.6, 1), sc * rand(.9, 1.3)); m.position.set(x, sc * .2, z); m.rotation.set(rand(0, 1), rand(0, 3), 0); seaGroup.add(m); };
+const palm = (x, z, sc, lean) => {
+  const g = new THREE.Group();
+  let px = 0, py = 0;
+  for (let i = 0; i < 7; i++) { // 마디진 줄기가 살짝 휘어 올라간다
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(.15 * sc, .19 * sc, .5 * sc, 7), toon(i % 2 ? "#a7743f" : "#8e6033"));
+    px += lean * i * .03 * sc; py += .46 * sc; seg.position.set(px, py, 0); seg.rotation.z = -lean * i * .06; g.add(seg);
+  }
+  for (let k = 0; k < 7; k++) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 5), toon(k % 2 ? "#3f9a45" : "#55b94e"));
+    const a = k / 7 * Math.PI * 2;
+    leaf.scale.set(1.3 * sc, .1 * sc, .32 * sc);
+    leaf.position.set(px + Math.cos(a) * .9 * sc, py + .1 * sc, Math.sin(a) * .9 * sc);
+    leaf.rotation.set(0, -a, -.45); g.add(leaf);
+  }
+  for (let k = 0; k < 3; k++) { const c = new THREE.Mesh(new THREE.SphereGeometry(.13 * sc, 7, 6), toon("#6b4a26")); c.position.set(px + rand(-.15, .15) * sc, py - .1 * sc, rand(-.15, .15) * sc); g.add(c); }
+  g.position.set(x, .55, z); seaGroup.add(g);
+};
+for (const sx of [-1, 1]) {
+  for (const [x, sc] of [[5.2, .95], [7.4, 1.25], [10, 1.15], [13, 1.4]]) palm(sx * x, seaFront(sx * x) + 1.4 + rand(0, .8), sc, -sx * rand(.8, 1.3));
+  for (let i = 0; i < 9; i++) { const x = sx * rand(5, 17), z = seaFront(x) - rand(-.3, .9); seaRock(x, z, rand(.3, .8)); }
+}
+// 파라솔
+{
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, 1.9, 6), toon("#ffffff")); pole.position.y = .95; g.add(pole);
+  const top = new THREE.Mesh(new THREE.ConeGeometry(1.1, .45, 12, 1, true), toon("#ff6b6b", { side: THREE.DoubleSide })); top.position.y = 1.9; g.add(top);
+  const stripe = new THREE.Mesh(new THREE.ConeGeometry(1.12, .46, 12, 1, true, 0, Math.PI / 3), toon("#fff8e8", { side: THREE.DoubleSide })); stripe.position.y = 1.9; g.add(stripe);
+  const stripe2 = stripe.clone(); stripe2.rotation.y = Math.PI * 2 / 3; g.add(stripe2);
+  const stripe3 = stripe.clone(); stripe3.rotation.y = Math.PI * 4 / 3; g.add(stripe3);
+  g.position.set(-6.4, .55, seaFront(-6.4) + 1.2); g.rotation.z = .1; g.scale.setScalar(.75); seaGroup.add(g);
+}
+// 먼 섬과 등대
+const island = (x, z, r, h) => {
+  const g = new THREE.Group();
+  const sand = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.12, r * 1.2, .3, 20), toon("#f2dca2")); sand.position.y = .05; g.add(sand);
+  const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), toon("#4f9a46")); hill.scale.y = h; g.add(hill);
+  g.position.set(x, 0, z); seaGroup.add(g);
+};
+island(-16, -46, 5, .6); island(9, -54, 7, .45); island(25, -42, 3.5, .8);
+{
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.DodecahedronGeometry(2.2, 1), toon("#7d8791")); base.scale.y = .55; g.add(base);
+  for (let i = 0; i < 5; i++) { const ring = new THREE.Mesh(new THREE.CylinderGeometry(.62 - i * .05, .67 - i * .05, .7, 12), toon(i % 2 ? "#ffffff" : "#ff5a5a")); ring.position.y = 1 + i * .7; g.add(ring); }
+  const lamp = new THREE.Mesh(new THREE.CylinderGeometry(.45, .45, .5, 10), toon("#fff3a0", { emissive: "#ffd23f", emissiveIntensity: .8 })); lamp.position.y = 4.75; g.add(lamp);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(.6, .6, 10), toon("#ff5a5a")); cap.position.y = 5.3; g.add(cap);
+  g.position.set(-8.5, 0, -24); g.scale.setScalar(.9); seaGroup.add(g);
+}
+const buoys = [];
+for (const [x, z, c] of [[-7, -14, "#ff5a5a"], [8, -18, "#ffd23f"], [3, -26, "#ff5a5a"]]) {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.SphereGeometry(.32, 10, 8), toon(c)); g.add(b);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(.33, .33, .12, 10), toon("#ffffff")); g.add(band);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, .6, 5), toon("#ffffff")); pole.position.y = .45; g.add(pole);
+  g.position.set(x, .05, z); seaGroup.add(g); buoys.push(g);
+}
+const PLACE_LOOK = {
+  fresh: { sky: "#9fdcf0", fog: [22, 42], sea: 0 },
+  sea: { sky: "#86cdf7", fog: [34, 95], sea: 1 },
+};
+function setPlace(place) {
+  PLACE = place;
+  const L = PLACE_LOOK[place];
+  pondGroup.visible = place === "fresh"; seaGroup.visible = place === "sea";
+  SKY.set(L.sky); scene.fog.color.copy(SKY); scene.fog.near = L.fog[0]; scene.fog.far = L.fog[1];
+  waterMat.uniforms.sea.value = L.sea;
+}
+setPlace("fresh");
 
 // ------------------------------------------------------------------ 입자
 function makePoints(n, size) {
@@ -226,9 +351,10 @@ function spotPos() {
   for (let tries = 0; tries < 40; tries++) {
     const a = rand(Math.PI * 1.05, Math.PI * 1.95), k = rand(.25, .78), p = pondPoint(a, k);
     if (p.y > DECK_Z - 3.2) continue; // 데크 바로 앞은 비운다
+    if (PLACE === "sea" && p.y > seaFront(p.x) - 1.6) continue; // 바다: 만 양쪽 모래밭 위는 안 된다
     if (spots.every((s) => Math.hypot(s.x - p.x, s.z - p.y) > 3.4)) return p;
   }
-  return pondPoint(rand(Math.PI * 1.1, Math.PI * 1.9), .5);
+  return new THREE.Vector2(rand(-2, 2), POND.z - rand(0, 3));
 }
 function rollType() {
   let sum = 0; for (const k in SPOT_TYPES) sum += SPOT_TYPES[k].weight;
@@ -560,7 +686,8 @@ function shout(text, cls = "sun", sec = .9) {
 function flash(kind) { const el = $("flash"); el.className = "flash"; void el.offsetWidth; el.className = `flash ${kind}`; }
 function hint(html) { const h = $("hint"); h.innerHTML = html || ""; h.hidden = !html; }
 let shake = 0, punch = 0; // punch: 화면이 쾅 다가오는 정도(+) / 밀려나는 정도(-)
-$("legend").innerHTML = Object.values(SPOT_TYPES).map((T) => `<span><i style="background:${T.color === "rainbow" ? "conic-gradient(red,orange,yellow,lime,cyan,blue,violet,red)" : T.color}"></i>${T.name}</span>`).join("") + "<span>물결 없는 거품은 가짜일지도?</span>";
+const renderLegend = () => $("legend").innerHTML = Object.values(SPOT_TYPES).map((T) => `<span><i style="background:${T.color === "rainbow" ? "conic-gradient(red,orange,yellow,lime,cyan,blue,violet,red)" : T.color}"></i>${T.name}</span>`).join("") + "<span>물결 없는 거품은 가짜일지도?</span>";
+renderLegend();
 
 // ------------------------------------------------------------------ 게임 상태
 const G = { playing: false, time: 180, score: 0, caught: [], book: new Set(), ending: false, lastResult: "" };
@@ -586,7 +713,7 @@ function castTo(spot) {
 function landed() {
   SFX.plop(); ripple(R.target.x, R.target.z, .8); splash(R.target.x, R.target.z, 10, .45);
   const s = R.spot;
-  R.species = pick(s.fake ? FAKE_TABLE : s.T.table);
+  R.species = pickSpecies(s.fake ? FAKE_TABLE : s.T.table);
   R.timer = rand(1.4, 3.6); R.nibbles = Math.floor(rand(0, 3));
   R.state = "waiting"; hint("찌가 <em>쏙!</em> 들어가면 눌러요. 톡톡은 기다려요");
 }
@@ -597,21 +724,31 @@ function earlyStrike() {
 }
 
 // 콤보 악보: 한 칸씩 + 우다다(빠른 방향키 묶음 → 감기로 마무리) + 좌우 버티기 + 가끔 감기
-// 결정적인 순간(중간 고비·마지막 끌어올리기)은 "계속 연타하세요!" — 누를수록 원이 커지고, 기준선을 넘으면 성공.
-// 같은 물고기라도 클수록(sizeT) 칸이 많고 빠르며, 연타 원이 덜 커지고 더 빨리 줄어든다.
+// 결정적인 순간(중간 고비·마지막 끌어올리기)은 "계속 연타하세요!" — 연타 속도(초당 횟수)가 기준보다 빠르면 원이 커지고
+// 느리면 작아진다. 기준선을 넘으면 성공, 원이 다 사라지면 실패. 기준 속도는 사람 손에 맞춰 초당 2.4~4.6번.
+// 같은 물고기라도 클수록(sizeT) 칸이 많고 빠르며, 연타 기준 속도가 높고 오래 버텨야 한다.
 const DIRS = ["up", "down", "left", "right"];
-const SIZE_CLASS = (t) => (t < .3 ? ["S", "작은"] : t < .7 ? ["M", "보통"] : t < .92 ? ["L", "큰"] : ["XL", "왕"]);
+// 크기 등급: 같은 물고기도 크기(sizeT)에 따라 월척 > S급 > A급 > B급 > 놔주자급
+const GRADES = [
+  { min: .92, name: "월척", color: "#ff4d6d", mult: 1.7 },
+  { min: .72, name: "S급", color: "#d79a12", mult: 1.3 },
+  { min: .45, name: "A급", color: "#3f8f5a", mult: 1.1 },
+  { min: .18, name: "B급", color: "#2f7fc0", mult: 1 },
+  { min: 0, name: "놔주자급", color: "#6b7280", mult: .5, release: true },
+];
+const gradeOf = (t) => GRADES.find((g) => t >= g.min);
 function mashNote(sp, sizeT, final) {
-  const need = Math.round((5 + sp.points / 320 * 10) * (.7 + sizeT * .75));   // 쉬지 않고 눌렀을 때 필요한 수
-  const hold = .8 + sizeT * 1.6 + (sp.tier === "전설" ? .6 : sp.tier === "희귀" ? .3 : 0); // 초당 이만큼 눌러야 원이 유지
-  return { type: "mash", dir: "any", need, hold, win: 2.2 + need / 4.5, final };
+  const power = Math.min(1, sp.points / 320);
+  const hold = 2.4 + power * 1.2 + sizeT * 1.0;   // 초당 이만큼 눌러야 원이 그대로 (어린이 연타 초당 5~7번 기준)
+  const dur = 3 + power * 2 + sizeT * 2;          // 기준보다 초당 2번 빠르게 누르면 이만큼 걸려 성공
+  return { type: "mash", dir: "any", hold, grow: .65 / (2 * dur), win: 22, final };
 }
 function makeChart(sp, sizeT) {
   const notes = [];
   let last = "";
   const arrow = () => { let d = DIRS[Math.floor(rand(0, 4))]; if (d === last && Math.random() < .6) d = DIRS[(DIRS.indexOf(d) + 1 + Math.floor(rand(0, 3))) % 4]; last = d; return d; };
   const n = Math.max(3, sp.notes + Math.round(sizeT * 4) - 2), winK = 1.12 - sizeT * .26;
-  const mid = Math.max(0, sp.mash - 1) + (sizeT > .85 && sp.points >= 45 ? 1 : 0);
+  const mid = Math.max(0, sp.mash - 1);
   const mashAt = new Set(), zigAt = new Set(), burstAt = new Set();
   for (let i = 0; i < mid; i++) mashAt.add(Math.floor(n * (i + 1) / (mid + 1)));
   for (let i = 0; i < sp.zig; i++) zigAt.add(Math.max(1, Math.floor(n * (i + .5) / (sp.zig + .5))));
@@ -648,17 +785,18 @@ function hook() {
   const fish = new Fish(R.species, sizeT);
   const chart = makeChart(sp, sizeT);
   const weight = chart.reduce((a, n) => a + (n.type === "mash" ? 3 : n.finisher ? 2 : 1), 0);
-  F = { fish, sp, sizeT, chart, i: 0, weight, got: 0, hearts: 3, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0,
+  F = { fish, sp, sizeT, chart, i: 0, weight, got: 0, hearts: 3, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0, tapT: [], rate: 0, mood: "",
     from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1 };
   R.state = "fight"; hint(""); document.body.classList.add("fighting");
   $("fight").hidden = false;
-  const [sz, szName] = SIZE_CLASS(sizeT), cm = Math.round(lerp(sp.len[0], sp.len[1], sizeT));
-  $("ftier").textContent = sp.tier === "꽝" ? "???" : sp.tier; $("ftier").style.background = TIER_COLOR[sp.tier];
-  $("fsize").textContent = sp.tier === "꽝" ? "?" : `${sz} 약${cm}cm`; $("fsize").classList.toggle("xl", sz === "XL" && sp.tier !== "꽝");
-  $("fnameText").textContent = sz === "XL" ? "왕 사이즈다!!" : sp.tier === "전설" ? "엄청난 힘이다!!" : sp.tier === "희귀" || sz === "L" ? "묵직하다!" : "걸렸다!";
+  const gr = gradeOf(sizeT), cm = Math.round(lerp(sp.len[0], sp.len[1], sizeT)), junk = sp.tier === "꽝";
+  $("ftier").textContent = junk ? "???" : sp.tier; $("ftier").style.background = TIER_COLOR[sp.tier];
+  $("fsize").textContent = junk ? "?" : `${gr.name} 약${cm}cm`; $("fsize").style.background = junk ? "" : gr.color; $("fsize").style.color = junk ? "" : "#fff8e8";
+  $("fsize").classList.toggle("xl", gr.name === "월척" && !junk);
+  $("fnameText").textContent = junk ? "걸렸다!" : gr.name === "월척" ? "월척이다!!" : sp.tier === "전설" ? "엄청난 힘이다!!" : sp.tier === "희귀" || gr.name === "S급" ? "묵직하다!" : "걸렸다!";
   $("hearts").innerHTML = HEART + HEART + HEART;
   $("combo").hidden = true;
-  const big = sp.tier === "전설" || (sz === "XL" && sp.points >= 45);
+  const big = sp.tier === "전설" || (gr.name === "월척" && sp.points >= 45);
   shout(big ? "대물이다!!" : "걸렸다!", big ? "hot" : "sun", 1);
   if (big) { flash("gold"); SFX.legend(); }
   beatStart(sp.tier === "전설" ? 150 : sp.tier === "희귀" ? 140 : 128);
@@ -673,8 +811,8 @@ function showNote() {
   key.style.animation = "none"; void key.offsetWidth; key.style.animation = ""; // 다시 튀어나오게
   $("curMash").hidden = !mash; $("curCount").hidden = !mash; $("mashCv").hidden = !mash;
   if (mash) {
-    F.gauge = 0; F.taps = 0; $("curCount").textContent = "0";
-    $("curMash").innerHTML = `계속 연타하세요!<small><span class="kb-desk">아무 키나 · 스페이스</span><span class="kb-touch">화면을 마구 톡톡</span></small>`;
+    F.gauge = .35; F.taps = 0; F.tapT = []; F.rate = 0; F.mood = ""; $("curCount").textContent = "0";
+    $("curMash").innerHTML = `계속 연타하세요!<small id="mashMood"><span class="kb-desk">아무 키나 · 스페이스를 빠르게</span><span class="kb-touch">화면을 빠르게 톡톡톡</span></small>`;
     shout(n.final ? "마지막 한 방!!" : "버텨라!!", "hot", .9);
   }
   if (n.zig && !F.chart[F.i - 1]?.zig) shout("좌우로 버텨!", "lime", .9);
@@ -692,18 +830,12 @@ function press(dir) {
   const n = F.chart[F.i];
   const cur = $("cur"); cur.classList.add("pressed"); setTimeout(() => cur.classList.remove("pressed"), 70);
   const fp = F.fish.group.position;
-  if (n.type === "mash") { // 무엇을 눌러도 원이 커진다
-    F.taps++; F.gauge += 1 / n.need; F.gpop = 1;
+  if (n.type === "mash") { // 무엇을 눌러도 된다. 원의 크기는 연타 속도로 정해진다(updateFight)
+    F.taps++; F.tapT.push(F.t); F.gpop = 1; F.gauge = Math.min(1, F.gauge + .004);
     const c = $("curCount"); c.textContent = F.taps; c.classList.remove("tick"); void c.offsetWidth; c.classList.add("tick");
-    SFX.mash(F.taps, n.need);
-    A.kick = .7; shake = Math.max(shake, .14 + F.gauge * .12); F.pulse = 1; punch = .35 + F.gauge * .4;
-    splash(fp.x, fp.z, 4 + Math.round(F.gauge * 6), .6 + F.gauge * .5);
-    if (F.gauge >= 1) {
-      F.got += 3; F.combo += 3; F.perfect++;
-      judge(n.final ? "끌어올렸다!!" : "연타 성공!", "perfect"); flash("white"); SFX.mashDone(); pxWave();
-      shake = .5; punch = 1.4; A.kick = 1.6; F.leapV = 5;
-      nextNote();
-    }
+    SFX.mash(F.taps, n.hold > 4.4 ? 20 : 8);
+    A.kick = .7; shake = Math.max(shake, .1 + F.gauge * .14); F.pulse = 1; punch = .3 + F.gauge * .45;
+    splash(fp.x, fp.z, 3 + Math.round(F.gauge * 6), .5 + F.gauge * .6);
     return;
   }
   if (dir === "tap") return; // 화면 톡톡은 연타 때만
@@ -727,7 +859,28 @@ function nextNote() {
   if (F.i >= F.chart.length) return endFight("caught");
   showNote();
 }
-// 연타 원(64×64 캔버스를 키워서 픽셀로 보이게): 안쪽 원 = 연타 힘, 점선 = 기준선, 바깥 점 = 남은 시간
+function mashWin(n) {
+  F.got += 3; F.combo += 3; F.perfect++;
+  judge(n.final ? "끌어올렸다!!" : "연타 성공!", "perfect"); flash("white"); SFX.mashDone(); pxWave();
+  shake = .5; punch = 1.4; A.kick = 1.6; F.leapV = 5;
+  nextNote();
+}
+function updateMash(n, dt) {
+  const f = F;
+  while (f.tapT.length && f.tapT[0] < f.t - 1) f.tapT.shift();
+  f.rate = lerp(f.rate, f.tapT.length / Math.min(1, Math.max(.35, f.noteT)), ease(8, dt));
+  if (f.noteT > 1) { const ex = f.rate - n.hold; f.gauge += (ex > 0 ? ex : ex * .7) * n.grow * dt; } // 처음 1초는 손 풀 시간
+  f.gpop = Math.max(0, f.gpop - dt * 8);
+  const mood = f.noteT < 1 ? "" : f.rate < n.hold - .3 ? "slow" : f.rate > n.hold + 2.2 ? "fire" : "ok";
+  if (mood !== f.mood) {
+    f.mood = mood;
+    const el = $("mashMood");
+    if (el && mood) el.innerHTML = mood === "slow" ? '<b style="color:var(--hot)">▼ 더 빨리!!</b>' : mood === "fire" ? '<b style="color:var(--sun)">▲▲ 불타오른다!!</b>' : '<b style="color:var(--lime)">▲ 좋아요, 계속!</b>';
+  }
+  if (f.gauge >= 1) return mashWin(n);
+  if (f.gauge <= 0) return miss("힘이 모자라!");
+}
+// 연타 원(64×64 캔버스를 키워서 픽셀로 보이게): 안쪽 원 = 연타 힘, 점선 = 기준선, 바깥 점 = 연타 속도(빨간 눈금 = 기준 속도)
 const mashCtx = $("mashCv").getContext("2d");
 function drawMash(n, k, t) {
   const c = mashCtx, C = 32, target = 21;
@@ -744,12 +897,13 @@ function drawMash(n, k, t) {
     c.fillStyle = g >= .9 && Math.sin(t * 30) > 0 ? "#ffffff" : "#fff8e8";
     c.fillRect(Math.round(C + Math.cos(a) * target) - 1, Math.round(C + Math.sin(a) * target) - 1, 2, 2);
   }
-  // 남은 시간
-  const dots = 32, lit = Math.ceil(k * dots);
+  // 연타 속도계 (꽉 차면 기준 + 초당 3번)
+  const dots = 32, top = n.hold + 3, lit = Math.round(Math.min(1, F.rate / top) * dots), mark = Math.round(n.hold / top * dots);
   for (let i = 0; i < dots; i++) {
     const a = -Math.PI / 2 + i / dots * Math.PI * 2;
-    c.fillStyle = i < lit ? (k < .35 ? "#ff4d6d" : "#9cf25a") : "rgba(19,22,46,.6)";
-    c.fillRect(Math.round(C + Math.cos(a) * 29) - 1, Math.round(C + Math.sin(a) * 29) - 1, 3, 3);
+    c.fillStyle = i === mark ? "#ff4d6d" : i < lit ? (F.rate < n.hold ? "#ffd23f" : "#9cf25a") : "rgba(19,22,46,.6)";
+    const sz = i === mark ? 4 : 3;
+    c.fillRect(Math.round(C + Math.cos(a) * 29) - sz / 2, Math.round(C + Math.sin(a) * 29) - sz / 2, sz, sz);
   }
 }
 function miss(text) {
@@ -768,22 +922,24 @@ function endFight(result) {
   if (R.spot) R.spot.age = R.spot.life; // 그 자리 거품은 끝
   if (result === "caught") {
     const sp = f.sp, cm = Math.round(lerp(sp.len[0], sp.len[1], f.sizeT));
-    const base = sp.points * (.75 + f.sizeT * .5);
+    const junk = !sp.points, gr = gradeOf(f.sizeT);
+    const base = sp.points * gr.mult * (.9 + f.sizeT * .2);
     const pts = Math.round((base * (1 + f.perfect * .04) + (sp.points ? f.maxCombo * 2 : 0)) * f.bonus);
-    const isNew = !G.book.has(f.fish.id) && f.fish.id !== "boot";
-    G.book.add(f.fish.id); G.caught.push({ id: f.fish.id, cm, pts }); G.score += pts;
-    $("score").textContent = G.score; $("count").textContent = G.caught.filter((c) => c.id !== "boot").length;
+    const isNew = !G.book.has(f.fish.id) && !junk;
+    G.book.add(f.fish.id); G.caught.push({ id: f.fish.id, cm, pts, grade: junk ? "" : gr.name }); G.score += pts;
+    $("score").textContent = G.score; $("count").textContent = G.caught.filter((c) => SPECIES[c.id].points).length;
     $("cardTier").textContent = sp.tier; $("cardTier").style.background = TIER_COLOR[sp.tier];
+    $("cardGrade").hidden = junk; $("cardGrade").textContent = gr.name; $("cardGrade").style.background = gr.color;
     $("cardName").textContent = sp.name; $("cardSize").textContent = `${cm}cm`;
     $("cardPoints").textContent = pts ? `+${pts}` : "꽝!";
-    $("cardBonus").textContent = [f.perfect ? `PERFECT ${f.perfect}` : "", f.maxCombo > 2 ? `최대 ${f.maxCombo}콤보` : "", f.bonus > 1 ? "무지개 ×2" : ""].filter(Boolean).join(" · ");
+    $("cardBonus").textContent = [f.perfect ? `PERFECT ${f.perfect}` : "", f.maxCombo > 2 ? `최대 ${f.maxCombo}콤보` : "", f.bonus > 1 ? "무지개 ×2" : "", !junk && gr.release ? "작으니까 다시 놓아줘요" : ""].filter(Boolean).join(" · ");
     $("cardNew").hidden = !isNew;
     const c = $("card"); c.hidden = false; c.style.animation = "none"; void c.offsetWidth; c.style.animation = ""; card = 2.8;
     (sp.tier === "전설" ? SFX.legend : sp.points ? SFX.catch : SFX.lose)();
     if (sp.tier === "전설") flash("gold");
     // 물고기를 들어 올려 데크 위에서 파닥
     f.fish.group.position.set(angler.position.x + 1.1, .5, angler.position.z + .2);
-    show = { fish: f.fish, t: 0, y: 1.6, vy: 2, roll: Math.PI / 2, heading: rand(-.5, .5), next: .1 };
+    show = { fish: f.fish, t: 0, y: 1.6, vy: 2, roll: Math.PI / 2, heading: rand(-.5, .5), next: .1, release: !junk && gr.release };
     splash(angler.position.x + 1.1, angler.position.z + .2, 16, .8, WHITE, .5);
     A.jump = 1; A.vy = 4.2;
   } else {
@@ -890,12 +1046,12 @@ function updateFight(dt, t) {
   f.t += dt; f.noteT += dt; beatTick();
   if (f.noteT >= n.win) { miss(n.type === "mash" ? "힘이 모자라!" : "늦었어!"); if (!F) return; }
   const cn = F.chart[F.i];
-  const k = clamp(1 - F.noteT / cn.win, 0, 1);
-  if (cn.type === "mash") { // 가만히 있으면 원이 줄어든다
-    F.gauge = Math.max(0, F.gauge - cn.hold / cn.need * dt); F.gpop = Math.max(0, F.gpop - dt * 8);
-    drawMash(cn, k, t);
-  } else setFrame(k);
-  $("cur").classList.toggle("urgent", k < .4);
+  let k = clamp(1 - F.noteT / cn.win, 0, 1);
+  if (cn.type === "mash") { updateMash(cn, dt); if (!F) return; if (F.chart[F.i] === cn) drawMash(cn, k, t); }
+  else setFrame(k);
+  if (F.chart[F.i] !== cn) return;
+  if (cn.type === "mash") k = F.gauge < .25 ? F.gauge / .25 * .4 : .4 + F.gauge * .6; // 원이 작아지면 화면이 빨갛게
+  $("cur").classList.toggle("urgent", cn.type === "mash" ? F.mood === "slow" : k < .4);
   $("danger").style.boxShadow = k < .4 ? `inset 0 0 ${60 + Math.sin(t * 30) * 20}px ${20 + (1 - k) * 30}px rgba(255, 40, 70, ${((.4 - k) * 1.3).toFixed(2)})` : "";
   // 끌어온 정도
   const prog = f.got / f.weight;
@@ -937,6 +1093,12 @@ function updateShow(dt, t) {
   g.rotation.order = "YXZ"; g.rotation.y = s.heading; g.rotation.z = 0;
   f.body.rotation.x = s.roll;
   g.position.y = .5 + f.len * .1 + s.y;
+  if (s.release && s.t > 1.6) { // 놔주자급: 물로 퐁당 돌려보낸다
+    if (!s.toss) { s.toss = 1; s.vy = 5; s.heading = -Math.PI / 2; }
+    g.position.z -= dt * 3.2; g.position.y = .5 + s.y;
+    if (s.y <= 0 && s.t > 1.9) { splash(g.position.x, g.position.z, 14, .8); ripple(g.position.x, g.position.z, .8); SFX.plop(); f.dispose(); show = null; resetRod(); }
+    return;
+  }
   if (s.t > 2.8) { g.scale.multiplyScalar(Math.pow(.02, dt)); if (s.t > 3.3) { f.dispose(); show = null; resetRod(); } }
 }
 
@@ -957,14 +1119,24 @@ function finish() {
   let best = 0; try { best = +localStorage.getItem("jamfish-best") || 0; if (G.score > best) { best = G.score; localStorage.setItem("jamfish-best", String(best)); } } catch { best = Math.max(best, G.score); }
   $("endScore").textContent = `${G.score}점`;
   $("endBest").textContent = G.score >= best && G.score > 0 ? "최고 기록이에요!" : `최고 기록 ${best}점`;
-  $("endList").innerHTML = ORDER.map((id) => {
-    const list = G.caught.filter((c) => c.id === id), big = list.reduce((m, c) => Math.max(m, c.cm), 0);
-    return `<div class="${list.length ? "" : "none"}">${SPECIES[id].name}<span>${list.length ? `${list.length}마리 · ${big}cm` : "-"}</span></div>`;
+  $("endList").innerHTML = placeIds().map((id) => {
+    const list = G.caught.filter((c) => c.id === id), top = list.reduce((m, c) => (!m || c.cm > m.cm ? c : m), null);
+    return `<div class="${list.length ? "" : "none"}"><b class="nm">${SPECIES[id].name}</b><span>${top ? `${list.length}마리 · ${top.grade ? top.grade + " " : ""}${top.cm}cm` : "-"}</span></div>`;
   }).join("");
+  $("card").hidden = true; card = 0;
   $("end").hidden = false;
 }
-$("startBtn").addEventListener("click", start);
+async function choosePlace(place) {
+  audio();
+  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = true; });
+  setPlace(place); renderLegend();
+  await loadPlace(place);
+  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = false; });
+  start();
+}
+document.querySelectorAll("[data-place]").forEach((b) => b.addEventListener("click", () => choosePlace(b.dataset.place)));
 $("againBtn").addEventListener("click", start);
+$("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
 let last = performance.now(), clock = 0;
@@ -986,6 +1158,7 @@ function frame(now) {
   stepDrops(dt); stepRings(dt);
   if (card > 0) { card -= dt; if (card <= 0) $("card").hidden = true; }
   waterMat.uniforms.t.value = t;
+  if (seaGroup.visible) buoys.forEach((b, i) => { b.position.y = .05 + Math.sin(t * 1.6 + i * 2) * .07; b.rotation.z = Math.sin(t * 1.2 + i) * .12; });
   // 카메라: 평소엔 연못 전체, 싸울 때는 낚시꾼 어깨 너머로 다가가 물고기를 본다
   const gp = _c.set(1.4, 6.4, STAND.z + 7.2), gl = _d.set(0, 0, POND.z + 1);
   if (F) { const fp = F.fish.group.position; gp.set(fp.x * .35 + 1.2, 4.6, STAND.z + 5); gl.set(fp.x * .7, 0, (fp.z + STAND.z) / 2 - 1.2); }
@@ -1008,18 +1181,29 @@ resetSpots();
 requestAnimationFrame(frame);
 
 // ------------------------------------------------------------------ 모델 불러오기
+// 낚시꾼은 바로, 물고기는 고른 낚시터 것만 불러온다(민물·바다 합치면 크니까)
+let MODEL_LIST = [];
+const loading = {};
+function loadPlace(place) {
+  if (loading[place]) return loading[place];
+  const list = MODEL_LIST.filter((m) => SPECIES[m.id]?.water === place && !models[m.id]);
+  let done = 0;
+  const show = () => { $("loadText").textContent = `${PLACES[place].name} 물고기 부르는 중… ${done}/${list.length}`; };
+  show();
+  return (loading[place] = Promise.all(list.map(async (m) => {
+    try { await loadFish(m.id, m.file, m.yaw, m.roll); } catch (e) { console.warn("모델", m.id, e); }
+    done++; show();
+  })).then(() => { $("loadText").textContent = "준비 완료!"; }));
+}
 (async () => {
-  let list = [];
-  try { list = await (await fetch("models.json", { cache: "no-cache" })).json(); } catch { list = []; }
-  let done = 0; const total = list.length;
-  $("loadText").textContent = total ? `불러오는 중… 0/${total}` : "";
-  await Promise.all(list.map(async (m) => {
-    try { if (m.id === "angler") await loadAngler(m.file, m.yaw); else await loadFish(m.id, m.file, m.yaw, m.roll); } catch (e) { console.warn("모델", m.id, e); }
-    done++; $("loadText").textContent = `불러오는 중… ${done}/${total}`;
-  }));
-  $("loadText").textContent = "준비 완료!";
-  $("startBtn").disabled = false;
+  try { MODEL_LIST = await (await fetch("models.json", { cache: "no-cache" })).json(); } catch { MODEL_LIST = []; }
+  const a = MODEL_LIST.find((m) => m.id === "angler");
+  $("loadText").textContent = "낚시꾼 준비 중…";
+  if (a) try { await loadAngler(a.file, a.yaw); } catch (e) { console.warn("낚시꾼", e); }
+  $("loadText").textContent = "낚시터를 골라요!";
+  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = false; });
+  loadPlace("fresh"); // 미리 받아 두기
 })();
 
 // 점검용 훅
-window.__fish = { SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
+window.__fish = { setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
