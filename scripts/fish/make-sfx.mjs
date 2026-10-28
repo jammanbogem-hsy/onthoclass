@@ -26,6 +26,16 @@ const SFX = {
   hook:    { sec: 0.6, text: "strong rod jerk whoosh with water splash, impact" },
   catch:   { sec: 1.8, text: "short cheerful retro 8-bit arcade victory jingle" },
   legend:  { sec: 3.0, text: "epic retro arcade jackpot fanfare with coins and sparkles, chiptune" },
+  // 피버·보스·미션·미니게임·날씨·도감
+  fever:   { sec: 2.0, text: "LOUD energetic arcade fever mode start fanfare, rising synth whoosh with crowd cheer" },
+  boss:    { sec: 3.5, text: "deep ominous horn blast and underwater rumble, a giant creature appears, dramatic" },
+  bigsplash: { sec: 1.5, text: "LOUD huge water explosion splash, massive fish breaching the surface" },
+  mission: { sec: 1.5, text: "LOUD bright achievement unlocked chime with sparkles, video game reward" },
+  ding:    { sec: 0.8, text: "loud bright video game coin ding, metallic chime, close" },
+  tension: { sec: 3.0, text: "fishing line creaking under heavy tension with reel drag buzzing, close up" },
+  rain:    { sec: 12, text: "steady gentle rain falling on a pond surface, calm ambience, seamless" },
+  bait:    { sec: 0.5, text: "LOUD cute bubbly pop click, small and short, immediate attack" },
+  stamp:   { sec: 0.6, text: "LOUD rubber stamp thud on paper, short, immediate attack" },
 };
 
 const only = process.argv.slice(2);

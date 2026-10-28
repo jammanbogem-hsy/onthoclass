@@ -227,6 +227,54 @@
   body.fighting .bag { opacity: .25; }
   .sound { pointer-events: auto; cursor: pointer; }
   .sound b { font-size: 15px !important; }
+  /* 미니게임 판 */
+  .minigame { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: none; }
+  .minigame canvas { width: min(560px, 92vw); aspect-ratio: 128 / 40; image-rendering: pixelated; filter: drop-shadow(0 8px 0 rgba(19, 22, 46, .55)); }
+  .minigame p { margin: 0; font-size: clamp(15px, 3.6vw, 22px); text-align: center; text-shadow: var(--pxs); max-width: 92vw; line-height: 1.5; }
+  /* 위쪽 칩들 */
+  .chips.left { justify-content: flex-start; }
+  .chip.fever b { font-size: 16px !important; color: var(--cream) !important; }
+  .chip.fever.hot { background: linear-gradient(90deg, #ff4d6d, #ffd23f, #9cf25a, #3ec7ff, #b26bff); animation: blink .3s steps(2) infinite; }
+  .chip .wx { font-size: 16px !important; color: var(--cream) !important; }
+  /* 피버: 화면 테두리가 무지개로 번쩍 */
+  body.fever #stage { box-shadow: inset 0 0 0 6px #ffd23f; }
+  body.fever::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 4; border: 8px solid transparent; border-image: linear-gradient(90deg, #ff4d6d, #ffd23f, #9cf25a, #3ec7ff, #b26bff, #ff4d6d) 1; animation: feverHue 1s steps(6) infinite; }
+  @keyframes feverHue { to { filter: hue-rotate(360deg); } }
+  /* 알림 */
+  .toast { position: fixed; left: 50%; top: calc(84px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 9; background: var(--panel); box-shadow: var(--pxbox); padding: 10px 16px; font-size: 16px; color: var(--lime); white-space: nowrap; pointer-events: none; }
+  .toast b { color: var(--sun); }
+  .toast.go { animation: keyIn .25s steps(4); }
+  /* 미끼 */
+  .baits { position: fixed; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 5; display: flex; flex-direction: column; gap: 10px; }
+  .bait { --pb: 3px; background: var(--panel); color: var(--cream); font-family: var(--px); font-weight: 700; font-size: 14px; padding: 8px 12px; text-align: left; }
+  .bait i { font-style: normal; color: var(--muted); margin-right: 4px; }
+  .bait.on { background: var(--sun); color: var(--ink); }
+  /* 미션 */
+  .mbox h3 { margin: 0 0 6px; font-size: 15px; color: var(--sun); } .mbox h3 small { color: var(--muted); font-size: 11px; margin-left: 6px; }
+  .missions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .missions li { display: flex; justify-content: space-between; gap: 8px; background: rgba(255, 255, 255, .07); padding: 6px 10px; }
+  .missions li b { color: var(--sun); white-space: nowrap; } .missions li.done { color: var(--lime); } .missions li.done b { color: var(--lime); }
+  /* 도감 */
+  .panel.wide { width: min(880px, calc(100% - 8px)); max-height: calc(100vh - 40px); overflow-y: auto; }
+  .bookhead { display: flex; align-items: center; gap: 12px; } .bookhead h2 { margin: 0; font-size: 28px; text-shadow: var(--stroke); } .bookhead b { color: var(--sun); flex: 1; }
+  .bookhead .close { font-size: 16px; padding: 8px 14px; }
+  .tabs { display: flex; gap: 12px; } .tabs .go { flex: 1; font-size: 18px; padding: 8px; } .tabs .go.on { background: var(--sky); }
+  .titles { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; } .titles span { background: rgba(255, 255, 255, .07); padding: 5px 10px; color: var(--muted); } .titles span.ok { background: var(--sun); color: var(--ink); } .titles small { font-size: 11px; }
+  .bookgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .bcard { background: rgba(255, 255, 255, .07); padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink); margin: 3px; }
+  .bcard img { width: 112px; height: 68px; image-rendering: pixelated; object-fit: contain; }
+  .bcard.locked img { filter: brightness(0) opacity(.45); } .bcard.locked b { color: var(--muted); }
+  .bcard.boss { background: rgba(224, 36, 94, .18); }
+  .bcard small { font-size: 11px; padding: 1px 6px; color: var(--cream); }
+  .bcard p { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.5; } .bcard p i { font-style: normal; color: var(--cream); padding: 0 4px; }
+  body.fighting .baits, body.fighting .toast { }
+  .bait { white-space: nowrap; }
+  body.fighting .chip.sound, body.fighting .chips.left .chip:not(.timer):not(.fever) { display: none; }
+  @media (max-width: 560px) {
+    .chip { padding: 3px 8px 4px; } .chip small { font-size: 11px; } .chip b { font-size: 16px !important; }
+    .fhead { top: calc(112px + env(safe-area-inset-top, 0px)); }
+  }
+  @media (max-width: 560px) { .baits { flex-direction: row; left: 50%; right: auto; transform: translateX(-50%); bottom: calc(64px + env(safe-area-inset-bottom, 0px)); } .bait { font-size: 12px; padding: 6px 8px; } .chips.left .chip:not(.timer) small { display: none; } }
   @media (prefers-reduced-motion: reduce) { .cur .burst, .bite b, .cur.urgent .key, .speed.on, .cur .mash, .fname .size.xl { animation: none; } }
 </style>
 <script type="importmap">
@@ -243,7 +291,11 @@
 <div class="flash" id="flash"></div>
 
 <div class="top">
-  <div class="chip timer" id="timerChip"><small>남은 시간</small><b id="timer">3:00</b></div>
+  <div class="chips left">
+    <div class="chip timer" id="timerChip"><small>남은 시간</small><b id="timer">3:00</b></div>
+    <div class="chip"><small>날씨</small><b id="weatherTxt" class="wx">맑음</b></div>
+    <div class="chip fever" id="feverChip" hidden><b id="feverTxt">연속 0/3</b></div>
+  </div>
   <div class="chips">
     <button class="chip sound" id="soundBtn" aria-label="배경 음악 켜고 끄기"><small>음악</small><b id="soundTxt">ON</b></button>
     <div class="chip"><small>점수</small><b id="score">0</b></div>
@@ -252,6 +304,12 @@
 </div>
 <div class="hint" id="hint" hidden></div>
 <div class="bag" id="bag"></div>
+<div class="toast" id="toast" hidden></div>
+<div class="baits" id="baits" hidden>
+  <button class="px bait on" data-bait="worm"><i class="kb-desk">1</i> 지렁이</button>
+  <button class="px bait" data-bait="shrimp"><i class="kb-desk">2</i> 새우</button>
+  <button class="px bait" data-bait="lure"><i class="kb-desk">3</i> 반짝 루어</button>
+</div>
 <div class="shout" id="shout"></div>
 <div class="bite" id="bite" hidden><b>쏙!!</b><span><i class="kb-desk">스페이스바로</i><i class="kb-touch">화면을 눌러</i> 챔기!</span></div>
 
@@ -274,6 +332,7 @@
     <div class="queue" id="queue"></div>
   </div>
   <div class="circles" id="circles"></div>
+  <div class="minigame" id="mini" hidden><canvas id="miniCv" width="128" height="40"></canvas><p id="miniCap"></p></div>
   <div class="judge" id="judge"></div>
   <div class="combo" id="combo" hidden><b id="comboN">0</b><span>COMBO</span></div>
   <button class="reelbtn k-reel px" data-dir="reel" aria-label="감기">감기</button>
@@ -302,10 +361,13 @@
       <b>던지기</b><span>보글보글 거품을 눌러 낚싯대를 던져요</span>
       <b>챔기</b><span>찌가 <em>쏙!</em> 들어가면 바로 눌러요. 톡톡은 가짜!</span>
       <b>승부</b><span>나오는 방향키를 빠르게 <span class="mini"><i class="key k-up"></i><i class="key k-down"></i><i class="key k-left"></i><i class="key k-right"></i></span> 우다다 뒤엔 <b style="font-size:inherit"><i class="kb-desk">스페이스바</i><i class="kb-touch">감기 버튼</i></b>로 릴을 감아요! 늦거나 틀리면 하트가 깎여요</span>
+      <b>미니게임</b><span>원 터치·타이밍 바·줄 버티기·물고기 따라잡기! 물고기마다 달라요</span>
       <b>연타</b><span>"계속 연타하세요!"가 나오면 쉬지 말고 빠르게! 빠르면 원이 커지고, 느리면 작아져요. 큰 놈일수록 더 빠르게 오래</span>
     </div>
     <div class="bubbles" id="legend"></div>
+    <div class="mbox"><h3>오늘의 미션 <small>완료하면 +150점</small></h3><ul class="missions"></ul></div>
     <p class="load" id="loadText">물고기 불러오는 중…</p>
+    <button class="go alt" data-openbook>물고기 도감</button>
     <div class="places">
       <button class="go place fresh" data-place="fresh" disabled><b>민물 낚시터</b><small>붕어·잉어·쏘가리·황금 잉어 13종</small></button>
       <button class="go place sea" data-place="sea" disabled><b>바다 낚시터</b><small>고등어·참돔·방어·청새치 11종</small></button>
@@ -319,10 +381,21 @@
     <div class="big" id="endScore">0</div>
     <p class="best" id="endBest">최고 기록 0</p>
     <div class="results" id="endList"></div>
+    <div class="mbox"><h3>오늘의 미션</h3><ul class="missions"></ul></div>
     <div class="places"><button class="go" id="againBtn">한 판 더!</button><button class="go alt" id="placeBtn">낚시터 바꾸기</button></div>
+    <button class="go alt" data-openbook>물고기 도감</button>
   </div>
 </div>
 
-<script type="module" src="game.js?v=11"></script>
+<div class="screen" id="book" hidden>
+  <div class="panel wide">
+    <div class="bookhead"><h2>물고기 도감</h2><b id="bookCount">0 / 0종</b><button class="go alt close" id="bookClose" aria-label="닫기">닫기</button></div>
+    <div class="tabs"><button class="go alt" data-booktab="fresh">민물</button><button class="go alt" data-booktab="sea">바다</button></div>
+    <div class="titles" id="titles"></div>
+    <div class="bookgrid" id="bookGrid"></div>
+  </div>
+</div>
+
+<script type="module" src="game.js?v=14"></script>
 </body>
 </html>
