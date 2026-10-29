@@ -23,7 +23,8 @@
         "firebase.json",
         "**/.*",
         "**/node_modules/**",
-        "idea/**"
+        "idea/**",
+        "**/*.pdf"
       ],
       "cleanUrls": false,
       "headers": [

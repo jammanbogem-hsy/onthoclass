@@ -4,7 +4,7 @@
   "description": "잼클래스 온톨로지 추출 Cloud Functions",
   "main": "lib/index.js",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "scripts": {
     "build": "tsc",
