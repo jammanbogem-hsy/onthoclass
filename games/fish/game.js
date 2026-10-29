@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { NET, initNet, saveCatch, refresh } from "./town.js?v=2";
+import { NET, initNet, saveCatch, refresh } from "./town.js?v=3";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -2252,7 +2252,7 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen) tutOpen();
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=2").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=3").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };

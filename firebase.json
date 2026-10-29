@@ -156,6 +156,9 @@
             "region": "asia-northeast3"
           }
         }
+      ],
+      "predeploy": [
+        "node scripts/copy-fish.cjs"
       ]
     },
     {

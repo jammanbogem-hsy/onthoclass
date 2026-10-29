@@ -316,3 +316,49 @@ export const fishLeave = onCall(options, async (req) => {
   if (typeof st === "string" && st.length >= 20 && st.length <= 80) await db().doc(`fishTokens/${sha(st)}`).delete();
   return { ok: true };
 });
+
+// ---------------------------------------------------------------- 오류 로그·의견, 최고 관리자
+// 최고 관리자는 구글 로그인 이메일로만 정한다(서버에서 검사). 학생·교사 누구나 오류/의견은 보낼 수 있다.
+const ADMINS = ["jammanbogem@gmail.com"];
+const isAdmin = (req: CallableRequest) => !!req.auth?.token?.email_verified && ADMINS.includes(String(req.auth.token.email || "").toLowerCase());
+const cut = (v: unknown, n: number) => String(v ?? "").slice(0, n);
+
+export const fishReport = onCall(options, async (req) => {
+  const kind = req.data?.kind === "feedback" ? "feedback" : "error", msg = cut(req.data?.msg, 2000).trim();
+  if (!msg) throw new HttpsError("invalid-argument", "내용을 써 주세요.");
+  let key: string | null = null, name = "";
+  try { key = await who(req); name = String((await meRef(key).get()).data()?.name || ""); } catch { /* 로그인 안 한 사람도 보낼 수 있다 */ }
+  await db().collection("fishLogs").add({ kind, msg, key, name, email: req.auth?.token?.email || null,
+    url: cut(req.data?.url, 300), ua: cut(req.data?.ua, 300), stack: cut(req.data?.stack, 3000), at: Date.now(), done: false });
+  return { ok: true };
+});
+
+export const fishAdmin = onCall(options, async (req) => {
+  if (!isAdmin(req)) throw new HttpsError("permission-denied", "최고 관리자만 볼 수 있어요.");
+  const action = String(req.data?.action || "overview");
+  if (action === "class") {
+    const cid = cut(req.data?.cid, 64);
+    if (!/^[\w-]{1,64}$/.test(cid)) throw new HttpsError("invalid-argument", "학급을 골라 주세요.");
+    const st = await db().collection(`fishClasses/${cid}/students`).get();
+    const profs = st.docs.length ? await db().getAll(...st.docs.map((d) => meRef(`s_${cid}_${d.id}`))) : [];
+    return { students: st.docs.map((d, i) => { const s = d.data(), p = profs[i]?.data() || {};
+      return { sid: d.id, name: s.name, hasPin: !!s.pinHash, locked: (s.lockUntil || 0) > Date.now(), joined: s.createdAt || 0,
+        taste: p.taste || 0, money: p.money || 0, romance: p.romance || 0, caught: p.caught || 0, bag: p.bagN || 0, rod: p.rod || 1, best: p.best || 0, lastCatchAt: p.lastCatchAt || 0 }; }) };
+  }
+  if (action === "done") { const id = cut(req.data?.id, 64); if (!/^[\w-]{1,64}$/.test(id)) throw new HttpsError("invalid-argument", "?"); await db().doc(`fishLogs/${id}`).update({ done: !!req.data?.done }); return { ok: true }; }
+  if (action === "clearErrors") { // 확인한 오류 로그 비우기(의견은 남긴다)
+    const s = await db().collection("fishLogs").where("kind", "==", "error").limit(400).get();
+    const b = db().batch(); s.docs.forEach((d) => b.delete(d.ref)); await b.commit(); return { removed: s.size };
+  }
+  const [cls, logs, fishers] = await Promise.all([
+    db().collection("fishClasses").get(),
+    db().collection("fishLogs").orderBy("at", "desc").limit(150).get(),
+    db().collection("fishers").count().get(),
+  ]);
+  const classes = await Promise.all(cls.docs.map(async (c) => {
+    const d = c.data(), n = await c.ref.collection("students").count().get();
+    return { cid: c.id, name: d.name, code: d.code, teacherName: d.teacherName || "", teacher: d.teacher, createdAt: d.createdAt || 0, students: n.data().count };
+  }));
+  return { fishers: fishers.data().count, classes: classes.sort((a, b) => b.createdAt - a.createdAt),
+    logs: logs.docs.map((d) => ({ id: d.id, ...d.data() })) };
+});

@@ -368,6 +368,21 @@
   .clstable { display: flex; flex-direction: column; font-size: 13px; overflow-x: auto; }
   .clstable > div { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr .8fr .8fr 1.3fr; gap: 6px; padding: 5px 4px; border-bottom: 1px solid rgba(255, 248, 232, .1); font-variant-numeric: tabular-nums; align-items: center; min-width: 460px; }
   .clstable .th { color: var(--muted); font-size: 11px; }
+  .fbbox { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; padding: 16px; background: rgba(10, 14, 30, .72); }
+  .fbbox textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 0; background: var(--ink); color: var(--cream); font: inherit; font-family: var(--px); font-size: 15px; resize: vertical; box-shadow: inset 0 0 0 2px rgba(255, 248, 232, .25); }
+  .fbopen { align-self: flex-end; }
+  .admsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; } .admsum div { display: flex; flex-direction: column; align-items: center; padding: 8px; background: var(--ink); }
+  .admsum small { font-size: 11px; color: var(--muted); } .admsum b { font-size: 22px; color: var(--sun); } .admsum b.bad { color: var(--hot); }
+  .admlist { display: flex; flex-direction: column; gap: 4px; }
+  .admrow { display: grid; grid-template-columns: 1.6fr 1fr .9fr .6fr 1fr; gap: 8px; align-items: center; padding: 8px 10px; border: 0; background: var(--ink); color: var(--cream); font: inherit; text-align: left; cursor: pointer; }
+  .admrow em { font-style: normal; color: var(--sun); letter-spacing: .08em; } .admrow small { color: var(--muted); font-size: 11px; }
+  .admst { padding: 4px 8px 10px; background: rgba(255, 248, 232, .04); }
+  .admlogs { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+  .admlog { padding: 8px 10px; background: var(--ink); display: flex; flex-direction: column; gap: 4px; } .admlog p { margin: 0; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+  .admlog small { font-size: 11px; color: var(--muted); } .admlog.done { opacity: .5; } .admlog.err p { color: #ffb3c0; }
+  .admlog pre { margin: 4px 0 0; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--muted); max-height: 200px; overflow: auto; }
+  .admlog .acctout { align-self: flex-start; }
+  @media (max-width: 560px) { .admrow { grid-template-columns: 1fr 1fr; } }
   #town { z-index: 25; background: rgba(10, 14, 30, .7); } #town .panel { background: #1b2045; }
   .acct { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: rgba(255, 248, 232, .06); box-shadow: inset 0 0 0 2px rgba(255, 248, 232, .15); }
   .acct p { font-size: 13px; }
@@ -576,6 +591,11 @@
   <div class="townpop" id="townPop" hidden></div>
 </div>
 
+<div class="fbbox" id="fbBox" hidden><div class="tutcard px"><div class="tuthead"><b>의견·오류 알리기</b><button class="tutx" id="fbClose" aria-label="닫기">✕</button></div>
+  <p>이상한 점, 안 되는 것, 바라는 것을 자유롭게 써 주세요. 최고 관리자 선생님이 읽어요.</p>
+  <textarea maxlength="2000" rows="5" placeholder="예) 바위 피하기가 너무 빨라요 / 휴대폰에서 버튼이 안 눌려요"></textarea>
+  <div class="tutnav"><button class="go" id="fbSend">보내기</button></div></div></div>
+
 <div class="screen" id="book" hidden>
   <div class="panel wide">
     <div class="bookhead"><h2>물고기 도감</h2><b id="bookCount">0 / 0종</b><button class="go alt close" id="bookClose" aria-label="닫기">닫기</button></div>
@@ -585,6 +605,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=26"></script>
+<script type="module" src="game.js?v=27"></script>
 </body>
 </html>

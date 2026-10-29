@@ -27,6 +27,18 @@ export async function call(name, data = {}) {
   try { return await (await sdk()).call(name, ST ? { ...data, st: ST } : data); }
   catch (e) { const msg = e?.message?.replace(/^.*?: /, "") || "잠깐 문제가 생겼어요"; hooks.toast?.(msg); throw e; }
 }
+// 오류는 자동으로(한 번 열 때 5개까지, 같은 건 한 번), 의견은 직접 써서 보낸다 → 최고 관리자가 본다
+const ADMIN_EMAIL = "jammanbogem@gmail.com"; // 화면 표시용. 실제 권한은 서버가 이메일로 검사
+let errN = 0; const errSeen = new Set();
+function reportErr(msg, stack) {
+  if (errN >= 5 || errSeen.has(msg)) return; errSeen.add(msg); errN++;
+  sdk().then((a) => a.call("fishReport", { kind: "error", msg, stack: String(stack || ""), url: location.href, ua: navigator.userAgent, ...(ST ? { st: ST } : {}) })).catch(() => {});
+}
+addEventListener("error", (e) => reportErr(String(e.message || "오류"), e.error?.stack || `${e.filename}:${e.lineno}:${e.colno}`));
+addEventListener("unhandledrejection", (e) => { const r = e.reason; if (r?.code?.startsWith?.("functions/")) return; reportErr(`Promise: ${r?.message || r}`, r?.stack); });
+export async function sendFeedback(msg) { await call("fishReport", { kind: "feedback", msg, url: location.href, ua: navigator.userAgent }); }
+const isAdminView = () => !NET.student && (NET.user?.email || "").toLowerCase() === ADMIN_EMAIL;
+let ADM = null, ADMC = {}, admOpen = "";
 const changed = () => { renderAcct(); hooks.onProfile?.(NET.me); if (!$("town").hidden) renderTown(); };
 
 // hooks: { SPECIES, fishThumb, toast, sample, onProfile }
@@ -89,10 +101,12 @@ export function renderAcct() {
       box.querySelector("[data-join]").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; const b = f.querySelector("button"); b.disabled = true; join(f.code.value, f.name.value, f.pin.value).catch(() => {}).finally(() => { b.disabled = false; }); });
     } else {
       const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
-      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
+      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
         <div class="townbtns"><button class="go alt" data-town="market">수산시장${NET.bag.length ? ` <i>${NET.bag.length}</i>` : ""}</button><button class="go alt" data-town="shop">낚시 가게</button><button class="go alt" data-town="cook">캠핑 요리</button></div>`;
     }
+    box.insertAdjacentHTML("beforeend", `<button class="acctout fbopen" data-feedback>의견·오류 알리기</button>`);
+    box.querySelector("[data-feedback]").addEventListener("click", openFeedback);
     box.querySelector("[data-login]")?.addEventListener("click", login);
     box.querySelector("[data-logout]")?.addEventListener("click", logout);
     box.querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => openTown(b.dataset.town)));
@@ -102,7 +116,7 @@ export function renderAcct() {
 // ---------------------------------------------------------------- 마을(수산시장·가게·요리·옷장)
 let tab = "market", pick = new Set(), cooking = null, busy = false;
 export async function openTown(t = "market") {
-  tab = t; pick = new Set(); cooking = null; if (t === "class") CLASSES = null;
+  tab = t; pick = new Set(); cooking = null; if (t === "class") CLASSES = null; if (t === "admin") { ADM = null; ADMC = {}; }
   $("town").hidden = false; renderTown();
   try { Object.assign(NET, await call("fishMe")); renderTown(); renderAcct(); } catch {}
 }
@@ -123,7 +137,7 @@ const kgText = (kg) => (kg >= 100 ? `${Math.round(kg)}kg` : kg >= 1 ? `${kg.toFi
 
 export function renderTown() {
   const m = NET.me; if (!m) { $("townBody").innerHTML = `<p class="empty">로그인이 필요해요.</p>`; return; }
-  const tabs = { ...TABS, ...(NET.user && !NET.student ? { class: "낚시 학급" } : {}) };
+  const tabs = { ...TABS, ...(NET.user && !NET.student ? { class: "낚시 학급" } : {}), ...(isAdminView() ? { admin: "관리자" } : {}) };
   $("townTabs").innerHTML = Object.entries(tabs).map(([k, v]) => `<button class="go ${k === tab ? "" : "alt"}" data-tab="${k}">${v}</button>`).join("");
   $("townTabs").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; pick = new Set(); cooking = null; renderTown(); }));
   $("townScores").innerHTML = `<span>손맛 <b>${m.taste.toLocaleString("ko-KR")}</b></span><span>돈 <b class="money">${won(m.money)}</b></span><span>낭만 <b class="romance">${m.romance.toLocaleString("ko-KR")}</b></span>`;
@@ -169,6 +183,25 @@ export function renderTown() {
           <button class="go ${can ? "" : "alt"}" data-cook="${k}" ${can ? "" : "disabled"}>${can ? "요리하기" : r.ramen && !(m.stock.ramen || 0) ? "라면 없음" : "재료 부족"}</button></div>`;
       }).join("")}</div>`;
     body.querySelectorAll("[data-cook]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.cook; if (!NET.recipes[k].fish) return cook(k, []); cooking = k; pick = new Set(); renderTown(); }));
+  } else if (tab === "admin") {
+    if (!ADM) { body.innerHTML = `<p class="empty">불러오는 중…</p>`; call("fishAdmin", { action: "overview" }).then((r) => { ADM = r; renderTown(); }).catch(() => {}); return; }
+    const errs = ADM.logs.filter((l) => l.kind === "error"), fbs = ADM.logs.filter((l) => l.kind === "feedback");
+    const when = (t) => new Date(t).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const studN = ADM.classes.reduce((a, c) => a + c.students, 0);
+    body.innerHTML = `<div class="admsum"><div><small>낚시꾼(계정)</small><b>${ADM.fishers}</b></div><div><small>낚시 학급</small><b>${ADM.classes.length}</b></div><div><small>학급 학생</small><b>${studN}</b></div><div><small>오류</small><b class="${errs.length ? "bad" : ""}">${errs.length}</b></div><div><small>의견(미확인)</small><b>${fbs.filter((f) => !f.done).length}</b></div></div>
+      <div class="townact"><button class="go alt" data-admreload>새로고침</button></div>
+      <h3>학급 <small>눌러서 학생 상황 보기</small></h3>
+      <div class="admlist">${ADM.classes.map((c) => `<button class="admrow" data-admcls="${c.cid}"><b>${esc(c.name)}</b><span>${esc(c.teacherName || "-")}</span><em>${c.code}</em><span>${c.students}명</span><small>${c.createdAt ? when(c.createdAt) : ""}</small></button>
+        ${admOpen === c.cid ? (ADMC[c.cid] ? `<div class="clstable admst"><div class="th"><span>이름</span><span>손맛</span><span>돈</span><span>낭만</span><span>잡은 수</span><span>살림망·낚싯대·상태</span></div>${[...ADMC[c.cid]].sort((a, b) => b.taste - a.taste).map((s) => `<div><span>${esc(s.name)}</span><span>${s.taste.toLocaleString("ko-KR")}</span><span class="money">${won(s.money)}</span><span class="romance">${s.romance}</span><span>${s.caught}</span><span>${s.bag}마리 · Lv.${s.rod}${s.locked ? " · 잠김" : ""}${!s.hasPin ? " · 번호 초기화됨" : ""}${s.lastCatchAt ? ` · 최근 ${when(s.lastCatchAt)}` : ""}</span></div>`).join("") || "<p class='empty'>학생 없음</p>"}</div>` : `<p class="empty">불러오는 중…</p>`) : ""}`).join("") || `<p class="empty">아직 학급이 없어요.</p>`}</div>
+      <h3>의견 <small>${fbs.length}개</small></h3>
+      <div class="admlogs">${fbs.map((l) => `<div class="admlog ${l.done ? "done" : ""}"><small>${when(l.at)} · ${esc(l.name || l.email || "익명")}</small><p>${esc(l.msg)}</p><button class="acctout" data-admdone="${l.id}:${l.done ? "" : "1"}">${l.done ? "확인 취소" : "확인함"}</button></div>`).join("") || `<p class="empty">아직 의견이 없어요.</p>`}</div>
+      <h3>오류 로그 <small>${errs.length}개 · 학생 화면에서 난 오류가 자동으로 들어와요</small></h3>
+      ${errs.length ? `<div class="townact"><button class="go alt" data-admclear>확인한 오류 로그 비우기</button></div>` : ""}
+      <div class="admlogs">${errs.map((l) => `<div class="admlog err"><small>${when(l.at)} · ${esc(l.name || l.email || "로그인 전")} · ${esc((l.ua || "").replace(/^.*?\((.*?)\).*$/, "$1").slice(0, 60))}</small><p>${esc(l.msg)}</p>${l.stack ? `<details><summary>자세히</summary><pre>${esc(l.stack)}\n${esc(l.url || "")}</pre></details>` : ""}</div>`).join("") || `<p class="empty">오류가 없어요.</p>`}</div>`;
+    body.querySelector("[data-admreload]").addEventListener("click", () => { ADM = null; ADMC = {}; renderTown(); });
+    body.querySelectorAll("[data-admcls]").forEach((b) => b.addEventListener("click", () => { const cid = b.dataset.admcls; admOpen = admOpen === cid ? "" : cid; if (admOpen && !ADMC[cid]) call("fishAdmin", { action: "class", cid }).then((r) => { ADMC[cid] = r.students; renderTown(); }).catch(() => {}); renderTown(); }));
+    body.querySelectorAll("[data-admdone]").forEach((b) => b.addEventListener("click", () => { const [id, d] = b.dataset.admdone.split(":"); act(async () => { await call("fishAdmin", { action: "done", id, done: !!d }); const l = ADM.logs.find((x) => x.id === id); if (l) l.done = !!d; renderTown(); }); }));
+    body.querySelector("[data-admclear]")?.addEventListener("click", () => act(async () => { const r = await call("fishAdmin", { action: "clearErrors" }); hooks.toast?.(`오류 로그 ${r.removed}개를 비웠어요`); ADM = null; renderTown(); }));
   } else if (tab === "class") {
     if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; call("fishClassList").then((r) => { CLASSES = r.classes; renderTown(); }).catch(() => {}); return; }
     body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음)</small></h3>
@@ -216,3 +249,16 @@ function pop(big, cls, small) {
   el.hidden = false; el.style.animation = "none"; void el.offsetWidth; el.style.animation = ""; clearTimeout(pop.t); pop.t = setTimeout(() => { el.hidden = true; }, 1600);
 }
 document.addEventListener("click", (e) => { if (e.target.id === "townClose") $("town").hidden = true; });
+
+// 의견 보내기 창
+function openFeedback() {
+  const el = $("fbBox"); el.hidden = false; const ta = el.querySelector("textarea"); ta.value = ""; setTimeout(() => ta.focus(), 50);
+}
+document.addEventListener("click", (e) => {
+  if (e.target.id === "fbClose") $("fbBox").hidden = true;
+  if (e.target.id === "fbSend") {
+    const ta = $("fbBox").querySelector("textarea"), msg = ta.value.trim(); if (!msg) return;
+    e.target.disabled = true;
+    sendFeedback(msg).then(() => { $("fbBox").hidden = true; hooks.toast?.("고마워요! 선생님께 잘 전달했어요"); }).catch(() => {}).finally(() => { e.target.disabled = false; });
+  }
+});
