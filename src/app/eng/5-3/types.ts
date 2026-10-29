@@ -12,20 +12,20 @@ export const POINTS_PER_SOLVE = 5;
 export type Place = { id: string; en: string; ko: string; img: string };
 
 export const PLACES: Place[] = [
-  { id: "library", en: "library", ko: "도서관", img: "library.png" },
-  { id: "hospital", en: "hospital", ko: "병원", img: "hospital.png" },
-  { id: "restaurant", en: "restaurant", ko: "식당", img: "restaurant.png" },
-  { id: "bank", en: "bank", ko: "은행", img: "bank.png" },
-  { id: "busstop", en: "bus stop", ko: "버스정류장", img: "busstop.png" },
-  { id: "restroom", en: "restroom", ko: "화장실", img: "restroom.png" },
-  { id: "park", en: "park", ko: "공원", img: "park.png" },
-  { id: "cafe", en: "cafe", ko: "카페", img: "cafe.png" },
-  { id: "academy", en: "academy", ko: "학원", img: "academy.png" },
+  { id: "library", en: "library", ko: "도서관", img: "library.webp" },
+  { id: "hospital", en: "hospital", ko: "병원", img: "hospital.webp" },
+  { id: "restaurant", en: "restaurant", ko: "식당", img: "restaurant.webp" },
+  { id: "bank", en: "bank", ko: "은행", img: "bank.webp" },
+  { id: "busstop", en: "bus stop", ko: "버스정류장", img: "busstop.webp" },
+  { id: "restroom", en: "restroom", ko: "화장실", img: "restroom.webp" },
+  { id: "park", en: "park", ko: "공원", img: "park.webp" },
+  { id: "cafe", en: "cafe", ko: "카페", img: "cafe.webp" },
+  { id: "academy", en: "academy", ko: "학원", img: "academy.webp" },
   {
     id: "store",
     en: "convenience store",
     ko: "편의점",
-    img: "convienence store.png", // 원본 파일명(철자/공백) 그대로
+    img: "convienence store.webp", // 원본 파일명(철자/공백) 그대로
   },
 ];
 
