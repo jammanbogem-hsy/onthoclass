@@ -274,11 +274,26 @@ export function renderTown() {
   }
 }
 async function act(fn) { if (busy) return; busy = true; try { await fn(); } catch {} busy = false; }
-const sell = (ids) => act(async () => {
-  const r = await call("fishSell", { ids });
-  Object.assign(NET, { me: r.me, bag: r.bag }); pick = new Set();
-  hooks.sample?.("cash") || hooks.sample?.("ding"); pop(`+${won(r.earned)}`, "money", `${r.n}마리를 팔았어요!`); changed();
-});
+// 판 것처럼 먼저 보여 주고(살림망에서 빼고 돈을 올림), 서버 답이 오면 맞추고, 실패하면 되돌린다
+let selling = 0;
+async function sell(ids) {
+  const list = ids === "all" ? NET.bag : NET.bag.filter((f) => ids.includes(f.id));
+  if (!list.length) return;
+  const gone = new Set(list.map((f) => f.id)), earned = list.reduce((t, f) => t + f.price, 0), order = NET.bag.map((f) => f.id);
+  NET.bag = NET.bag.filter((f) => !gone.has(f.id)); NET.me = { ...NET.me, money: NET.me.money + earned }; pick = new Set();
+  hooks.sample?.("cash") || hooks.sample?.("ding"); pop(`+${won(earned)}`, "money", `${list.length}마리를 팔았어요!`); changed();
+  selling++;
+  try {
+    const r = await call("fishSell", { ids: [...gone] });
+    selling--;
+    NET.me = selling ? { ...NET.me, money: NET.me.money + r.earned - earned } : r.me; // 다른 팔기가 없으면 서버 값 그대로
+  } catch {
+    selling--;
+    NET.me = { ...NET.me, money: NET.me.money - earned };
+    NET.bag = [...NET.bag, ...list].sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id));
+  }
+  changed();
+}
 const buy = (item) => act(async () => {
   const before = NET.me.romance, r = await call("fishBuy", { item });
   NET.me = r.me; hooks.sample?.("cash") || hooks.sample?.("ding");

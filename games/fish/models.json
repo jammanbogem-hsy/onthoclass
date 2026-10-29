@@ -92,8 +92,10 @@
   },
   {
     "id": "flounder",
-    "file": "assets/fish/flounder.glb?v=1",
-    "yaw": -90
+    "file": "assets/fish/flounder.glb?v=2",
+    "yaw": 0,
+    "roll": 90,
+    "spin": -90
   },
   {
     "id": "cutlass",

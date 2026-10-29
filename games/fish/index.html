@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>잼만보 낚시터</title>
+<title>잠만보 낚시터</title>
 <meta name="description" content="보글보글 거품에 낚싯대를 던지고, 방향키 콤보로 물고기와 한판 승부! 3분 낚시 대회">
-<meta property="og:title" content="잼만보 낚시터">
+<meta property="og:title" content="잠만보 낚시터">
 <meta property="og:description" content="보글보글 거품에 낚싯대를 던지고, 방향키 콤보로 물고기와 한판 승부! 3분 낚시 대회">
 <link rel="preload" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -179,6 +179,9 @@
   .place.fresh { background: var(--lime); } .place.sea { background: var(--sky); }
   .go.alt { background: var(--cream); font-size: 20px; }
   @media (max-width: 420px) { .places { grid-template-columns: 1fr; } }
+  .places.endact { grid-template-columns: 1.2fr 1fr 1fr; margin: 4px 0 10px; }
+  .places.endact .go { white-space: nowrap; font-size: 17px; padding-inline: 6px; }
+  @media (max-width: 420px) { .places.endact { grid-template-columns: 1fr 1fr; } .places.endact #againBtn { grid-column: 1 / -1; } }
   .panel.startp { flex-direction: column; }
   .scol { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   @media (min-width: 900px) {
@@ -556,7 +559,7 @@
 <div class="screen" id="start">
   <div class="panel startp">
     <div class="scol">
-      <h1>잼만보<br><em>낚시터</em></h1>
+      <h1>잠만보<br><em>낚시터</em></h1>
       <div class="acct" data-acct></div>
       <div class="places">
         <button class="go place fresh" data-place="fresh" disabled><b>민물 낚시터</b><small>붕어·향어·산천어·황금 잉어 18종</small></button>
@@ -571,7 +574,7 @@
         <b>던지기</b><span>물 위를 <em>꾹</em> 누른 채 방향을 맞추고, 힘 바늘이 <b style="font-size:inherit;color:var(--lime)">초록</b>일 때 떼요. 그림자가 클수록 큰 물고기!</span>
         <b>챔기</b><span>찌가 <em>쏙!</em> 들어가면 바로 눌러요. 톡톡은 가짜!</span>
         <b>승부</b><span>나오는 방향키를 빠르게 <span class="mini"><i class="key k-up"></i><i class="key k-down"></i><i class="key k-left"></i><i class="key k-right"></i></span> 우다다 뒤엔 <b style="font-size:inherit"><i class="kb-desk">스페이스바</i><i class="kb-touch">화면 톡</i></b>로 릴을 감아요! 늦거나 틀리면 하트가 깎여요</span>
-        <b>미니게임</b><span>타이밍 바·박자 낚시·바위 피하기·타자 등 11가지! 모드 카드가 뜨면 방법을 읽어요</span>
+        <b>미니게임</b><span>타이밍 바·박자 낚시·장애물 피하기·점프 넘기·먹이 받기 등 13가지! 모드 카드가 뜨면 방법을 읽어요</span>
         <b>점수</b><span>크기 × 무게로 점수가 매겨져요. 같은 물고기도 내 기록보다 무거우면 <em>기록 경신 ×1.3</em></span>
         <b>연타</b><span>"계속 연타하세요!"가 나오면 쉬지 말고 빠르게! 빠르면 원이 커지고, 느리면 작아져요. 큰 놈일수록 더 빠르게 오래</span>
       </div>
@@ -599,11 +602,10 @@
     <small class="endlabel">이번 판 손맛 점수</small>
     <div class="big" id="endScore">0</div>
     <p class="best" id="endBest">최고 기록 0</p>
+    <div class="places endact"><button class="go" id="againBtn">한 판 더!</button><button class="go alt" id="placeBtn">메인 화면으로</button><button class="go alt" data-openbook>물고기 도감</button></div>
     <div class="results" id="endList"></div>
     <div class="acct" data-acct></div>
     <div class="mbox"><h3>오늘의 미션</h3><ul class="missions"></ul></div>
-    <div class="places"><button class="go" id="againBtn">한 판 더!</button><button class="go alt" id="placeBtn">낚시터 바꾸기</button></div>
-    <button class="go alt" data-openbook>물고기 도감</button>
   </div>
 </div>
 
@@ -621,7 +623,7 @@
   <p class="qq"></p><div class="qo"></div><p class="qmsg"></p></div></div>
 <div class="fbbox" id="fbBox" hidden><div class="tutcard px"><div class="tuthead"><b>의견·오류 알리기</b><button class="tutx" id="fbClose" aria-label="닫기">✕</button></div>
   <p>이상한 점, 안 되는 것, 바라는 것을 자유롭게 써 주세요. 최고 관리자 선생님이 읽어요.</p>
-  <textarea maxlength="2000" rows="5" placeholder="예) 바위 피하기가 너무 빨라요 / 휴대폰에서 버튼이 안 눌려요"></textarea>
+  <textarea maxlength="2000" rows="5" placeholder="예) 장애물 피하기가 너무 빨라요 / 휴대폰에서 버튼이 안 눌려요"></textarea>
   <div class="tutnav"><button class="go" id="fbSend">보내기</button></div></div></div>
 
 <div class="screen" id="book" hidden>
@@ -633,6 +635,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=31"></script>
+<script type="module" src="game.js?v=32"></script>
 </body>
 </html>

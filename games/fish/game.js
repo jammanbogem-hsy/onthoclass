@@ -1,10 +1,10 @@
-// 잼만보 낚시터 — Three.js 2.5D 낚시 게임
+// 잠만보 낚시터 — Three.js 2.5D 낚시 게임
 // 보글보글 거품(등급·가짜)에 낚싯대를 던지고, 걸리면 방향키 콤보로 끌어올린다.
 // 물고기·낚시꾼 모델은 Tripo. 물고기 동작은 정점 셰이더로 몸을 휜다(종마다 뼈 구성이 달라서).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz } from "./town.js?v=5";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz } from "./town.js?v=6";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -78,14 +78,17 @@ Object.assign(MINIS, {
   seabream: ["bar", "typing"], flounder: ["hold", "whack"], yellowtail: ["spin", "simon"], sunfish: ["hold", "typing"], tuna: ["track", "spin", "simon"], marlin: ["bar", "whack", "hold"],
   bagrid: ["hold", "rhythm"], nuchi: ["bar", "typing"], mirrorcarp: ["hold", "whack"], kkeokji: ["dodge", "simon"], masu: ["track", "bar"], seabass: ["bar", "whack"], mahimahi: ["track", "rhythm"], kingfish: ["spin", "hold"], hammerhead: ["hold", "dodge"], sailfish: ["spin", "dodge"],
 });
-// 박자 낚시(rhythm)·바위 피하기(dodge)도 섞는다
+// 박자 낚시(rhythm)·장애물 피하기(dodge)도 섞는다
 for (const [id, t] of Object.entries({ minnow: "rhythm", bluegill: "rhythm", crucian: "rhythm", sturgeon: "rhythm", mackerel: "rhythm", seabream: "rhythm", tuna: "rhythm", sunfish: "rhythm",
   bass: "dodge", trout: "dodge", eel: "dodge", snakehead: "dodge", goldkoi: "dodge", cutlass: "dodge", flounder: "dodge", marlin: "dodge", yellowtail: "dodge" })) MINIS[id].push(t);
+// 점프 넘기(jump)·먹이 받기(feed)
+for (const [id, t] of Object.entries({ pirami: "jump", carp: "feed", catfish: "jump", mandarin: "feed", bagrid: "jump", nuchi: "feed", masu: "jump", crucian: "feed",
+  jack: "feed", rockfish: "jump", seabream: "feed", kingfish: "jump", mahimahi: "jump", seabass: "feed", sunfish: "feed", tuna: "jump" })) MINIS[id].push(t);
 for (const id in MINIS) SPECIES[id].minis = MINIS[id];
 // 보스: 경기 후반에 한 번 나타나는 거대한 그림자. 모든 미니게임을 다 거친다
 Object.assign(SPECIES, {
-  bossFresh: { water: "fresh", name: "메기 대왕", tier: "보스", points: 800, disp: 3.4, len: [250, 320], model: "catfish", notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["bar", "typing", "track", "whack", "hold", "rhythm", "dodge"], boss: true },
-  bossSea: { water: "sea", name: "청새치 대왕", tier: "보스", points: 900, disp: 4.2, len: [450, 600], model: "marlin", notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["spin", "simon", "track", "whack", "hold", "rhythm", "dodge"], boss: true },
+  bossFresh: { water: "fresh", name: "메기 대왕", tier: "보스", points: 800, disp: 3.4, len: [250, 320], model: "catfish", notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["bar", "typing", "track", "whack", "hold", "rhythm", "dodge", "jump", "feed"], boss: true },
+  bossSea: { water: "sea", name: "청새치 대왕", tier: "보스", points: 900, disp: 4.2, len: [450, 600], model: "marlin", notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["spin", "simon", "track", "whack", "hold", "rhythm", "dodge", "jump", "feed"], boss: true },
 });
 // 미끼: 등급별로 잘 무는 정도가 다르다
 const BAITS = {
@@ -603,12 +606,12 @@ function bodyPoints(root, step = 9) {
   });
   return out;
 }
-async function loadFish(id, file, yaw = 0, roll = 0) {
+async function loadFish(id, file, yaw = 0, roll = 0, spin = 0) {
   const gltf = await loader.loadAsync(file);
   const root = gltf.scene, holder = new THREE.Group(), turn = new THREE.Group();
   turn.add(root); holder.add(turn);
   root.traverse((o) => { if (o.isMesh && o.material.map) { o.material.map.magFilter = THREE.NearestFilter; o.material.map.colorSpace = THREE.SRGBColorSpace; } });
-  turn.rotation.set(THREE.MathUtils.degToRad(roll), THREE.MathUtils.degToRad(yaw), 0, "YXZ"); // 머리 +x (모델마다 눈으로 확인한 값)
+  turn.rotation.set(THREE.MathUtils.degToRad(roll), THREE.MathUtils.degToRad(yaw), THREE.MathUtils.degToRad(spin), "YXZ"); // 머리 +x (모델마다 눈으로 확인한 값)
   const size = new THREE.Box3().setFromPoints(bodyPoints(holder)).getSize(new THREE.Vector3());
   turn.scale.setScalar(1 / Math.max(size.x, 1e-3));
   const box2 = new THREE.Box3().setFromPoints(bodyPoints(holder));
@@ -667,6 +670,49 @@ class Fish {
   wave(phase, amp, arc, head = amp * .3) { this.U.bend.value.set(phase, amp, arc, head); if (!this.norm) this.body.rotation.y = Math.sin(phase) * amp; }
   mouth(out) { return this.norm ? out.set(.48, 0, 0).applyMatrix4(this.norm.matrixWorld) : out.set(this.len * .48, 0, 0).applyMatrix4(this.body.matrixWorld); }
   dispose() { scene.remove(this.group); }
+}
+
+// ------------------------------------------------------------------ 구경거리: 물고기가 가끔 펄쩍 뛰거나, 등을 내밀고 지나가거나, 보글보글 숨을 쉰다
+const JUMPERS = []; let jumpNext = 3;
+function spawnJumper() {
+  const ids = realIds(PLACE).filter((id) => models[SPECIES[id].model || id] && SPECIES[id].tier !== "전설");
+  if (!ids.length) return;
+  const id = ids[Math.floor(Math.random() * ids.length)], f = new Fish(id, rand(0, .6)), kind = Math.random() < .55 ? "jump" : Math.random() < .55 ? "fin" : "bubble";
+  let p = null;
+  for (let k = 0; k < 20 && !p; k++) { const q = pondPoint(rand(Math.PI * 1.05, Math.PI * 1.95), rand(.3, .85)); if (q.y < DECK_Z - 4 && (PLACE !== "sea" || q.y < seaFront(q.x) - 2) && spots.every((s) => Math.hypot(s.x - q.x, s.z - q.y) > 2.5)) p = q; }
+  if (!p) { f.dispose(); return; }
+  const head = Math.random() < .5 ? 0 : Math.PI, len = f.len;
+  const J = { f, kind, x: p.x, z: p.y, head, age: 0, phase: rand(0, 9),
+    dur: kind === "jump" ? .8 + len * .18 : kind === "fin" ? 3.2 : 2.6, h: .7 + len * .35, d: kind === "jump" ? .8 + len * 1.1 : 2.2 + len };
+  f.group.rotation.y = head; f.group.position.set(p.x, -5, p.y);
+  if (kind === "jump") { splash(p.x, p.y, 10, .8); ripple(p.x, p.y, 1.2); sample("splash", { vol: .25, rate: rand(1, 1.3) }); }
+  JUMPERS.push(J);
+}
+function stepJumpers(dt, t) {
+  // 낚시 대회 중 사투가 아닐 때, 그리고 시작 화면에서
+  if (!F && !show && JUMPERS.length < 2 && (jumpNext -= dt) <= 0) { jumpNext = rand(4, 9); spawnJumper(); }
+  for (let i = JUMPERS.length - 1; i >= 0; i--) {
+    const J = JUMPERS[i], f = J.f; J.age += dt;
+    const k = J.age / J.dur, dir = Math.cos(J.head), gp = f.group.position;
+    J.phase += dt * (J.kind === "jump" ? 14 : 8);
+    if (J.kind === "jump") { // 포물선으로 튀어 올랐다가 머리부터 들어간다
+      const x = J.x + dir * J.d * k, y = J.h * 4 * k * (1 - k) - .1, vy = J.h * 4 * (1 - 2 * k) / J.dur, vx = J.d / J.dur;
+      gp.set(x, y, J.z); f.body.rotation.z = Math.atan2(vy, vx) * .9;
+      f.wave(J.phase, .14, Math.sin(k * Math.PI) * .1);
+      if (k >= 1) { splash(x, J.z, 14, 1); ripple(x, J.z, 1.4); ripple(x, J.z, .8, "#effffb", 1.3); sample("splash", { vol: .3, rate: rand(.9, 1.2) }); }
+    } else if (J.kind === "fin") { // 등지느러미만 물 위로 내밀고 스르륵
+      const up = Math.min(1, k * 4, (1 - k) * 4), x = J.x + dir * J.d * (k - .5);
+      gp.set(x, -f.halfH * 1.6 + up * f.halfH * .9, J.z); f.body.rotation.z = 0;
+      f.wave(J.phase, .1, 0);
+      if (Math.random() < dt * 6 * up) ripple(x - dir * f.len * .3, J.z + rand(-.1, .1), .5 + f.len * .3, "#effffb", .8);
+    } else { // 수면 아래에서 보글보글: 몸은 안 보이고 거품만 줄줄이
+      const x = J.x + dir * J.d * .3 * (k - .5);
+      gp.set(x, -5, J.z);
+      if (Math.random() < dt * 14) emitBubble(x + rand(-.15, .15), J.z + rand(-.15, .15), rand(.07, .16), "#e8fbff", false);
+      if (Math.random() < dt * 2) ripple(x, J.z, .4, "#effffb", .7);
+    }
+    if (k >= 1 || F || show) { f.dispose(); f.group.traverse((o) => { if (o.material) o.material.dispose(); }); JUMPERS.splice(i, 1); }
+  }
 }
 
 // ------------------------------------------------------------------ 내 장비(로그인하면 서버에서): 낚싯대 단계·옷·장식
@@ -1255,9 +1301,17 @@ function miniNote(type, sp, sizeT) {
     const need = 6 + Math.round(power * 3 + sizeT * 3), gap = .62 - power * .12 - sizeT * .1;
     return { type, dir: "any", need, gap, speed: 62 + power * 20, win: 1.2 + (need + 4) * gap + 2.5 };
   }
-  if (type === "dodge") { // 바위 피하기: 물고기를 위아래로 옮겨 바위·수초를 피한다
-    const dur = 6 + power * 2 + sizeT * 2;
-    return { type, dir: "dodge", dur, speed: 44 + power * 18 + sizeT * 14, gap: .95 - power * .2 - sizeT * .15, win: dur + 4 };
+  if (type === "dodge") { // 장애물 피하기: 물고기를 위아래로 옮겨 바위·수초·깡통을 모두 피한다
+    const dur = 7 + power * 2 + sizeT * 2;
+    return { type, dir: "dodge", dur, speed: 52 + power * 20 + sizeT * 14, gap: .82 - power * .2 - sizeT * .15, win: dur + 4 };
+  }
+  if (type === "jump") { // 점프 넘기: 떠내려오는 통나무를 눌러서 뛰어넘는다
+    const dur = 7 + power * 2 + sizeT * 2;
+    return { type, dir: "any", dur, speed: 46 + power * 16 + sizeT * 12, gap: 1.15 - power * .25 - sizeT * .15, win: dur + 4 };
+  }
+  if (type === "feed") { // 먹이 받기: 뜰채를 좌우로 옮겨 떨어지는 지렁이는 받고 깡통은 피한다
+    const need = 6 + Math.round(power * 3 + sizeT * 2);
+    return { type, dir: "track", need, fall: 26 + power * 10 + sizeT * 8, gap: .62 - power * .1, win: 6 + need * 1.6 };
   }
   if (type === "hold") return { type, dir: "hold", win: 16, need: 2.6 + power * 1.4 + sizeT * 1.2, pull: .5 + power * .5 + sizeT * .3, jerk: .5 + power * 1.2 + sizeT * .6 };
   if (type === "typing") { // 영어 단어 타자: 클수록 긴 단어
@@ -1401,6 +1455,8 @@ function press(dir) {
   if (n.type === "spin") return spinPress(n, dir);
   if (n.type === "rhythm") return rhythmPress(n);
   if (n.type === "dodge") return dodgePress(n, dir);
+  if (n.type === "jump") { const m = F.ms; if (m.y <= .01) { m.vy = 112; sample("bait", { rate: 1.6, vol: .5 }); } return; }
+  if (n.type === "feed") return; // 좌우로 옮기기는 updateMini 가 본다
   if (n.type === "typing" || n.type === "whack") return; // 글자·칸은 따로 받는다
   if (n.type === "hold" || n.type === "track") return; // 누르고 있기·따라가기는 updateMini 가 본다
   if (n.type === "mash") { // 무엇을 눌러도 된다. 원의 크기는 연타 속도로 정해진다(updateFight)
@@ -1485,7 +1541,7 @@ function popCircle(n, perfect) {
   $("fight").appendChild(el); setTimeout(() => el.remove(), 500);
 }
 // ------------------------------------------------------------------ 미니게임: 타이밍 바 · 줄 텐션 · 물고기 따라잡기
-const MINI_TYPES = new Set(["bar", "hold", "track", "typing", "simon", "spin", "whack", "rhythm", "dodge"]);
+const MINI_TYPES = new Set(["bar", "hold", "track", "typing", "simon", "spin", "whack", "rhythm", "dodge", "jump", "feed"]);
 // 타자 낚시 단어(한글). 클수록 긴 단어
 const WORDS = ["낚시", "바다", "강물", "붕어", "잉어", "미끼", "파도", "거품", "연못", "고래", "조개", "그물", "바람", "노을", "수달", "문어", "모래", "등대",
   "물고기", "낚싯대", "물방울", "소나기", "무지개", "물보라", "지렁이", "개구리", "해파리", "오징어", "갈매기", "뱃고동",
@@ -1503,7 +1559,9 @@ const MODES = {
   spin: { title: "릴 돌리기", tip: "↑ → ↓ ← 순서로 빙글빙글!", tipTouch: "화면을 빙글빙글 돌려요!", color: "#9cf25a", short: "릴" },
   whack: { title: "튀어나온 물고기 잡기", tip: "튀어나온 물고기를 클릭! (키 Q W E / A S D / Z X C)", tipTouch: "튀어나온 물고기를 톡!", color: "#ff9f1c", short: "잡기" },
   rhythm: { title: "박자 낚시", tip: "북이 선에 닿을 때 스페이스!", tipTouch: "북이 선에 닿을 때 톡!", color: "#ff6bb5", short: "박자" },
-  dodge: { title: "바위 피하기", tip: "↑ ↓ 로 물고기를 옮겨 바위를 피해요!", tipTouch: "화면 위·아래를 눌러 바위를 피해요!", color: "#9cf25a", short: "피하기" },
+  dodge: { title: "장애물 피하기", tip: "↑ ↓ 로 물고기를 옮겨 바위·수초·깡통을 모두 피해요!", tipTouch: "화면 위·아래를 눌러 바위·수초·깡통을 모두 피해요!", color: "#9cf25a", short: "피하기" },
+  jump: { title: "점프 넘기", tip: "통나무가 오면 스페이스로 폴짝!", tipTouch: "통나무가 오면 화면을 톡 — 폴짝!", color: "#ffd23f", short: "점프" },
+  feed: { title: "먹이 받기", tip: "← → 로 뜰채를 옮겨 지렁이만 받아요!", tipTouch: "화면을 좌우로 끌어 지렁이만 받아요!", color: "#ff9f1c", short: "먹이" },
   mash: { title: "연타!", tip: "아무 키나 빠르게 마구!", tipTouch: "화면을 빠르게 톡톡톡!", color: "#ff4d6d" },
 };
 const modeOf = (n) => (n.type === "tap" ? "arrow" : n.type);
@@ -1533,7 +1591,9 @@ const MINI_CAP = {
   bar: '바늘이 <b style="color:var(--lime)">초록 칸</b>에 왔을 때 눌러요! <span class="kb-desk">(스페이스·방향키)</span><span class="kb-touch">(화면 톡)</span>',
   hold: '<span class="kb-desk">스페이스를</span><span class="kb-touch">화면을</span> 꾹 눌러 감고, <b style="color:var(--hot)">빨개지면 떼요!</b> 초록에서 버티기',
   rhythm: '흘러오는 북이 <b style="color:var(--sun)">노란 선</b>에 닿을 때 <span class="kb-desk">스페이스(아무 키)</span><span class="kb-touch">화면 톡</span>! 4개 놓치면 실패',
-  dodge: '<span class="kb-desk">↑ ↓ 로</span><span class="kb-touch">화면 위·아래를 눌러</span> 물고기를 옮겨 <b style="color:var(--hot)">바위</b>를 피해요! 3번 부딪히면 실패',
+  dodge: '<span class="kb-desk">↑ ↓ 로</span><span class="kb-touch">화면 위·아래를 눌러</span> 물고기를 옮겨 <b style="color:var(--hot)">바위·수초·깡통 모두</b> 피해요! 3번 부딪히면 실패',
+  jump: '통나무가 다가오면 <span class="kb-desk">스페이스(아무 키)</span><span class="kb-touch">화면 톡</span>으로 폴짝 뛰어넘어요! 3번 부딪히면 실패',
+  feed: '<span class="kb-desk">← → 로</span><span class="kb-touch">화면을 좌우로 끌어</span> 뜰채를 옮겨 <b style="color:var(--sun)">지렁이</b>는 받고 <b style="color:var(--hot)">깡통</b>은 피해요! 깡통 3개면 실패',
   track: '<span class="kb-desk">← → 를 눌러</span><span class="kb-touch">화면을 좌우로 끌어</span> 상자로 물고기를 따라가요!',
 };
 function startMini(n) {
@@ -1550,12 +1610,16 @@ function startMini(n) {
     : n.type === "spin" ? { turns: 0, last: -1, pa: null }
     : n.type === "rhythm" ? { notes: rhythmNotes(n), hits: 0, esc: 0, cool: 0, flash: 0 }
     : n.type === "dodge" ? { lane: 1, y: 1, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
+    : n.type === "jump" ? { y: 0, vy: 0, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
+    : n.type === "feed" ? { bx: .5, drops: [], spawn: .4, got: 0, bad: 0, lost: 0, pop: 0 }
     : { cell: -1, t: 0, next: .5, hits: 0, esc: 0 };
   const dom = ["typing", "simon", "whack"].includes(n.type);
   $("miniCv").hidden = dom; $("miniDom").hidden = !dom;
   $("miniCap").innerHTML = MINI_CAP[n.type] || "";
   renderMiniDom(n);
 }
+// 점프 넘기·먹이 받기에 떨어질/떠내려올 것 하나 만들기
+const feedDrop = () => ({ x: rand(8, 120), y: -4, bad: Math.random() < .3, k: Math.floor(rand(0, 3)) });
 const tri = (x) => { const f = x % 2; return f < 1 ? f : 2 - f; };
 function barPress(n, fp) {
   const m = F.ms; if (m.cool > 0) return;
@@ -1709,7 +1773,7 @@ function rhythmPress(n) {
   sample(best.big ? "taiko" : "tap", { rate: perfect ? 1.1 : 1, vol: .8 }) || SFX.hit("up", perfect); goodHit(perfect);
   if (m.hits >= n.need) miniWin(n);
 }
-// ---- 바위 피하기: 세 줄 물길에서 물고기를 위아래로
+// ---- 장애물 피하기: 세 줄 물길에서 물고기를 위아래로
 function dodgePress(n, dir) {
   const m = F.ms;
   if (dir === "up") m.lane = Math.max(0, m.lane - 1);
@@ -1719,7 +1783,7 @@ function dodgePress(n, dir) {
 }
 function miniWin(n) {
   F.got += 3; F.combo += 2;
-  judge({ bar: "명중!!", hold: "버텨냈다!", track: "따라잡았다!", rhythm: "박자 완벽!", dodge: "다 피했다!", typing: "다 쳤다!", simon: "기억 완벽!", spin: "감았다!", whack: "다 잡았다!" }[n.type] || "성공!", "perfect");
+  judge({ bar: "명중!!", hold: "버텨냈다!", track: "따라잡았다!", rhythm: "박자 완벽!", dodge: "다 피했다!", jump: "다 넘었다!", feed: "배불리 먹였다!", typing: "다 쳤다!", simon: "기억 완벽!", spin: "감았다!", whack: "다 잡았다!" }[n.type] || "성공!", "perfect");
   flash("white"); SFX.mashDone(); pxWave(); shake = .45; punch = 1.2; A.kick = 1.5; F.leapV = 4.5;
   nextNote();
 }
@@ -1753,8 +1817,8 @@ function updateMini(n, dt, t) {
     m.spawn -= dt;
     if (m.spawn <= 0 && m.t < n.dur - 1.2) {
       m.spawn = n.gap * rand(.8, 1.25);
-      const lanes = [0, 1, 2].sort(() => Math.random() - .5).slice(0, m.t > 2 && Math.random() < .35 ? 2 : 1); // 늘 한 줄은 비어 있다
-      for (const l of lanes) m.obs.push({ x: 134, lane: l, weed: Math.random() < .4 });
+      const lanes = [0, 1, 2].sort(() => Math.random() - .5).slice(0, m.t > 1.5 && Math.random() < .45 ? 2 : 1); // 늘 한 줄은 비어 있다
+      for (const l of lanes) { const r = Math.random(); m.obs.push({ x: 134, lane: l, weed: r < .35, can: r > .78 }); }
     }
     for (const o of m.obs) o.x -= n.speed * dt;
     m.obs = m.obs.filter((o) => o.x > -10);
@@ -1765,6 +1829,42 @@ function updateMini(n, dt, t) {
     F.tug = lerp(F.tug, (m.y - 1) * 1.2, ease(6, dt));
     m.danger = m.hit >= 2 ? .3 : 1;
     if (m.t >= n.dur) return miniWin(n);
+    return drawMini(n, t);
+  }
+  if (n.type === "jump") {
+    m.t += dt; m.inv = Math.max(0, m.inv - dt);
+    m.vy -= 330 * dt; m.y = Math.max(0, m.y + m.vy * dt); if (m.y <= 0) m.vy = 0;
+    m.spawn -= dt;
+    if (m.spawn <= 0 && m.t < n.dur - 1.2) { m.spawn = n.gap * rand(.75, 1.35); m.obs.push({ x: 136, w: Math.random() < .3 ? 14 : 9 }); }
+    for (const o of m.obs) o.x -= n.speed * dt;
+    m.obs = m.obs.filter((o) => o.x > -16);
+    for (const o of m.obs) if (!o.done && o.x < 26 && o.x + o.w > 16 && m.y < 7 && m.inv <= 0) {
+      o.done = true; m.hit++; m.inv = 1; shake = Math.max(shake, .35); punch = -.6; SFX.nibble(); judge("쿵!", "miss"); F.leapV = 2.5;
+      if (m.hit >= 3) return miss("통나무에 부딪혔어!");
+    }
+    m.danger = m.hit >= 2 ? .3 : 1;
+    if (m.t >= n.dur) return miniWin(n);
+    return drawMini(n, t);
+  }
+  if (n.type === "feed") {
+    m.pop = Math.max(0, m.pop - dt * 4);
+    if (HOLD.ptr) { const r = $("miniCv").getBoundingClientRect(); const tx = clamp((HOLD.cx - r.left) / r.width, 0, 1); m.bx += clamp(tx - m.bx, -1.6 * dt, 1.6 * dt); }
+    else m.bx += ((HOLD.right ? 1 : 0) - (HOLD.left ? 1 : 0)) * .95 * dt;
+    m.bx = clamp(m.bx, .08, .92);
+    m.spawn -= dt;
+    if (m.spawn <= 0) { m.spawn = n.gap * rand(.8, 1.3); m.drops.push(feedDrop()); }
+    const nx = 4 + m.bx * 120;
+    for (const o of m.drops) {
+      o.y += n.fall * dt;
+      if (!o.done && o.y > 28 && o.y < 34 && Math.abs(o.x - nx) < 10) {
+        o.done = true;
+        if (o.bad) { m.bad++; shake = Math.max(shake, .3); SFX.nibble(); judge("깡통!", "miss"); if (m.bad >= 3) return miss("깡통을 너무 많이 받았어!"); }
+        else { m.got++; m.pop = 1; judge("냠!", "good"); sample("tap", { rate: 1.2, vol: .7 }) || SFX.hit("up", false); goodHit(false); if (m.got >= n.need) return miniWin(n); }
+      }
+    }
+    m.drops = m.drops.filter((o) => !o.done && o.y < 44);
+    F.tug = lerp(F.tug, (m.bx - .5) * 2, ease(6, dt));
+    m.danger = m.bad >= 2 ? .3 : .4 + .6 * (1 - F.noteT / n.win);
     return drawMini(n, t);
   }
   if (n.type === "bar") {
@@ -1832,12 +1932,33 @@ function drawMini(n, t) {
     }
     for (let i = 0; i < n.need; i++) box(64 - n.need * 4 + i * 8, 2, 6, 5, i < m.hits ? "#ffd23f" : "rgba(255,248,232,.3)");
     for (let i = 0; i < 4; i++) box(100 + i * 6, 33, 4, 4, i < m.esc ? "#ff4d6d" : "rgba(255,248,232,.3)");
+  } else if (n.type === "jump") {
+    box(0, 0, 128, 24, "#2a3160"); box(0, 24, 128, 14, "#1d5f8a");
+    for (let x = 0; x < 128; x += 8) box(((x - t * n.speed) % 128 + 128) % 128, 24, 4, 1, "#3e8fbf");
+    for (const o of m.obs) { box(o.x, 19, o.w, 6, "#13162e"); box(o.x + 1, 20, o.w - 2, 4, "#8a5a2b"); box(o.x + 1, 20, 2, 4, "#c48a4a"); }
+    const fy = 19 - m.y, blink = m.inv > 0 && Math.sin(t * 40) > 0;
+    if (m.y > 1) box(16, 25, 10, 1, "rgba(255,248,232,.35)");
+    if (!blink) { box(17, fy, 10, 5, "#ffd23f"); box(13, fy + (Math.sin(t * 20) > 0 ? 0 : 1), 4, 5, "#ff9f1c"); box(24, fy + 1, 1, 1, "#13162e"); }
+    box(2, 35, 124, 4, "#13162e"); box(3, 36, 122 * clamp(m.t / n.dur, 0, 1), 2, "#ffd23f");
+    for (let i = 0; i < 3; i++) box(110 + i * 6, 2, 4, 4, i < m.hit ? "#ff4d6d" : "rgba(255,248,232,.35)");
+  } else if (n.type === "feed") {
+    box(0, 0, 128, 40, "#1d5f8a");
+    for (const o of m.drops) {
+      if (o.bad) { box(o.x - 3, o.y - 3, 6, 7, "#13162e"); box(o.x - 2, o.y - 2, 4, 5, "#9aa3b5"); box(o.x - 2, o.y, 4, 1, "#d94a5a"); }
+      else for (let k = 0; k < 4; k++) box(o.x - 3 + k * 2, o.y + Math.sin(t * 12 + k) * 1.2, 2, 2, "#ff8fa3");
+    }
+    const nx = 4 + m.bx * 120;
+    box(nx - 10, 30, 20, 2, "#fff8e8"); box(nx - 10, 32, 2, 4, "#fff8e8"); box(nx + 8, 32, 2, 4, "#fff8e8"); box(nx - 8, 35, 16, 1, "#fff8e8");
+    box(nx - 8, 32, 16, 3, m.pop > 0 ? "rgba(255,210,63,.55)" : "rgba(255,248,232,.18)");
+    for (let i = 0; i < n.need; i++) box(64 - n.need * 3 + i * 6, 2, 4, 4, i < m.got ? "#ffd23f" : "rgba(255,248,232,.3)");
+    for (let i = 0; i < 3; i++) box(110 + i * 6, 9, 4, 4, i < m.bad ? "#ff4d6d" : "rgba(255,248,232,.35)");
   } else if (n.type === "dodge") {
     box(0, 2, 128, 32, "#1d5f8a");
     for (let l = 1; l < 3; l++) for (let x = 0; x < 128; x += 8) box((x - t * n.speed) % 128 + (x - t * n.speed < 0 ? 128 : 0), 2 + l * 10.67, 4, 1, "#3e8fbf");
     for (const o of m.obs) {
       const y = 2 + o.lane * 10.67;
       if (o.weed) { for (let k = 0; k < 3; k++) box(o.x - 4 + k * 3, y + 2 + Math.sin(t * 6 + k) , 2, 9, "#3f8f5a"); }
+      else if (o.can) { box(o.x - 4, y + 2, 8, 8, "#13162e"); box(o.x - 3, y + 3, 6, 6, "#d94a5a"); box(o.x - 3, y + 5, 6, 1, "#fff8e8"); }
       else { box(o.x - 5, y + 2, 10, 8, "#13162e"); box(o.x - 4, y + 3, 8, 6, "#8a8f9c"); box(o.x - 3, y + 3, 3, 2, "#c4c8d2"); }
     }
     const fy = 2 + m.y * 10.67 + 3, blink = m.inv > 0 && Math.sin(t * 40) > 0;
@@ -2255,7 +2376,7 @@ const TUT = [
   { v: "combo", t: "3. 방향키 콤보", d: TOUCH
     ? "나오는 화살표를 <em>오른쪽 아래 버튼</em>으로 빠르게! <em>감기</em> 칸은 <em>화면 아무 데나 톡</em>. 분홍 원은 고리가 원에 닿을 때 톡. 늦거나 틀리면 하트가 하나 깎여요."
     : "나오는 화살표를 <em>방향키</em>로 빠르게! <em>SPACE</em> 칸은 스페이스바로 릴을 감아요. 분홍 원은 고리가 원에 닿을 때 클릭. 늦거나 틀리면 하트가 하나 깎여요." },
-  { v: "mini", t: "4. 미니게임", d: "사투 중간에 <em>모드 카드</em>가 뜨면 방법을 읽어요. 타이밍 바·박자 낚시·줄 버티기·따라잡기·바위 피하기·타자·기억·릴 돌리기·두더지까지 물고기마다 달라요. 큰 물고기와 <span class='r'>보스</span>는 미니게임이 더 나와요." },
+  { v: "mini", t: "4. 미니게임", d: "사투 중간에 <em>모드 카드</em>가 뜨면 방법을 읽어요. 타이밍 바·박자 낚시·줄 버티기·따라잡기·장애물 피하기·점프 넘기·먹이 받기·타자·기억·릴 돌리기·두더지까지 물고기마다 달라요. 큰 물고기와 <span class='r'>보스</span>는 미니게임이 더 나와요." },
   { v: "mash", t: "5. 끌어올리기와 점수", d: `마지막엔 <span class='r'>계속 연타!</span> ${TOUCH ? "화면을" : "아무 키나"} 빠르게 두드려 원을 선 밖까지 키워요. 점수는 <em>크기 × 무게</em>로 정해져요. 같은 물고기라도 <em>내 기록보다 무거우면 ×1.3</em>! 미끼(${TOUCH ? "아래 버튼" : "1·2·3"})·피버·보스도 노려 봐요.` },
 ];
 let tutI = 0;
@@ -2279,7 +2400,7 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen) tutOpen();
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=5").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=6").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -2294,7 +2415,7 @@ function frame(now) {
     $("timerChip").classList.toggle("low", left < 20);
     if (G.time <= 0 && !G.ending) { if (F) { G.ending = true; shout("마지막 승부!", "hot", 1.2); } else finish(); }
   }
-  stepSpots(dt, t); stepAim(dt); stepDeco(t); stepBubbles(dt, t); stepRain(dt); stepFever(dt);
+  stepSpots(dt, t); stepJumpers(dt, t); stepAim(dt); stepDeco(t); stepBubbles(dt, t); stepRain(dt); stepFever(dt);
   if (G.playing && !G.bossSpawned && G.time < 75 && !F && !show) spawnBoss();
   $("baits").hidden = !G.playing || !!F || R.state !== "idle";
   updateAngler(dt, t);
@@ -2345,7 +2466,7 @@ function loadPlace(place) {
   const show = () => { $("loadText").textContent = `${PLACES[place].name} 물고기 부르는 중… ${done}/${list.length}`; };
   show();
   return (loading[place] = Promise.all(list.map(async (m) => {
-    try { await loadFish(m.id, m.file, m.yaw, m.roll); } catch (e) { console.warn("모델", m.id, e); }
+    try { await loadFish(m.id, m.file, m.yaw, m.roll, m.spin); } catch (e) { console.warn("모델", m.id, e); }
     done++; show();
   })).then(() => { if (MODELS_READY) applyGate(); else $("loadText").textContent = "준비 완료!"; }));
 }
@@ -2359,4 +2480,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
+window.__fish = { applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };

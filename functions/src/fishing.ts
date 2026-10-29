@@ -1,5 +1,5 @@
 /**
- * 잼만보 낚시터(jammanbo-fish.web.app) 서버 — 살림망·수산시장·낚시 가게·캠핑 요리
+ * 잠만보 낚시터(jammanbo-fish.web.app) 서버 — 살림망·수산시장·낚시 가게·캠핑 요리
  *
  * 세 가지 점수: 손맛 점수(잡은 물고기), 돈(수산시장에 팔아서), 낭만 점수(옷차림·장식·요리)
  * 돈·물고기·아이템은 모두 이 함수들만 바꾼다(fishers/** 는 규칙에서 클라이언트 쓰기 금지).
@@ -179,15 +179,16 @@ export const fishSell = onCall(options, async (req) => {
   if (ids !== "all" && (!Array.isArray(ids) || ids.length < 1 || ids.length > BAG_MAX || ids.some((i) => typeof i !== "string" || !/^[\w-]{1,64}$/.test(i)))) throw new HttpsError("invalid-argument", "팔 물고기를 골라 주세요.");
   const day = kstDay(), bag = meRef(uid).collection("bag");
   const res = await db().runTransaction(async (tx) => {
-    await readMe(tx, uid);
+    const d = await readMe(tx, uid);
     const docs = ids === "all" ? (await tx.get(bag.limit(BAG_MAX))).docs : (await Promise.all((ids as string[]).map((i) => tx.get(bag.doc(i))))).filter((s) => s.exists);
     if (!docs.length) throw new HttpsError("failed-precondition", "팔 물고기가 없어요.");
     let earned = 0;
     for (const s of docs) { earned += priceOf(s.data() as Fish, day); tx.delete(s.ref); }
     tx.update(meRef(uid), { money: FieldValue.increment(earned), bagN: FieldValue.increment(-docs.length), sold: FieldValue.increment(docs.length) });
-    return { earned, n: docs.length };
+    // 다시 읽지 않고 거래 안에서 읽은 값으로 돌려준다(빠르게)
+    return { earned, n: docs.length, sold: docs.map((x) => x.id), me: pub({ ...d, money: (d.money || 0) + earned }) };
   });
-  return { ...res, me: pub((await meRef(uid).get()).data()!), bag: await bagOf(uid) };
+  return res;
 });
 
 // 낚시 가게: 낚싯대는 한 단계씩, 옷·장식은 한 번, 라면은 여러 개
