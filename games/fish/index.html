@@ -182,13 +182,32 @@
   .places.endact { grid-template-columns: 1.2fr 1fr 1fr; margin: 4px 0 10px; }
   .places.endact .go { white-space: nowrap; font-size: 17px; padding-inline: 6px; }
   @media (max-width: 420px) { .places.endact { grid-template-columns: 1fr 1fr; } .places.endact #againBtn { grid-column: 1 / -1; } }
-  .panel.startp { flex-direction: column; }
+  .panel.startp { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "l" "c" "r"; }
+  .panel.startp .scol:first-child { grid-area: l; } .panel.startp .charcol { grid-area: c; } .panel.startp .scol:last-child { grid-area: r; }
   .scol { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   @media (min-width: 900px) {
-    .panel.startp { width: min(1100px, calc(100% - 8px)); flex-direction: row; align-items: flex-start; gap: 28px; }
-    .panel.startp .scol { flex: 1; } .panel.startp .scol:last-child { flex: 1.15; padding-top: 8px; }
+    .panel.startp { width: min(1100px, calc(100% - 8px)); grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); grid-template-areas: "l r" "c r"; align-items: start; gap: 18px 28px; }
+    .panel.startp .scol:last-child { padding-top: 8px; }
     .panel.startp h1 { font-size: clamp(42px, 5vw, 60px); }
   }
+  @media (min-width: 1240px) {
+    .panel.startp { width: min(1500px, calc(100% - 24px)); grid-template-columns: minmax(0, 1fr) minmax(0, .78fr) minmax(0, 1.15fr); grid-template-areas: "l c r"; }
+    .charslot { height: 380px; }
+  }
+  /* 내 낚시꾼 카드 */
+  .charcard { background: linear-gradient(180deg, #2c3a78, #1b2045 75%); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .08); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .charslot { height: 260px; position: relative; background: radial-gradient(ellipse 45% 10% at 50% 92%, rgba(0, 0, 0, .35), transparent 70%); }
+  #charView { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  .charinfo { display: flex; flex-direction: column; gap: 4px; text-align: center; }
+  .charinfo b { font-size: 20px; } .charinfo small { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  /* 꾸미기 탭 */
+  .dress { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .dressav { height: 240px; background: radial-gradient(ellipse 45% 10% at 50% 92%, rgba(0, 0, 0, .35), transparent 70%), linear-gradient(180deg, #2c3a78, #1b2045); }
+  .dressopt { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  @media (min-width: 760px) { .dress { grid-template-columns: 280px minmax(0, 1fr); align-items: start; } .dressav { height: 420px; position: sticky; top: 0; } }
+  .sw { display: flex; flex-wrap: wrap; gap: 6px; }
+  .swatch { width: 34px; height: 34px; border: 0; background: var(--c); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .35); cursor: pointer; padding: 0; }
+  .swatch.on { box-shadow: 0 0 0 3px #fff, inset 0 0 0 2px rgba(0, 0, 0, .35); }
   .load { font-family: var(--num); font-size: 14px; color: var(--muted); text-align: center; }
   .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .results div { align-items: center; } .results div > :first-child, .results .nm { white-space: nowrap; } .results div span { text-align: right; line-height: 1.4; }
@@ -568,6 +587,13 @@
       <p class="load" id="loadText">물고기 불러오는 중…</p>
       <button class="go alt" data-openbook>물고기 도감</button>
     </div>
+    <div class="scol charcol">
+      <div class="charcard">
+        <div class="charslot" id="charSlot"><canvas id="charView" aria-label="내 낚시꾼. 끌어서 돌려 봐요"></canvas></div>
+        <div class="charinfo" id="charInfo"></div>
+        <button class="go" data-closet disabled>꾸미기</button>
+      </div>
+    </div>
     <div class="scol">
       <p class="intro">3분 동안 물고기를 잡아 손맛 점수를 모아요. 반짝이는 거품일수록 대물이 숨어 있고, 같은 물고기도 클수록 등급(월척·S·A·B·놔주자급)과 점수가 올라가요.</p>
       <div class="how">
@@ -635,6 +661,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=32"></script>
+<script type="module" src="game.js?v=34"></script>
 </body>
 </html>

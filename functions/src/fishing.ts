@@ -59,15 +59,30 @@ export const ROD = [
   { lv: 4, name: "프로 낚싯대", price: 22000, desc: "하트가 하나 더 생겨요" },
   { lv: 5, name: "황금 낚싯대", price: 50000, desc: "더 큰 물고기가 잘 걸려요" },
 ];
-export const SHOP: Record<string, { name: string; kind: "wear" | "decor" | "stock"; slot?: "head" | "face" | "body"; price: number; romance: number; desc: string }> = {
+type Slot = "head" | "face" | "body" | "back";
+const SLOTS: Slot[] = ["head", "face", "body", "back"];
+export const SHOP: Record<string, { name: string; kind: "wear" | "decor" | "stock"; slot?: Slot; price: number; romance: number; desc: string }> = {
   hat_straw: { name: "밀짚모자", kind: "wear", slot: "head", price: 1500, romance: 10, desc: "여름 낚시의 기본" },
   hat_beanie: { name: "털모자", kind: "wear", slot: "head", price: 2000, romance: 10, desc: "바닷바람도 끄떡없어요" },
   glasses: { name: "선글라스", kind: "wear", slot: "face", price: 2500, romance: 15, desc: "물 위 반짝임을 막아 줘요" },
   vest: { name: "낚시 조끼", kind: "wear", slot: "body", price: 4000, romance: 20, desc: "주머니가 열두 개" },
   hat_pirate: { name: "해적 모자", kind: "wear", slot: "head", price: 8000, romance: 30, desc: "바다의 주인" },
   crown: { name: "왕관", kind: "wear", slot: "head", price: 30000, romance: 80, desc: "낚시왕만 쓰는 왕관" },
+  cap: { name: "야구 모자", kind: "wear", slot: "head", price: 1800, romance: 10, desc: "챙이 앞으로 쏙" },
+  flower: { name: "꽃 핀", kind: "wear", slot: "head", price: 1200, romance: 8, desc: "머리에 꽃 한 송이" },
+  bunny: { name: "토끼 머리띠", kind: "wear", slot: "head", price: 3000, romance: 15, desc: "쫑긋 토끼 귀" },
+  roundglasses: { name: "동그란 안경", kind: "wear", slot: "face", price: 2200, romance: 12, desc: "똑똑해 보여요" },
+  mustache: { name: "콧수염", kind: "wear", slot: "face", price: 1000, romance: 8, desc: "노련한 낚시꾼 느낌" },
+  scarf: { name: "목도리", kind: "wear", slot: "body", price: 2500, romance: 12, desc: "포근한 줄무늬 목도리" },
+  cape: { name: "망토", kind: "wear", slot: "body", price: 9000, romance: 35, desc: "바람에 펄럭" },
+  backpack: { name: "배낭", kind: "wear", slot: "back", price: 3000, romance: 15, desc: "간식이 가득" },
+  flag: { name: "낚시왕 깃발", kind: "wear", slot: "back", price: 6000, romance: 25, desc: "등에 꽂는 깃발" },
+  wings: { name: "천사 날개", kind: "wear", slot: "back", price: 20000, romance: 60, desc: "하늘하늘 날개" },
   chair: { name: "캠핑 의자", kind: "decor", price: 3500, romance: 20, desc: "데크에 놓는 접이식 의자" },
   fire: { name: "모닥불", kind: "decor", price: 6000, romance: 40, desc: "타닥타닥, 데크 옆 모닥불" },
+  cooler: { name: "아이스박스", kind: "decor", price: 2500, romance: 12, desc: "잡은 물고기를 시원하게" },
+  lantern: { name: "캠핑 랜턴", kind: "decor", price: 4000, romance: 20, desc: "밤낚시의 친구" },
+  cat: { name: "고양이 친구", kind: "decor", price: 12000, romance: 50, desc: "데크에서 낚시 구경" },
   ramen: { name: "라면", kind: "stock", price: 500, romance: 0, desc: "요리 재료(최대 20개)" },
 };
 // 캠핑 요리: 살림망 물고기를 써서 낭만 점수를 올린다
@@ -112,7 +127,7 @@ const auth = who;
 // 클라이언트에 보여 줄 내 정보
 function pub(d: DocumentData) {
   return { name: d.name || "낚시꾼", money: d.money || 0, romance: d.romance || 0, taste: d.taste || 0, rod: d.rod || 1,
-    own: d.own || {}, wear: d.wear || {}, stock: d.stock || {}, cooked: d.cooked || {}, best: d.best || 0, caught: d.caught || 0 };
+    own: d.own || {}, wear: d.wear || {}, look: d.look || {}, stock: d.stock || {}, cooked: d.cooked || {}, best: d.best || 0, caught: d.caught || 0 };
 }
 async function bagOf(uid: string) {
   const s = await meRef(uid).collection("bag").orderBy("at", "desc").limit(BAG_MAX).get();
@@ -194,38 +209,54 @@ export const fishSell = onCall(options, async (req) => {
 // 낚시 가게: 낚싯대는 한 단계씩, 옷·장식은 한 번, 라면은 여러 개
 export const fishBuy = onCall(options, async (req) => {
   const uid = await auth(req), item = String(req.data?.item || "");
-  await db().runTransaction(async (tx) => {
+  // 다시 읽지 않고 거래 안에서 바꾼 값으로 돌려준다(빠르게)
+  const me = await db().runTransaction(async (tx) => {
     const d = await readMe(tx, uid), money = d.money || 0;
     if (item === "rod") {
       const next = ROD[(d.rod || 1)]; if (!next) throw new HttpsError("failed-precondition", "이미 최고의 낚싯대예요.");
       if (money < next.price) throw new HttpsError("failed-precondition", "돈이 모자라요.");
       tx.update(meRef(uid), { money: money - next.price, rod: next.lv });
-      return;
+      return pub({ ...d, money: money - next.price, rod: next.lv });
     }
     const it = SHOP[item]; if (!it) throw new HttpsError("invalid-argument", "없는 물건이에요.");
     if (money < it.price) throw new HttpsError("failed-precondition", "돈이 모자라요.");
     if (it.kind === "stock") {
       const n = d.stock?.[item] || 0; if (n >= 20) throw new HttpsError("failed-precondition", "더 이상 들고 갈 수 없어요.");
       tx.update(meRef(uid), { money: money - it.price, [`stock.${item}`]: n + 1 });
-      return;
+      return pub({ ...d, money: money - it.price, stock: { ...d.stock, [item]: n + 1 } });
     }
     if (d.own?.[item]) throw new HttpsError("failed-precondition", "이미 갖고 있어요.");
     const upd: DocumentData = { money: money - it.price, [`own.${item}`]: true, romance: FieldValue.increment(it.romance) };
     if (it.kind === "wear" && it.slot) upd[`wear.${it.slot}`] = item; // 사면 바로 입는다
     tx.update(meRef(uid), upd);
+    return pub({ ...d, money: money - it.price, romance: (d.romance || 0) + it.romance, own: { ...d.own, [item]: true }, wear: it.kind === "wear" && it.slot ? { ...d.wear, [it.slot]: item } : d.wear });
   });
-  return { me: pub((await meRef(uid).get()).data()!) };
+  return { me };
 });
 
 // 옷 갈아입기/벗기
 export const fishWear = onCall(options, async (req) => {
   const uid = await auth(req), slot = String(req.data?.slot || ""), item = req.data?.item == null ? null : String(req.data.item);
-  if (!["head", "face", "body"].includes(slot)) throw new HttpsError("invalid-argument", "어디에 입을지 골라 주세요.");
+  if (!SLOTS.includes(slot as Slot)) throw new HttpsError("invalid-argument", "어디에 입을지 골라 주세요.");
   const d = (await meRef(uid).get()).data();
   if (!d) throw new HttpsError("failed-precondition", "먼저 낚시터에 들어와 주세요.");
   if (item && (!d.own?.[item] || SHOP[item]?.slot !== slot)) throw new HttpsError("failed-precondition", "갖고 있지 않은 옷이에요.");
   await meRef(uid).update({ [`wear.${slot}`]: item ?? FieldValue.delete() });
-  return { me: pub((await meRef(uid).get()).data()!) };
+  const wear = { ...d.wear }; if (item) wear[slot] = item; else delete wear[slot];
+  return { me: pub({ ...d, wear }) };
+});
+
+// 생김새(무료): 비옷·장화·모자·머리 색을 팔레트 번호(0~7)로
+export const fishLook = onCall(options, async (req) => {
+  const uid = await auth(req), look = req.data?.look;
+  if (!look || typeof look !== "object") throw new HttpsError("invalid-argument", "고를 색을 보내 주세요.");
+  const upd: DocumentData = {};
+  for (const k of ["coat", "boots", "hat", "hair"]) { const v = (look as Record<string, unknown>)[k]; if (v === undefined) continue; if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > 7) throw new HttpsError("invalid-argument", "없는 색이에요."); upd[`look.${k}`] = v; }
+  if (!Object.keys(upd).length) throw new HttpsError("invalid-argument", "고를 색을 보내 주세요.");
+  const d = (await meRef(uid).get()).data();
+  if (!d) throw new HttpsError("failed-precondition", "먼저 낚시터에 들어와 주세요.");
+  await meRef(uid).update(upd);
+  return { me: pub({ ...d, look: { ...d.look, ...Object.fromEntries(Object.entries(upd).map(([k, v]) => [k.slice(5), v])) } }) };
 });
 
 // 캠핑 요리: 레시피에 맞는 살림망 물고기(ids)와 라면을 써서 낭만 점수
@@ -234,7 +265,7 @@ export const fishCook = onCall(options, async (req) => {
   const ids = Array.isArray(req.data?.ids) ? (req.data.ids as unknown[]).filter((i): i is string => typeof i === "string" && /^[\w-]{1,64}$/.test(i)) : [];
   if (!r) throw new HttpsError("invalid-argument", "없는 요리예요.");
   if (new Set(ids).size !== r.fish || ids.length !== r.fish) throw new HttpsError("invalid-argument", `물고기 ${r.fish}마리를 골라 주세요.`);
-  await db().runTransaction(async (tx) => {
+  const me = await db().runTransaction(async (tx) => {
     const d = await readMe(tx, uid), bag = meRef(uid).collection("bag");
     const snaps = await Promise.all(ids.map((i) => tx.get(bag.doc(i))));
     if (snaps.some((s) => !s.exists || !r.ok(s.data() as Fish))) throw new HttpsError("failed-precondition", "그 물고기로는 이 요리를 못 해요.");
@@ -242,8 +273,10 @@ export const fishCook = onCall(options, async (req) => {
     if (ramen < r.ramen) throw new HttpsError("failed-precondition", "라면이 없어요. 가게에서 사 와요!");
     snaps.forEach((s) => tx.delete(s.ref));
     tx.update(meRef(uid), { romance: FieldValue.increment(r.romance), "stock.ramen": ramen - r.ramen, [`cooked.${key}`]: FieldValue.increment(1), ...(r.fish ? { bagN: FieldValue.increment(-r.fish) } : {}) });
+    return pub({ ...d, romance: (d.romance || 0) + r.romance, stock: { ...d.stock, ramen: ramen - r.ramen }, cooked: { ...d.cooked, [key]: (d.cooked?.[key] || 0) + 1 } });
   });
-  return { romance: r.romance, name: r.name, me: pub((await meRef(uid).get()).data()!), bag: await bagOf(uid) };
+  // 살림망은 다시 읽지 않는다: 뺀 물고기(ids)는 화면이 이미 알고 있다
+  return { romance: r.romance, name: r.name, me, used: ids };
 });
 
 // ---------------------------------------------------------------- 낚시 학급(교사가 만들고, 학생은 코드+이름+입장번호)

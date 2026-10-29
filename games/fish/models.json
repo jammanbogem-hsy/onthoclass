@@ -1,13 +1,13 @@
 [
   {
     "id": "minnow",
-    "file": "assets/fish/minnow.glb?v=2",
+    "file": "assets/fish/minnow.glb?v=3",
     "yaw": 90
   },
   {
     "id": "crucian",
-    "file": "assets/fish/crucian.glb?v=2",
-    "yaw": 0
+    "file": "assets/fish/crucian.glb?v=3",
+    "yaw": 90
   },
   {
     "id": "carp",
@@ -26,7 +26,7 @@
   },
   {
     "id": "sturgeon",
-    "file": "assets/fish/sturgeon.glb?v=2",
+    "file": "assets/fish/sturgeon.glb?v=3",
     "yaw": 90
   },
   {
@@ -67,7 +67,7 @@
   },
   {
     "id": "bluegill",
-    "file": "assets/fish/bluegill.glb?v=1",
+    "file": "assets/fish/bluegill.glb?v=2",
     "yaw": -90
   },
   {
@@ -82,8 +82,8 @@
   },
   {
     "id": "rockfish",
-    "file": "assets/fish/rockfish.glb?v=1",
-    "yaw": -90
+    "file": "assets/fish/rockfish.glb?v=2",
+    "yaw": 90
   },
   {
     "id": "seabream",
@@ -150,8 +150,8 @@
   },
   {
     "id": "mirrorcarp",
-    "file": "assets/fish/mirrorcarp.glb?v=1",
-    "yaw": 90
+    "file": "assets/fish/mirrorcarp.glb?v=2",
+    "yaw": -90
   },
   {
     "id": "kkeokji",

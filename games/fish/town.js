@@ -7,6 +7,13 @@ import { FB } from "./fb-config.js";
 const V = "12.13.0";
 // 계정: 학생(학급 코드+이름+입장번호 → 입장권 st, localStorage) 또는 구글(선생님·누구나)
 let ST = null; try { ST = localStorage.getItem("jamfish-st"); } catch {}
+// 생김새 팔레트(서버는 번호 0~7만 저장). 0번이 원래 색
+export const LOOK_PAL = {
+  coat: ["#f4c21c", "#e0483c", "#3d7be0", "#4caf50", "#9b59d0", "#ff8fb8", "#f4f1e8", "#33343f"],
+  boots: ["#3aa0c8", "#e0483c", "#f4c21c", "#4caf50", "#ff8fb8", "#8a5a2b", "#f4f1e8", "#33343f"],
+  hat: ["#6b7a2a", "#e0483c", "#3d7be0", "#f4c21c", "#9b59d0", "#ff8fb8", "#f4f1e8", "#33343f"],
+  hair: ["#3b2618", "#141414", "#8a5a2b", "#e8c05a", "#c0492b", "#7d8db0", "#ff8fb8", "#f4f1e8"],
+};
 export const NET = { ready: false, failed: false, role: "", room: null, user: null, student: null, me: null, bag: [], market: {}, rods: [], shop: {}, recipes: {}, day: "" };
 let api = null, hooks = {};
 const $ = (id) => document.getElementById(id);
@@ -138,6 +145,12 @@ function roomLine() {
 }
 // ---------------------------------------------------------------- 시작·끝 화면의 계정 칸
 export function renderAcct() {
+  const info = document.getElementById("charInfo");
+  if (info) {
+    const m = NET.me, worn = m ? Object.values(m.wear || {}).filter(Boolean).map((k) => `${SHOP_ART[k] || ""} ${esc(NET.shop[k]?.name || "")}`) : [];
+    info.innerHTML = m ? `<b>${esc(m.name)}</b><small>${worn.length ? worn.join(" · ") : "아직 기본 차림이에요"}</small>` : `<b>내 낚시꾼</b><small>학급으로 입장하면 옷·악세서리·색을 바꿀 수 있어요</small>`;
+    const btn = document.querySelector("[data-closet]"); if (btn) btn.disabled = !m;
+  }
   document.querySelectorAll("[data-acct]").forEach((box) => {
     if (!NET.ready) { box.innerHTML = `<p class="acctwait">로그인 확인 중…</p>`; return; }
     if (!NET.me) {
@@ -163,19 +176,22 @@ export function renderAcct() {
 
 // ---------------------------------------------------------------- 마을(수산시장·가게·요리·옷장)
 let tab = "market", pick = new Set(), cooking = null, busy = false;
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-closet]") && NET.me) openTown("closet"); });
 export async function openTown(t = "market") {
   tab = t; pick = new Set(); cooking = null; if (t === "class") CLASSES = null; if (t === "admin") { ADM = null; ADMC = {}; }
   $("town").hidden = false; renderTown();
   try { Object.assign(NET, await call("fishMe")); renderTown(); renderAcct(); } catch {}
 }
-const TABS = { market: "수산시장", shop: "낚시 가게", cook: "캠핑 요리", closet: "옷장" };
+const TABS = { market: "수산시장", shop: "낚시 가게", cook: "캠핑 요리", closet: "꾸미기" };
 let CLASSES = null;
 const RECIPE_OK = {
   ramen: () => true, seafoodRamen: (f, S) => S[f.sp]?.water === "sea", gui: (f) => ["월척", "S급", "A급"].includes(f.grade),
   maeuntang: (f, S) => S[f.sp]?.water === "fresh", haemultang: (f, S) => S[f.sp]?.water === "sea", hoe: (f, S) => ["전설", "보스"].includes(S[f.sp]?.tier),
 };
 const FOOD_ART = { ramen: "🍜", seafoodRamen: "🍜", gui: "🐟", maeuntang: "🍲", haemultang: "🦀", hoe: "🍣" };
-const SHOP_ART = { hat_straw: "👒", hat_beanie: "🧢", glasses: "🕶️", vest: "🦺", hat_pirate: "🏴‍☠️", crown: "👑", chair: "🪑", fire: "🔥", ramen: "🍜" };
+const SHOP_ART = { hat_straw: "👒", hat_beanie: "🧶", glasses: "🕶️", vest: "🦺", hat_pirate: "🏴‍☠️", crown: "👑", chair: "🪑", fire: "🔥", ramen: "🍜",
+  cap: "🧢", flower: "🌸", bunny: "🐰", roundglasses: "👓", mustache: "🥸", scarf: "🧣", cape: "🦸", backpack: "🎒", flag: "🚩", wings: "🪽", cooler: "🧊", lantern: "🏮", cat: "🐈" };
+const LOOK_LABEL = { coat: "비옷", boots: "장화", hat: "벙거지", hair: "머리카락" };
 
 function fishRow(f, on, extra = "") {
   const S = hooks.SPECIES[f.sp] || {};
@@ -263,52 +279,78 @@ export function renderTown() {
     body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = null; pop(r.code, "money", `${r.name} 학급 코드`); renderTown(); }); });
     body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); act(async () => { await call("fishClassResetPin", { cid, sid }); CLASSES = null; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); renderTown(); }); }));
   } else {
-    const slots = { head: "머리", face: "얼굴", body: "몸" };
-    body.innerHTML = `<h3>옷장 <small>산 옷을 골라 입어요. 낚시할 때 내 낚시꾼이 입고 나와요</small></h3>
+    const slots = { head: "머리", face: "얼굴", body: "몸", back: "등" }, L = m.look || {};
+    body.innerHTML = `<div class="dress"><div class="dressav" data-avslot></div><div class="dressopt">
+      <h3>생김새 <small>무료로 언제든 바꿔요</small></h3>
+      ${Object.entries(LOOK_LABEL).map(([k, label]) => `<div class="closet"><b>${label}</b><div class="sw">${LOOK_PAL[k].map((c, i) => `<button class="swatch ${(L[k] || 0) === i ? "on" : ""}" style="--c:${c}" data-look="${k}:${i}" aria-label="${label} ${i + 1}번 색"></button>`).join("")}</div></div>`).join("")}
+      <h3>옷·악세서리 <small>가게에서 산 것을 골라 입어요</small></h3>
       ${Object.entries(slots).map(([slot, label]) => {
         const items = Object.entries(NET.shop).filter(([k, it]) => it.slot === slot && m.own[k]);
         return `<div class="closet"><b>${label}</b><div>${items.length ? items.map(([k, it]) => `<button class="go ${m.wear[slot] === k ? "" : "alt"}" data-wear="${slot}:${k}">${SHOP_ART[k]} ${esc(it.name)}</button>`).join("") + `<button class="go alt" data-wear="${slot}:">벗기</button>` : `<small>가게에서 사 와요</small>`}</div></div>`;
       }).join("")}
-      <h3>장식</h3><div class="closet"><div>${["chair", "fire"].map((k) => `<span class="deco ${m.own[k] ? "on" : ""}">${SHOP_ART[k]} ${esc(NET.shop[k]?.name || k)} ${m.own[k] ? "· 데크에 있어요" : "· 아직 없어요"}</span>`).join("")}</div></div>`;
+      <h3>데크 장식</h3><div class="closet"><div>${Object.entries(NET.shop).filter(([, it]) => it.kind === "decor").map(([k, it]) => `<span class="deco ${m.own[k] ? "on" : ""}">${SHOP_ART[k] || "🎁"} ${esc(it.name)} ${m.own[k] ? "· 데크에 있어요" : "· 아직 없어요"}</span>`).join("")}</div></div>
+      </div></div>`;
+    hooks.mountAvatar?.(body.querySelector("[data-avslot]"));
     body.querySelectorAll("[data-wear]").forEach((b) => b.addEventListener("click", () => { const [slot, item] = b.dataset.wear.split(":"); wear(slot, item || null); }));
+    body.querySelectorAll("[data-look]").forEach((b) => b.addEventListener("click", () => { const [k, i] = b.dataset.look.split(":"); setLook(k, +i); }));
   }
 }
 async function act(fn) { if (busy) return; busy = true; try { await fn(); } catch {} busy = false; }
-// 판 것처럼 먼저 보여 주고(살림망에서 빼고 돈을 올림), 서버 답이 오면 맞추고, 실패하면 되돌린다
-let selling = 0;
-async function sell(ids) {
-  const list = ids === "all" ? NET.bag : NET.bag.filter((f) => ids.includes(f.id));
-  if (!list.length) return;
-  const gone = new Set(list.map((f) => f.id)), earned = list.reduce((t, f) => t + f.price, 0), order = NET.bag.map((f) => f.id);
-  NET.bag = NET.bag.filter((f) => !gone.has(f.id)); NET.me = { ...NET.me, money: NET.me.money + earned }; pick = new Set();
-  hooks.sample?.("cash") || hooks.sample?.("ding"); pop(`+${won(earned)}`, "money", `${list.length}마리를 팔았어요!`); changed();
-  selling++;
-  try {
-    const r = await call("fishSell", { ids: [...gone] });
-    selling--;
-    NET.me = selling ? { ...NET.me, money: NET.me.money + r.earned - earned } : r.me; // 다른 팔기가 없으면 서버 값 그대로
-  } catch {
-    selling--;
-    NET.me = { ...NET.me, money: NET.me.money - earned };
-    NET.bag = [...NET.bag, ...list].sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id));
-  }
+// 판 것·산 것처럼 먼저 보여 주고, 서버 답이 오면 맞춘다(아직 다른 요청이 남아 있으면 화면 값을 그대로 둔다)
+// 실패하면 서버에서 다시 받아 되돌린다. call() 이 실패 문구를 띄운다
+let inflight = 0;
+async function optimistic(apply, req, after) {
+  apply(); changed(); inflight++;
+  try { const r = await req(); inflight--; if (!inflight && r?.me) NET.me = r.me; after?.(r); }
+  catch { inflight--; try { Object.assign(NET, await call("fishMe")); } catch {} }
   changed();
 }
-const buy = (item) => act(async () => {
-  const before = NET.me.romance, r = await call("fishBuy", { item });
-  NET.me = r.me; hooks.sample?.("cash") || hooks.sample?.("ding");
-  const gain = r.me.romance - before; pop(item === "rod" ? `Lv.${r.me.rod}` : NET.shop[item]?.name || "", gain ? "romance" : "money", gain ? `낭만 +${gain}` : "샀어요!"); changed();
-});
-const wear = (slot, item) => act(async () => { const r = await call("fishWear", { slot, item }); NET.me = r.me; changed(); });
-const cook = (recipe, ids) => act(async () => {
-  const pot = $("cookPot"); pot.hidden = false; pot.querySelector("b").textContent = "보글보글…"; pot.querySelector("small").textContent = NET.recipes[recipe].name;
+function sell(ids) {
+  const list = ids === "all" ? NET.bag : NET.bag.filter((f) => ids.includes(f.id));
+  if (!list.length) return;
+  const gone = new Set(list.map((f) => f.id)), earned = list.reduce((t, f) => t + f.price, 0);
+  hooks.sample?.("cash") || hooks.sample?.("ding"); pop(`+${won(earned)}`, "money", `${list.length}마리를 팔았어요!`);
+  return optimistic(() => { NET.bag = NET.bag.filter((f) => !gone.has(f.id)); NET.me = { ...NET.me, money: NET.me.money + earned }; pick = new Set(); },
+    () => call("fishSell", { ids: [...gone] }));
+}
+// 가게 물건을 산 뒤의 내 정보(서버 fishBuy 와 같은 규칙). 살 수 없으면 null
+function bought(me, item) {
+  if (item === "rod") { const next = NET.rods?.find((r) => r.lv === (me.rod || 1) + 1); return next && me.money >= next.price ? { ...me, money: me.money - next.price, rod: next.lv } : null; }
+  const it = NET.shop?.[item]; if (!it || me.money < it.price) return null;
+  if (it.kind === "stock") { const n = me.stock?.[item] || 0; return n >= 20 ? null : { ...me, money: me.money - it.price, stock: { ...me.stock, [item]: n + 1 } }; }
+  if (me.own?.[item]) return null;
+  return { ...me, money: me.money - it.price, romance: me.romance + it.romance, own: { ...me.own, [item]: true }, wear: it.kind === "wear" && it.slot ? { ...me.wear, [it.slot]: item } : me.wear };
+}
+function buy(item) {
+  const next = bought(NET.me, item); if (!next) return;
+  const gain = next.romance - NET.me.romance;
+  hooks.sample?.("cash") || hooks.sample?.("ding");
+  pop(item === "rod" ? `Lv.${next.rod}` : NET.shop[item]?.name || "", gain ? "romance" : "money", gain ? `낭만 +${gain}` : "샀어요!");
+  return optimistic(() => { NET.me = next; }, () => call("fishBuy", { item }));
+}
+const wear = (slot, item) => optimistic(() => { const w = { ...NET.me.wear }; if (item) w[slot] = item; else delete w[slot]; NET.me = { ...NET.me, wear: w }; }, () => call("fishWear", { slot, item }));
+// 생김새는 팔레트 번호만 바꾼다(무료). 여러 번 눌러도 마지막 것만 서버로
+let lookT = null, lookQ = {};
+function setLook(k, i) {
+  NET.me = { ...NET.me, look: { ...NET.me.look, [k]: i } }; lookQ[k] = i; changed();
+  clearTimeout(lookT); lookT = setTimeout(() => { const q = lookQ; lookQ = {}; optimistic(() => {}, () => call("fishLook", { look: q })); }, 400);
+}
+// 요리: 냄비 연출(1.6초) 동안 서버를 기다리지 않고 바로 재료를 빼고 낭만을 올린다
+function cook(recipe, ids) {
+  const r = NET.recipes[recipe], pot = $("cookPot"), gone = new Set(ids);
+  pot.hidden = false; pot.querySelector("b").textContent = "보글보글…"; pot.querySelector("small").textContent = r.name;
   hooks.sample?.("cook");
-  const [r] = await Promise.all([call("fishCook", { recipe, ids }).catch((e) => { pot.hidden = true; throw e; }), new Promise((ok) => setTimeout(ok, 1600))]);
-  Object.assign(NET, { me: r.me, bag: r.bag }); cooking = null; pick = new Set();
-  pot.querySelector("b").textContent = `${r.name} 완성!`; pot.querySelector("small").textContent = `낭만 +${r.romance}`;
-  hooks.sample?.("mission") || hooks.sample?.("ding");
-  setTimeout(() => { pot.hidden = true; }, 1500); changed();
-});
+  setTimeout(() => {
+    pot.querySelector("b").textContent = `${r.name} 완성!`; pot.querySelector("small").textContent = `낭만 +${r.romance}`;
+    hooks.sample?.("mission") || hooks.sample?.("ding");
+    setTimeout(() => { pot.hidden = true; }, 1500);
+  }, 1600);
+  return optimistic(() => {
+    const m = NET.me; cooking = null; pick = new Set();
+    NET.bag = NET.bag.filter((f) => !gone.has(f.id));
+    NET.me = { ...m, romance: m.romance + r.romance, stock: { ...m.stock, ramen: (m.stock?.ramen || 0) - r.ramen }, cooked: { ...m.cooked, [recipe]: (m.cooked?.[recipe] || 0) + 1 } };
+  }, () => call("fishCook", { recipe, ids }).catch((e) => { pot.hidden = true; throw e; }));
+}
 function pop(big, cls, small) {
   const el = $("townPop"); el.className = `townpop ${cls}`; el.innerHTML = `<b>${esc(big)}</b><small>${esc(small)}</small>`;
   el.hidden = false; el.style.animation = "none"; void el.offsetWidth; el.style.animation = ""; clearTimeout(pop.t); pop.t = setTimeout(() => { el.hidden = true; }, 1600);

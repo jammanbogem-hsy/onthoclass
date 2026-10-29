@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz } from "./town.js?v=6";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL } from "./town.js?v=8";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -618,10 +618,38 @@ async function loadFish(id, file, yaw = 0, roll = 0, spin = 0) {
   turn.position.sub(box2.getCenter(new THREE.Vector3()));
   models[id] = { holder, half: box2.getSize(new THREE.Vector3()).multiplyScalar(.5) };
 }
+// 낚시꾼 모델(한 덩어리)의 부위를 색으로 골라 다시 칠한다: 모자(초록 벙거지)·머리카락·비옷(노랑)·장화(파랑)
+// 산 모자를 쓰면 벙거지를 그 모자 색으로 칠해 모자가 두 개 겹쳐 보이지 않게 한다
+const part = () => ({ on: { value: 0 }, color: { value: new THREE.Color() } });
+const LOOKU = { hat: part(), hair: part(), coat: part(), boots: part(), hatY: { value: 1e9 }, headY: { value: 1e9 }, bootY: { value: -1e9 } };
+function hatShader(mesh) {
+  const g = mesh.geometry; g.computeBoundingBox(); const b = g.boundingBox, h = b.max.y - b.min.y;
+  LOOKU.hatY.value = b.max.y - h * .36; LOOKU.headY.value = b.max.y - h * .5; LOOKU.bootY.value = b.min.y + h * .17;
+  mesh.material.onBeforeCompile = (sh) => {
+    for (const k of ["hat", "hair", "coat", "boots"]) { sh.uniforms[k + "On"] = LOOKU[k].on; sh.uniforms[k + "Col"] = LOOKU[k].color; }
+    Object.assign(sh.uniforms, { hatY: LOOKU.hatY, headY: LOOKU.headY, bootY: LOOKU.bootY });
+    sh.vertexShader = "varying float vLY;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvLY = position.y;");
+    sh.fragmentShader = `uniform float hatOn, hairOn, coatOn, bootsOn, hatY, headY, bootY; uniform vec3 hatCol, hairCol, coatCol, bootsCol; varying float vLY;
+      vec3 lookTo(vec3 col, vec3 s, float ref) { return col * clamp(max(s.r, max(s.g, s.b)) / ref, .45, 1.35); }
+      float hueOf(vec3 s) { float mx = max(s.r, max(s.g, s.b)), mn = min(s.r, min(s.g, s.b)), d = mx - mn; if (d < 1e-4) return 0.;
+        float h = mx == s.r ? mod((s.g - s.b) / d, 6.) : mx == s.g ? (s.b - s.r) / d + 2. : (s.r - s.g) / d + 4.; return h / 6.; }
+      ` + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+      {
+        vec3 s = pow(max(diffuseColor.rgb, vec3(0.)), vec3(1. / 2.2));
+        float mx = max(s.r, max(s.g, s.b)), sat = mx > 0. ? (mx - min(s.r, min(s.g, s.b))) / mx : 0., hu = hueOf(s);
+        bool hat = vLY > hatY && hu > .11 && hu < .42 && sat > .12;
+        if (hat && hatOn > .5) diffuseColor.rgb = lookTo(hatCol, s, .42);
+        else if (!hat && vLY > headY && hairOn > .5 && mx < .42 && sat > .25 && hu < .12) diffuseColor.rgb = lookTo(hairCol, s, .3);
+        else if (vLY < bootY && bootsOn > .5 && hu > .42 && hu < .7 && sat > .3) diffuseColor.rgb = lookTo(bootsCol, s, .72);
+        else if (vLY >= bootY && vLY < hatY && coatOn > .5 && hu > .09 && hu < .2 && sat > .5 && mx > .4) diffuseColor.rgb = lookTo(coatCol, s, .9);
+      }`);
+  };
+}
+const setPart = (k, hex, on = true) => { LOOKU[k].on.value = on && hex ? 1 : 0; if (hex) LOOKU[k].color.value.set(hex).convertSRGBToLinear(); };
 async function loadAngler(file, yaw = 0) {
   const gltf = await loader.loadAsync(file);
   const root = gltf.scene, turn = new THREE.Group(); turn.add(root);
-  root.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); } });
+  root.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); hatShader(o); } });
   turn.rotation.y = THREE.MathUtils.degToRad(yaw);
   const box = new THREE.Box3().setFromPoints(bodyPoints(turn));
   const s = 1.35 / (box.max.y - box.min.y); turn.scale.setScalar(s);
@@ -733,15 +761,29 @@ function applyGear(me) {
     const hx = head.reduce((a, p) => a + p.x, 0) / head.length, hz = head.reduce((a, p) => a + p.z, 0) / head.length;
     const add = (geo, c, x, y, z, extra) => { const m = new THREE.Mesh(geo, toon(c, extra)); m.position.set(hx + x, y, hz + z); gearGroup.add(m); return m; };
     const w = GEAR.wear;
-    if (w.head === "hat_straw") { add(new THREE.CylinderGeometry(.46, .46, .035, 18), "#e8c66a", 0, top - .02, 0); add(new THREE.CylinderGeometry(.21, .25, .17, 14), "#e8c66a", 0, top + .07, 0); add(new THREE.CylinderGeometry(.255, .255, .05, 14), "#d94a4a", 0, top + .01, 0); }
-    if (w.head === "hat_beanie") { add(new THREE.SphereGeometry(.29, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), "#e05a5a", 0, top - .1, 0); add(new THREE.CylinderGeometry(.3, .3, .08, 14), "#fff8e8", 0, top - .1, 0); add(new THREE.SphereGeometry(.08, 8, 6), "#fff8e8", 0, top + .2, 0); }
-    if (w.head === "hat_pirate") { const b = add(new THREE.CylinderGeometry(.44, .44, .04, 16), "#1d1d24", 0, top - .01, 0); b.scale.z = .7; add(new THREE.CylinderGeometry(.2, .26, .2, 14), "#1d1d24", 0, top + .1, 0); add(new THREE.SphereGeometry(.05, 8, 6), "#fff8e8", 0, top + .11, -.22); }
-    if (w.head === "crown") { add(new THREE.CylinderGeometry(.22, .22, .12, 12, 1, true), "#ffd23f", 0, top + .03, 0, { side: THREE.DoubleSide, emissive: "#6a4a00" }); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; add(new THREE.ConeGeometry(.05, .12, 6), "#ffd23f", Math.cos(a) * .2, top + .14, Math.sin(a) * .2, { emissive: "#6a4a00" }); } add(new THREE.SphereGeometry(.045, 8, 6), "#ff4d6d", 0, top + .04, -.22); }
+    // 생김새 색 + 모자는 원래 벙거지를 그 모자 색(머리띠·꽃·왕관은 머리카락 색)으로 칠하고 장식만 얹는다
+    const L = me?.look || {}, P = LOOK_PAL, hair = P.hair[L.hair || 0];
+    setPart("coat", P.coat[L.coat || 0], !!L.coat); setPart("boots", P.boots[L.boots || 0], !!L.boots); setPart("hair", hair, !!L.hair);
+    const HAT_COLOR = { hat_straw: "#ffe08a", hat_beanie: "#e05a5a", hat_pirate: "#2a2a33", cap: "#3a6fd8", crown: hair, bunny: hair, flower: hair };
+    if (HAT_COLOR[w.head]) setPart("hat", HAT_COLOR[w.head]); else setPart("hat", P.hat[L.hat || 0], !!L.hat);
+    if (w.head === "hat_beanie") add(new THREE.SphereGeometry(.07, 8, 6), "#fff8e8", 0, top + .02, 0);
+    if (w.head === "hat_pirate") add(new THREE.SphereGeometry(.045, 8, 6), "#fff8e8", 0, top - .08, -.2);
+    if (w.head === "crown") { add(new THREE.CylinderGeometry(.16, .16, .1, 12, 1, true), "#ffd23f", 0, top + .03, 0, { side: THREE.DoubleSide, emissive: "#6a4a00" }); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; add(new THREE.ConeGeometry(.04, .1, 6), "#ffd23f", Math.cos(a) * .15, top + .12, Math.sin(a) * .15, { emissive: "#6a4a00" }); } add(new THREE.SphereGeometry(.035, 8, 6), "#ff4d6d", 0, top + .04, -.16); }
+    if (w.head === "cap") { const v = add(new THREE.CylinderGeometry(.2, .2, .025, 14, 1, false, -Math.PI / 2, Math.PI), "#2c58b8", 0, top - .17, -.24); v.rotation.y = Math.PI; add(new THREE.SphereGeometry(.03, 8, 6), "#f4f1e8", 0, top + .01, 0); }
+    if (w.head === "bunny") for (const sx of [-.1, .1]) { const e = add(new THREE.SphereGeometry(.07, 10, 8), "#fff8f0", sx, top + .12, .02); e.scale.set(.75, 2.4, .45); e.rotation.z = -sx * 1.4; const n = add(new THREE.SphereGeometry(.04, 8, 6), "#ff9fbf", sx, top + .12, -.012); n.scale.set(.7, 2.6, .3); n.rotation.z = -sx * 1.4; }
+    if (w.head === "flower") { for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; add(new THREE.SphereGeometry(.045, 8, 6), "#ff7eb0", .19 + Math.cos(a) * .05, top - .06 + Math.sin(a) * .05, -.13); } add(new THREE.SphereGeometry(.035, 8, 6), "#ffd23f", .19, top - .06, -.16); }
+    if (w.face === "roundglasses") { for (const sx of [-.09, .09]) add(new THREE.TorusGeometry(.055, .012, 6, 16), "#3a2a1a", sx, top - .3, -.27); add(new THREE.BoxGeometry(.06, .015, .015), "#3a2a1a", 0, top - .3, -.27); }
+    if (w.face === "mustache") for (const sx of [-1, 1]) { const m = add(new THREE.SphereGeometry(.05, 8, 6), L.hair ? hair : "#3b2618", sx * .05, top - .4, -.27); m.scale.set(1.4, .5, .5); m.rotation.z = sx * .35; }
+    if (w.body === "scarf") { const r = add(new THREE.TorusGeometry(.19, .05, 8, 18), "#e0483c", 0, top - .52, 0); r.rotation.x = Math.PI / 2; for (let i = 0; i < 3; i++) add(new THREE.BoxGeometry(.09, .07, .05), i % 2 ? "#f4f1e8" : "#e0483c", .1, top - .6 - i * .07, -.17); }
+    if (w.body === "cape") { const c = add(new THREE.BoxGeometry(.48, .5, .03), "#b8323c", 0, top * .48, .24); c.rotation.x = -.12; add(new THREE.SphereGeometry(.03, 8, 6), "#ffd23f", 0, top - .55, -.18); }
+    if (w.back === "backpack") { add(new THREE.BoxGeometry(.32, .34, .16), "#4f7a3a", 0, top * .52, .26); add(new THREE.BoxGeometry(.22, .12, .05), "#3a5a2a", 0, top * .45, .35); }
+    if (w.back === "flag") { add(new THREE.CylinderGeometry(.012, .012, .9, 6), "#c4c8d2", .12, top * .62 + .25, .24); const f = add(new THREE.BoxGeometry(.28, .17, .01), "#e0483c", .26, top * .62 + .6, .24); add(new THREE.SphereGeometry(.035, 8, 6), "#ffd23f", .26, top * .62 + .6, .23); }
+    if (w.back === "wings") for (const sx of [-1, 1]) { const g = add(new THREE.SphereGeometry(.2, 12, 8), "#ffffff", sx * .2, top * .62, .27, { emissive: "#333344" }); g.scale.set(1, 1.3, .18); g.rotation.set(0, sx * .5, sx * -.5); }
     if (w.face === "glasses") { for (const sx of [-.09, .09]) add(new THREE.BoxGeometry(.12, .07, .03), "#13162e", sx, top - .3, -.26); add(new THREE.BoxGeometry(.08, .02, .02), "#13162e", 0, top - .29, -.26); }
     if (w.body === "vest") { const v = add(new THREE.CylinderGeometry(.27, .3, .34, 12), "#4f7a3a", 0, top * .5, 0); v.scale.z = .85; for (const sx of [-.12, .12]) add(new THREE.BoxGeometry(.1, .08, .03), "#3a5a2a", sx, top * .46, -.25); }
   }
   // 장식: 데크 위 캠핑 의자·모닥불
-  decoGroup.clear(); decoGroup.userData.flames = [];
+  decoGroup.clear(); decoGroup.userData.flames = []; decoGroup.userData.tail = null;
   const at = (x, z) => new THREE.Vector3(STAND.x + x, .49, STAND.z + z);
   if (GEAR.own.chair) {
     const g = new THREE.Group(), c = at(1.05, .55); g.position.copy(c); g.rotation.y = -.5;
@@ -757,8 +799,47 @@ function applyGear(me) {
     for (const [c, s, y] of [["#ff4d1f", .13, .16], ["#ffb13a", .09, .2], ["#fff1a0", .05, .22]]) { const f = new THREE.Mesh(new THREE.ConeGeometry(s, s * 2.6, 7), new THREE.MeshBasicMaterial({ color: c })); f.position.y = y; g.add(f); decoGroup.userData.flames.push(f); }
     decoGroup.add(g);
   }
+  const box = (g, geo, col, x, y, z, extra) => { const m = new THREE.Mesh(geo, toon(col, extra)); m.position.set(x, y, z); g.add(m); return m; };
+  if (GEAR.own.cooler) { const g = new THREE.Group(); g.position.copy(at(-.55, .85)); box(g, new THREE.BoxGeometry(.42, .26, .28), "#3d7be0", 0, .13, 0); box(g, new THREE.BoxGeometry(.44, .06, .3), "#f4f1e8", 0, .29, 0); decoGroup.add(g); }
+  if (GEAR.own.lantern) { const g = new THREE.Group(); g.position.copy(at(.5, -.25)); box(g, new THREE.CylinderGeometry(.09, .1, .04, 10), "#2d2d38", 0, .02, 0); box(g, new THREE.CylinderGeometry(.07, .07, .16, 10), "#fff1a0", 0, .12, 0, { emissive: "#c08a20" }); box(g, new THREE.CylinderGeometry(.09, .06, .05, 10), "#2d2d38", 0, .22, 0); decoGroup.add(g); }
+  if (GEAR.own.cat) {
+    const g = new THREE.Group(); g.position.copy(at(.6, .9)); g.rotation.y = 2.4;
+    box(g, new THREE.BoxGeometry(.3, .18, .16), "#f0a040", 0, .12, 0); box(g, new THREE.BoxGeometry(.18, .16, .16), "#f0a040", -.2, .24, 0);
+    for (const z of [-.05, .05]) box(g, new THREE.ConeGeometry(.035, .07, 4), "#f0a040", -.22, .35, z);
+    for (const z of [-.04, .04]) box(g, new THREE.BoxGeometry(.02, .03, .02), "#222", -.29, .26, z);
+    const tail = box(g, new THREE.BoxGeometry(.04, .2, .04), "#d98a30", .17, .22, 0); tail.rotation.z = -.4; decoGroup.userData.tail = tail;
+    decoGroup.add(g);
+  }
+  avatarDirty = true;
 }
-function stepDeco(t) { decoGroup.userData.flames?.forEach((f, i) => { f.scale.set(1 + Math.sin(t * 13 + i) * .12, 1 + Math.sin(t * 17 + i * 2) * .25, 1 + Math.cos(t * 11 + i) * .12); f.rotation.y = t * (2 + i); }); }
+// 시작 화면·꾸미기에서 보는 내 낚시꾼(작은 화면에 따로 그린다). 끌어서 돌려 볼 수 있다
+let avatarDirty = true;
+const AV = { r: null, sc: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, .1, 40), g: new THREE.Group(), spin: 0, drag: null, w: 0, h: 0, ht: 1.4 };
+AV.sc.add(new THREE.HemisphereLight("#ffffff", "#556070", 2.3)); { const d = new THREE.DirectionalLight("#ffffff", 1.5); d.position.set(-2, 3, -3); AV.sc.add(d); } AV.sc.add(AV.g);
+function stepAvatar(dt, t) {
+  const cv = $("charView"), slot = $("charSlot"); if (!cv) return;
+  if ($("town").hidden && slot && cv.parentElement !== slot) slot.append(cv);
+  if (!cv.offsetParent) return;
+  if (!AV.r) {
+    AV.r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true }); AV.r.setPixelRatio(Math.min(2, devicePixelRatio));
+    cv.addEventListener("pointerdown", (e) => { AV.drag = e.clientX; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener("pointermove", (e) => { if (AV.drag == null) return; AV.spin += (e.clientX - AV.drag) * .012; AV.drag = e.clientX; });
+    for (const ev of ["pointerup", "pointercancel"]) cv.addEventListener(ev, () => { AV.drag = null; });
+  }
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (w !== AV.w || h !== AV.h) { AV.w = w; AV.h = h; AV.r.setSize(w, h, false); AV.cam.aspect = w / Math.max(1, h); AV.cam.updateProjectionMatrix(); }
+  if (avatarDirty) {
+    AV.g.clear(); const holder = new THREE.Group(); holder.add(anglerModel.clone(), gearGroup.clone());
+    const box = new THREE.Box3().setFromObject(holder), c = box.getCenter(new THREE.Vector3());
+    holder.position.set(-c.x, -box.min.y, -c.z); AV.g.add(holder); AV.ht = Math.max(.5, box.max.y - box.min.y); avatarDirty = false;
+  }
+  AV.g.rotation.y = AV.spin + (AV.drag == null ? Math.sin(t * .5) * .45 : 0);
+  const d = AV.ht * .5 / Math.tan(THREE.MathUtils.degToRad(13)) / Math.min(1, AV.cam.aspect * 1.25);
+  AV.cam.position.set(0, AV.ht * .62, -d); AV.cam.lookAt(0, AV.ht * .5, 0);
+  AV.r.render(AV.sc, AV.cam);
+}
+function mountAvatar(el) { const cv = $("charView"); if (cv && el) el.append(cv); }
+function stepDeco(t) { if (decoGroup.userData.tail) decoGroup.userData.tail.rotation.z = -.4 + Math.sin(t * 3) * .35; decoGroup.userData.flames?.forEach((f, i) => { f.scale.set(1 + Math.sin(t * 13 + i) * .12, 1 + Math.sin(t * 17 + i * 2) * .25, 1 + Math.cos(t * 11 + i) * .12); f.rotation.y = t * (2 + i); }); }
 
 // ------------------------------------------------------------------ 소리
 // assets/sfx 에 일레븐랩스로 만든 효과음이 있으면 그걸 쓰고, 없으면 칩튠 신스로 낸다.
@@ -2395,12 +2476,12 @@ $("tutClose").addEventListener("click", tutClose);
 $("tutPrev").addEventListener("click", () => tutShow(tutI - 1));
 $("tutNext").addEventListener("click", () => (tutI === TUT.length - 1 ? tutClose() : tutShow(tutI + 1)));
 $("tutDots").addEventListener("click", (e) => { const k = e.target.dataset?.k; if (k != null) tutShow(+k); });
-setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate }), 600);
+setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate, mountAvatar }), 600);
 const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen) tutOpen();
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=6").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=8").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -2415,7 +2496,7 @@ function frame(now) {
     $("timerChip").classList.toggle("low", left < 20);
     if (G.time <= 0 && !G.ending) { if (F) { G.ending = true; shout("마지막 승부!", "hot", 1.2); } else finish(); }
   }
-  stepSpots(dt, t); stepJumpers(dt, t); stepAim(dt); stepDeco(t); stepBubbles(dt, t); stepRain(dt); stepFever(dt);
+  stepSpots(dt, t); stepJumpers(dt, t); stepAim(dt); stepDeco(t); stepAvatar(dt, t); stepBubbles(dt, t); stepRain(dt); stepFever(dt);
   if (G.playing && !G.bossSpawned && G.time < 75 && !F && !show) spawnBoss();
   $("baits").hidden = !G.playing || !!F || R.state !== "idle";
   updateAngler(dt, t);
