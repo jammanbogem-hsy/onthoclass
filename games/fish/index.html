@@ -469,6 +469,20 @@
   .pot { position: relative; width: 120px; height: 70px; margin-top: 30px; background: #8a8f9c; box-shadow: 0 0 0 4px var(--ink), inset 0 10px 0 #c4c8d2; }
   .pot::after { content: ""; position: absolute; left: 10px; right: 10px; top: 4px; height: 10px; background: #ff6b3a; animation: blink .3s steps(2) infinite; }
   .pot i { position: absolute; bottom: 64px; width: 12px; height: 12px; background: rgba(255, 255, 255, .8); animation: steam 1s steps(5) infinite; }
+  /* 석쇠: 불꽃 위 생선이 지글지글 뒤척이고 연기가 오른다 */
+  .grill { position: relative; width: 140px; height: 90px; margin-top: 30px; }
+  .grill::before { content: ""; position: absolute; left: 0; right: 0; top: 46px; height: 12px; background: repeating-linear-gradient(90deg, #2d2d38 0 6px, transparent 6px 14px); box-shadow: 0 0 0 3px var(--ink); }
+  .grill s { position: absolute; left: 14px; right: 14px; top: 62px; height: 22px; background: repeating-linear-gradient(90deg, #ff4d1f 0 10px, #ffb13a 10px 20px); animation: blink .25s steps(2) infinite; text-decoration: none; }
+  .grill em { position: absolute; left: 38px; top: 6px; font-size: 52px; font-style: normal; filter: sepia(.7) saturate(1.6); animation: sizzle .35s steps(2) infinite; }
+  .grill i { position: absolute; top: -6px; width: 12px; height: 12px; background: rgba(220, 220, 230, .75); animation: steam 1.1s steps(5) infinite; }
+  .grill i:nth-of-type(1) { left: 30px; } .grill i:nth-of-type(2) { left: 66px; animation-delay: .35s; } .grill i:nth-of-type(3) { left: 102px; animation-delay: .7s; }
+  @keyframes sizzle { 50% { transform: translateY(-3px) rotate(-4deg); } }
+  /* 도마: 칼이 위아래로 썰고 생선 조각이 생긴다 */
+  .board { position: relative; width: 150px; height: 80px; margin-top: 30px; }
+  .board u { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; background: #c38a50; box-shadow: 0 0 0 4px var(--ink), inset 0 6px 0 #d9a46a; }
+  .board em { position: absolute; left: 20px; bottom: 18px; font-size: 48px; font-style: normal; z-index: 1; }
+  .board span { position: absolute; left: 62px; bottom: 26px; font-size: 44px; z-index: 2; transform-origin: 80% 80%; animation: chop .3s steps(2) infinite; }
+  @keyframes chop { 50% { transform: translateY(-16px) rotate(-12deg); } }
   .pot i:nth-child(1) { left: 20px; } .pot i:nth-child(2) { left: 54px; animation-delay: .3s; } .pot i:nth-child(3) { left: 88px; animation-delay: .6s; }
   @keyframes steam { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-34px) scale(1.6); opacity: 0; } }
 
@@ -642,7 +656,7 @@
     <div class="tabs" id="townTabs"></div>
     <div class="townbody" id="townBody"></div>
   </div>
-  <div class="cookpot" id="cookPot" hidden><div class="pot"><i></i><i></i><i></i></div><b>보글보글…</b><small></small></div>
+  <div class="cookpot" id="cookPot" hidden><div class="cookart"><div class="pot"><i></i><i></i><i></i></div></div><b>보글보글…</b><small></small></div>
   <div class="townpop" id="townPop" hidden></div>
 </div>
 
@@ -662,6 +676,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=35"></script>
+<script type="module" src="game.js?v=36"></script>
 </body>
 </html>

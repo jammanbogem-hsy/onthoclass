@@ -171,6 +171,7 @@ export function renderAcct() {
     box.querySelector("[data-login]")?.addEventListener("click", login);
     box.querySelector("[data-logout]")?.addEventListener("click", logout);
     box.querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => openTown(b.dataset.town)));
+    if (!NET.student && (NET.role === "teacher" || NET.role === "admin") && !CLASSES) loadClasses(); // 선생님은 학급 목록을 미리 받아 둔다(함수도 깨워 둠)
   });
 }
 
@@ -178,16 +179,23 @@ export function renderAcct() {
 let tab = "market", pick = new Set(), cooking = null, busy = false;
 document.addEventListener("click", (e) => { if (e.target.closest?.("[data-closet]") && NET.me) openTown("closet"); });
 export async function openTown(t = "market") {
-  tab = t; pick = new Set(); cooking = null; if (t === "class") CLASSES = null; if (t === "admin") { ADM = null; ADMC = {}; }
+  tab = t; pick = new Set(); cooking = null; if (t === "class") loadClasses(); if (t === "admin") { ADM = null; ADMC = {}; }
   $("town").hidden = false; renderTown();
   try { Object.assign(NET, await call("fishMe")); renderTown(); renderAcct(); } catch {}
 }
 const TABS = { market: "수산시장", shop: "낚시 가게", cook: "캠핑 요리", closet: "꾸미기" };
-let CLASSES = null;
+let CLASSES = null, classLoading = null;
+// 학급 목록: 있던 것을 바로 보여 주고 뒤에서 새로 받아 맞춘다(함수가 잠들어 있으면 몇 초 걸리니까)
+function loadClasses() {
+  return classLoading ??= call("fishClassList").then((r) => { CLASSES = r.classes; if (tab === "class" && !$("town").hidden) renderTown(); }).catch(() => {}).finally(() => { classLoading = null; });
+}
 const RECIPE_OK = {
   ramen: () => true, seafoodRamen: (f, S) => S[f.sp]?.water === "sea", gui: (f) => ["월척", "S급", "A급"].includes(f.grade),
   maeuntang: (f, S) => S[f.sp]?.water === "fresh", haemultang: (f, S) => S[f.sp]?.water === "sea", hoe: (f, S) => ["전설", "보스"].includes(S[f.sp]?.tier),
 };
+// 요리마다 하는 말과 연출: 탕·라면은 냄비, 구이는 석쇠, 회는 도마
+const COOK = { gui: { verb: "굽기", done: "구움", sound: "지글지글…", art: "grill" }, hoe: { verb: "뜨기", done: "뜸", sound: "슥슥 써는 중…", art: "board" } };
+const cookOf = (k) => COOK[k] || { verb: "끓이기", done: "끓임", sound: "보글보글…", art: "pot" };
 const FOOD_ART = { ramen: "🍜", seafoodRamen: "🍜", gui: "🐟", maeuntang: "🍲", haemultang: "🦀", hoe: "🍣" };
 // 옷·장식은 3D 모델을 찍은 그림(assets/avatar/thumb), 그 밖(라면·낚싯대)은 이모지
 const THUMB = new Set(["hat_bucket","hat_straw","hat_beanie","hat_pirate","crown","cap","flower","bunny","glasses","roundglasses","mustache","backpack","flag","wings","cape","chair","fire","cooler","lantern","cat","vest","scarf"]);
@@ -237,7 +245,7 @@ export function renderTown() {
       const r = NET.recipes[cooking], ok = NET.bag.filter((f) => RECIPE_OK[cooking](f, S));
       body.innerHTML = `<h3>${FOOD_ART[cooking]} ${esc(r.name)} <small>${esc(r.desc)} · 물고기 ${r.fish}마리 골라요</small></h3>
         ${ok.length ? `<div class="fishlist">${ok.map((f) => fishRow(f, pick.has(f.id))).join("")}</div>` : `<p class="empty">이 요리에 쓸 물고기가 살림망에 없어요.</p>`}
-        <div class="townact"><button class="go" data-cookgo ${pick.size === r.fish && (m.stock.ramen || 0) >= r.ramen ? "" : "disabled"}>${esc(r.name)} 끓이기 (${pick.size}/${r.fish})</button><button class="go alt" data-cookback>뒤로</button></div>`;
+        <div class="townact"><button class="go" data-cookgo ${pick.size === r.fish && (m.stock.ramen || 0) >= r.ramen ? "" : "disabled"}>${esc(r.name)} ${cookOf(cooking).verb} (${pick.size}/${r.fish})</button><button class="go alt" data-cookback>뒤로</button></div>`;
       body.querySelectorAll("[data-fid]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.fid; if (pick.has(id)) pick.delete(id); else if (pick.size < r.fish) pick.add(id); renderTown(); }));
       body.querySelector("[data-cookgo]")?.addEventListener("click", () => cook(cooking, [...pick]));
       body.querySelector("[data-cookback]").addEventListener("click", () => { cooking = null; pick = new Set(); renderTown(); });
@@ -246,7 +254,7 @@ export function renderTown() {
     body.innerHTML = `<h3>캠핑 요리 <small>살림망 물고기로 요리해 낭만 점수를 올려요 · 라면 ${m.stock.ramen || 0}개</small></h3>
       <div class="shopgrid">${Object.entries(NET.recipes).map(([k, r]) => {
         const have = NET.bag.filter((f) => RECIPE_OK[k](f, S)).length, can = have >= r.fish && (m.stock.ramen || 0) >= r.ramen;
-        return `<div class="item"><i>${FOOD_ART[k]}</i><b>${esc(r.name)}</b><small>${esc(r.desc)} · <span class="romance">낭만 +${r.romance}</span>${m.cooked[k] ? ` · ${m.cooked[k]}번 끓임` : ""}</small>
+        return `<div class="item"><i>${FOOD_ART[k]}</i><b>${esc(r.name)}</b><small>${esc(r.desc)} · <span class="romance">낭만 +${r.romance}</span>${m.cooked[k] ? ` · ${m.cooked[k]}번 ${cookOf(k).done}` : ""}</small>
           <button class="go ${can ? "" : "alt"}" data-cook="${k}" ${can ? "" : "disabled"}>${can ? "요리하기" : r.ramen && !(m.stock.ramen || 0) ? "라면 없음" : "재료 부족"}</button></div>`;
       }).join("")}</div>`;
     body.querySelectorAll("[data-cook]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.cook; if (!NET.recipes[k].fish) return cook(k, []); cooking = k; pick = new Set(); renderTown(); }));
@@ -270,7 +278,7 @@ export function renderTown() {
     body.querySelectorAll("[data-admdone]").forEach((b) => b.addEventListener("click", () => { const [id, d] = b.dataset.admdone.split(":"); act(async () => { await call("fishAdmin", { action: "done", id, done: !!d }); const l = ADM.logs.find((x) => x.id === id); if (l) l.done = !!d; renderTown(); }); }));
     body.querySelector("[data-admclear]")?.addEventListener("click", () => act(async () => { const r = await call("fishAdmin", { action: "clearErrors" }); hooks.toast?.(`오류 로그 ${r.removed}개를 비웠어요`); ADM = null; renderTown(); }));
   } else if (tab === "class") {
-    if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; call("fishClassList").then((r) => { CLASSES = r.classes; renderTown(); }).catch(() => {}); return; }
+    if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; loadClasses(); return; }
     if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 계정만 학급을 만들 수 있어요. 러닝크루에서 교사로 가입한 구글 계정으로 로그인해 주세요.</p>`; return; }
     body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음). 학생은 선생님이 낚시터를 열었을 때만 낚시할 수 있어요</small></h3>
       <form class="joinf" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go">학급 만들기</button></form>
@@ -279,12 +287,15 @@ export function renderTown() {
           ${[...c.students].sort((a, b) => b.taste - a.taste).map((s) => `<div><span>${esc(s.name)}</span><span>${s.taste.toLocaleString("ko-KR")}</span><span class="money">${won(s.money)}</span><span class="romance">${s.romance}</span><span>${s.caught}</span><span><button class="acctout" data-reset="${c.cid}:${s.sid}">${s.hasPin ? "입장번호 초기화" : "초기화됨"}</button></span></div>`).join("")}</div>`
           : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 코드 <b>${c.code}</b>를 적어 주세요.</p>`}</div>`).join("") : `<p class="empty">아직 만든 학급이 없어요.</p>`}`;
     body.querySelectorAll("[data-room]").forEach((box) => bindRoom(box));
-    body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = null; pop(r.code, "money", `${r.name} 학급 코드`); renderTown(); }); });
-    body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); act(async () => { await call("fishClassResetPin", { cid, sid }); CLASSES = null; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); renderTown(); }); }));
+    body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "만드는 중…";
+      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0 } }]; pop(r.code, "money", `${r.name} 학급 코드`); }).finally(renderTown); });
+    body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); b.disabled = true; b.textContent = "초기화 중…";
+      act(async () => { await call("fishClassResetPin", { cid, sid }); const st = CLASSES?.find((c) => c.cid === cid)?.students.find((x) => x.sid === sid); if (st) st.hasPin = false; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); }).finally(renderTown); }));
   } else {
     const slots = { head: "머리", face: "얼굴", body: "몸", back: "등" }, L = m.look || {};
     body.innerHTML = `<div class="dress"><div class="dressav" data-avslot></div><div class="dressopt">
       <h3>생김새 <small>무료로 언제든 바꿔요</small></h3>
+      <div class="closet"><b>캐릭터</b><div>${[["0", "남자"], ["1", "여자"]].map(([v, t]) => `<button class="go ${String(L.base || 0) === v ? "" : "alt"}" data-look="base:${v}">${t}</button>`).join("")}</div></div>
       ${Object.entries(LOOK_LABEL).map(([k, label]) => `<div class="closet"><b>${label}</b><div class="sw">${LOOK_PAL[k].map((c, i) => `<button class="swatch ${(L[k] || 0) === i ? "on" : ""}" style="--c:${c}" data-look="${k}:${i}" aria-label="${label} ${i + 1}번 색"></button>`).join("")}</div></div>`).join("")}
       <h3>옷·악세서리 <small>가게에서 산 것을 골라 입어요</small></h3>
       ${Object.entries(slots).map(([slot, label]) => {
@@ -298,7 +309,7 @@ export function renderTown() {
     body.querySelectorAll("[data-look]").forEach((b) => b.addEventListener("click", () => { const [k, i] = b.dataset.look.split(":"); setLook(k, +i); }));
   }
 }
-async function act(fn) { if (busy) return; busy = true; try { await fn(); } catch {} busy = false; }
+async function act(fn) { if (busy) { hooks.toast?.("앞에 누른 것을 처리하는 중이에요"); return; } busy = true; try { await fn(); } catch {} busy = false; }
 // 판 것·산 것처럼 먼저 보여 주고, 서버 답이 오면 맞춘다(아직 다른 요청이 남아 있으면 화면 값을 그대로 둔다)
 // 실패하면 서버에서 다시 받아 되돌린다. call() 이 실패 문구를 띄운다
 let inflight = 0;
@@ -340,8 +351,10 @@ function setLook(k, i) {
 }
 // 요리: 냄비 연출(1.6초) 동안 서버를 기다리지 않고 바로 재료를 빼고 낭만을 올린다
 function cook(recipe, ids) {
-  const r = NET.recipes[recipe], pot = $("cookPot"), gone = new Set(ids);
-  pot.hidden = false; pot.querySelector("b").textContent = "보글보글…"; pot.querySelector("small").textContent = r.name;
+  const r = NET.recipes[recipe], pot = $("cookPot"), gone = new Set(ids), C = cookOf(recipe);
+  const ART = { pot: `<div class="pot"><i></i><i></i><i></i></div>`, grill: `<div class="grill"><em>🐟</em><s></s><i></i><i></i><i></i></div>`, board: `<div class="board"><em>🐟</em><u></u><span>🔪</span></div>` };
+  pot.querySelector(".cookart").innerHTML = ART[C.art];
+  pot.hidden = false; pot.querySelector("b").textContent = C.sound; pot.querySelector("small").textContent = r.name;
   hooks.sample?.("cook");
   setTimeout(() => {
     pot.querySelector("b").textContent = `${r.name} 완성!`; pot.querySelector("small").textContent = `낭만 +${r.romance}`;
@@ -380,8 +393,8 @@ function roomBox(c) {
   return `<div class="roombox ${open ? "open" : ""}" data-room="${c.cid}">
     <b>${open ? `낚시터 열림 · ${Math.ceil((r.closesAt - Date.now()) / 60000)}분 남음` : "낚시터 닫힘 (학생은 대기 중)"}</b>
     <div class="roomset">
-      <label>열어 둘 시간<select name="minutes">${opt([[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], 40)}</select></label>
-      <label>한 판 시간<select name="roundSec">${opt([[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec)}</select></label>
+      <label title="이 시간이 지나면 낚시터가 저절로 닫혀요">열어 둘 시간 <small>(지나면 자동으로 닫힘)</small><select name="minutes">${opt([[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], 40)}</select></label>
+      <label title="학생이 한 번 대회할 때 타이머 길이">한 판 시간 <small>(대회 한 번 타이머)</small><select name="roundSec">${opt([[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec)}</select></label>
       <label>낚시터<select name="place">${opt([["any", "학생이 고르기"], ["fresh", "민물만"], ["sea", "바다만"]], r.place)}</select></label>
     </div>
     <div class="roomquiz"><label class="chk"><input type="checkbox" name="quizOn" ${r.quizOn ? "checked" : ""}> 던지기 전에 문제 풀기</label>
@@ -391,7 +404,10 @@ function roomBox(c) {
 }
 const settings = (box) => ({ minutes: +box.querySelector("[name=minutes]").value, roundSec: +box.querySelector("[name=roundSec]").value, place: box.querySelector("[name=place]").value, quizOn: box.querySelector("[name=quizOn]").checked });
 function bindRoom(box) {
-  const cid = box.dataset.room, save = (extra) => act(async () => { await call("fishRoomSet", { cid, ...settings(box), ...extra }); CLASSES = null; renderTown(); });
+  const cid = box.dataset.room, save = (extra) => {
+    box.querySelectorAll("button").forEach((b) => { b.disabled = true; }); box.querySelector(".townact")?.insertAdjacentHTML("beforeend", `<small class="saving">저장 중…</small>`);
+    return act(async () => { const r = await call("fishRoomSet", { cid, ...settings(box), ...extra }); const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; }).finally(renderTown);
+  };
   box.querySelector("[data-roomopen]")?.addEventListener("click", () => save({ open: true }).then(() => hooks.toast?.("낚시터를 열었어요! 학생 화면이 몇 초 안에 열려요")));
   box.querySelector("[data-roomclose]")?.addEventListener("click", () => save({ open: false }));
   box.querySelector("[data-roomsave]")?.addEventListener("click", () => save({}).then(() => hooks.toast?.("저장했어요")));

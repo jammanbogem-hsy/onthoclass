@@ -251,7 +251,8 @@ export const fishLook = onCall(options, async (req) => {
   const uid = await auth(req), look = req.data?.look;
   if (!look || typeof look !== "object") throw new HttpsError("invalid-argument", "고를 색을 보내 주세요.");
   const upd: DocumentData = {};
-  for (const k of ["coat", "boots", "hat", "hair"]) { const v = (look as Record<string, unknown>)[k]; if (v === undefined) continue; if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > 7) throw new HttpsError("invalid-argument", "없는 색이에요."); upd[`look.${k}`] = v; }
+  // 색은 팔레트 번호 0~7, base 는 몸(0 남자·1 여자)
+  for (const [k, max] of [["coat", 7], ["boots", 7], ["hat", 7], ["hair", 7], ["base", 1]] as const) { const v = (look as Record<string, unknown>)[k]; if (v === undefined) continue; if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > max) throw new HttpsError("invalid-argument", "없는 색이에요."); upd[`look.${k}`] = v; }
   if (!Object.keys(upd).length) throw new HttpsError("invalid-argument", "고를 색을 보내 주세요.");
   const d = (await meRef(uid).get()).data();
   if (!d) throw new HttpsError("failed-precondition", "먼저 낚시터에 들어와 주세요.");

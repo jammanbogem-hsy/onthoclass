@@ -24,7 +24,7 @@ export function analyze(mesh, toLocal) {
   for (let i = 0; i < n; i++) {
     const x = P[i * 3], y = P[i * 3 + 1] / H, z = P[i * 3 + 2];
     if (y > .55) { hx.push(x); hz.push(z); }
-    if (y > .3 && y < .47 && Math.abs(x) < .08 * H) { tb = Math.max(tb, z); }
+    if (y > .3 && y < .4 && Math.abs(x) < .08 * H) { tb = Math.max(tb, z); } // 등(어깨까지 내려온 머리카락은 빼려고 가슴 아래만)
     if (y > .3 && y < .5) hand = Math.min(hand, z);
     if (y > .24 && y < .3) tf = Math.min(tf, z); // 배(팔 아래)
   }
@@ -64,12 +64,13 @@ export function shell(S, planes, off, material) {
   return new THREE.Mesh(g, material);
 }
 
-// 옷 모양(상자). 좌표는 낚시꾼 몸 기준(키 H, 앞 -z, 옆 x)
-export function cut(S, kind) {
+// 옷 모양(상자). 좌표는 낚시꾼 몸 기준(키 H, 앞 -z, 옆 x). P: 몸마다 다른 값(단발머리처럼 어깨까지 내려온 머리는 빼야 하니까)
+export function cut(S, kind, P = {}) {
   const { H, hand, torso } = S.A, Y = (k) => k * H;
-  const above = (y) => [0, 1, 0, -y], below = (y) => [0, -1, 0, y], behind = (z) => [0, 0, 1, -z], inX = (w) => [[1, 0, 0, w], [-1, 0, 0, w]];
-  if (kind === "coat") return [above(Y(.195)), below(Y(.497)), behind(hand + Y(.07))]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
-  if (kind === "vest") { const k = .9, w = Y(.118), y0 = Y(.38); return [above(Y(.29)), below(Y(.49)), behind(torso.front - Y(.012)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0]]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
+  const above = (y) => [0, 1, 0, -y], below = (y) => [0, -1, 0, y], behind = (z) => [0, 0, 1, -z];
+  const hairOut = [...(P.backZ != null ? [[0, 0, -1, P.backZ]] : []), ...(P.sideX != null ? [[1, 0, 0, P.sideX], [-1, 0, 0, P.sideX]] : [])];
+  if (kind === "coat") return [above(Y(.195)), below(Y(P.coatTop ?? .497)), behind(hand + Y(.07)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
+  if (kind === "vest") { const k = .9, w = Y(.118), y0 = Y(.38); return [above(Y(.29)), below(Y(P.vestTop ?? .49)), behind(P.vestFront ?? torso.front - Y(.012)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...hairOut]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
   if (kind === "boots") return [below(Y(.19))];
   return [];
 }
