@@ -3,8 +3,11 @@
 // 물고기·낚시꾼 모델은 Tripo. 물고기 동작은 정점 셰이더로 몸을 휜다(종마다 뼈 구성이 달라서).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL } from "./town.js?v=8";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { analyze, shell, cut } from "./avatar.js?v=1";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL } from "./town.js?v=9";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -151,10 +154,11 @@ const grad = new THREE.DataTexture(new Uint8Array([90, 165, 240]), 3, 1, THREE.R
 grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
 const toon = (color, extra = {}) => new THREE.MeshToonMaterial({ color, gradientMap: grad, ...extra });
 
+// 화면 가로를 약 720픽셀로 그린 뒤 키워서 살짝 픽셀 느낌. 느린 기기(크롬북)는 스스로 600·480으로 낮춘다
+const QUALITY = [720, 600, 480]; let qLevel = 0;
 function resize() {
   const w = innerWidth, h = innerHeight;
-  // 화면 가로를 약 720픽셀로 그린 뒤 키워서 살짝 픽셀 느낌
-  renderer.setPixelRatio(Math.min(1, 720 / Math.max(320, Math.min(w, h * 1.7))));
+  renderer.setPixelRatio(Math.min(1, QUALITY[qLevel] / Math.max(320, Math.min(w, h * 1.7))));
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.fov = w / h < 0.8 ? 58 : 40;
@@ -318,6 +322,32 @@ for (const [x, z, c] of [[-7, -14, "#ff5a5a"], [8, -18, "#ffd23f"], [3, -26, "#f
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, .6, 5), toon("#ffffff")); pole.position.y = .45; g.add(pole);
   g.position.set(x, .05, z); seaGroup.add(g); buoys.push(g);
 }
+// 움직이지 않는 풍경 조각(나무·바위·부들·꽃…)을 색을 꼭짓점에 담아 한 덩어리로 합친다: 그리는 횟수 수백 번 → 몇 번(크롬북용)
+function bake(group, skip = new Set()) {
+  group.updateMatrixWorld(true);
+  const inv = group.matrixWorld.clone().invert(), buckets = new Map(), dead = [];
+  group.traverse((o) => {
+    if (!o.isMesh || Array.isArray(o.material) || !o.material.isMeshToonMaterial || o.material.map) return;
+    for (let p = o; p && p !== group; p = p.parent) if (skip.has(p)) return;
+    const m = o.material, key = `${m.side}|${m.emissive.getHexString()}|${m.emissiveIntensity}`;
+    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
+    for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "normal") g.deleteAttribute(k);
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    const n = g.attributes.position.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) col.set([m.color.r, m.color.g, m.color.b], i * 3);
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    if (!buckets.has(key)) buckets.set(key, { m, gs: [] });
+    buckets.get(key).gs.push(g); dead.push(o);
+  });
+  for (const o of dead) o.removeFromParent();
+  for (const { m, gs } of buckets.values()) {
+    const mesh = new THREE.Mesh(mergeGeometries(gs), toon("#ffffff", { vertexColors: true, side: m.side, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity }));
+    group.add(mesh);
+  }
+  // 빈 묶음 정리
+  const empty = []; group.traverse((o) => { if (o !== group && !o.isMesh && !o.children.length) empty.push(o); }); empty.forEach((o) => o.removeFromParent());
+}
+bake(pondGroup); bake(seaGroup, new Set(buoys)); bake(deck);
 const PLACE_LOOK = {
   fresh: { sky: "#9fdcf0", fog: [22, 42], sea: 0 },
   sea: { sky: "#86cdf7", fog: [34, 95], sea: 1 },
@@ -389,17 +419,19 @@ function emitBubble(x, z, size, color, rainbow) {
   b.c.set(color === "rainbow" ? "#ffffff" : color);
 }
 function stepBubbles(dt, t) {
+  let live = 0; // 살아 있는 거품만 앞쪽 칸에 모아 그 수만큼만 그린다(크롬북용)
   for (let i = 0; i < BUBBLES; i++) {
     const b = bub[i];
-    if (b.life >= b.max) { tmpM.makeScale(0, 0, 0); bubbleMesh.setMatrixAt(i, tmpM); bubbleMesh.setColorAt(i, b.c); continue; }
+    if (b.life >= b.max) continue;
     b.life += dt; b.y = Math.min(.06, b.y + b.vy * dt);
     const k = b.life / b.max, pop = k > .85 ? 1 + (k - .85) * 4 : 1;
     const s = b.s * Math.min(1, k * 4) * pop * (1 + Math.sin(t * 12 + i) * .06);
     tmpM.makeScale(s, s * .8, s).setPosition(b.x, b.y, b.z);
-    bubbleMesh.setMatrixAt(i, tmpM);
+    bubbleMesh.setMatrixAt(live, tmpM);
     if (b.rainbow) tmpC.setHSL((b.hue + t * .6) % 1, .9, .65); else tmpC.copy(b.c);
-    bubbleMesh.setColorAt(i, tmpC);
+    bubbleMesh.setColorAt(live, tmpC); live++;
   }
+  bubbleMesh.count = live; bubbleMesh.visible = live > 0;
   bubbleMesh.instanceMatrix.needsUpdate = true;
   if (bubbleMesh.instanceColor) bubbleMesh.instanceColor.needsUpdate = true;
 }
@@ -574,10 +606,13 @@ function drawLine(to, slack) {
 }
 
 // ------------------------------------------------------------------ 물고기 모델 (Tripo) + 셰이더 휘기
-const loader = new GLTFLoader();
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder); // 모델은 meshopt 압축 + webp 텍스처(받는 양 줄이기)
 const models = {};
 const BEND_GLSL = `
   vec4 fp = uFish * vec4(transformed, 1.0);
+  #ifdef FISH_OUTLINE
+  fp.xyz += normalize(mat3(uFish) * normal) * 0.005; // 외곽선: 물고기 좌표(길이 1)에서 두께를 정해 모델 압축(양자화)과 상관없이 같은 굵기
+  #endif
   float ft = clamp(fp.x + 0.5, 0.0, 1.0);
   float fs = 1.0 - ft;
   float fc = abs(ft - 0.5) * 2.0;
@@ -591,7 +626,7 @@ function bendMaterial(base, U, outline) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uBend = U.bend; sh.uniforms.uFish = U.fish; sh.uniforms.uFishInv = U.fishInv;
     sh.vertexShader = "uniform vec4 uBend; uniform mat4 uFish; uniform mat4 uFishInv;\n" + sh.vertexShader.replace("#include <project_vertex>",
-      (outline ? "transformed += normalize(normal) * 0.006;\n" : "") + BEND_GLSL + "#include <project_vertex>");
+      (outline ? "#define FISH_OUTLINE\n" : "") + BEND_GLSL + "#include <project_vertex>");
   };
   m.customProgramCacheKey = () => (outline ? "fish-outline" : "fish-toon");
   return m;
@@ -618,49 +653,107 @@ async function loadFish(id, file, yaw = 0, roll = 0, spin = 0) {
   turn.position.sub(box2.getCenter(new THREE.Vector3()));
   models[id] = { holder, half: box2.getSize(new THREE.Vector3()).multiplyScalar(.5) };
 }
-// 낚시꾼 모델(한 덩어리)의 부위를 색으로 골라 다시 칠한다: 모자(초록 벙거지)·머리카락·비옷(노랑)·장화(파랑)
-// 산 모자를 쓰면 벙거지를 그 모자 색으로 칠해 모자가 두 개 겹쳐 보이지 않게 한다
-const part = () => ({ on: { value: 0 }, color: { value: new THREE.Color() } });
-const LOOKU = { hat: part(), hair: part(), coat: part(), boots: part(), hatY: { value: 1e9 }, headY: { value: 1e9 }, bootY: { value: -1e9 } };
-function hatShader(mesh) {
-  const g = mesh.geometry; g.computeBoundingBox(); const b = g.boundingBox, h = b.max.y - b.min.y;
-  LOOKU.hatY.value = b.max.y - h * .36; LOOKU.headY.value = b.max.y - h * .5; LOOKU.bootY.value = b.min.y + h * .17;
+// 낚시꾼: 바탕 몸(반팔·반바지) 위에 옷 껍데기(비옷·조끼·장화)와 아이템(모자·안경·배낭…)을 입힌다(avatar.js)
+// 머리카락 색만 바탕 몸 셰이더에서 바꾼다(머리 높이의 짙은 갈색, 얼굴 앞쪽은 이마 위만)
+const HAIR = { on: { value: 0 }, col: { value: new THREE.Color() }, toBody: { value: new THREE.Matrix4() }, headY: { value: 1e9 }, faceZ: { value: -1e9 }, browY: { value: 1e9 } };
+function hairShader(mesh) {
   mesh.material.onBeforeCompile = (sh) => {
-    for (const k of ["hat", "hair", "coat", "boots"]) { sh.uniforms[k + "On"] = LOOKU[k].on; sh.uniforms[k + "Col"] = LOOKU[k].color; }
-    Object.assign(sh.uniforms, { hatY: LOOKU.hatY, headY: LOOKU.headY, bootY: LOOKU.bootY });
-    sh.vertexShader = "varying float vLY;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvLY = position.y;");
-    sh.fragmentShader = `uniform float hatOn, hairOn, coatOn, bootsOn, hatY, headY, bootY; uniform vec3 hatCol, hairCol, coatCol, bootsCol; varying float vLY;
-      vec3 lookTo(vec3 col, vec3 s, float ref) { return col * clamp(max(s.r, max(s.g, s.b)) / ref, .45, 1.35); }
+    Object.assign(sh.uniforms, { hairOn: HAIR.on, hairCol: HAIR.col, toBody: HAIR.toBody, headY: HAIR.headY, faceZ: HAIR.faceZ, browY: HAIR.browY });
+    sh.vertexShader = "uniform mat4 toBody; varying vec3 vB;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvB = (toBody * vec4(position, 1.)).xyz;");
+    sh.fragmentShader = `uniform float hairOn, headY, faceZ, browY; uniform vec3 hairCol; varying vec3 vB;
       float hueOf(vec3 s) { float mx = max(s.r, max(s.g, s.b)), mn = min(s.r, min(s.g, s.b)), d = mx - mn; if (d < 1e-4) return 0.;
         float h = mx == s.r ? mod((s.g - s.b) / d, 6.) : mx == s.g ? (s.b - s.r) / d + 2. : (s.r - s.g) / d + 4.; return h / 6.; }
       ` + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
-      {
+      if (hairOn > .5 && vB.y > headY && (vB.z > faceZ || vB.y > browY)) {
         vec3 s = pow(max(diffuseColor.rgb, vec3(0.)), vec3(1. / 2.2));
         float mx = max(s.r, max(s.g, s.b)), sat = mx > 0. ? (mx - min(s.r, min(s.g, s.b))) / mx : 0., hu = hueOf(s);
-        bool hat = vLY > hatY && hu > .11 && hu < .42 && sat > .12;
-        if (hat && hatOn > .5) diffuseColor.rgb = lookTo(hatCol, s, .42);
-        else if (!hat && vLY > headY && hairOn > .5 && mx < .42 && sat > .25 && hu < .12) diffuseColor.rgb = lookTo(hairCol, s, .3);
-        else if (vLY < bootY && bootsOn > .5 && hu > .42 && hu < .7 && sat > .3) diffuseColor.rgb = lookTo(bootsCol, s, .72);
-        else if (vLY >= bootY && vLY < hatY && coatOn > .5 && hu > .09 && hu < .2 && sat > .5 && mx > .4) diffuseColor.rgb = lookTo(coatCol, s, .9);
+        if (mx < .62 && (sat > .1 && (hu < .14 || hu > .95) || mx < .28)) diffuseColor.rgb = hairCol * clamp(mx / .3, .45, 1.35);
       }`);
   };
 }
-const setPart = (k, hex, on = true) => { LOOKU[k].on.value = on && hex ? 1 : 0; if (hex) LOOKU[k].color.value.set(hex).convertSRGBToLinear(); };
 async function loadAngler(file, yaw = 0) {
   const gltf = await loader.loadAsync(file);
   const root = gltf.scene, turn = new THREE.Group(); turn.add(root);
-  root.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); hatShader(o); } });
+  let mesh = null;
+  root.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); hairShader(o); mesh = o; } });
   turn.rotation.y = THREE.MathUtils.degToRad(yaw);
   const box = new THREE.Box3().setFromPoints(bodyPoints(turn));
   const s = 1.35 / (box.max.y - box.min.y); turn.scale.setScalar(s);
   const b2 = new THREE.Box3().setFromPoints(bodyPoints(turn));
   turn.position.set(-(b2.min.x + b2.max.x) / 2, -b2.min.y, -(b2.min.z + b2.max.z) / 2);
   body.remove(anglerModel); anglerModel = turn; body.add(turn);
-  // 모델이 쥔 막대 끝(가장 앞쪽 점)에서 우리 낚싯대가 이어진다
+  // 몸 좌표(발바닥 0, 앞 -z)로 바꾸는 행렬 → 옷 껍데기·아이템 기준점
+  turn.updateMatrix(); root.updateMatrixWorld(true);
+  const toBody = new THREE.Matrix4().multiplyMatrices(turn.matrix, new THREE.Matrix4().multiplyMatrices(new THREE.Matrix4().copy(turn.matrixWorld).invert(), mesh.matrixWorld));
+  AVA.S = analyze(mesh, toBody); AVA.shells = {};
+  const A = AVA.S.A; HAIR.toBody.value.copy(toBody); HAIR.headY.value = A.H * .55; HAIR.faceZ.value = A.head.front + A.H * .1; HAIR.browY.value = A.H * .8;
+  // 모델이 쥔 주먹 끝(가장 앞쪽 점)에서 우리 낚싯대가 이어진다
   let tipPt = null;
   for (const p of bodyPoints(turn, 3)) if (p.y > .3 && p.y < 1.1 && (!tipPt || p.z < tipPt.z)) tipPt = p;
   if (tipPt) HAND.copy(tipPt).add(new THREE.Vector3(0, 0, .02)); else HAND.set(0.05, .62, -.4);
-  applyGear(NET.me); // 모델이 바뀌면 옷도 다시 맞춘다
+  applyGear(GEAR.me); // 모델이 바뀌면 옷도 다시 맞춘다
+}
+
+// 아이템(Tripo, assets/avatar/<id>.glb): 처음 입을 때 받아 두고 다시 쓴다
+// yaw: 앞이 -z(낚시꾼 앞)가 되게 돌리는 각도. at: 붙이는 자리, w: 너비(머리·몸통 너비 배수 또는 m), 나머지는 자리별 미세 조정
+const ITEM_FIT = {
+  hat_bucket: { at: "head", w: .92, sink: .55 },
+  hat_straw: { at: "head", w: 1.35, sink: .5 },
+  hat_beanie: { at: "head", w: .88, sink: .55 },
+  hat_pirate: { at: "head", w: 1.05, sink: .45, yaw: 90 },
+  crown: { at: "head", w: .55, sink: .2 },
+  cap: { at: "head", w: .95, sink: .5, yaw: 90, z: -.04 },
+  flower: { at: "pin", w: .2, yaw: 90 },
+  bunny: { at: "head", w: .8, sink: .3, yaw: 90 },
+  glasses: { at: "face", w: .62, yaw: 90 },
+  roundglasses: { at: "face", w: .62, yaw: 90 },
+  mustache: { at: "mouth", w: .3, yaw: 90 },
+  backpack: { at: "back", w: .34, yaw: -90 },
+  flag: { at: "pole", w: .32, yaw: -90 },
+  wings: { at: "wings", w: .9, yaw: 90 },
+  cape: { at: "cape", w: .42 },
+  chair: { at: "deck", w: .52 }, fire: { at: "deck", w: .5 }, cooler: { at: "deck", w: .42 }, lantern: { at: "deck", w: .2 }, cat: { at: "deck", w: .32, yaw: 90 },
+};
+const AVA = { S: null, shells: {}, items: {}, loading: {} };
+function itemModel(id) {
+  if (!ITEM_FIT[id]) return Promise.resolve(null);
+  return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=1`).then((g) => {
+    const turn = new THREE.Group(); turn.add(g.scene);
+    g.scene.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); } });
+    turn.rotation.y = THREE.MathUtils.degToRad(ITEM_FIT[id].yaw || 0);
+    const box = new THREE.Box3().setFromPoints(bodyPoints(turn, 1)), sz = box.getSize(new THREE.Vector3());
+    const k = 1 / Math.max(sz.x, 1e-3); turn.scale.setScalar(k);
+    const b2 = new THREE.Box3().setFromPoints(bodyPoints(turn, 1));
+    turn.position.set(-(b2.min.x + b2.max.x) / 2, -b2.min.y, -(b2.min.z + b2.max.z) / 2); // 바닥 가운데가 원점, 너비 1
+    const holder = new THREE.Group(); holder.add(turn);
+    AVA.items[id] = { holder, size: b2.getSize(new THREE.Vector3()) };
+    return AVA.items[id];
+  }).catch((e) => { console.warn("아이템", id, e); return null; });
+}
+// 몸 기준 자리에 맞춰 복제해 놓는다. 아직 안 받았으면 받고 나서 옷을 다시 입힌다
+function placeItem(id, parent, tint) {
+  const it = AVA.items[id], f = ITEM_FIT[id], S = AVA.S;
+  if (!it) { itemModel(id).then((r) => { if (r) applyGear(GEAR.me); }); return null; }
+  const o = it.holder.clone(true), sz = it.size;
+  if (tint) o.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); m.material.color.set(tint); } });
+  if (!S) return null;
+  const A = S.A, H = A.H, hd = A.head;
+  let w = f.w, x = 0, y = 0, z = 0;
+  if (f.at === "head") { w *= hd.w; x = hd.cx; z = hd.cz + (f.z || 0) * H; y = hd.top - sz.y * w * f.sink; }
+  else if (f.at === "pin") { w *= H; x = hd.cx + hd.w * .26; y = H * .86; z = hd.front + H * .17; o.rotation.z = -.5; }
+  else if (f.at === "face") { w *= hd.w; x = hd.cx; y = H * .735 - sz.y * w / 2; z = A.frontAt(H * .735) - H * .03 + sz.z * w / 2; }
+  else if (f.at === "mouth") { w *= hd.w; x = hd.cx; y = H * .645 - sz.y * w / 2; z = A.frontAt(H * .645) - H * .012 + sz.z * w / 2; }
+  else if (f.at === "back") { w *= H; y = H * .27; z = A.torso.back + sz.z * w / 2 - H * .01; }
+  else if (f.at === "pole") { w *= H; x = H * .08; y = H * .25; z = A.torso.back + H * .04; }
+  else if (f.at === "wings") { w *= H; y = H * .28; z = A.torso.back + sz.z * w / 2; }
+  else if (f.at === "cape") { w *= H; y = H * .08; z = A.torso.back + sz.z * w / 2 - H * .02; }
+  else w = f.w; // 데크 장식은 m 단위
+  o.scale.setScalar(w); o.position.set(x, y, z); parent.add(o);
+  return o;
+}
+function shellOf(kind) {
+  if (!AVA.S) return null;
+  return AVA.shells[kind] ??= shell(AVA.S, cut(AVA.S, kind), { coat: .014, vest: .02, boots: .012 }[kind], toon("#ffffff", { side: THREE.DoubleSide })).geometry;
 }
 
 class Fish {
@@ -745,83 +838,57 @@ function stepJumpers(dt, t) {
 
 // ------------------------------------------------------------------ 내 장비(로그인하면 서버에서): 낚싯대 단계·옷·장식
 // 낚싯대 Lv2 캐스팅 칸 넓게 · Lv3 연타 쉽게+미니게임 시간 · Lv4 하트 +1 · Lv5 큰 물고기
-const GEAR = { rod: 1, wear: {}, own: {} };
+const GEAR = { me: null, rod: 1, wear: {}, own: {} };
 const gearGroup = new THREE.Group(); body.add(gearGroup);
 const decoGroup = new THREE.Group(); scene.add(decoGroup);
 const ROD_COLORS = [["#3a2a20", "#5a3c26"], ["#6b4a2a", "#9a6a3a"], ["#22252e", "#454b5c"], ["#1f4fa0", "#3f7fe0"], ["#b8860b", "#ffd23f"]];
 function applyGear(me) {
-  Object.assign(GEAR, me ? { rod: me.rod || 1, wear: me.wear || {}, own: me.own || {} } : { rod: 1, wear: {}, own: {} });
+  Object.assign(GEAR, me ? { me, rod: me.rod || 1, wear: me.wear || {}, own: me.own || {} } : { me: null, rod: 1, wear: {}, own: {} });
   const rc = ROD_COLORS[GEAR.rod - 1] || ROD_COLORS[0];
   rodSegs.forEach((m, k) => { if (k <= 11) { m.material.dispose(); m.material = toon(k % 4 === 0 ? rc[0] : rc[1], GEAR.rod === 5 ? { emissive: "#5a3a00" } : {}); } });
-  // 옷: 모델 머리 꼭대기·몸통에 맞춰 단순한 블록으로 얹는다(낚시꾼은 -z 쪽, 물을 본다)
+  // 옷: 바탕 몸에 비옷(조끼를 입으면 조끼)·장화 껍데기, 모자(없으면 벙거지)·얼굴·등 아이템
   gearGroup.clear();
-  const pts = bodyPoints(anglerModel, 5).map((p) => body.worldToLocal(p));
-  if (pts.length) {
-    const top = Math.max(...pts.map((p) => p.y)), head = pts.filter((p) => p.y > top - .22);
-    const hx = head.reduce((a, p) => a + p.x, 0) / head.length, hz = head.reduce((a, p) => a + p.z, 0) / head.length;
-    const add = (geo, c, x, y, z, extra) => { const m = new THREE.Mesh(geo, toon(c, extra)); m.position.set(hx + x, y, hz + z); gearGroup.add(m); return m; };
-    const w = GEAR.wear;
-    // 생김새 색 + 모자는 원래 벙거지를 그 모자 색(머리띠·꽃·왕관은 머리카락 색)으로 칠하고 장식만 얹는다
-    const L = me?.look || {}, P = LOOK_PAL, hair = P.hair[L.hair || 0];
-    setPart("coat", P.coat[L.coat || 0], !!L.coat); setPart("boots", P.boots[L.boots || 0], !!L.boots); setPart("hair", hair, !!L.hair);
-    const HAT_COLOR = { hat_straw: "#ffe08a", hat_beanie: "#e05a5a", hat_pirate: "#2a2a33", cap: "#3a6fd8", crown: hair, bunny: hair, flower: hair };
-    if (HAT_COLOR[w.head]) setPart("hat", HAT_COLOR[w.head]); else setPart("hat", P.hat[L.hat || 0], !!L.hat);
-    if (w.head === "hat_beanie") add(new THREE.SphereGeometry(.07, 8, 6), "#fff8e8", 0, top + .02, 0);
-    if (w.head === "hat_pirate") add(new THREE.SphereGeometry(.045, 8, 6), "#fff8e8", 0, top - .08, -.2);
-    if (w.head === "crown") { add(new THREE.CylinderGeometry(.16, .16, .1, 12, 1, true), "#ffd23f", 0, top + .03, 0, { side: THREE.DoubleSide, emissive: "#6a4a00" }); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; add(new THREE.ConeGeometry(.04, .1, 6), "#ffd23f", Math.cos(a) * .15, top + .12, Math.sin(a) * .15, { emissive: "#6a4a00" }); } add(new THREE.SphereGeometry(.035, 8, 6), "#ff4d6d", 0, top + .04, -.16); }
-    if (w.head === "cap") { const v = add(new THREE.CylinderGeometry(.2, .2, .025, 14, 1, false, -Math.PI / 2, Math.PI), "#2c58b8", 0, top - .17, -.24); v.rotation.y = Math.PI; add(new THREE.SphereGeometry(.03, 8, 6), "#f4f1e8", 0, top + .01, 0); }
-    if (w.head === "bunny") for (const sx of [-.1, .1]) { const e = add(new THREE.SphereGeometry(.07, 10, 8), "#fff8f0", sx, top + .12, .02); e.scale.set(.75, 2.4, .45); e.rotation.z = -sx * 1.4; const n = add(new THREE.SphereGeometry(.04, 8, 6), "#ff9fbf", sx, top + .12, -.012); n.scale.set(.7, 2.6, .3); n.rotation.z = -sx * 1.4; }
-    if (w.head === "flower") { for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; add(new THREE.SphereGeometry(.045, 8, 6), "#ff7eb0", .19 + Math.cos(a) * .05, top - .06 + Math.sin(a) * .05, -.13); } add(new THREE.SphereGeometry(.035, 8, 6), "#ffd23f", .19, top - .06, -.16); }
-    if (w.face === "roundglasses") { for (const sx of [-.09, .09]) add(new THREE.TorusGeometry(.055, .012, 6, 16), "#3a2a1a", sx, top - .3, -.27); add(new THREE.BoxGeometry(.06, .015, .015), "#3a2a1a", 0, top - .3, -.27); }
-    if (w.face === "mustache") for (const sx of [-1, 1]) { const m = add(new THREE.SphereGeometry(.05, 8, 6), L.hair ? hair : "#3b2618", sx * .05, top - .4, -.27); m.scale.set(1.4, .5, .5); m.rotation.z = sx * .35; }
-    if (w.body === "scarf") { const r = add(new THREE.TorusGeometry(.19, .05, 8, 18), "#e0483c", 0, top - .52, 0); r.rotation.x = Math.PI / 2; for (let i = 0; i < 3; i++) add(new THREE.BoxGeometry(.09, .07, .05), i % 2 ? "#f4f1e8" : "#e0483c", .1, top - .6 - i * .07, -.17); }
-    if (w.body === "cape") { const c = add(new THREE.BoxGeometry(.48, .5, .03), "#b8323c", 0, top * .48, .24); c.rotation.x = -.12; add(new THREE.SphereGeometry(.03, 8, 6), "#ffd23f", 0, top - .55, -.18); }
-    if (w.back === "backpack") { add(new THREE.BoxGeometry(.32, .34, .16), "#4f7a3a", 0, top * .52, .26); add(new THREE.BoxGeometry(.22, .12, .05), "#3a5a2a", 0, top * .45, .35); }
-    if (w.back === "flag") { add(new THREE.CylinderGeometry(.012, .012, .9, 6), "#c4c8d2", .12, top * .62 + .25, .24); const f = add(new THREE.BoxGeometry(.28, .17, .01), "#e0483c", .26, top * .62 + .6, .24); add(new THREE.SphereGeometry(.035, 8, 6), "#ffd23f", .26, top * .62 + .6, .23); }
-    if (w.back === "wings") for (const sx of [-1, 1]) { const g = add(new THREE.SphereGeometry(.2, 12, 8), "#ffffff", sx * .2, top * .62, .27, { emissive: "#333344" }); g.scale.set(1, 1.3, .18); g.rotation.set(0, sx * .5, sx * -.5); }
-    if (w.face === "glasses") { for (const sx of [-.09, .09]) add(new THREE.BoxGeometry(.12, .07, .03), "#13162e", sx, top - .3, -.26); add(new THREE.BoxGeometry(.08, .02, .02), "#13162e", 0, top - .29, -.26); }
-    if (w.body === "vest") { const v = add(new THREE.CylinderGeometry(.27, .3, .34, 12), "#4f7a3a", 0, top * .5, 0); v.scale.z = .85; for (const sx of [-.12, .12]) add(new THREE.BoxGeometry(.1, .08, .03), "#3a5a2a", sx, top * .46, -.25); }
+  const w = GEAR.wear, L = me?.look || {}, P = LOOK_PAL;
+  HAIR.on.value = L.hair ? 1 : 0; HAIR.col.value.set(P.hair[L.hair || 0]).convertSRGBToLinear();
+  if (AVA.S) {
+    const A = AVA.S.A, H = A.H;
+    const wearShell = (kind, col) => { const g = shellOf(kind); if (g) gearGroup.add(new THREE.Mesh(g, toon(col, { side: THREE.DoubleSide }))); };
+    if (w.body === "vest") {
+      wearShell("vest", "#4f7a3a");
+      for (const sx of [-1, 1]) { const pk = new THREE.Mesh(new THREE.BoxGeometry(H * .06, H * .05, H * .02), toon("#3a5a2a")); pk.position.set(sx * H * .055, H * .335, A.torso.front - H * .02); gearGroup.add(pk); }
+    } else if (w.body !== "cape") wearShell("coat", P.coat[L.coat || 0]);
+    wearShell("boots", P.boots[L.boots || 0]);
+    if (w.body === "scarf") {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(H * .1, H * .035, 8, 20), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.position.set(0, H * .5, (A.torso.front + A.torso.back) / 2); gearGroup.add(r);
+      for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(H * .06, H * .05, H * .03), toon(i % 2 ? "#f4f1e8" : "#e0483c")); t.position.set(H * .06, H * (.47 - i * .05), A.torso.front - H * .05); gearGroup.add(t); }
+    }
+    placeItem(w.head || "hat_bucket", gearGroup, w.head ? null : P.hat[L.hat || 0]);
+    if (w.face) placeItem(w.face, gearGroup);
+    if (w.back) placeItem(w.back, gearGroup);
+    if (w.body === "cape") placeItem("cape", gearGroup);
   }
-  // 장식: 데크 위 캠핑 의자·모닥불
-  decoGroup.clear(); decoGroup.userData.flames = []; decoGroup.userData.tail = null;
+  // 장식: 데크 위(Tripo 모델). 모닥불은 불꽃만 움직이는 도형, 고양이는 숨 쉬듯 들썩
+  decoGroup.clear(); decoGroup.userData.flames = []; decoGroup.userData.cat = null;
   const at = (x, z) => new THREE.Vector3(STAND.x + x, .49, STAND.z + z);
-  if (GEAR.own.chair) {
-    const g = new THREE.Group(), c = at(1.05, .55); g.position.copy(c); g.rotation.y = -.5;
-    const part = (geo, col, x, y, z) => { const m = new THREE.Mesh(geo, toon(col)); m.position.set(x, y, z); g.add(m); };
-    part(new THREE.BoxGeometry(.5, .05, .45), "#3e7bd6", 0, .28, 0); part(new THREE.BoxGeometry(.5, .45, .05), "#3e7bd6", 0, .5, .22);
-    for (const [x, z] of [[-.22, -.2], [.22, -.2], [-.22, .2], [.22, .2]]) part(new THREE.CylinderGeometry(.02, .02, .3, 6), "#c4c8d2", x, .14, z);
-    decoGroup.add(g);
-  }
-  if (GEAR.own.fire) {
-    const g = new THREE.Group(); g.position.copy(at(-1.15, .45));
-    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2, m = new THREE.Mesh(new THREE.DodecahedronGeometry(.07), toon("#8a8f9c")); m.position.set(Math.cos(a) * .22, .04, Math.sin(a) * .22); g.add(m); }
-    for (const r of [0, 1.2]) { const m = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, .36, 6), toon("#6b4a2a")); m.rotation.set(Math.PI / 2, 0, r); m.position.y = .06; g.add(m); }
-    for (const [c, s, y] of [["#ff4d1f", .13, .16], ["#ffb13a", .09, .2], ["#fff1a0", .05, .22]]) { const f = new THREE.Mesh(new THREE.ConeGeometry(s, s * 2.6, 7), new THREE.MeshBasicMaterial({ color: c })); f.position.y = y; g.add(f); decoGroup.userData.flames.push(f); }
-    decoGroup.add(g);
-  }
-  const box = (g, geo, col, x, y, z, extra) => { const m = new THREE.Mesh(geo, toon(col, extra)); m.position.set(x, y, z); g.add(m); return m; };
-  if (GEAR.own.cooler) { const g = new THREE.Group(); g.position.copy(at(-.55, .85)); box(g, new THREE.BoxGeometry(.42, .26, .28), "#3d7be0", 0, .13, 0); box(g, new THREE.BoxGeometry(.44, .06, .3), "#f4f1e8", 0, .29, 0); decoGroup.add(g); }
-  if (GEAR.own.lantern) { const g = new THREE.Group(); g.position.copy(at(.5, -.25)); box(g, new THREE.CylinderGeometry(.09, .1, .04, 10), "#2d2d38", 0, .02, 0); box(g, new THREE.CylinderGeometry(.07, .07, .16, 10), "#fff1a0", 0, .12, 0, { emissive: "#c08a20" }); box(g, new THREE.CylinderGeometry(.09, .06, .05, 10), "#2d2d38", 0, .22, 0); decoGroup.add(g); }
-  if (GEAR.own.cat) {
-    const g = new THREE.Group(); g.position.copy(at(.6, .9)); g.rotation.y = 2.4;
-    box(g, new THREE.BoxGeometry(.3, .18, .16), "#f0a040", 0, .12, 0); box(g, new THREE.BoxGeometry(.18, .16, .16), "#f0a040", -.2, .24, 0);
-    for (const z of [-.05, .05]) box(g, new THREE.ConeGeometry(.035, .07, 4), "#f0a040", -.22, .35, z);
-    for (const z of [-.04, .04]) box(g, new THREE.BoxGeometry(.02, .03, .02), "#222", -.29, .26, z);
-    const tail = box(g, new THREE.BoxGeometry(.04, .2, .04), "#d98a30", .17, .22, 0); tail.rotation.z = -.4; decoGroup.userData.tail = tail;
-    decoGroup.add(g);
-  }
+  const deco = (id, x, z, ry) => { if (!GEAR.own[id]) return null; const g = new THREE.Group(); g.position.copy(at(x, z)); g.rotation.y = ry; decoGroup.add(g); placeItem(id, g); return g; };
+  deco("chair", 1.05, .55, -.5);
+  const fire = deco("fire", -1.15, .45, 0);
+  if (fire) for (const [c, sz, y] of [["#ff4d1f", .09, .19], ["#ffb13a", .065, .22], ["#fff1a0", .04, .24]]) { const f = new THREE.Mesh(new THREE.ConeGeometry(sz, sz * 2.6, 7), new THREE.MeshBasicMaterial({ color: c })); f.position.y = y; fire.add(f); decoGroup.userData.flames.push(f); }
+  deco("cooler", -.55, .85, .3);
+  deco("lantern", .5, -.25, 0);
+  decoGroup.userData.cat = deco("cat", .6, .9, 2.6);
   avatarDirty = true;
 }
 // 시작 화면·꾸미기에서 보는 내 낚시꾼(작은 화면에 따로 그린다). 끌어서 돌려 볼 수 있다
 let avatarDirty = true;
-const AV = { r: null, sc: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, .1, 40), g: new THREE.Group(), spin: 0, drag: null, w: 0, h: 0, ht: 1.4 };
+const AV = { cv: $("charView"), r: null, sc: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, .1, 40), g: new THREE.Group(), spin: 0, drag: null, w: 0, h: 0, ht: 1.4 };
 AV.sc.add(new THREE.HemisphereLight("#ffffff", "#556070", 2.3)); { const d = new THREE.DirectionalLight("#ffffff", 1.5); d.position.set(-2, 3, -3); AV.sc.add(d); } AV.sc.add(AV.g);
 function stepAvatar(dt, t) {
-  const cv = $("charView"), slot = $("charSlot"); if (!cv) return;
+  const cv = AV.cv, slot = $("charSlot"); if (!cv) return; // 꾸미기 탭이 다시 그려져도 캔버스를 잃지 않게 참조를 쥐고 있는다
   if ($("town").hidden && slot && cv.parentElement !== slot) slot.append(cv);
   if (!cv.offsetParent) return;
   if (!AV.r) {
-    AV.r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true }); AV.r.setPixelRatio(Math.min(2, devicePixelRatio));
+    AV.r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true }); AV.r.setPixelRatio(Math.min(1.5, devicePixelRatio));
     cv.addEventListener("pointerdown", (e) => { AV.drag = e.clientX; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener("pointermove", (e) => { if (AV.drag == null) return; AV.spin += (e.clientX - AV.drag) * .012; AV.drag = e.clientX; });
     for (const ev of ["pointerup", "pointercancel"]) cv.addEventListener(ev, () => { AV.drag = null; });
@@ -838,8 +905,8 @@ function stepAvatar(dt, t) {
   AV.cam.position.set(0, AV.ht * .62, -d); AV.cam.lookAt(0, AV.ht * .5, 0);
   AV.r.render(AV.sc, AV.cam);
 }
-function mountAvatar(el) { const cv = $("charView"); if (cv && el) el.append(cv); }
-function stepDeco(t) { if (decoGroup.userData.tail) decoGroup.userData.tail.rotation.z = -.4 + Math.sin(t * 3) * .35; decoGroup.userData.flames?.forEach((f, i) => { f.scale.set(1 + Math.sin(t * 13 + i) * .12, 1 + Math.sin(t * 17 + i * 2) * .25, 1 + Math.cos(t * 11 + i) * .12); f.rotation.y = t * (2 + i); }); }
+function mountAvatar(el) { if (AV.cv && el) el.append(AV.cv); }
+function stepDeco(t) { const cat = decoGroup.userData.cat; if (cat) { cat.scale.set(1, 1 + Math.sin(t * 2.4) * .04, 1); cat.rotation.y = 2.6 + Math.sin(t * .7) * .25; } decoGroup.userData.flames?.forEach((f, i) => { f.scale.set(1 + Math.sin(t * 13 + i) * .12, 1 + Math.sin(t * 17 + i * 2) * .25, 1 + Math.cos(t * 11 + i) * .12); f.rotation.y = t * (2 + i); }); }
 
 // ------------------------------------------------------------------ 소리
 // assets/sfx 에 일레븐랩스로 만든 효과음이 있으면 그걸 쓰고, 없으면 칩튠 신스로 낸다.
@@ -2481,13 +2548,26 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen) tutOpen();
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=8").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=9").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
-let last = performance.now(), clock = 0;
+let last = performance.now(), clock = 0, perfT = 0, perfN = 0, perfSum = 0, perfGood = 0;
 function frame(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now; clock += dt;
+  // 메뉴만 떠 있을 때는 초당 30번만 그린다(배경은 거의 안 움직이니까)
+  const menu = !G.playing && (!$("start").hidden || !$("town").hidden || !$("end").hidden);
+  if (menu && now - last < 31) { requestAnimationFrame(frame); return; }
+  const raw = (now - last) / 1000;
+  const dt = Math.min(.05, raw); last = now; clock += dt;
+  // 낚시 중 2초마다 평균 프레임 간격을 보고, 느리면 해상도를 한 단계 낮춘다(빠르게 오래 돌면 다시 올린다)
+  if (!menu && !document.hidden && raw < .5) {
+    perfSum += raw; perfN++; perfT += raw;
+    if (perfT > 2) {
+      const avg = perfSum / perfN; perfT = perfSum = perfN = 0;
+      if (avg > .021 && qLevel < QUALITY.length - 1) { qLevel++; perfGood = 0; resize(); }
+      else if (avg < .0135 && qLevel > 0 && ++perfGood >= 4) { qLevel--; perfGood = 0; resize(); }
+    }
+  }
   const t = clock;
   if (G.playing) {
     G.time -= dt;
@@ -2561,4 +2641,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
+window.__fish = { renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };

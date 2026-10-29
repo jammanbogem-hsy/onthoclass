@@ -147,7 +147,7 @@ function roomLine() {
 export function renderAcct() {
   const info = document.getElementById("charInfo");
   if (info) {
-    const m = NET.me, worn = m ? Object.values(m.wear || {}).filter(Boolean).map((k) => `${SHOP_ART[k] || ""} ${esc(NET.shop[k]?.name || "")}`) : [];
+    const m = NET.me, worn = m ? Object.values(m.wear || {}).filter(Boolean).map((k) => `${art(k)} ${esc(NET.shop[k]?.name || "")}`) : [];
     info.innerHTML = m ? `<b>${esc(m.name)}</b><small>${worn.length ? worn.join(" · ") : "아직 기본 차림이에요"}</small>` : `<b>내 낚시꾼</b><small>학급으로 입장하면 옷·악세서리·색을 바꿀 수 있어요</small>`;
     const btn = document.querySelector("[data-closet]"); if (btn) btn.disabled = !m;
   }
@@ -189,6 +189,9 @@ const RECIPE_OK = {
   maeuntang: (f, S) => S[f.sp]?.water === "fresh", haemultang: (f, S) => S[f.sp]?.water === "sea", hoe: (f, S) => ["전설", "보스"].includes(S[f.sp]?.tier),
 };
 const FOOD_ART = { ramen: "🍜", seafoodRamen: "🍜", gui: "🐟", maeuntang: "🍲", haemultang: "🦀", hoe: "🍣" };
+// 옷·장식은 3D 모델을 찍은 그림(assets/avatar/thumb), 그 밖(라면·낚싯대)은 이모지
+const THUMB = new Set(["hat_bucket","hat_straw","hat_beanie","hat_pirate","crown","cap","flower","bunny","glasses","roundglasses","mustache","backpack","flag","wings","cape","chair","fire","cooler","lantern","cat","vest","scarf"]);
+const art = (k) => THUMB.has(k) ? `<img class="ia" src="assets/avatar/thumb/${k}.webp?v=1" alt="">` : (SHOP_ART[k] || "🎁");
 const SHOP_ART = { hat_straw: "👒", hat_beanie: "🧶", glasses: "🕶️", vest: "🦺", hat_pirate: "🏴‍☠️", crown: "👑", chair: "🪑", fire: "🔥", ramen: "🍜",
   cap: "🧢", flower: "🌸", bunny: "🐰", roundglasses: "👓", mustache: "🥸", scarf: "🧣", cape: "🦸", backpack: "🎒", flag: "🚩", wings: "🪽", cooler: "🧊", lantern: "🏮", cat: "🐈" };
 const LOOK_LABEL = { coat: "비옷", boots: "장화", hat: "벙거지", hair: "머리카락" };
@@ -225,7 +228,7 @@ export function renderTown() {
       <h3>옷·장식·재료 <small>옷과 장식은 처음 살 때 낭만 점수가 올라요</small></h3>
       <div class="shopgrid">${Object.entries(NET.shop).map(([k, it]) => {
         const own = it.kind !== "stock" && m.own[k], n = it.kind === "stock" ? m.stock[k] || 0 : 0;
-        return `<div class="item ${own ? "have" : ""}"><i>${SHOP_ART[k] || "🎁"}</i><b>${esc(it.name)}</b><small>${esc(it.desc)}${it.romance ? ` · 낭만 +${it.romance}` : ""}${it.kind === "stock" ? ` · ${n}개 있음` : ""}</small>
+        return `<div class="item ${own ? "have" : ""}"><i>${art(k)}</i><b>${esc(it.name)}</b><small>${esc(it.desc)}${it.romance ? ` · 낭만 +${it.romance}` : ""}${it.kind === "stock" ? ` · ${n}개 있음` : ""}</small>
           ${own ? `<em>보유</em>` : `<button class="go ${m.money >= it.price ? "" : "alt"}" data-buy="${k}" ${m.money >= it.price ? "" : "disabled"}>${won(it.price)}</button>`}</div>`;
       }).join("")}</div>`;
     body.querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", () => buy(b.dataset.buy)));
@@ -286,9 +289,9 @@ export function renderTown() {
       <h3>옷·악세서리 <small>가게에서 산 것을 골라 입어요</small></h3>
       ${Object.entries(slots).map(([slot, label]) => {
         const items = Object.entries(NET.shop).filter(([k, it]) => it.slot === slot && m.own[k]);
-        return `<div class="closet"><b>${label}</b><div>${items.length ? items.map(([k, it]) => `<button class="go ${m.wear[slot] === k ? "" : "alt"}" data-wear="${slot}:${k}">${SHOP_ART[k]} ${esc(it.name)}</button>`).join("") + `<button class="go alt" data-wear="${slot}:">벗기</button>` : `<small>가게에서 사 와요</small>`}</div></div>`;
+        return `<div class="closet"><b>${label}</b><div>${items.length ? items.map(([k, it]) => `<button class="go ${m.wear[slot] === k ? "" : "alt"}" data-wear="${slot}:${k}">${art(k)} ${esc(it.name)}</button>`).join("") + `<button class="go alt" data-wear="${slot}:">벗기</button>` : `<small>가게에서 사 와요</small>`}</div></div>`;
       }).join("")}
-      <h3>데크 장식</h3><div class="closet"><div>${Object.entries(NET.shop).filter(([, it]) => it.kind === "decor").map(([k, it]) => `<span class="deco ${m.own[k] ? "on" : ""}">${SHOP_ART[k] || "🎁"} ${esc(it.name)} ${m.own[k] ? "· 데크에 있어요" : "· 아직 없어요"}</span>`).join("")}</div></div>
+      <h3>데크 장식</h3><div class="closet"><div>${Object.entries(NET.shop).filter(([, it]) => it.kind === "decor").map(([k, it]) => `<span class="deco ${m.own[k] ? "on" : ""}">${art(k)} ${esc(it.name)} ${m.own[k] ? "· 데크에 있어요" : "· 아직 없어요"}</span>`).join("")}</div></div>
       </div></div>`;
     hooks.mountAvatar?.(body.querySelector("[data-avslot]"));
     body.querySelectorAll("[data-wear]").forEach((b) => b.addEventListener("click", () => { const [slot, item] = b.dataset.wear.split(":"); wear(slot, item || null); }));

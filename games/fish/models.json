@@ -1,191 +1,191 @@
 [
   {
     "id": "minnow",
-    "file": "assets/fish/minnow.glb?v=3",
+    "file": "assets/fish/minnow.glb?v=4",
     "yaw": 90
   },
   {
     "id": "crucian",
-    "file": "assets/fish/crucian.glb?v=3",
+    "file": "assets/fish/crucian.glb?v=4",
     "yaw": 90
   },
   {
     "id": "carp",
-    "file": "assets/fish/carp.glb?v=3",
+    "file": "assets/fish/carp.glb?v=4",
     "yaw": 90
   },
   {
     "id": "catfish",
-    "file": "assets/fish/catfish.glb?v=3",
+    "file": "assets/fish/catfish.glb?v=4",
     "yaw": -90
   },
   {
     "id": "mandarin",
-    "file": "assets/fish/mandarin.glb?v=2",
+    "file": "assets/fish/mandarin.glb?v=3",
     "yaw": -90
   },
   {
     "id": "sturgeon",
-    "file": "assets/fish/sturgeon.glb?v=3",
+    "file": "assets/fish/sturgeon.glb?v=4",
     "yaw": 90
   },
   {
     "id": "goldkoi",
-    "file": "assets/fish/goldkoi.glb?v=2",
+    "file": "assets/fish/goldkoi.glb?v=3",
     "yaw": 14
   },
   {
     "id": "boot",
-    "file": "assets/fish/boot.glb?v=2",
+    "file": "assets/fish/boot.glb?v=3",
     "yaw": -90,
     "roll": 90
   },
   {
     "id": "pirami",
-    "file": "assets/fish/pirami.glb?v=1",
+    "file": "assets/fish/pirami.glb?v=2",
     "yaw": 90
   },
   {
     "id": "trout",
-    "file": "assets/fish/trout.glb?v=1",
+    "file": "assets/fish/trout.glb?v=2",
     "yaw": 90
   },
   {
     "id": "snakehead",
-    "file": "assets/fish/snakehead.glb?v=1",
+    "file": "assets/fish/snakehead.glb?v=2",
     "yaw": 0
   },
   {
     "id": "eel",
-    "file": "assets/fish/eel.glb?v=2",
+    "file": "assets/fish/eel.glb?v=3",
     "yaw": -90
   },
   {
     "id": "bass",
-    "file": "assets/fish/bass.glb?v=1",
+    "file": "assets/fish/bass.glb?v=2",
     "yaw": 0
   },
   {
     "id": "bluegill",
-    "file": "assets/fish/bluegill.glb?v=2",
+    "file": "assets/fish/bluegill.glb?v=3",
     "yaw": -90
   },
   {
     "id": "jack",
-    "file": "assets/fish/jack.glb?v=1",
+    "file": "assets/fish/jack.glb?v=2",
     "yaw": -90
   },
   {
     "id": "mackerel",
-    "file": "assets/fish/mackerel.glb?v=1",
+    "file": "assets/fish/mackerel.glb?v=2",
     "yaw": -90
   },
   {
     "id": "rockfish",
-    "file": "assets/fish/rockfish.glb?v=2",
+    "file": "assets/fish/rockfish.glb?v=3",
     "yaw": 90
   },
   {
     "id": "seabream",
-    "file": "assets/fish/seabream.glb?v=1",
+    "file": "assets/fish/seabream.glb?v=2",
     "yaw": 90
   },
   {
     "id": "flounder",
-    "file": "assets/fish/flounder.glb?v=2",
+    "file": "assets/fish/flounder.glb?v=3",
     "yaw": 0,
     "roll": 90,
     "spin": -90
   },
   {
     "id": "cutlass",
-    "file": "assets/fish/cutlass.glb?v=2",
+    "file": "assets/fish/cutlass.glb?v=3",
     "yaw": 90
   },
   {
     "id": "puffer",
-    "file": "assets/fish/puffer.glb?v=1",
+    "file": "assets/fish/puffer.glb?v=2",
     "yaw": 0
   },
   {
     "id": "yellowtail",
-    "file": "assets/fish/yellowtail.glb?v=1",
+    "file": "assets/fish/yellowtail.glb?v=2",
     "yaw": 90
   },
   {
     "id": "tuna",
-    "file": "assets/fish/tuna.glb?v=1",
+    "file": "assets/fish/tuna.glb?v=2",
     "yaw": 90
   },
   {
     "id": "sunfish",
-    "file": "assets/fish/sunfish.glb?v=2",
+    "file": "assets/fish/sunfish.glb?v=3",
     "yaw": -90
   },
   {
     "id": "marlin",
-    "file": "assets/fish/marlin.glb?v=2",
+    "file": "assets/fish/marlin.glb?v=3",
     "yaw": -90
   },
   {
     "id": "can",
-    "file": "assets/fish/can.glb?v=1",
+    "file": "assets/fish/can.glb?v=2",
     "yaw": -90,
     "roll": 90
   },
   {
     "id": "angler",
-    "file": "assets/angler.glb?v=1",
-    "yaw": 180
+    "file": "assets/avatar/base.glb?v=1",
+    "yaw": 90
   },
   {
     "id": "bagrid",
-    "file": "assets/fish/bagrid.glb?v=1",
+    "file": "assets/fish/bagrid.glb?v=2",
     "yaw": 90
   },
   {
     "id": "nuchi",
-    "file": "assets/fish/nuchi.glb?v=1",
+    "file": "assets/fish/nuchi.glb?v=2",
     "yaw": 90
   },
   {
     "id": "mirrorcarp",
-    "file": "assets/fish/mirrorcarp.glb?v=2",
+    "file": "assets/fish/mirrorcarp.glb?v=3",
     "yaw": -90
   },
   {
     "id": "kkeokji",
-    "file": "assets/fish/kkeokji.glb?v=1",
+    "file": "assets/fish/kkeokji.glb?v=2",
     "yaw": 90
   },
   {
     "id": "masu",
-    "file": "assets/fish/masu.glb?v=1",
+    "file": "assets/fish/masu.glb?v=2",
     "yaw": 90
   },
   {
     "id": "seabass",
-    "file": "assets/fish/seabass.glb?v=1",
+    "file": "assets/fish/seabass.glb?v=2",
     "yaw": 90
   },
   {
     "id": "mahimahi",
-    "file": "assets/fish/mahimahi.glb?v=1",
+    "file": "assets/fish/mahimahi.glb?v=2",
     "yaw": 90
   },
   {
     "id": "kingfish",
-    "file": "assets/fish/kingfish.glb?v=1",
+    "file": "assets/fish/kingfish.glb?v=2",
     "yaw": 90
   },
   {
     "id": "hammerhead",
-    "file": "assets/fish/hammerhead.glb?v=2",
+    "file": "assets/fish/hammerhead.glb?v=3",
     "yaw": -30
   },
   {
     "id": "sailfish",
-    "file": "assets/fish/sailfish.glb?v=1",
+    "file": "assets/fish/sailfish.glb?v=2",
     "yaw": 90
   }
 ]

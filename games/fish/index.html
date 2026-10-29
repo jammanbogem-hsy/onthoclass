@@ -457,7 +457,8 @@
   .rod.have { box-shadow: inset 0 0 0 2px #9cf25a; } .rod.have em { color: #9cf25a; }
   .shopgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
   .item { display: flex; flex-direction: column; gap: 4px; padding: 10px; background: var(--ink); align-items: flex-start; }
-  .item i { font-style: normal; font-size: 30px; } .item small { font-size: 11px; color: var(--muted); flex: 1; } .item em { font-style: normal; color: #9cf25a; }
+  .item i { font-style: normal; font-size: 30px; } .item i img.ia { width: 64px; height: 64px; display: block; }
+  img.ia { width: 26px; height: 26px; vertical-align: -7px; object-fit: contain; } .charinfo img.ia { width: 20px; height: 20px; vertical-align: -5px; } .item small { font-size: 11px; color: var(--muted); flex: 1; } .item em { font-style: normal; color: #9cf25a; }
   .item .go { align-self: stretch; padding: 6px; font-size: 14px; } .item.have { box-shadow: inset 0 0 0 2px #9cf25a; }
   .closet { display: flex; flex-direction: column; gap: 6px; } .closet > div { display: flex; flex-wrap: wrap; gap: 6px; } .closet .go { padding: 6px 10px; font-size: 14px; }
   .deco { padding: 6px 10px; background: var(--ink); color: var(--muted); font-size: 13px; } .deco.on { color: var(--cream); box-shadow: inset 0 0 0 2px #ff9ecb; }
@@ -661,6 +662,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=34"></script>
+<script type="module" src="game.js?v=35"></script>
 </body>
 </html>
