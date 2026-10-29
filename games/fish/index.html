@@ -306,6 +306,72 @@
   }
   @media (max-width: 560px) { .baits { flex-direction: row; left: 50%; right: auto; transform: translateX(-50%); bottom: calc(64px + env(safe-area-inset-bottom, 0px)); } .bait { font-size: 12px; padding: 6px 8px; } .chips.left .chip:not(.timer) small { display: none; } }
   @media (prefers-reduced-motion: reduce) { .cur .burst, .bite b, .cur.urgent .key, .speed.on, .cur .mash, .fname .size.xl { animation: none; } }
+
+  /* ---------- 캐스팅 게이지 ---------- */
+  .castm { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 7; width: min(420px, calc(100% - 32px)); padding: 10px 12px 8px; background: rgba(19, 22, 46, .82); font-family: var(--px); color: var(--cream); pointer-events: none; }
+  .castm .ctrack { position: relative; height: 22px; background: #2a3160; }
+  .castm .czone { position: absolute; top: 0; bottom: 0; background: var(--lime); display: grid; place-items: center; }
+  .castm .cpf { display: block; height: 100%; background: var(--sun); }
+  .castm .cneedle { position: absolute; top: -6px; bottom: -6px; width: 6px; margin-left: -3px; background: #fff; box-shadow: 0 0 0 3px var(--ink); }
+  .castm .ctrack { margin-bottom: 18px; }
+  .castm .ctick { position: absolute; top: 0; bottom: -5px; width: 2px; margin-left: -1px; background: rgba(255, 248, 232, .35); }
+  .castm .ctick u { position: absolute; top: 28px; left: 50%; transform: translateX(-50%); font-size: 11px; text-decoration: none; color: rgba(255, 248, 232, .75); }
+  .castm .cmark { position: absolute; top: -9px; width: 12px; height: 12px; margin-left: -6px; background: var(--c); box-shadow: 0 0 0 2px var(--ink); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+  .castm p b { color: #fff; }
+  .aimlabels { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
+  .aimlabels .alabel { position: absolute; left: 0; top: 0; font-family: var(--px); font-size: 14px; padding: 2px 6px; color: var(--ink); background: var(--c); box-shadow: 0 0 0 3px var(--ink); white-space: nowrap; }
+  .aimlabels .alabel.on { font-size: 18px; outline: 3px solid #fff; animation: blink .3s steps(2) infinite; }
+  #warning:not([hidden]) ~ .fight .modecard { visibility: hidden; }
+  .castm p { margin: 8px 0 0; font-size: 13px; display: flex; gap: 8px; justify-content: space-between; text-shadow: 2px 2px 0 var(--ink); }
+  .castm p span:first-child { color: var(--sun); }
+
+  /* ---------- 보스 사투: 붉은 경고 화면 + 체력바 ---------- */
+  .bossbar { display: none; width: 100%; flex-direction: column; gap: 6px; }
+  .bossbar b { display: flex; gap: 10px; align-items: center; font-size: 22px; color: var(--cream); text-shadow: var(--pxs); }
+  .bossbar b i { font-style: normal; font-size: 14px; padding: 2px 8px; background: var(--hot); color: var(--cream); text-shadow: 2px 2px 0 var(--ink); animation: blink .4s steps(2) infinite; }
+  .bossbar .hp { position: relative; height: 22px; background: var(--ink); --pb: 4px; }
+  .bossbar .hp i { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(#ff6b85, #c2324f); transition: width .2s steps(4);
+    -webkit-mask: repeating-linear-gradient(90deg, #000 0 14px, transparent 14px 17px); mask: repeating-linear-gradient(90deg, #000 0 14px, transparent 14px 17px); }
+  body.boss-fight .bossbar { display: flex; }
+  body.boss-fight .reelbar, body.boss-fight .fname { display: none; }
+  body.boss-fight .fight::before { content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(70, 0, 30, .6) 100%), repeating-linear-gradient(0deg, rgba(0, 0, 0, .14) 0 2px, transparent 2px 4px);
+    animation: bossPulse 1.1s steps(3) infinite; }
+  @keyframes bossPulse { 50% { opacity: .7; } }
+  .hazard { display: none; position: fixed; left: 0; right: 0; height: 14px; background: repeating-linear-gradient(45deg, #ffd23f 0 14px, #13162e 14px 28px); background-size: 40px 14px; animation: hazard .8s steps(4) infinite; }
+  .hazard.top { top: 0; } .hazard.bot { bottom: 0; }
+  @keyframes hazard { to { background-position: 40px 0; } }
+  body.boss-fight .hazard { display: block; }
+  .warning { position: fixed; left: 0; right: 0; top: 34%; z-index: 9; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; background: rgba(150, 10, 40, .82); font-family: var(--px); color: var(--cream); }
+  .warning .stripe { align-self: stretch; height: 10px; background: repeating-linear-gradient(45deg, #ffd23f 0 12px, #13162e 12px 24px); }
+  .warning b { font-size: clamp(44px, 12vw, 96px); letter-spacing: .12em; color: #ffd23f; text-shadow: var(--pxs); animation: blink .25s steps(2) infinite; }
+  .warning span { font-size: 18px; text-shadow: 2px 2px 0 var(--ink); }
+  .warning.go { animation: warnIn 2.4s steps(12) forwards; }
+  @keyframes warnIn { 0% { transform: scaleY(0); } 10%, 85% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(0); opacity: 0; } }
+
+  /* ---------- 대물 사투: 금빛 테두리 ---------- */
+  body.big-fight .fight::before { content: ""; position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 8px #ffd23f, inset 0 0 0 14px #13162e, inset 0 0 80px rgba(255, 210, 63, .45); animation: goldPulse .7s steps(2) infinite; }
+  @keyframes goldPulse { 50% { box-shadow: inset 0 0 0 8px #fff3b0, inset 0 0 0 14px #13162e, inset 0 0 50px rgba(255, 210, 63, .25); } }
+  body.big-fight .reelbar i { background: linear-gradient(#ffe680, #ffb700); }
+  body.big-fight .fname span { color: #ffd23f; }
+
+  /* ---------- 하는 법 팝업 ---------- */
+  .tut { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(10, 14, 30, .72); }
+  .tutcard { width: min(680px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; background: #1b2045; padding: 16px; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; font-family: var(--px); color: var(--cream); }
+  .tuthead { display: flex; align-items: center; gap: 10px; }
+  .tuthead b { flex: 1; font-size: 20px; color: var(--sun); text-shadow: 2px 2px 0 var(--ink); }
+  .tuthead small { font-size: 13px; padding: 3px 8px; background: var(--ink); color: var(--cream); }
+  .tutx { width: 36px; height: 36px; border: 0; background: var(--ink); color: var(--cream); font: inherit; font-size: 18px; cursor: pointer; }
+  .tutvid { background: #000; display: grid; place-items: center; box-shadow: 0 0 0 4px var(--ink); }
+  .tutvid video { display: block; width: 100%; max-height: 46vh; object-fit: contain; }
+  .tutcard h3 { margin: 4px 0 0; font-size: 22px; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); }
+  .tutcard p { margin: 0; font-size: 15px; line-height: 1.7; color: var(--cream); }
+  .tutcard p em { font-style: normal; color: var(--sun); }
+  .tutcard p .g { color: var(--lime); } .tutcard p .r { color: var(--hot); }
+  .tutdots { display: flex; gap: 8px; justify-content: center; }
+  .tutdots i { width: 12px; height: 12px; background: rgba(255, 248, 232, .3); cursor: pointer; }
+  .tutdots i.on { background: var(--sun); }
+  .tutnav { display: flex; gap: 10px; } .tutnav .go { flex: 1; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -343,8 +409,17 @@
 <div class="shout" id="shout"></div>
 <div class="bite" id="bite" hidden><b>쏙!!</b><span><i class="kb-desk">스페이스바로</i><i class="kb-touch">화면을 눌러</i> 챔기!</span></div>
 
+<div class="castm px" id="castM" hidden>
+  <div class="ctrack"><i class="czone" id="castZone" hidden><i class="cpf" id="castPf"></i></i><div id="castMarks"></div><b class="cneedle" id="castNeedle"></b></div>
+  <p><span>힘 <b id="castDist">0m</b></span><span>▼ 거품까지 거리 · <b style="color:var(--lime)">초록</b>에서 떼요</span></p>
+</div>
+<div class="aimlabels" id="aimLabels" hidden></div>
+<div class="warning" id="warning" hidden><div class="stripe"></div><b>WARNING</b><span>거대한 물고기가 다가온다!</span><div class="stripe"></div></div>
+
 <div class="fight" id="fight" hidden>
+  <div class="hazard top"></div><div class="hazard bot"></div>
   <div class="fhead">
+    <div class="bossbar" id="bossBar"><b><i>BOSS</i><span id="bossName">보스</span></b><div class="hp px"><i id="bossHp"></i></div></div>
     <div class="fname" id="fname"><small class="px" id="ftier">???</small><small class="px size" id="fsize">M</small><span id="fnameText">무언가 걸렸다!</span></div>
     <div class="hearts" id="hearts"></div>
     <div class="reelbar px"><i id="reelFill"></i><span id="reelText">10m</span></div>
@@ -389,12 +464,14 @@
     <h1>잼만보<br><em>낚시터</em></h1>
     <p>3분 동안 물고기를 잡아 점수를 모아요. 반짝이는 거품일수록 대물이 숨어 있고, 같은 물고기도 클수록 등급(월척·S·A·B·놔주자급)과 점수가 올라가요.</p>
     <div class="how">
-      <b>던지기</b><span>보글보글 거품을 눌러 낚싯대를 던져요</span>
+      <b>던지기</b><span>물 위를 <em>꾹</em> 누른 채 방향을 맞추고, 힘 바늘이 <b style="font-size:inherit;color:var(--lime)">초록</b>일 때 떼요. 그림자가 클수록 큰 물고기!</span>
       <b>챔기</b><span>찌가 <em>쏙!</em> 들어가면 바로 눌러요. 톡톡은 가짜!</span>
-      <b>승부</b><span>나오는 방향키를 빠르게 <span class="mini"><i class="key k-up"></i><i class="key k-down"></i><i class="key k-left"></i><i class="key k-right"></i></span> 우다다 뒤엔 <b style="font-size:inherit"><i class="kb-desk">스페이스바</i><i class="kb-touch">감기 버튼</i></b>로 릴을 감아요! 늦거나 틀리면 하트가 깎여요</span>
-      <b>미니게임</b><span>원 터치·타이밍 바·줄 버티기·물고기 따라잡기! 물고기마다 달라요</span>
+      <b>승부</b><span>나오는 방향키를 빠르게 <span class="mini"><i class="key k-up"></i><i class="key k-down"></i><i class="key k-left"></i><i class="key k-right"></i></span> 우다다 뒤엔 <b style="font-size:inherit"><i class="kb-desk">스페이스바</i><i class="kb-touch">화면 톡</i></b>로 릴을 감아요! 늦거나 틀리면 하트가 깎여요</span>
+      <b>미니게임</b><span>타이밍 바·박자 낚시·바위 피하기·타자 등 11가지! 모드 카드가 뜨면 방법을 읽어요</span>
+      <b>점수</b><span>크기 × 무게로 점수가 매겨져요. 같은 물고기도 내 기록보다 무거우면 <em>기록 경신 ×1.3</em></span>
       <b>연타</b><span>"계속 연타하세요!"가 나오면 쉬지 말고 빠르게! 빠르면 원이 커지고, 느리면 작아져요. 큰 놈일수록 더 빠르게 오래</span>
     </div>
+    <button class="go alt tutbtn" id="tutOpen">▶ 영상으로 하는 법 보기</button>
     <div class="bubbles" id="legend"></div>
     <div class="mbox"><h3>오늘의 미션 <small>완료하면 +150점</small></h3><ul class="missions"></ul></div>
     <p class="load" id="loadText">물고기 불러오는 중…</p>
@@ -403,6 +480,17 @@
       <button class="go place fresh" data-place="fresh" disabled><b>민물 낚시터</b><small>붕어·잉어·쏘가리·황금 잉어 13종</small></button>
       <button class="go place sea" data-place="sea" disabled><b>바다 낚시터</b><small>고등어·참돔·방어·청새치 11종</small></button>
     </div>
+  </div>
+</div>
+
+<div class="tut" id="tut" hidden>
+  <div class="tutcard px">
+    <div class="tuthead"><small id="tutStep">1 / 5</small><b>낚시하는 법</b><button class="tutx" id="tutClose" aria-label="닫기">✕</button></div>
+    <div class="tutvid"><video id="tutVid" muted loop playsinline autoplay preload="metadata"></video></div>
+    <h3 id="tutTitle"></h3>
+    <p id="tutText"></p>
+    <div class="tutdots" id="tutDots"></div>
+    <div class="tutnav"><button class="go alt" id="tutPrev">이전</button><button class="go" id="tutNext">다음</button></div>
   </div>
 </div>
 
@@ -427,6 +515,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=19"></script>
+<script type="module" src="game.js?v=24"></script>
 </body>
 </html>
