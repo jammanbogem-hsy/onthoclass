@@ -11,13 +11,13 @@
   },
   {
     "id": "carp",
-    "file": "assets/fish/carp.glb?v=2",
+    "file": "assets/fish/carp.glb?v=3",
     "yaw": 90
   },
   {
     "id": "catfish",
-    "file": "assets/fish/catfish.glb?v=2",
-    "yaw": 73
+    "file": "assets/fish/catfish.glb?v=3",
+    "yaw": -90
   },
   {
     "id": "mandarin",
@@ -37,7 +37,7 @@
   {
     "id": "boot",
     "file": "assets/fish/boot.glb?v=2",
-    "yaw": 0,
+    "yaw": -90,
     "roll": 90
   },
   {
@@ -57,7 +57,7 @@
   },
   {
     "id": "eel",
-    "file": "assets/fish/eel.glb?v=1",
+    "file": "assets/fish/eel.glb?v=2",
     "yaw": -90
   },
   {
@@ -99,7 +99,7 @@
   },
   {
     "id": "cutlass",
-    "file": "assets/fish/cutlass.glb?v=1",
+    "file": "assets/fish/cutlass.glb?v=2",
     "yaw": 90
   },
   {
@@ -119,18 +119,18 @@
   },
   {
     "id": "sunfish",
-    "file": "assets/fish/sunfish.glb?v=1",
-    "yaw": 90
+    "file": "assets/fish/sunfish.glb?v=2",
+    "yaw": -90
   },
   {
     "id": "marlin",
-    "file": "assets/fish/marlin.glb?v=1",
+    "file": "assets/fish/marlin.glb?v=2",
     "yaw": -90
   },
   {
     "id": "can",
     "file": "assets/fish/can.glb?v=1",
-    "yaw": 0,
+    "yaw": -90,
     "roll": 90
   },
   {
@@ -180,8 +180,8 @@
   },
   {
     "id": "hammerhead",
-    "file": "assets/fish/hammerhead.glb?v=1",
-    "yaw": 90
+    "file": "assets/fish/hammerhead.glb?v=2",
+    "yaw": -30
   },
   {
     "id": "sailfish",
