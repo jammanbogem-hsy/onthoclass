@@ -6,9 +6,16 @@
  * 게임은 브라우저에서 돌기 때문에 잡은 물고기를 완전히 증명할 수는 없고,
  * 크기·무게가 그 물고기로 가능한 범위인지, 너무 빨리 잡지 않았는지(3초)와 하루 개수만 서버가 막는다.
  * 러닝크루의 만보와는 따로 쓰는 게임 돈(원)이라 기존 경제에 영향이 없다.
+ *
+ * 계정 두 가지:
+ *  - 구글 로그인(교사·누구나): fishers/{uid}
+ *  - 낚시 학급 학생: 교사가 만든 학급 코드 + 이름 + 4자리 입장번호 → 서버가 입장권(st)을 준다.
+ *    구글 계정이 없어도 되고, 이후 모든 호출에 data.st 를 붙인다. fishers/s_{학급}_{학생}
+ *    입장권은 해시만 저장(fishTokens/{sha256}), 입장번호도 소금+해시. 5번 틀리면 5분 잠금.
  */
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore, type Transaction, type DocumentData } from "firebase-admin/firestore";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 
 const options = { region: "asia-northeast3", maxInstances: 10, timeoutSeconds: 20 };
 
@@ -79,10 +86,19 @@ const tasteOf = (f: Fish) => { const { t, cond } = sizeOf(f); return Math.round(
 
 const db = () => getFirestore();
 const meRef = (uid: string) => db().doc(`fishers/${uid}`);
-function auth(req: CallableRequest) {
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+// 호출한 사람의 낚시꾼 키: 학생 입장권이 있으면 학생, 아니면 구글 로그인
+async function who(req: CallableRequest): Promise<string> {
+  const st = req.data?.st;
+  if (typeof st === "string" && st.length >= 20 && st.length <= 80) {
+    const t = await db().doc(`fishTokens/${sha(st)}`).get();
+    if (!t.exists) throw new HttpsError("unauthenticated", "입장권이 만료됐어요. 다시 입장해 주세요.");
+    return t.data()!.key as string;
+  }
   if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요해요.");
   return req.auth.uid;
 }
+const auth = who;
 // 클라이언트에 보여 줄 내 정보
 function pub(d: DocumentData) {
   return { name: d.name || "낚시꾼", money: d.money || 0, romance: d.romance || 0, taste: d.taste || 0, rod: d.rod || 1,
@@ -101,11 +117,11 @@ async function readMe(tx: Transaction, uid: string) {
 
 // 내 정보 + 살림망 + 오늘의 시세 + 가게 목록. 처음이면 만든다(이름은 러닝크루 이름 → 구글 이름)
 export const fishMe = onCall(options, async (req) => {
-  const uid = auth(req), ref = meRef(uid);
+  const uid = await auth(req), ref = meRef(uid);
   let snap = await ref.get();
   if (!snap.exists) {
-    const u = await db().doc(`users/${uid}`).get();
-    const name = String(u.data()?.name || req.auth?.token?.name || "낚시꾼").slice(0, 20);
+    const u = uid.startsWith("s_") ? null : await db().doc(`users/${uid}`).get();
+    const name = String(u?.data()?.name || req.auth?.token?.name || "낚시꾼").slice(0, 20);
     await ref.set({ name, money: 0, romance: 0, taste: 0, rod: 1, own: {}, wear: {}, stock: { ramen: 1 }, cooked: {}, bagN: 0, caught: 0, best: 0, createdAt: FieldValue.serverTimestamp() }, { merge: true });
     snap = await ref.get();
   }
@@ -117,7 +133,7 @@ export const fishMe = onCall(options, async (req) => {
 
 // 잡은 물고기 → 살림망. 놔주자급은 손맛만 오르고 물로 돌려보낸다
 export const fishCatch = onCall(options, async (req) => {
-  const uid = auth(req);
+  const uid = await auth(req);
   const { sp, cm, kg, run } = (req.data || {}) as { sp?: string; cm?: number; kg?: number; run?: number };
   const S = sp ? SPECIES[sp] : undefined;
   if (!S || typeof cm !== "number" || typeof kg !== "number" || !isFinite(cm) || !isFinite(kg)) throw new HttpsError("invalid-argument", "물고기 정보를 확인해 주세요.");
@@ -144,7 +160,7 @@ export const fishCatch = onCall(options, async (req) => {
 
 // 수산시장: 고른 물고기(없으면 전부)를 오늘 시세로 판다
 export const fishSell = onCall(options, async (req) => {
-  const uid = auth(req), ids = req.data?.ids;
+  const uid = await auth(req), ids = req.data?.ids;
   if (ids !== "all" && (!Array.isArray(ids) || ids.length < 1 || ids.length > BAG_MAX || ids.some((i) => typeof i !== "string" || !/^[\w-]{1,64}$/.test(i)))) throw new HttpsError("invalid-argument", "팔 물고기를 골라 주세요.");
   const day = kstDay(), bag = meRef(uid).collection("bag");
   const res = await db().runTransaction(async (tx) => {
@@ -161,7 +177,7 @@ export const fishSell = onCall(options, async (req) => {
 
 // 낚시 가게: 낚싯대는 한 단계씩, 옷·장식은 한 번, 라면은 여러 개
 export const fishBuy = onCall(options, async (req) => {
-  const uid = auth(req), item = String(req.data?.item || "");
+  const uid = await auth(req), item = String(req.data?.item || "");
   await db().runTransaction(async (tx) => {
     const d = await readMe(tx, uid), money = d.money || 0;
     if (item === "rod") {
@@ -187,7 +203,7 @@ export const fishBuy = onCall(options, async (req) => {
 
 // 옷 갈아입기/벗기
 export const fishWear = onCall(options, async (req) => {
-  const uid = auth(req), slot = String(req.data?.slot || ""), item = req.data?.item == null ? null : String(req.data.item);
+  const uid = await auth(req), slot = String(req.data?.slot || ""), item = req.data?.item == null ? null : String(req.data.item);
   if (!["head", "face", "body"].includes(slot)) throw new HttpsError("invalid-argument", "어디에 입을지 골라 주세요.");
   const d = (await meRef(uid).get()).data();
   if (!d) throw new HttpsError("failed-precondition", "먼저 낚시터에 들어와 주세요.");
@@ -198,7 +214,7 @@ export const fishWear = onCall(options, async (req) => {
 
 // 캠핑 요리: 레시피에 맞는 살림망 물고기(ids)와 라면을 써서 낭만 점수
 export const fishCook = onCall(options, async (req) => {
-  const uid = auth(req), key = String(req.data?.recipe || ""), r = RECIPES[key];
+  const uid = await auth(req), key = String(req.data?.recipe || ""), r = RECIPES[key];
   const ids = Array.isArray(req.data?.ids) ? (req.data.ids as unknown[]).filter((i): i is string => typeof i === "string" && /^[\w-]{1,64}$/.test(i)) : [];
   if (!r) throw new HttpsError("invalid-argument", "없는 요리예요.");
   if (new Set(ids).size !== r.fish || ids.length !== r.fish) throw new HttpsError("invalid-argument", `물고기 ${r.fish}마리를 골라 주세요.`);
@@ -212,4 +228,91 @@ export const fishCook = onCall(options, async (req) => {
     tx.update(meRef(uid), { romance: FieldValue.increment(r.romance), "stock.ramen": ramen - r.ramen, [`cooked.${key}`]: FieldValue.increment(1), ...(r.fish ? { bagN: FieldValue.increment(-r.fish) } : {}) });
   });
   return { romance: r.romance, name: r.name, me: pub((await meRef(uid).get()).data()!), bag: await bagOf(uid) };
+});
+
+// ---------------------------------------------------------------- 낚시 학급(교사가 만들고, 학생은 코드+이름+입장번호)
+const CODE_CH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0·O·1·I 빼고
+const cleanName = (n: unknown) => String(n ?? "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, 12);
+const teacherOf = (req: CallableRequest) => { if (!req.auth) throw new HttpsError("unauthenticated", "선생님은 구글로 로그인해 주세요."); return req.auth.uid; };
+
+export const fishClassCreate = onCall(options, async (req) => {
+  const uid = teacherOf(req), name = cleanName(req.data?.name) || "우리 반";
+  const mine = await db().collection("fishClasses").where("teacher", "==", uid).count().get();
+  if (mine.data().count >= 20) throw new HttpsError("resource-exhausted", "학급은 20개까지 만들 수 있어요.");
+  for (let i = 0; i < 8; i++) {
+    const code = Array.from({ length: 6 }, () => CODE_CH[randomInt(CODE_CH.length)]).join("");
+    const ok = await db().runTransaction(async (tx) => {
+      const c = db().doc(`fishCodes/${code}`); if ((await tx.get(c)).exists) return null;
+      const ref = db().collection("fishClasses").doc();
+      tx.create(c, { cid: ref.id }); tx.create(ref, { name, code, teacher: uid, teacherName: String(req.auth?.token?.name || ""), createdAt: Date.now() });
+      return { cid: ref.id, code, name };
+    });
+    if (ok) return ok;
+  }
+  throw new HttpsError("internal", "코드를 만들지 못했어요. 다시 눌러 주세요.");
+});
+
+// 교사: 내 학급과 학생별 손맛·돈·낭만
+export const fishClassList = onCall(options, async (req) => {
+  const uid = teacherOf(req);
+  const cls = await db().collection("fishClasses").where("teacher", "==", uid).get();
+  return { classes: await Promise.all(cls.docs.map(async (c) => {
+    const st = await c.ref.collection("students").get();
+    const profs = st.docs.length ? await db().getAll(...st.docs.map((d) => meRef(`s_${c.id}_${d.id}`))) : [];
+    const students = st.docs.map((d, i) => { const p = profs[i]?.data() || {}; return { sid: d.id, name: d.data().name, hasPin: !!d.data().pinHash, taste: p.taste || 0, money: p.money || 0, romance: p.romance || 0, caught: p.caught || 0 }; });
+    return { cid: c.id, name: c.data().name, code: c.data().code, students };
+  })) };
+});
+
+// 교사: 학생이 입장번호를 잊으면 초기화(다음 입장 때 새로 정한다)
+export const fishClassResetPin = onCall(options, async (req) => {
+  const uid = teacherOf(req), { cid, sid } = (req.data || {}) as { cid?: string; sid?: string };
+  if (!cid || !sid || !/^[\w-]{1,64}$/.test(cid) || !/^[\w-]{1,64}$/.test(sid)) throw new HttpsError("invalid-argument", "학생을 골라 주세요.");
+  const c = await db().doc(`fishClasses/${cid}`).get();
+  if (c.data()?.teacher !== uid) throw new HttpsError("permission-denied", "내 학급이 아니에요.");
+  await db().doc(`fishClasses/${cid}/students/${sid}`).update({ pinHash: null, salt: null, fails: 0, lockUntil: 0 });
+  return { ok: true };
+});
+
+// 학생 입장: 처음이면 이름+입장번호로 만들고, 다음부터는 같은 번호로 들어온다
+export const fishJoin = onCall(options, async (req) => {
+  const code = String(req.data?.code || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), name = cleanName(req.data?.name), pin = String(req.data?.pin || "");
+  if (code.length !== 6) throw new HttpsError("invalid-argument", "학급 코드 6자리를 확인해 주세요.");
+  if (!name) throw new HttpsError("invalid-argument", "이름을 써 주세요.");
+  if (!/^\d{4}$/.test(pin)) throw new HttpsError("invalid-argument", "입장번호는 숫자 4자리예요.");
+  const c = await db().doc(`fishCodes/${code}`).get();
+  if (!c.exists) throw new HttpsError("not-found", "그런 학급 코드가 없어요.");
+  const cid = c.data()!.cid as string, cls = await db().doc(`fishClasses/${cid}`).get(), studs = cls.ref.collection("students");
+  const found = await studs.where("name", "==", name).limit(1).get();
+  const now = Date.now();
+  const sid = await db().runTransaction(async (tx) => {
+    if (found.empty) {
+      const n = await tx.get(studs.limit(80));
+      if (n.size >= 80) throw new HttpsError("resource-exhausted", "학급 인원이 꽉 찼어요.");
+      const ref = studs.doc(), salt = randomBytes(8).toString("hex");
+      tx.create(ref, { name, salt, pinHash: sha(salt + pin), fails: 0, lockUntil: 0, createdAt: now });
+      return ref.id;
+    }
+    const ref = found.docs[0].ref, d = (await tx.get(ref)).data()!;
+    if ((d.lockUntil || 0) > now) throw new HttpsError("resource-exhausted", `입장번호를 여러 번 틀렸어요. ${Math.ceil((d.lockUntil - now) / 60000)}분 뒤에 다시 해 봐요.`);
+    if (!d.pinHash) { const salt = randomBytes(8).toString("hex"); tx.update(ref, { salt, pinHash: sha(salt + pin), fails: 0 }); return ref.id; } // 선생님이 초기화한 뒤 새 번호
+    if (sha(d.salt + pin) !== d.pinHash) {
+      const fails = (d.fails || 0) + 1;
+      tx.update(ref, { fails: fails >= 5 ? 0 : fails, lockUntil: fails >= 5 ? now + 5 * 60e3 : 0 });
+      return null;
+    }
+    tx.update(ref, { fails: 0 });
+    return ref.id;
+  });
+  if (!sid) throw new HttpsError("permission-denied", "입장번호가 달라요. 잊었으면 선생님께 초기화를 부탁해요.");
+  const key = `s_${cid}_${sid}`, st = randomBytes(24).toString("base64url");
+  await db().doc(`fishTokens/${sha(st)}`).set({ key, cid, sid, at: now });
+  const me = meRef(key);
+  if (!(await me.get()).exists) await me.set({ name, cid, money: 0, romance: 0, taste: 0, rod: 1, own: {}, wear: {}, stock: { ramen: 1 }, cooked: {}, bagN: 0, caught: 0, best: 0, createdAt: FieldValue.serverTimestamp() });
+  return { st, name, className: cls.data()?.name || "" };
+});
+export const fishLeave = onCall(options, async (req) => {
+  const st = req.data?.st;
+  if (typeof st === "string" && st.length >= 20 && st.length <= 80) await db().doc(`fishTokens/${sha(st)}`).delete();
+  return { ok: true };
 });

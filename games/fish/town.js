@@ -4,7 +4,9 @@
 import { FB } from "./fb-config.js";
 
 const V = "12.13.0";
-export const NET = { ready: false, user: null, me: null, bag: [], market: {}, rods: [], shop: {}, recipes: {}, day: "" };
+// 계정: 학생(학급 코드+이름+입장번호 → 입장권 st, localStorage) 또는 구글(선생님·누구나)
+let ST = null; try { ST = localStorage.getItem("jamfish-st"); } catch {}
+export const NET = { ready: false, user: null, student: null, me: null, bag: [], market: {}, rods: [], shop: {}, recipes: {}, day: "" };
 let api = null, hooks = {};
 const $ = (id) => document.getElementById(id);
 const won = (n) => `${Math.round(n).toLocaleString("ko-KR")}원`;
@@ -21,8 +23,8 @@ async function sdk() {
   api = { A, auth, call: (name, data) => Fn.httpsCallable(fns, name)(data).then((r) => r.data) };
   return api;
 }
-export async function call(name, data) {
-  try { return await (await sdk()).call(name, data); }
+export async function call(name, data = {}) {
+  try { return await (await sdk()).call(name, ST ? { ...data, st: ST } : data); }
   catch (e) { const msg = e?.message?.replace(/^.*?: /, "") || "잠깐 문제가 생겼어요"; hooks.toast?.(msg); throw e; }
 }
 const changed = () => { renderAcct(); hooks.onProfile?.(NET.me); if (!$("town").hidden) renderTown(); };
@@ -35,22 +37,36 @@ export async function initNet(h) {
     const { A, auth } = await sdk();
     A.getRedirectResult(auth).catch(() => {});
     A.onAuthStateChanged(auth, async (u) => {
-      NET.user = u; NET.ready = true;
-      if (u) { try { Object.assign(NET, await call("fishMe")); } catch {} } else Object.assign(NET, { me: null, bag: [] });
-      changed();
+      NET.user = u;
+      if (ST) { // 학생 입장권이 먼저
+        try { Object.assign(NET, await (await sdk()).call("fishMe", { st: ST })); NET.student = { name: NET.me.name, className: (() => { try { return localStorage.getItem("jamfish-class") || ""; } catch { return ""; } })() }; }
+        catch { setST(null); NET.student = null; }
+      }
+      if (!ST && u) { try { Object.assign(NET, await call("fishMe")); } catch {} } else if (!ST) Object.assign(NET, { me: null, bag: [] });
+      NET.ready = true; changed();
     });
   } catch { NET.ready = true; renderAcct(); }
 }
+function setST(v, cls = "") { ST = v; try { if (v) { localStorage.setItem("jamfish-st", v); localStorage.setItem("jamfish-class", cls); } else { localStorage.removeItem("jamfish-st"); localStorage.removeItem("jamfish-class"); } } catch {} }
+// 학생 입장: 학급 코드 + 이름 + 입장번호 4자리
+export async function join(code, name, pin) {
+  const r = await (await sdk()).call("fishJoin", { code, name, pin }).catch((e) => { hooks.toast?.(e?.message?.replace(/^.*?: /, "") || "입장하지 못했어요"); throw e; });
+  setST(r.st, r.className); NET.student = { name: r.name, className: r.className };
+  Object.assign(NET, await call("fishMe")); NET.ready = true; changed();
+  hooks.toast?.(`${r.className} ${r.name}, 어서 와요!`);
+}
+export async function leave() { const st = ST; setST(null); NET.student = null; try { await (await sdk()).call("fishLeave", { st }); } catch {} Object.assign(NET, { me: null, bag: [] }); if (NET.user) { try { Object.assign(NET, await call("fishMe")); } catch {} } changed(); }
 export async function login() {
   const { A, auth } = await sdk(), p = new A.GoogleAuthProvider();
   try { await A.signInWithPopup(auth, p); }
   catch (e) { if (e?.code === "auth/popup-blocked" || e?.code === "auth/operation-not-supported-in-this-environment") await A.signInWithRedirect(auth, p); else if (e?.code !== "auth/popup-closed-by-user" && e?.code !== "auth/cancelled-popup-request") hooks.toast?.("로그인하지 못했어요. 선생님께 알려 주세요"); }
 }
-export async function logout() { const { A, auth } = await sdk(); await A.signOut(auth); }
+export async function logout() { if (ST) return leave(); const { A, auth } = await sdk(); await A.signOut(auth); }
 
 // 잡은 물고기를 살림망에(게임이 부른다). 실패해도 게임은 계속
 export async function saveCatch(sp, cm, kg, run) {
   if (!NET.me) return null;
+  if (NET.me.bagN == null) NET.me.bagN = NET.bag.length;
   try {
     const r = await call("fishCatch", { sp, cm, kg, run });
     NET.me.taste += r.taste; NET.me.caught++;
@@ -59,17 +75,21 @@ export async function saveCatch(sp, cm, kg, run) {
     return r;
   } catch { return null; }
 }
-export const refresh = async () => { if (NET.user) { Object.assign(NET, await call("fishMe")); changed(); } };
+export const refresh = async () => { if (ST || NET.user) { Object.assign(NET, await call("fishMe")); changed(); } };
 
 // ---------------------------------------------------------------- 시작·끝 화면의 계정 칸
 export function renderAcct() {
   document.querySelectorAll("[data-acct]").forEach((box) => {
     if (!NET.ready) { box.innerHTML = `<p class="acctwait">로그인 확인 중…</p>`; return; }
-    if (!NET.user) {
-      box.innerHTML = `<button class="go acctlogin" data-login>구글로 로그인</button><p>로그인하면 잡은 물고기를 <b>수산시장</b>에 팔고, 돈으로 <b>낚싯대·옷·요리 재료</b>를 살 수 있어요.</p>`;
+    if (!NET.me) {
+      box.innerHTML = `<b class="accth">학급으로 입장</b>
+        <form class="joinf" data-join><input name="code" maxlength="6" placeholder="학급 코드 6자리" autocomplete="off" autocapitalize="characters" spellcheck="false"><input name="name" maxlength="12" placeholder="이름" autocomplete="off"><input name="pin" maxlength="4" inputmode="numeric" pattern="\\d{4}" placeholder="입장번호 4자리" autocomplete="off" type="password"><button class="go">입장</button></form>
+        <p>처음이면 이름과 입장번호 4자리를 정해서 들어와요. 다음부터 같은 이름·번호로 들어오면 잡은 물고기와 돈이 이어져요. 로그인하면 물고기를 <b>수산시장</b>에 팔고 <b>낚싯대·옷·요리 재료</b>를 살 수 있어요.</p>
+        <button class="acctout" data-login>선생님이세요? 구글로 로그인해 낚시 학급 만들기</button>`;
+      box.querySelector("[data-join]").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; const b = f.querySelector("button"); b.disabled = true; join(f.code.value, f.name.value, f.pin.value).catch(() => {}).finally(() => { b.disabled = false; }); });
     } else {
-      const m = NET.me || { name: NET.user.displayName || "낚시꾼", taste: 0, money: 0, romance: 0 };
-      box.innerHTML = `<div class="acctrow"><b class="acctname">${esc(m.name)}</b><button class="acctout" data-logout>로그아웃</button></div>
+      const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
+      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
         <div class="townbtns"><button class="go alt" data-town="market">수산시장${NET.bag.length ? ` <i>${NET.bag.length}</i>` : ""}</button><button class="go alt" data-town="shop">낚시 가게</button><button class="go alt" data-town="cook">캠핑 요리</button></div>`;
     }
@@ -82,11 +102,12 @@ export function renderAcct() {
 // ---------------------------------------------------------------- 마을(수산시장·가게·요리·옷장)
 let tab = "market", pick = new Set(), cooking = null, busy = false;
 export async function openTown(t = "market") {
-  tab = t; pick = new Set(); cooking = null;
+  tab = t; pick = new Set(); cooking = null; if (t === "class") CLASSES = null;
   $("town").hidden = false; renderTown();
   try { Object.assign(NET, await call("fishMe")); renderTown(); renderAcct(); } catch {}
 }
 const TABS = { market: "수산시장", shop: "낚시 가게", cook: "캠핑 요리", closet: "옷장" };
+let CLASSES = null;
 const RECIPE_OK = {
   ramen: () => true, seafoodRamen: (f, S) => S[f.sp]?.water === "sea", gui: (f) => ["월척", "S급", "A급"].includes(f.grade),
   maeuntang: (f, S) => S[f.sp]?.water === "fresh", haemultang: (f, S) => S[f.sp]?.water === "sea", hoe: (f, S) => ["전설", "보스"].includes(S[f.sp]?.tier),
@@ -102,7 +123,8 @@ const kgText = (kg) => (kg >= 100 ? `${Math.round(kg)}kg` : kg >= 1 ? `${kg.toFi
 
 export function renderTown() {
   const m = NET.me; if (!m) { $("townBody").innerHTML = `<p class="empty">로그인이 필요해요.</p>`; return; }
-  $("townTabs").innerHTML = Object.entries(TABS).map(([k, v]) => `<button class="go ${k === tab ? "" : "alt"}" data-tab="${k}">${v}</button>`).join("");
+  const tabs = { ...TABS, ...(NET.user && !NET.student ? { class: "낚시 학급" } : {}) };
+  $("townTabs").innerHTML = Object.entries(tabs).map(([k, v]) => `<button class="go ${k === tab ? "" : "alt"}" data-tab="${k}">${v}</button>`).join("");
   $("townTabs").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; pick = new Set(); cooking = null; renderTown(); }));
   $("townScores").innerHTML = `<span>손맛 <b>${m.taste.toLocaleString("ko-KR")}</b></span><span>돈 <b class="money">${won(m.money)}</b></span><span>낭만 <b class="romance">${m.romance.toLocaleString("ko-KR")}</b></span>`;
   const body = $("townBody"), S = hooks.SPECIES;
@@ -147,6 +169,16 @@ export function renderTown() {
           <button class="go ${can ? "" : "alt"}" data-cook="${k}" ${can ? "" : "disabled"}>${can ? "요리하기" : r.ramen && !(m.stock.ramen || 0) ? "라면 없음" : "재료 부족"}</button></div>`;
       }).join("")}</div>`;
     body.querySelectorAll("[data-cook]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.cook; if (!NET.recipes[k].fish) return cook(k, []); cooking = k; pick = new Set(); renderTown(); }));
+  } else if (tab === "class") {
+    if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; call("fishClassList").then((r) => { CLASSES = r.classes; renderTown(); }).catch(() => {}); return; }
+    body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음)</small></h3>
+      <form class="joinf" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go">학급 만들기</button></form>
+      ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>
+        ${c.students.length ? `<div class="clstable"><div class="th"><span>이름</span><span>손맛</span><span>돈</span><span>낭만</span><span>잡은 수</span><span></span></div>
+          ${[...c.students].sort((a, b) => b.taste - a.taste).map((s) => `<div><span>${esc(s.name)}</span><span>${s.taste.toLocaleString("ko-KR")}</span><span class="money">${won(s.money)}</span><span class="romance">${s.romance}</span><span>${s.caught}</span><span><button class="acctout" data-reset="${c.cid}:${s.sid}">${s.hasPin ? "입장번호 초기화" : "초기화됨"}</button></span></div>`).join("")}</div>`
+          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 코드 <b>${c.code}</b>를 적어 주세요.</p>`}</div>`).join("") : `<p class="empty">아직 만든 학급이 없어요.</p>`}`;
+    body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = null; pop(r.code, "money", `${r.name} 학급 코드`); renderTown(); }); });
+    body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); act(async () => { await call("fishClassResetPin", { cid, sid }); CLASSES = null; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); renderTown(); }); }));
   } else {
     const slots = { head: "머리", face: "얼굴", body: "몸" };
     body.innerHTML = `<h3>옷장 <small>산 옷을 골라 입어요. 낚시할 때 내 낚시꾼이 입고 나와요</small></h3>

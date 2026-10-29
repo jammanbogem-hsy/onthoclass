@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { NET, initNet, saveCatch, refresh } from "./town.js?v=1";
+import { NET, initNet, saveCatch, refresh } from "./town.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -2003,7 +2003,7 @@ addEventListener("keyup", (e) => {
   if (KEYMAP[e.code] === "right") HOLD.right = false;
 });
 addEventListener("keydown", (e) => {
-  if (e.target.id === "typeIn") return; // 한글 입력칸은 그대로 두고
+  if (e.target.id === "typeIn" || e.target.closest?.("input, textarea, form")) return; // 입력칸(한글 타자·입장 양식)은 그대로 두고
   const dir = KEYMAP[e.code];
   if (dir || e.code === "Space") e.preventDefault();
   if (e.code === "Space") HOLD.space = true;
@@ -2252,7 +2252,7 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen) tutOpen();
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=1").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=2").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
