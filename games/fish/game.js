@@ -728,7 +728,7 @@ const SONGS = {
 for (const [k, S] of Object.entries(SONGS)) S.mel = [makeMelody(k === "sea" ? 7 : 3, S.prog), makeMelody(k === "sea" ? 11 : 19, S.prog)];
 const BGM = { on: true, gain: null, next: 0, step: 0, song: SONGS.fresh, noise: null };
 try { BGM.on = localStorage.getItem("jamfish-bgm") !== "off"; } catch {}
-function bgmLevel() { return BGM.on ? (F ? 0 : .55) : 0; }
+function bgmLevel() { return BGM.on && !F && !calmReady() ? .55 : 0; } // 잔잔한 곡이 준비되면 칩튠은 쉼
 function bgmStart() {
   const a = audio(); if (!a) return;
   if (!BGM.gain) {
@@ -738,6 +738,7 @@ function bgmStart() {
     BGM.noise = b; BGM.next = a.currentTime + .1;
   }
   BGM.gain.gain.setTargetAtTime(bgmLevel(), a.currentTime, .3);
+  if (!CALM.gain) { CALM.gain = a.createGain(); CALM.gain.gain.value = 0; CALM.gain.connect(a.destination); }
 }
 function bgmTone(m, dur, type, vol, when) {
   const o = ac.createOscillator(), g = ac.createGain();
@@ -751,8 +752,58 @@ function bgmHit(dur, vol, hp, when) {
   g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(.001, when + dur);
   s.connect(f).connect(g).connect(BGM.gain); s.start(when); s.stop(when + dur);
 }
+// 가만히 있을 때 깔리는 잔잔한 곡(일레븐랩스 30초 루프). 낚시터·날씨마다 곡이 2개씩 있어서 한 바퀴마다 번갈아 튼다.
+// 시작 화면과 끝 화면은 title. 사투에 들어가면 잦아들고 칩튠 박자가 대신 나온다.
+const CALM = { list: {}, bufs: {}, vol: {}, span: {}, loading: {}, gain: null, cur: null, group: "", name: "", t0: 0 };
+fetch("assets/bgm/bgm.json").then((r) => (r.ok ? r.json() : {})).then((l) => { CALM.list = l; }).catch(() => {});
+function calmGroup() { return G.playing ? `${PLACE}-${G.weather}` : "title"; }
+function calmNames(g) { return Object.keys(CALM.list).filter((n) => n === g || n.startsWith(g + "-")); }
+function calmLoad(n) {
+  if (CALM.bufs[n] || CALM.loading[n] || !ac) return;
+  CALM.loading[n] = true;
+  fetch(`assets/bgm/${CALM.list[n]}`).then((r) => r.arrayBuffer()).then((b) => ac.decodeAudioData(b)).then((b) => { CALM.span[n] = calmSpan(b); CALM.vol[n] = calmVol(b, CALM.span[n]); CALM.bufs[n] = b; }).catch(() => { CALM.loading[n] = false; });
+}
+function calmSpan(b) { // 긴 곡(Music API)은 앞뒤에 정적·페이드아웃이 있어서 소리 나는 구간만 쓴다
+  const d = b.getChannelData(0), sr = b.sampleRate; let on = 0, off = d.length - 1;
+  while (on < d.length && Math.abs(d[on]) < .02) on++;
+  while (off > on && Math.abs(d[off]) < .02) off--;
+  return [on / sr, Math.max(on / sr + 5, off / sr)];
+}
+function calmVol(b, [on, off]) { // 곡마다 크기가 달라서 평균 세기(rms)를 맞춘다
+  const d = b.getChannelData(0), a = Math.floor(on * b.sampleRate), z = Math.floor(off * b.sampleRate); let q = 0, n = 0;
+  for (let i = a; i < z; i += 16) { q += d[i] * d[i]; n++; }
+  return Math.min(1.8, .12 / Math.max(.02, Math.sqrt(q / Math.max(1, n))));
+}
+function calmReady() { return calmNames(calmGroup()).some((n) => CALM.bufs[n]); }
+function calmPlay(n, fade) {
+  const now = ac.currentTime, s = ac.createBufferSource(), g = ac.createGain();
+  const [on, off] = CALM.span[n];
+  s.buffer = CALM.bufs[n]; s.loop = true; s.loopStart = on; s.loopEnd = off; // 틱이 멈춰도(탭 숨김) 같은 곡이 계속 돈다
+  g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(CALM.vol[n] || 1, now + fade);
+  s.connect(g).connect(CALM.gain); s.start(now, on);
+  if (CALM.cur) { const o = CALM.cur; o.g.gain.cancelScheduledValues(now); o.g.gain.setValueAtTime(o.g.gain.value, now); o.g.gain.linearRampToValueAtTime(0, now + fade); o.s.stop(now + fade + .05); }
+  CALM.cur = { s, g }; CALM.name = n; CALM.t0 = now;
+}
+function calmTick() {
+  if (!CALM.gain) return;
+  CALM.gain.gain.setTargetAtTime(BGM.on ? (F ? 0 : .42) : 0, ac.currentTime, F ? .3 : 1.5);
+  const g = calmGroup(), names = calmNames(g);
+  names.forEach(calmLoad);
+  const ready = names.filter((n) => CALM.bufs[n]);
+  if (!ready.length) return;
+  if (CALM.group !== g) { // 낚시터·날씨가 바뀌면 긴 곡(-m)부터, 아직 안 왔으면 있는 곡으로
+    const long = ready.filter((n) => n.endsWith("-m")), pool = long.length ? long : ready;
+    CALM.group = g; return calmPlay(pool[Math.floor(Math.random() * pool.length)], 2.5);
+  }
+  const sp = CALM.span[CALM.name] || [0, 30], dur = sp[1] - sp[0];
+  if (ac.currentTime - CALM.t0 > dur - 2.2) { // 한 바퀴 끝나 갈 때 다른 곡으로 겹쳐 넘김
+    const other = ready.filter((n) => n !== CALM.name);
+    if (other.length) calmPlay(other[Math.floor(Math.random() * other.length)], 2.2); else CALM.t0 += dur;
+  }
+}
 function bgmTick() {
   if (!BGM.gain || !ac) return;
+  calmTick();
   BGM.gain.gain.setTargetAtTime(bgmLevel(), ac.currentTime, F ? .15 : .8);
   const S = BGM.song, six = 60 / S.bpm / 4;
   if (BGM.next < ac.currentTime - .5) BGM.next = ac.currentTime + .05; // 탭이 쉬다 돌아왔을 때
@@ -778,6 +829,9 @@ function setSound(on) {
 }
 $("soundTxt").textContent = BGM.on ? "ON" : "OFF";
 $("soundBtn").addEventListener("click", (e) => { e.stopPropagation(); setSound(!BGM.on); });
+// 브라우저는 사용자가 한 번 누른 뒤에야 소리를 내 준다. 시작 화면에서 처음 누를 때 title 곡을 켠다.
+const firstTouch = () => { bgmStart(); removeEventListener("pointerdown", firstTouch); removeEventListener("keydown", firstTouch); };
+addEventListener("pointerdown", firstTouch); addEventListener("keydown", firstTouch);
 
 // ------------------------------------------------------------------ 화면 효과 (사투 화면은 픽셀 그림)
 function pxSvg(rows, fill = "#13162e", rot = 0, extra = "") {
@@ -1943,4 +1997,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
+window.__fish = { CALM, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook };
