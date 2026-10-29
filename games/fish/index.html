@@ -355,6 +355,51 @@
   body.big-fight .reelbar i { background: linear-gradient(#ffe680, #ffb700); }
   body.big-fight .fname span { color: #ffd23f; }
 
+  /* ---------- 계정·낚시 마을 ---------- */
+  #town { z-index: 25; background: rgba(10, 14, 30, .7); } #town .panel { background: #1b2045; }
+  .acct { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: rgba(255, 248, 232, .06); box-shadow: inset 0 0 0 2px rgba(255, 248, 232, .15); }
+  .acct p { font-size: 13px; }
+  .acct .acctlogin { align-self: stretch; }
+  .acctrow { display: flex; align-items: center; gap: 8px; } .acctname { flex: 1; font-family: var(--px); font-size: 18px; color: var(--cream); }
+  .acctout { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+  .scores3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .scores3 div { display: flex; flex-direction: column; align-items: center; padding: 6px 4px; background: var(--ink); font-family: var(--px); }
+  .scores3 small { font-size: 11px; color: var(--muted); } .scores3 b { font-size: 17px; color: var(--sun); font-variant-numeric: tabular-nums; }
+  .money { color: #9cf25a !important; } .romance { color: #ff9ecb !important; }
+  .townbtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } .townbtns .go { padding-inline: 4px; font-size: 14px; }
+  .townbtns i { font-style: normal; background: var(--hot); color: var(--cream); padding: 0 5px; margin-left: 2px; }
+  .endlabel { text-align: center; color: var(--muted); font-family: var(--px); }
+  .townscores { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--px); font-size: 14px; color: var(--muted); } .townscores b { color: var(--sun); }
+  .townbody { display: flex; flex-direction: column; gap: 10px; font-family: var(--px); color: var(--cream); }
+  .townbody h3 { margin: 6px 0 0; font-size: 18px; } .townbody h3 small { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .townbody .empty { color: var(--muted); font-size: 14px; }
+  .ticker { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; } .ticker span { background: var(--ink); padding: 3px 7px; }
+  .ticker .up b { color: #9cf25a; } .ticker .down b { color: var(--hot); }
+  .fishlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; max-height: 46vh; overflow-y: auto; }
+  .fishrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; background: var(--ink); color: var(--cream); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 2px transparent; }
+  .fishrow.on { box-shadow: inset 0 0 0 3px var(--sun); background: #2a3160; }
+  .fishrow img { width: 56px; height: 34px; image-rendering: pixelated; } .fishrow span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .fishrow small { font-size: 11px; color: var(--muted); } .fishrow em { font-style: normal; color: #9cf25a; font-size: 13px; }
+  .townact { display: flex; gap: 8px; flex-wrap: wrap; } .townact .go { flex: 1; min-width: 160px; }
+  .rods { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .rod { display: flex; flex-direction: column; gap: 3px; padding: 8px; background: var(--ink); font-size: 13px; } .rod small { font-size: 11px; color: var(--muted); } .rod em { font-style: normal; color: var(--sun); }
+  .rod.have { box-shadow: inset 0 0 0 2px #9cf25a; } .rod.have em { color: #9cf25a; }
+  .shopgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+  .item { display: flex; flex-direction: column; gap: 4px; padding: 10px; background: var(--ink); align-items: flex-start; }
+  .item i { font-style: normal; font-size: 30px; } .item small { font-size: 11px; color: var(--muted); flex: 1; } .item em { font-style: normal; color: #9cf25a; }
+  .item .go { align-self: stretch; padding: 6px; font-size: 14px; } .item.have { box-shadow: inset 0 0 0 2px #9cf25a; }
+  .closet { display: flex; flex-direction: column; gap: 6px; } .closet > div { display: flex; flex-wrap: wrap; gap: 6px; } .closet .go { padding: 6px 10px; font-size: 14px; }
+  .deco { padding: 6px 10px; background: var(--ink); color: var(--muted); font-size: 13px; } .deco.on { color: var(--cream); box-shadow: inset 0 0 0 2px #ff9ecb; }
+  .cookpot, .townpop { position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 30px; background: #1b2045; box-shadow: var(--pxbox); font-family: var(--px); color: var(--cream); }
+  .cookpot b, .townpop b { font-size: 28px; color: var(--sun); text-shadow: 2px 2px 0 var(--ink); } .cookpot small, .townpop small { font-size: 16px; color: #ff9ecb; }
+  .townpop.money small, .townpop.money b { color: #9cf25a; }
+  .townpop { animation: popIn .3s steps(4); } @keyframes popIn { from { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } }
+  .pot { position: relative; width: 120px; height: 70px; margin-top: 30px; background: #8a8f9c; box-shadow: 0 0 0 4px var(--ink), inset 0 10px 0 #c4c8d2; }
+  .pot::after { content: ""; position: absolute; left: 10px; right: 10px; top: 4px; height: 10px; background: #ff6b3a; animation: blink .3s steps(2) infinite; }
+  .pot i { position: absolute; bottom: 64px; width: 12px; height: 12px; background: rgba(255, 255, 255, .8); animation: steam 1s steps(5) infinite; }
+  .pot i:nth-child(1) { left: 20px; } .pot i:nth-child(2) { left: 54px; animation-delay: .3s; } .pot i:nth-child(3) { left: 88px; animation-delay: .6s; }
+  @keyframes steam { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-34px) scale(1.6); opacity: 0; } }
+
   /* ---------- 하는 법 팝업 ---------- */
   .tut { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(10, 14, 30, .72); }
   .tutcard { width: min(680px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; background: #1b2045; padding: 16px; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; font-family: var(--px); color: var(--cream); }
@@ -394,7 +439,7 @@
   </div>
   <div class="chips">
     <button class="chip sound" id="soundBtn" aria-label="배경 음악 켜고 끄기"><small>음악</small><b id="soundTxt">ON</b></button>
-    <div class="chip"><small>점수</small><b id="score">0</b></div>
+    <div class="chip"><small>손맛</small><b id="score">0</b></div>
     <div class="chip"><small>마리</small><b id="count">0</b></div>
   </div>
 </div>
@@ -462,7 +507,8 @@
 <div class="screen" id="start">
   <div class="panel">
     <h1>잼만보<br><em>낚시터</em></h1>
-    <p>3분 동안 물고기를 잡아 점수를 모아요. 반짝이는 거품일수록 대물이 숨어 있고, 같은 물고기도 클수록 등급(월척·S·A·B·놔주자급)과 점수가 올라가요.</p>
+    <div class="acct" data-acct></div>
+    <p>3분 동안 물고기를 잡아 손맛 점수를 모아요. 반짝이는 거품일수록 대물이 숨어 있고, 같은 물고기도 클수록 등급(월척·S·A·B·놔주자급)과 점수가 올라가요.</p>
     <div class="how">
       <b>던지기</b><span>물 위를 <em>꾹</em> 누른 채 방향을 맞추고, 힘 바늘이 <b style="font-size:inherit;color:var(--lime)">초록</b>일 때 떼요. 그림자가 클수록 큰 물고기!</span>
       <b>챔기</b><span>찌가 <em>쏙!</em> 들어가면 바로 눌러요. 톡톡은 가짜!</span>
@@ -497,13 +543,25 @@
 <div class="screen" id="end" hidden>
   <div class="panel">
     <h1>대회 <em>끝!</em></h1>
+    <small class="endlabel">이번 판 손맛 점수</small>
     <div class="big" id="endScore">0</div>
     <p class="best" id="endBest">최고 기록 0</p>
     <div class="results" id="endList"></div>
+    <div class="acct" data-acct></div>
     <div class="mbox"><h3>오늘의 미션</h3><ul class="missions"></ul></div>
     <div class="places"><button class="go" id="againBtn">한 판 더!</button><button class="go alt" id="placeBtn">낚시터 바꾸기</button></div>
     <button class="go alt" data-openbook>물고기 도감</button>
   </div>
+</div>
+
+<div class="screen" id="town" hidden>
+  <div class="panel wide">
+    <div class="bookhead"><h2>낚시 마을</h2><div class="townscores" id="townScores"></div><button class="go alt close" id="townClose" aria-label="닫기">닫기</button></div>
+    <div class="tabs" id="townTabs"></div>
+    <div class="townbody" id="townBody"></div>
+  </div>
+  <div class="cookpot" id="cookPot" hidden><div class="pot"><i></i><i></i><i></i></div><b>보글보글…</b><small></small></div>
+  <div class="townpop" id="townPop" hidden></div>
 </div>
 
 <div class="screen" id="book" hidden>
@@ -515,6 +573,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=24"></script>
+<script type="module" src="game.js?v=25"></script>
 </body>
 </html>

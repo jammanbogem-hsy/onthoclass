@@ -32,6 +32,7 @@ export { puyoStart, puyoFinish, puyoClock } from "./puyo";
 export { mcp, mcpAuthInfo, mcpApprove } from "./mcp";
 export { showcase, showcaseLink } from "./showcase";
 export { moaAssets } from "./moaBridge";
+export { fishMe, fishCatch, fishSell, fishBuy, fishWear, fishCook } from "./fishing";
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");

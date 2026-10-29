@@ -3,6 +3,15 @@ rules_version = '2';
 // 잼클래스 보안 규칙 v1 (docs/SCHEMA.md 기준)
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 잼만보 낚시터: 돈·살림망·아이템은 Cloud Functions(fishing.ts)만 바꾼다. 본인만 읽기
+    match /fishers/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+      match /bag/{fid} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
 
     function signedIn() { return request.auth != null; }
     function uid() { return request.auth.uid; }

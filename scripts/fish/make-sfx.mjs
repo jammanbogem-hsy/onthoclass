@@ -36,6 +36,9 @@ const SFX = {
   rain:    { sec: 12, text: "steady gentle rain falling on a pond surface, calm ambience, seamless" },
   bait:    { sec: 0.5, text: "LOUD cute bubbly pop click, small and short, immediate attack" },
   stamp:   { sec: 0.6, text: "LOUD rubber stamp thud on paper, short, immediate attack" },
+  // 수산시장·캠핑 요리
+  cash:    { sec: 1.0, text: "LOUD cheerful cash register ka-ching with coins clinking, video game shop purchase" },
+  cook:    { sec: 2.0, text: "soup pot bubbling and boiling on a camping stove with a lid clink, cozy, close" },
 };
 
 const only = process.argv.slice(2);
