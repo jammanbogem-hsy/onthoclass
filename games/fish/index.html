@@ -375,6 +375,21 @@
   .clstable { display: flex; flex-direction: column; font-size: 13px; overflow-x: auto; }
   .clstable > div { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr .8fr .8fr 1.3fr; gap: 6px; padding: 5px 4px; border-bottom: 1px solid rgba(255, 248, 232, .1); font-variant-numeric: tabular-nums; align-items: center; min-width: 460px; }
   .clstable .th { color: var(--muted); font-size: 11px; }
+  .quizbox { position: fixed; inset: 0; z-index: 36; display: grid; place-items: center; padding: 16px; background: rgba(10, 14, 30, .6); }
+  .quizbox .qq { font-size: 22px; line-height: 1.5; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); white-space: pre-wrap; }
+  .quizbox .qo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .quizbox .qo .go { font-size: 17px; text-align: left; padding: 12px; }
+  .quizbox .qo i { font-style: normal; display: inline-block; min-width: 22px; color: var(--hot); }
+  .quizbox .qo .right { background: var(--lime); } .quizbox .qo .wrong { background: var(--hot); color: var(--cream); }
+  .quizbox .qmsg { min-height: 22px; font-size: 17px; color: var(--sun); text-align: center; }
+  @media (max-width: 520px) { .quizbox .qo { grid-template-columns: 1fr; } }
+  .roomline { padding: 6px 10px; font-family: var(--px); font-size: 14px; } .roomline.open { background: rgba(156, 242, 90, .18); color: var(--lime); } .roomline.wait { background: rgba(255, 210, 63, .12); color: var(--sun); animation: blink 1.2s steps(2) infinite; }
+  .roomline small { color: var(--muted); }
+  .roombox { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--ink); box-shadow: inset 0 0 0 2px rgba(255, 248, 232, .15); }
+  .roombox.open { box-shadow: inset 0 0 0 3px var(--lime); } .roombox > b { font-size: 15px; } .roombox.open > b { color: var(--lime); }
+  .roomset { display: flex; flex-wrap: wrap; gap: 10px; } .roomset label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  .roomset select { padding: 6px; background: #2a3160; color: var(--cream); border: 0; font: inherit; font-family: var(--px); font-size: 14px; }
+  .roomquiz { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; } .roomquiz .chk { display: flex; gap: 6px; align-items: center; color: var(--cream); }
+  .filebtn { padding: 6px 12px; font-size: 14px; cursor: pointer; }
   .fbbox { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; padding: 16px; background: rgba(10, 14, 30, .72); }
   .fbbox textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 0; background: var(--ink); color: var(--cream); font: inherit; font-family: var(--px); font-size: 15px; resize: vertical; box-shadow: inset 0 0 0 2px rgba(255, 248, 232, .25); }
   .fbopen { align-self: flex-end; }
@@ -544,8 +559,8 @@
       <h1>잼만보<br><em>낚시터</em></h1>
       <div class="acct" data-acct></div>
       <div class="places">
-        <button class="go place fresh" data-place="fresh" disabled><b>민물 낚시터</b><small>붕어·잉어·쏘가리·황금 잉어 13종</small></button>
-        <button class="go place sea" data-place="sea" disabled><b>바다 낚시터</b><small>고등어·참돔·방어·청새치 11종</small></button>
+        <button class="go place fresh" data-place="fresh" disabled><b>민물 낚시터</b><small>붕어·향어·산천어·황금 잉어 18종</small></button>
+        <button class="go place sea" data-place="sea" disabled><b>바다 낚시터</b><small>참돔·부시리·돛새치·상어 16종</small></button>
       </div>
       <p class="load" id="loadText">물고기 불러오는 중…</p>
       <button class="go alt" data-openbook>물고기 도감</button>
@@ -602,6 +617,8 @@
   <div class="townpop" id="townPop" hidden></div>
 </div>
 
+<div class="quizbox" id="quizBox" hidden><div class="tutcard px"><div class="tuthead"><b>문제를 맞히면 던질 수 있어요!</b></div>
+  <p class="qq"></p><div class="qo"></div><p class="qmsg"></p></div></div>
 <div class="fbbox" id="fbBox" hidden><div class="tutcard px"><div class="tuthead"><b>의견·오류 알리기</b><button class="tutx" id="fbClose" aria-label="닫기">✕</button></div>
   <p>이상한 점, 안 되는 것, 바라는 것을 자유롭게 써 주세요. 최고 관리자 선생님이 읽어요.</p>
   <textarea maxlength="2000" rows="5" placeholder="예) 바위 피하기가 너무 빨라요 / 휴대폰에서 버튼이 안 눌려요"></textarea>
@@ -616,6 +633,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=28"></script>
+<script type="module" src="game.js?v=30"></script>
 </body>
 </html>

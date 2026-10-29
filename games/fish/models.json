@@ -135,5 +135,55 @@
     "id": "angler",
     "file": "assets/angler.glb?v=1",
     "yaw": 180
+  },
+  {
+    "id": "bagrid",
+    "file": "assets/fish/bagrid.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "nuchi",
+    "file": "assets/fish/nuchi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "mirrorcarp",
+    "file": "assets/fish/mirrorcarp.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "kkeokji",
+    "file": "assets/fish/kkeokji.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "masu",
+    "file": "assets/fish/masu.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "seabass",
+    "file": "assets/fish/seabass.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "mahimahi",
+    "file": "assets/fish/mahimahi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "kingfish",
+    "file": "assets/fish/kingfish.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "hammerhead",
+    "file": "assets/fish/hammerhead.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "sailfish",
+    "file": "assets/fish/sailfish.glb?v=1",
+    "yaw": 90
   }
 ]

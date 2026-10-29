@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
-import { NET, initNet, saveCatch, refresh } from "./town.js?v=3";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz } from "./town.js?v=5";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -33,6 +33,11 @@ const SPECIES = {
   snakehead: { water: "fresh", name: "가물치",    tier: "희귀", points: 100, disp: 1.6,  len: [40, 90],   ...T_RARE, notes: 10, win: .92 },
   sturgeon:  { water: "fresh", name: "철갑상어",  tier: "전설", points: 220, disp: 2.4,  len: [100, 190], ...T_LEGEND },
   goldkoi:   { water: "fresh", name: "황금 잉어", tier: "전설", points: 320, disp: 1.7,  len: [60, 95],   ...T_LEGEND, notes: 12, win: .84 },
+  bagrid:    { water: "fresh", name: "동자개", tier: "보통", points: 40, disp: 1.0, len: [15, 30], ...T_NORMAL },
+  nuchi:     { water: "fresh", name: "누치", tier: "흔함", points: 28, disp: 1.1, len: [20, 50], ...T_COMMON },
+  mirrorcarp:{ water: "fresh", name: "향어", tier: "보통", points: 52, disp: 1.4, len: [40, 80], ...T_NORMAL },
+  kkeokji:   { water: "fresh", name: "꺽지", tier: "희귀", points: 85, disp: 0.9, len: [12, 28], ...T_RARE, notes: 10, win: .92 },
+  masu:      { water: "fresh", name: "산천어", tier: "희귀", points: 105, disp: 1.1, len: [20, 40], ...T_RARE },
   // 바다
   can:       { water: "sea", name: "녹슨 깡통",   tier: "꽝",   points: 0,   disp: 0.4,  len: [8, 12],    notes: 3, win: 1.6, mash: 0, zig: 0 },
   jack:      { water: "sea", name: "전갱이",      tier: "흔함", points: 14,  disp: 0.8,  len: [15, 35],   ...T_COMMON },
@@ -46,10 +51,16 @@ const SPECIES = {
   sunfish:   { water: "sea", name: "개복치",      tier: "희귀", points: 120, disp: 1.8,  len: [100, 250], ...T_RARE, notes: 10, win: .92 },
   tuna:      { water: "sea", name: "참치",        tier: "전설", points: 250, disp: 2.4,  len: [120, 280], ...T_LEGEND },
   marlin:    { water: "sea", name: "청새치",      tier: "전설", points: 320, disp: 2.8,  len: [180, 400], ...T_LEGEND, notes: 12, win: .84 },
+  seabass:   { water: "sea", name: "농어", tier: "보통", points: 58, disp: 1.3, len: [40, 100], ...T_NORMAL },
+  mahimahi:  { water: "sea", name: "만새기", tier: "희귀", points: 110, disp: 1.6, len: [60, 150], ...T_RARE },
+  kingfish:  { water: "sea", name: "부시리", tier: "희귀", points: 115, disp: 1.8, len: [60, 150], ...T_RARE, zig: 2 },
+  hammerhead:{ water: "sea", name: "상어", tier: "전설", points: 280, disp: 2.6, len: [150, 350], ...T_LEGEND },
+  sailfish:  { water: "sea", name: "돛새치", tier: "전설", points: 300, disp: 2.6, len: [150, 330], ...T_LEGEND, notes: 12, win: .84 },
 };
 // 어떤 물고기는 방향키 대신 화면에 뜨는 원을 터치(클릭)해서 잡는다. mix 는 방향키와 원이 번갈아
 const PLAY_STYLE = { bluegill: "circle", trout: "circle", eel: "circle", mandarin: "circle", sturgeon: "mix", goldkoi: "mix",
-  jack: "circle", puffer: "circle", cutlass: "circle", yellowtail: "circle", tuna: "mix", marlin: "mix" };
+  jack: "circle", puffer: "circle", cutlass: "circle", yellowtail: "circle", tuna: "mix", marlin: "mix",
+  masu: "circle", mahimahi: "circle", sailfish: "mix", hammerhead: "mix" };
 for (const id in PLAY_STYLE) SPECIES[id].play = PLAY_STYLE[id];
 // 사투 중간에 끼는 미니게임: bar(타이밍 바) · hold(줄 텐션 유지) · track(물고기 따라잡기)
 const MINIS = {
@@ -65,6 +76,7 @@ Object.assign(MINIS, {
   sturgeon: ["hold", "simon", "spin"], goldkoi: ["bar", "typing", "whack"],
   jack: ["bar", "typing"], mackerel: ["track", "whack"], rockfish: ["hold", "simon"], puffer: ["whack"], cutlass: ["track", "spin"],
   seabream: ["bar", "typing"], flounder: ["hold", "whack"], yellowtail: ["spin", "simon"], sunfish: ["hold", "typing"], tuna: ["track", "spin", "simon"], marlin: ["bar", "whack", "hold"],
+  bagrid: ["hold", "rhythm"], nuchi: ["bar", "typing"], mirrorcarp: ["hold", "whack"], kkeokji: ["dodge", "simon"], masu: ["track", "bar"], seabass: ["bar", "whack"], mahimahi: ["track", "rhythm"], kingfish: ["spin", "hold"], hammerhead: ["hold", "dodge"], sailfish: ["spin", "dodge"],
 });
 // 박자 낚시(rhythm)·바위 피하기(dodge)도 섞는다
 for (const [id, t] of Object.entries({ minnow: "rhythm", bluegill: "rhythm", crucian: "rhythm", sturgeon: "rhythm", mackerel: "rhythm", seabream: "rhythm", tuna: "rhythm", sunfish: "rhythm",
@@ -992,7 +1004,7 @@ function bookAdd(id, cm, grade, kg) {
   return { isNew, record };
 }
 // 무게(kg) = 몸 모양 계수 × (길이 m)³ × 통통함. 길쭉한 물고기는 가볍고 둥근 물고기는 무겁다
-const WEIGHT_K = { minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
+const WEIGHT_K = { mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
 const kgOf = (id, cm, cond) => Math.max(.01, (WEIGHT_K[id] || 12) * (cm / 100) ** 3 * cond);
 const kgText = (kg) => (kg >= 100 ? `${Math.round(kg)}kg` : kg >= 1 ? `${kg.toFixed(1)}kg` : `${Math.round(kg * 1000)}g`);
 const realIds = (w) => placeIds(w).filter((id) => SPECIES[id].points && !SPECIES[id].boss);
@@ -1127,6 +1139,7 @@ const AIM = { t: 0, pos: 0, dir: -Math.PI / 2, minD: 2.5, maxD: 20, speed: .7, k
 function aimStart(p) {
   if (R.state !== "idle" || F || show) return;
   audio();
+  if (quizNeeded() && !G.quizPass) { HOLD.ptr = false; askQuiz(() => { G.quizPass = true; hint("정답! 이제 물 위를 <em>꾹</em> 눌러 던져요"); }); return; } // 문제를 맞혀야 던질 수 있다
   R.state = "aiming"; AIM.t = 0; AIM.key = !p;
   if (p) aimToward(p);
   AIM.maxD = Math.max(8, ...spots.map((s) => Math.hypot(s.x - angler.position.x, s.z - angler.position.z))) * 1.2;
@@ -1176,6 +1189,7 @@ function stepAim(dt) {
 }
 function castRelease() {
   if (R.state !== "aiming") return;
+  G.quizPass = false; // 한 번 던지면 다음엔 또 문제
   $("aimLabels").hidden = true;
   $("castM").hidden = true; aimRing.visible = false; aimDots.forEach((d) => { d.visible = false; });
   R.state = "idle";
@@ -1948,7 +1962,7 @@ function endFight(result) {
     $("cardName").textContent = sp.name; $("cardSize").textContent = junk ? `${cm}cm` : `${cm}cm · ${kgText(kg)}`;
     $("cardPoints").textContent = pts ? `+${pts}` : "꽝!";
     $("cardBonus").textContent = [f.perfect ? `PERFECT ${f.perfect}` : "", f.maxCombo > 2 ? `최대 ${f.maxCombo}콤보` : "", f.bonus > 1 ? "무지개 ×2" : "", fever ? "피버 ×2" : "", record ? "내 기록 경신 ×1.3" : "", !junk && gr.release ? "작으니까 다시 놓아줘요" : ""].filter(Boolean).join(" · ");
-    if (!junk && NET.me) saveCatch(f.fish.id, cm, kg, G.score).then((r) => {
+    if (!junk && NET.me) saveCatch(f.fish.id, cm, kg, G.score, pts).then((r) => {
       if (!r) return;
       toast(r.release ? `물로 돌려보냈어요 · 손맛 +${r.taste}` : r.saved ? `살림망에 넣었어요 · 오늘 시세 <b style="color:var(--sun)">${r.price.toLocaleString("ko-KR")}원</b>` : "살림망이 꽉 찼어요! 수산시장에서 팔아요");
     });
@@ -2158,7 +2172,8 @@ function start() {
   if (F) { F.fish.dispose(); F = null; }
   if (show) { show.fish.dispose(); show = null; }
   const w = Math.random();
-  Object.assign(G, { playing: true, time: 180, score: 0, caught: [], book: new Set(), ending: false,
+  const g = DEV_FREE ? {} : gate();
+  Object.assign(G, { playing: true, time: g.room?.roundSec || 180, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
     streak: 0, fever: 0, bossSpawned: false, stat: { barPerfect: 0, circlePerfect: 0 }, weather: w < .5 ? "sunny" : w < .75 ? "rain" : "sunset" });
   applyWeather(); setBait(G.bait);
   $("score").textContent = 0; $("count").textContent = 0; $("timerChip").classList.remove("low");
@@ -2208,12 +2223,24 @@ $("bookClose").addEventListener("click", () => { $("book").hidden = true; });
 document.querySelectorAll("[data-bait]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); setBait(b.dataset.bait); }));
 renderMissions();
 
+// 낚시터 버튼: 교사는 언제나, 학생은 선생님이 연 방의 장소만, 그 밖에는 막고 이유를 보여 준다
+let MODELS_READY = false;
+const DEV_FREE = (() => { try { return localStorage.getItem("jamfish-dev") === "1"; } catch { return false; } })(); // 점검용
+function applyGate() {
+  const g = DEV_FREE ? { ok: true } : gate();
+  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = !MODELS_READY || !g.ok || (g.room && g.room.place !== "any" && g.room.place !== b.dataset.place); });
+  if (MODELS_READY) $("loadText").textContent = g.ok ? (g.room ? `낚시터가 열렸어요! ${g.room.place === "any" ? "낚시터를 골라요" : (g.room.place === "sea" ? "바다" : "민물") + " 낚시터로 가요"}` : "낚시터를 골라요!") : g.why;
+  // 낚시 중에 선생님이 방을 닫으면 그 판을 마친다
+  if (G.playing && !g.ok && NET.role === "student") { shout("낚시터가 닫혔어요", "cream", 1.4); finish(); }
+}
 async function choosePlace(place) {
   audio();
+  const g = DEV_FREE ? { ok: true } : gate();
+  if (!g.ok) { toast(g.why); return; }
   document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = true; });
   setPlace(place); renderLegend(); bgmStart();
   await loadPlace(place);
-  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = false; });
+  applyGate();
   start();
 }
 document.querySelectorAll("[data-place]").forEach((b) => b.addEventListener("click", () => choosePlace(b.dataset.place)));
@@ -2247,12 +2274,12 @@ $("tutClose").addEventListener("click", tutClose);
 $("tutPrev").addEventListener("click", () => tutShow(tutI - 1));
 $("tutNext").addEventListener("click", () => (tutI === TUT.length - 1 ? tutClose() : tutShow(tutI + 1)));
 $("tutDots").addEventListener("click", (e) => { const k = e.target.dataset?.k; if (k != null) tutShow(+k); });
-setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear }), 600);
+setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate }), 600);
 const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen) tutOpen();
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=3").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=5").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -2327,8 +2354,7 @@ function loadPlace(place) {
   const a = MODEL_LIST.find((m) => m.id === "angler");
   $("loadText").textContent = "낚시꾼 준비 중…";
   if (a) try { await loadAngler(a.file, a.yaw); } catch (e) { console.warn("낚시꾼", e); }
-  $("loadText").textContent = "낚시터를 골라요!";
-  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = false; });
+  MODELS_READY = true; applyGate();
   loadPlace("fresh"); // 미리 받아 두기
 })();
 

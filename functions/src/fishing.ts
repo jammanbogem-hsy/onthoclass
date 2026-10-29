@@ -34,9 +34,19 @@ const SPECIES: Record<string, { w: "fresh" | "sea"; n: string; t: string; p: num
   flounder: { w: "sea", n: "광어", t: "보통", p: 55, len: [35, 90] }, yellowtail: { w: "sea", n: "방어", t: "희귀", p: 100, len: [60, 110] },
   sunfish: { w: "sea", n: "개복치", t: "희귀", p: 120, len: [100, 250] }, tuna: { w: "sea", n: "참치", t: "전설", p: 250, len: [120, 280] },
   marlin: { w: "sea", n: "청새치", t: "전설", p: 320, len: [180, 400] },
+  bagrid: { w: "fresh", n: "동자개", t: "보통", p: 40, len: [15, 30] },
+  nuchi: { w: "fresh", n: "누치", t: "흔함", p: 28, len: [20, 50] },
+  mirrorcarp: { w: "fresh", n: "향어", t: "보통", p: 52, len: [40, 80] },
+  kkeokji: { w: "fresh", n: "꺽지", t: "희귀", p: 85, len: [12, 28] },
+  masu: { w: "fresh", n: "산천어", t: "희귀", p: 105, len: [20, 40] },
+  seabass: { w: "sea", n: "농어", t: "보통", p: 58, len: [40, 100] },
+  mahimahi: { w: "sea", n: "만새기", t: "희귀", p: 110, len: [60, 150] },
+  kingfish: { w: "sea", n: "부시리", t: "희귀", p: 115, len: [60, 150] },
+  hammerhead: { w: "sea", n: "상어", t: "전설", p: 280, len: [150, 350] },
+  sailfish: { w: "sea", n: "돛새치", t: "전설", p: 300, len: [150, 330] },
   bossFresh: { w: "fresh", n: "메기 대왕", t: "보스", p: 800, len: [250, 320] }, bossSea: { w: "sea", n: "청새치 대왕", t: "보스", p: 900, len: [450, 600] },
 };
-const WEIGHT_K: Record<string, number> = { minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
+const WEIGHT_K: Record<string, number> = { mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
 const kgOf = (id: string, cm: number, cond: number) => (WEIGHT_K[id] || 12) * (cm / 100) ** 3 * cond;
 const GRADES: [number, string][] = [[.92, "월척"], [.72, "S급"], [.45, "A급"], [.18, "B급"], [0, "놔주자급"]];
 const gradeOf = (t: number) => GRADES.find(([min]) => t >= min)![1];
@@ -127,14 +137,16 @@ export const fishMe = onCall(options, async (req) => {
   }
   const day = kstDay();
   const prices = Object.fromEntries(Object.keys(SPECIES).map((id) => [id, market(day, id)]));
-  return { me: pub(snap.data()!), bag: await bagOf(uid), day, market: prices,
+  const role = isAdmin(req) && !uid.startsWith("s_") ? "admin" : uid.startsWith("s_") ? "student" : (await isTeacherUid(req)) ? "teacher" : "user";
+  const room = uid.startsWith("s_") ? roomPub(await roomOf(uid.split("_")[1])) : null;
+  return { role, room, me: pub(snap.data()!), bag: await bagOf(uid), day, market: prices,
     rods: ROD, shop: SHOP, recipes: Object.fromEntries(Object.entries(RECIPES).map(([k, r]) => [k, { name: r.name, romance: r.romance, ramen: r.ramen, fish: r.fish, desc: r.desc }])) };
 });
 
 // 잡은 물고기 → 살림망. 놔주자급은 손맛만 오르고 물로 돌려보낸다
 export const fishCatch = onCall(options, async (req) => {
   const uid = await auth(req);
-  const { sp, cm, kg, run } = (req.data || {}) as { sp?: string; cm?: number; kg?: number; run?: number };
+  const { sp, cm, kg, run, pts } = (req.data || {}) as { sp?: string; cm?: number; kg?: number; run?: number; pts?: number };
   const S = sp ? SPECIES[sp] : undefined;
   if (!S || typeof cm !== "number" || typeof kg !== "number" || !isFinite(cm) || !isFinite(kg)) throw new HttpsError("invalid-argument", "물고기 정보를 확인해 주세요.");
   if (cm < S.len[0] - 1 || cm > S.len[1] + 1) throw new HttpsError("invalid-argument", "그 물고기는 그런 크기가 될 수 없어요.");
@@ -143,12 +155,15 @@ export const fishCatch = onCall(options, async (req) => {
   const t = (cm - S.len[0]) / (S.len[1] - S.len[0]);
   const fish: Fish = { sp: sp!, cm: Math.round(cm), kg: Math.round(kg * 1000) / 1000, grade: gradeOf(t) };
   const day = kstDay();
+  if (uid.startsWith("s_")) { const room = await roomOf(uid.split("_")[1]); if (!roomOpen(room)) throw new HttpsError("failed-precondition", "낚시터가 닫혀 있어요. 선생님이 열어 줄 때 낚시해요."); }
   return db().runTransaction(async (tx) => {
     const d = await readMe(tx, uid), now = Date.now();
     if (now - (d.lastCatchAt || 0) < GAP_MS) throw new HttpsError("resource-exhausted", "너무 빨라요! 잠깐 쉬었다 잡아요.");
     const count = d.day === day ? d.dayCount || 0 : 0;
     if (count >= DAY_MAX) throw new HttpsError("resource-exhausted", "오늘은 충분히 잡았어요. 내일 또 와요!");
-    const taste = tasteOf(fish), release = fish.grade === "놔주자급", full = (d.bagN || 0) >= BAG_MAX;
+    // 손맛 = 게임 화면에서 받은 점수 그대로(콤보·PERFECT·피버·무지개·기록 경신 포함). 그럴 수 있는 최대치로만 자른다
+    const base = tasteOf(fish), taste = typeof pts === "number" && isFinite(pts) && pts >= 0 ? Math.min(Math.round(pts), base * 6 + 300) : base;
+    const release = fish.grade === "놔주자급", full = (d.bagN || 0) >= BAG_MAX;
     const upd: DocumentData = { taste: FieldValue.increment(taste), caught: FieldValue.increment(1), lastCatchAt: now, day, dayCount: count + 1 };
     if (typeof run === "number" && isFinite(run) && run > (d.best || 0) && run < 200000) upd.best = Math.round(run); // 한 판 최고 손맛(화면 점수)
     let saved = false;
@@ -234,9 +249,22 @@ export const fishCook = onCall(options, async (req) => {
 const CODE_CH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0·O·1·I 빼고
 const cleanName = (n: unknown) => String(n ?? "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, 12);
 const teacherOf = (req: CallableRequest) => { if (!req.auth) throw new HttpsError("unauthenticated", "선생님은 구글로 로그인해 주세요."); return req.auth.uid; };
+// 교사 = 러닝크루 교사 계정(users.role, claimTeacherRole 로만 부여) 또는 최고 관리자. 교사는 낚시터를 자유롭게 쓴다
+async function isTeacherUid(req: CallableRequest) {
+  if (!req.auth) return false;
+  if (isAdmin(req)) return true;
+  return (await db().doc(`users/${req.auth.uid}`).get()).data()?.role === "teacher";
+}
+// 낚시 방: 교사가 열면 그 학급 학생만 낚시할 수 있다(시간·장소·한 판 시간·문제)
+type Quiz = { q: string; o: string[]; a: number };
+type Room = { open: boolean; closesAt: number; place: "fresh" | "sea" | "any"; roundSec: number; quizOn: boolean; quiz: Quiz[] };
+const roomOpen = (r: Room | null) => !!r && r.open && Date.now() < r.closesAt;
+async function roomOf(cid: string): Promise<Room | null> { return ((await db().doc(`fishClasses/${cid}`).get()).data()?.room as Room) || null; }
+const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), closesAt: r.closesAt, place: r.place, roundSec: r.roundSec, quizOn: !!r.quizOn && r.quiz?.length > 0, quizN: r.quiz?.length || 0, ...(withQuiz && r.quizOn ? { quiz: r.quiz } : {}) } : { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0 };
 
 export const fishClassCreate = onCall(options, async (req) => {
   const uid = teacherOf(req), name = cleanName(req.data?.name) || "우리 반";
+  if (!(await isTeacherUid(req))) throw new HttpsError("permission-denied", "선생님 계정만 학급을 만들 수 있어요. 러닝크루에서 교사로 가입해 주세요.");
   const mine = await db().collection("fishClasses").where("teacher", "==", uid).count().get();
   if (mine.data().count >= 20) throw new HttpsError("resource-exhausted", "학급은 20개까지 만들 수 있어요.");
   for (let i = 0; i < 8; i++) {
@@ -260,7 +288,7 @@ export const fishClassList = onCall(options, async (req) => {
     const st = await c.ref.collection("students").get();
     const profs = st.docs.length ? await db().getAll(...st.docs.map((d) => meRef(`s_${c.id}_${d.id}`))) : [];
     const students = st.docs.map((d, i) => { const p = profs[i]?.data() || {}; return { sid: d.id, name: d.data().name, hasPin: !!d.data().pinHash, taste: p.taste || 0, money: p.money || 0, romance: p.romance || 0, caught: p.caught || 0 }; });
-    return { cid: c.id, name: c.data().name, code: c.data().code, students };
+    return { cid: c.id, name: c.data().name, code: c.data().code, students, room: roomPub(c.data().room || null, false) };
   })) };
 });
 
@@ -361,4 +389,32 @@ export const fishAdmin = onCall(options, async (req) => {
   }));
   return { fishers: fishers.data().count, classes: classes.sort((a, b) => b.createdAt - a.createdAt),
     logs: logs.docs.map((d) => ({ id: d.id, ...d.data() })) };
+});
+
+// 학생: 내 학급 방 상태(열렸는지·남은 시간·문제) — 대기 화면이 몇 초마다 묻는다
+export const fishRoom = onCall(options, async (req) => {
+  const key = await who(req);
+  if (!key.startsWith("s_")) return { room: null };
+  return { room: roomPub(await roomOf(key.split("_")[1])) };
+});
+// 교사: 방 열기·닫기·설정(열어 둘 시간, 한 판 시간, 장소, 문제)
+export const fishRoomSet = onCall(options, async (req) => {
+  const uid = teacherOf(req), cid = cut(req.data?.cid, 64);
+  if (!/^[\w-]{1,64}$/.test(cid)) throw new HttpsError("invalid-argument", "학급을 골라 주세요.");
+  const ref = db().doc(`fishClasses/${cid}`), c = await ref.get();
+  if (c.data()?.teacher !== uid && !isAdmin(req)) throw new HttpsError("permission-denied", "내 학급이 아니에요.");
+  const old: Room = c.data()?.room || { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quiz: [] };
+  const d = req.data || {}, room: Room = { ...old };
+  if (d.place !== undefined) room.place = (["fresh", "sea", "any"] as const).includes(d.place) ? d.place : "any";
+  if (d.roundSec !== undefined) room.roundSec = Math.min(900, Math.max(60, Math.round(Number(d.roundSec) || 180)));
+  if (d.quizOn !== undefined) room.quizOn = !!d.quizOn;
+  if (d.quiz !== undefined) {
+    if (!Array.isArray(d.quiz) || d.quiz.length > 300) throw new HttpsError("invalid-argument", "문제는 300개까지 올릴 수 있어요.");
+    room.quiz = (d.quiz as unknown[]).map((x) => { const q = x as Quiz; const o = Array.isArray(q?.o) ? q.o.map((v) => cut(v, 120)).filter(Boolean).slice(0, 5) : [];
+      return { q: cut(q?.q, 300), o, a: Math.round(Number(q?.a)) }; }).filter((q) => q.q && q.o.length >= 2 && q.a >= 0 && q.a < q.o.length);
+  }
+  if (d.open === true) { room.open = true; room.closesAt = Date.now() + Math.min(240, Math.max(5, Math.round(Number(d.minutes) || 40))) * 60e3; }
+  if (d.open === false) { room.open = false; room.closesAt = 0; }
+  await ref.update({ room });
+  return { room: roomPub(room, false) };
 });
