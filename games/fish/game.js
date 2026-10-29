@@ -2347,7 +2347,7 @@ function loadPlace(place) {
   return (loading[place] = Promise.all(list.map(async (m) => {
     try { await loadFish(m.id, m.file, m.yaw, m.roll); } catch (e) { console.warn("모델", m.id, e); }
     done++; show();
-  })).then(() => { $("loadText").textContent = "준비 완료!"; }));
+  })).then(() => { if (MODELS_READY) applyGate(); else $("loadText").textContent = "준비 완료!"; }));
 }
 (async () => {
   try { MODEL_LIST = await (await fetch("models.json", { cache: "no-cache" })).json(); } catch { MODEL_LIST = []; }
