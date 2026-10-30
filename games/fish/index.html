@@ -456,6 +456,7 @@
   .lobside { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .lobplaces { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; } .lobplaces .go { font-size: 16px; padding: 10px 4px; } .lobplaces .go.on { background: var(--sky); }
   .lobplaces > small { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+  .lobgo { font-size: 28px; background: var(--lime); }
   .lobwho > b { font-size: 15px; color: var(--muted); display: block; margin-bottom: 6px; }
   .chips, .hostchips { display: flex; flex-wrap: wrap; gap: 8px; }
   .hchip { background: var(--c); color: var(--ink); padding: 6px 12px 7px; font-size: 16px; box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), inset 0 -4px 0 rgba(0, 0, 0, .2); animation: chipIn .35s steps(4) both; }
@@ -741,6 +742,7 @@
       <div class="lobslot" id="lobbySlot"></div>
       <div class="lobside">
         <div class="lobplaces" id="lobPlaces" hidden><small>어디서 낚시할까요?</small><button class="go alt" data-lobplace="fresh">민물</button><button class="go alt" data-lobplace="sea">바다</button></div>
+        <button class="go lobgo" id="lobGo" hidden>낚시하러 가기 ▶</button>
         <div class="lobwho"><b id="lobCount"></b><div class="chips" id="lobPlayers"></div></div>
       </div>
     </div>
@@ -778,6 +780,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=38"></script>
+<script type="module" src="game.js?v=39"></script>
 </body>
 </html>

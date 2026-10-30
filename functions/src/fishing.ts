@@ -297,14 +297,14 @@ async function isTeacherUid(req: CallableRequest) {
 // 낚시 방: 교사가 열면 대기실(lobby)이 생기고, 학생이 다 들어오면 교사가 "시작"을 눌러 모두 같이 한 판(play)을 한다(블루킷처럼)
 // 열어 둘 시간이 지나면 저절로 닫힌다. 한 판이 끝나면(done) 교사가 대기실로 돌려 다음 판을 시작한다
 type Quiz = { q: string; o: string[]; a: number };
-type Room = { open: boolean; closesAt: number; place: "fresh" | "sea" | "any"; roundSec: number; quizOn: boolean; quiz: Quiz[]; phase?: "lobby" | "play"; round?: number; startAt?: number; endAt?: number };
+type Room = { open: boolean; closesAt: number; place: "fresh" | "sea" | "any"; roundSec: number; quizOn: boolean; quiz: Quiz[]; mode?: "contest" | "free"; phase?: "lobby" | "play"; round?: number; startAt?: number; endAt?: number };
 const roomOpen = (r: Room | null) => !!r && r.open && Date.now() < r.closesAt;
 // 학생이 지금 물고기를 잡을 수 있나(한 판 중). 끝난 뒤 마지막 한 마리를 올릴 틈 30초
-const roomPlaying = (r: Room | null) => roomOpen(r) && r!.phase === "play" && Date.now() >= (r!.startAt || 0) - 2000 && Date.now() < (r!.endAt || 0) + 30e3;
-const phaseOf = (r: Room | null) => { if (!roomOpen(r)) return "closed"; if (r!.phase !== "play") return "lobby"; const n = Date.now(); return n < (r!.startAt || 0) ? "countdown" : n < (r!.endAt || 0) ? "play" : "done"; };
+const roomPlaying = (r: Room | null) => roomOpen(r) && r!.mode === "free" || roomOpen(r) && r!.phase === "play" && Date.now() >= (r!.startAt || 0) - 2000 && Date.now() < (r!.endAt || 0) + 30e3;
+const phaseOf = (r: Room | null) => { if (!roomOpen(r)) return "closed"; if (r!.mode === "free") return "free"; if (r!.phase !== "play") return "lobby"; const n = Date.now(); return n < (r!.startAt || 0) ? "countdown" : n < (r!.endAt || 0) ? "play" : "done"; };
 async function roomOf(cid: string): Promise<Room | null> { return ((await db().doc(`fishClasses/${cid}`).get()).data()?.room as Room) || null; }
 const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), closesAt: r.closesAt, place: r.place, roundSec: r.roundSec, quizOn: !!r.quizOn && r.quiz?.length > 0, quizN: r.quiz?.length || 0, ...(withQuiz && r.quizOn ? { quiz: r.quiz } : {}),
-  phase: phaseOf(r), round: r.round || 0, startAt: r.startAt || 0, endAt: r.endAt || 0, now: Date.now() } : { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0, phase: "closed", round: 0, startAt: 0, endAt: 0, now: Date.now() };
+  mode: r.mode || "contest", phase: phaseOf(r), round: r.round || 0, startAt: r.startAt || 0, endAt: r.endAt || 0, now: Date.now() } : { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0, mode: "contest", phase: "closed", round: 0, startAt: 0, endAt: 0, now: Date.now() };
 // 대기실 명단: fishClasses/{cid}/lobby/{sid} = { name, at(마지막으로 보인 때), round, pts(이번 판 손맛), n(이번 판 마리) }
 const lobbyCol = (cid: string) => db().collection(`fishClasses/${cid}/lobby`);
 const HERE_MS = 30e3;
@@ -499,10 +499,13 @@ export const fishRoomSet = onCall(options, async (req) => {
     room.quiz = (d.quiz as unknown[]).map((x) => { const q = x as Quiz; const o = Array.isArray(q?.o) ? q.o.map((v) => cut(v, 120)).filter(Boolean).slice(0, 5) : [];
       return { q: cut(q?.q, 300), o, a: Math.round(Number(q?.a)) }; }).filter((q) => q.q && q.o.length >= 2 && q.a >= 0 && q.a < q.o.length);
   }
-  if (d.open === true) { room.open = true; room.phase = "lobby"; room.closesAt = now + Math.min(240, Math.max(5, Math.round(Number(d.minutes) || 40))) * 60e3; }
+  // 방식: contest(대기실에서 다 같이 시작) · free(열려 있는 동안 학생이 언제든 여러 판). 바꾸면 순위를 새로 센다
+  if (d.mode === "contest" || d.mode === "free") { if ((room.mode || "contest") !== d.mode) { room.round = (room.round || 0) + 1; room.phase = "lobby"; } room.mode = d.mode; }
+  if (d.open === true) { room.open = true; room.phase = "lobby"; room.round = (room.round || 0) + 1; room.closesAt = now + Math.min(240, Math.max(5, Math.round(Number(d.minutes) || 40))) * 60e3; }
   if (d.open === false) { room.open = false; room.closesAt = 0; room.phase = "lobby"; }
   if (d.start === true) { // 모두 같이 시작: 4초 카운트다운 뒤 한 판
     if (!roomOpen(room)) throw new HttpsError("failed-precondition", "먼저 낚시터를 열어 주세요.");
+    if (room.mode === "free") throw new HttpsError("failed-precondition", "자유 낚시 중이에요. 대회로 바꾼 뒤 시작해요.");
     room.phase = "play"; room.round = (room.round || 0) + 1; room.startAt = now + 4000; room.endAt = room.startAt + room.roundSec * 1000;
     if (room.endAt > room.closesAt) room.closesAt = room.endAt + 60e3; // 한 판 중에 닫히지 않게
   }

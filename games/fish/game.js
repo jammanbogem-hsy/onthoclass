@@ -7,7 +7,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=5";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=12";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=13";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -2575,7 +2575,7 @@ function start() {
   const w = Math.random();
   const g = DEV_FREE ? {} : gate();
   // 학급 대회: 모두 같은 순간에 끝나도록 서버 시계로 남은 시간을 잰다
-  const left = g.room?.endAt ? Math.max(3, (g.room.endAt - serverNow()) / 1000) : 180;
+  const left = g.room?.endAt && !g.free ? Math.max(3, (g.room.endAt - serverNow()) / 1000) : g.room?.roundSec || 180; // 자유 낚시는 판마다 한 판 시간
   if (g.room) G.round = g.room.round;
   Object.assign(G, { playing: true, time: left, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
     streak: 0, fever: 0, bossSpawned: false, stat: { barPerfect: 0, circlePerfect: 0 }, weather: w < .5 ? "sunny" : w < .75 ? "rain" : "sunset" });
@@ -2646,7 +2646,8 @@ let autoStarting = false;
 function screens() {
   const student = NET.role === "student" || (hasTicket() && !NET.ready);
   document.body.classList.toggle("student", student);
-  $("againBtn").hidden = student; $("placeBtn").textContent = student ? "대기실로" : "메인 화면으로";
+  const free = phaseNow() === "free";
+  $("againBtn").hidden = student && !free; $("placeBtn").textContent = student ? "대기실로" : "메인 화면으로";
   if (G.playing || autoStarting || !$("end").hidden) { $("lobby").hidden = $("join").hidden = true; return; }
   $("join").hidden = !(STUDENT_PAGE && !student);
   $("lobby").hidden = !student;
@@ -2674,6 +2675,12 @@ function setLobPlace(p) { lobPlace = p; try { localStorage.setItem("jamfish-plac
 document.querySelectorAll("[data-lobplace]").forEach((b) => b.addEventListener("click", () => { audio(); setLobPlace(b.dataset.lobplace); }));
 setLobPlace(lobPlace);
 document.querySelectorAll("[data-tut]").forEach((b) => b.addEventListener("click", () => tutOpen()));
+// 자유 낚시: 대기실에서 바로 낚시터로
+$("lobGo").addEventListener("click", () => {
+  const r = NET.room; if (!MODELS_READY || autoStarting || phaseNow() !== "free") return;
+  autoStarting = true; $("lobby").hidden = true;
+  choosePlace(r.place === "any" ? lobPlace : r.place).finally(() => { autoStarting = false; });
+});
 bindJoin();
 screens();
 async function choosePlace(place) {
@@ -2722,7 +2729,7 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=12").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=13").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
