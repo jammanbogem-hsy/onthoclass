@@ -34,6 +34,14 @@ export function analyze(mesh, toLocal) {
     head: { top: H, cx: (q(hx, .02) + q(hx, .98)) / 2, cz: (q(hz, .02) + q(hz, .98)) / 2, w: q(hx, .995) - q(hx, .005), front: q(hz, .003), back: q(hz, .997) },
     torso: { back: tb, front: tf },
   };
+  // 주먹: 양쪽(x<0, x>0)에서 가장 앞(z 최소)인 점 둘레의 가운데. 비옷·조끼는 이 둘레(구)를 빼서 주먹을 밖에 둔다
+  A.fists = [-1, 1].map((sx) => {
+    let tip = -1; for (let i = 0; i < n; i++) { const x = P[i * 3], y = P[i * 3 + 1] / H; if (y > .28 && y < .47 && x * sx > 0 && (tip < 0 || P[i * 3 + 2] < P[tip * 3 + 2])) tip = i; }
+    if (tip < 0) return null;
+    const c = [0, 0, 0]; let m = 0;
+    for (let i = 0; i < n; i++) if (Math.hypot(P[i * 3] - P[tip * 3], P[i * 3 + 1] - P[tip * 3 + 1], P[i * 3 + 2] - P[tip * 3 + 2]) < .055 * H) { c[0] += P[i * 3]; c[1] += P[i * 3 + 1]; c[2] += P[i * 3 + 2]; m++; }
+    return c.map((v) => v / m);
+  }).filter(Boolean);
   // 높이 y 에서 얼굴 가운데 앞면(z 가장 작은 값): 안경·수염 붙일 자리
   A.frontAt = (yq) => { let z = 1e9; for (let i = 0; i < n; i++) if (Math.abs(P[i * 3] - A.head.cx) < .06 * H && Math.abs(P[i * 3 + 1] - yq) < .02 * H) z = Math.min(z, P[i * 3 + 2]); return z < 1e8 ? z : A.head.front; };
   return { P, SN, n, index: g.index, A };
@@ -41,12 +49,19 @@ export function analyze(mesh, toLocal) {
 
 // 상자(평면 여러 개) 안쪽만 남기고 법선 쪽으로 off 만큼 부풀린 껍데기. planes: [[nx,ny,nz,d]] → nx*x+ny*y+nz*z+d >= 0 이 안쪽
 export function shell(S, planes, off, material) {
-  const idx = S.index ? S.index.array : null, tri = idx ? idx.length / 3 : S.n / 3, out = [];
+  const idx = S.index ? S.index.array : null, tri = idx ? idx.length / 3 : S.n / 3, out = [], nrm = [];
   const vert = (i) => [S.P[i * 3], S.P[i * 3 + 1], S.P[i * 3 + 2], S.SN[i * 3], S.SN[i * 3 + 1], S.SN[i * 3 + 2]];
   const lerp = (a, b, t) => a.map((v, k) => v + (b[k] - v) * t);
   for (let t = 0; t < tri; t++) {
     let poly = [0, 1, 2].map((k) => vert(idx ? idx[t * 3 + k] : t * 3 + k));
-    for (const [a, b, c, d] of planes) {
+    for (const pl of planes) {
+      let [a, b, c, d] = pl;
+      if (pl.length === 5) { // 구(주먹): 삼각형 가운데에서 구 중심 쪽 방향의 접평면으로 자른다(바깥만 남김)
+        const [, cx, cy, cz, r] = pl, m = [0, 1, 2].map((k) => poly.reduce((t, p) => t + p[k], 0) / poly.length), dx = m[0] - cx, dy = m[1] - cy, dz = m[2] - cz, l = Math.hypot(dx, dy, dz);
+        if (l > r * 1.6) continue;
+        if (l < 1e-6) { poly = []; break; }
+        a = dx / l; b = dy / l; c = dz / l; d = -(a * cx + b * cy + c * cz) - r;
+      }
       const nxt = [], D = poly.map((p) => a * p[0] + b * p[1] + c * p[2] + d);
       for (let k = 0; k < poly.length; k++) {
         const p = poly[k], q = poly[(k + 1) % poly.length], dp = D[k], dq = D[(k + 1) % poly.length];
@@ -56,11 +71,11 @@ export function shell(S, planes, off, material) {
       poly = nxt; if (poly.length < 3) break;
     }
     if (poly.length < 3) continue;
-    const o = poly.map((p) => { const l = Math.hypot(p[3], p[4], p[5]) || 1; return [p[0] + p[3] / l * off, p[1] + p[4] / l * off, p[2] + p[5] / l * off]; });
-    for (let k = 1; k + 1 < o.length; k++) out.push(...o[0], ...o[k], ...o[k + 1]);
+    const o = poly.map((p) => { const l = Math.hypot(p[3], p[4], p[5]) || 1; return [p[0] + p[3] / l * off, p[1] + p[4] / l * off, p[2] + p[5] / l * off, p[3] / l, p[4] / l, p[5] / l]; });
+    for (let k = 1; k + 1 < o.length; k++) for (const q of [o[0], o[k], o[k + 1]]) { out.push(q[0], q[1], q[2]); nrm.push(q[3], q[4], q[5]); }
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(out, 3));
-  g.computeVertexNormals();
+  // 법선은 바탕 몸의 매끈한 법선을 그대로(삼각형마다 각진 면이 보이지 않게)
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(out, 3)); g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
   return new THREE.Mesh(g, material);
 }
 
@@ -69,8 +84,10 @@ export function cut(S, kind, P = {}) {
   const { H, hand, torso } = S.A, Y = (k) => k * H;
   const above = (y) => [0, 1, 0, -y], below = (y) => [0, -1, 0, y], behind = (z) => [0, 0, 1, -z];
   const hairOut = [...(P.backZ != null ? [[0, 0, -1, P.backZ]] : []), ...(P.sideX != null ? [[1, 0, 0, P.sideX], [-1, 0, 0, P.sideX]] : [])];
-  if (kind === "coat") return [above(Y(.195)), below(Y(P.coatTop ?? .497)), behind(hand + Y(.07)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
-  if (kind === "vest") { const k = .9, w = Y(.118), y0 = Y(.38); return [above(Y(.29)), below(Y(P.vestTop ?? .49)), behind(P.vestFront ?? torso.front - Y(.012)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...hairOut]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
+  const fists = (r) => S.A.fists.map((f) => ["s", f[0], f[1], f[2], Y(r)]);
+  if (kind === "coat") return [above(Y(.195)), below(Y(P.coatTop ?? .497)), ...(P.handPlane ? [behind(hand + Y(.07))] : fists(.06)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
+  // 조끼: 앞이 트인 모양(팔뚝은 가슴 앞에 있어서 그 앞은 뺀다)
+  if (kind === "vest") { const k = .9, w = Y(P.vestW ?? .118), y0 = Y(.38); return [above(Y(.26)), below(Y(P.vestTop ?? .49)), behind(P.vestFront ?? torso.front + Y(P.vestOpen ?? 0)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...fists(.075), ...hairOut]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
   if (kind === "boots") return [below(Y(.19))];
   return [];
 }

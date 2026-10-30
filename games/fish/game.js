@@ -6,8 +6,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { analyze, shell, cut } from "./avatar.js?v=2";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=11";
+import { analyze, shell, cut } from "./avatar.js?v=5";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=12";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -656,34 +656,61 @@ async function loadFish(id, file, yaw = 0, roll = 0, spin = 0) {
 // 낚시꾼: 바탕 몸(반팔·반바지) 위에 옷 껍데기(비옷·조끼·장화)와 아이템(모자·안경·배낭…)을 입힌다(avatar.js)
 // 머리카락 색만 바탕 몸 셰이더에서 바꾼다(머리 높이의 갈색. 눈은 거의 검정이라 빠지고, 눈썹은 머리색을 따라간다)
 // 모자를 쓰면 모자 아래선(cut)보다 위의 머리를 머리 가운데로 눌러 모자 속에 넣는다(머리카락이 모자를 뚫고 나오지 않게)
-const HAIR = { on: { value: 0 }, col: { value: new THREE.Color() }, toBody: { value: new THREE.Matrix4() }, fromBody: { value: new THREE.Matrix4() }, headY: { value: 1e9 }, faceZ: { value: -1e9 }, browY: { value: 1e9 },
+const HAIR = { on: { value: 0 }, col: { value: new THREE.Color() }, ref: { value: new THREE.Color() }, toBody: { value: new THREE.Matrix4() }, fromBody: { value: new THREE.Matrix4() },
   cut: { value: 1e9 }, squash: { value: new THREE.Vector3(1, 1, .05) }, center: { value: new THREE.Vector2() } };
+// 머리카락 칠할 곳: 정수리 텍스처 색(= 그 모델의 머리색)과 비슷한 색인 꼭짓점만 hairW=1 (모델이 바뀌어도 그대로 맞는다). 눈·피부는 색이 달라 빠지고, 눈썹은 머리색을 따라간다
+function hairMask(mesh, toBody, H) {
+  const g = mesh.geometry, uv = g.attributes.uv, pos = g.attributes.position, n = pos.count, w = new Float32Array(n), img = mesh.material.map?.image, ref = new THREE.Color(.35, .22, .14);
+  g.setAttribute("hairW", new THREE.BufferAttribute(w, 1));
+  if (!img || !uv) return ref;
+  const S = 256, cv = document.createElement("canvas"); cv.width = cv.height = S;
+  const cx = cv.getContext("2d", { willReadFrequently: true }); cx.drawImage(img, 0, 0, S, S); const px = cx.getImageData(0, 0, S, S).data;
+  const at = (i) => { const u = uv.getX(i) - Math.floor(uv.getX(i)), v = uv.getY(i) - Math.floor(uv.getY(i)), k = ((Math.min(S - 1, v * S | 0)) * S + Math.min(S - 1, u * S | 0)) * 4; return [px[k] / 255, px[k + 1] / 255, px[k + 2] / 255]; };
+  const yb = new Float32Array(n), v = new THREE.Vector3();
+  let top = 0; for (let i = 0; i < n; i++) { yb[i] = v.fromBufferAttribute(pos, i).applyMatrix4(toBody).y; top = Math.max(top, yb[i]); }
+  const acc = [0, 0, 0]; let m = 0;
+  for (let i = 0; i < n; i++) if (yb[i] > top - H * .04) { const c = at(i); acc[0] += c[0]; acc[1] += c[1]; acc[2] += c[2]; m++; }
+  if (m) ref.setRGB(acc[0] / m, acc[1] / m, acc[2] / m);
+  // 정수리에서 시작해 머리색 꼭짓점끼리 이어진 곳만 칠한다(피부에 둘러싸인 눈동자·눈썹은 닿지 않는다)
+  const ok = new Uint8Array(n); for (let i = 0; i < n; i++) if (yb[i] > H * .3) { const c = at(i); ok[i] = Math.hypot(c[0] - ref.r, c[1] - ref.g, c[2] - ref.b) < .22 ? 1 : 0; }
+  const same = new Map(), root = new Int32Array(n);
+  for (let i = 0; i < n; i++) { v.fromBufferAttribute(pos, i); const k = `${Math.round(v.x * 3000)},${Math.round(v.y * 3000)},${Math.round(v.z * 3000)}`; if (!same.has(k)) same.set(k, i); root[i] = same.get(k); }
+  const adj = Array.from({ length: n }, () => []), I = g.index ? g.index.array : null, T = I ? I.length : n;
+  for (let t = 0; t < T; t += 3) { const a = root[I ? I[t] : t], b2 = root[I ? I[t + 1] : t + 1], c2 = root[I ? I[t + 2] : t + 2]; adj[a].push(b2, c2); adj[b2].push(a, c2); adj[c2].push(a, b2); }
+  const seen = new Uint8Array(n), q = [];
+  for (let i = 0; i < n; i++) if (ok[i] && yb[i] > top - H * .05 && !seen[root[i]]) { seen[root[i]] = 1; q.push(root[i]); }
+  while (q.length) { const i = q.pop(); for (const j of adj[i]) if (!seen[j] && ok[j]) { seen[j] = 1; q.push(j); } }
+  for (let i = 0; i < n; i++) if (seen[root[i]] && ok[i]) w[i] = 1;
+  return ref; // sRGB 0~1
+}
 function hairShader(mesh) {
   mesh.material.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, { hairOn: HAIR.on, hairCol: HAIR.col, toBody: HAIR.toBody, fromBody: HAIR.fromBody, headY: HAIR.headY, faceZ: HAIR.faceZ, browY: HAIR.browY, hatCut: HAIR.cut, hatSquash: HAIR.squash, hatCenter: HAIR.center });
-    sh.vertexShader = "uniform mat4 toBody, fromBody; uniform float hatCut; uniform vec3 hatSquash; uniform vec2 hatCenter; varying vec3 vB;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
-      vB = (toBody * vec4(position, 1.)).xyz;
+    Object.assign(sh.uniforms, { hairOn: HAIR.on, hairCol: HAIR.col, hairRef: HAIR.ref, toBody: HAIR.toBody, fromBody: HAIR.fromBody, hatCut: HAIR.cut, hatSquash: HAIR.squash, hatCenter: HAIR.center });
+    sh.vertexShader = "uniform mat4 toBody, fromBody; uniform float hatCut; uniform vec3 hatSquash; uniform vec2 hatCenter; attribute float hairW; varying float vHairW;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      vHairW = hairW;
+      vec3 vB = (toBody * vec4(position, 1.)).xyz;
       if (vB.y > hatCut - hatSquash.z) {
         vec3 q = vB; float k = smoothstep(hatCut - hatSquash.z, hatCut, q.y);
         q.xz = hatCenter + (q.xz - hatCenter) * mix(1., hatSquash.x, k);
         q.y = q.y > hatCut ? hatCut + (q.y - hatCut) * hatSquash.y : q.y;
         transformed = (fromBody * vec4(q, 1.)).xyz;
       }`);
-    sh.fragmentShader = `uniform float hairOn, headY, faceZ, browY; uniform vec3 hairCol; varying vec3 vB;
-      float hueOf(vec3 s) { float mx = max(s.r, max(s.g, s.b)), mn = min(s.r, min(s.g, s.b)), d = mx - mn; if (d < 1e-4) return 0.;
-        float h = mx == s.r ? mod((s.g - s.b) / d, 6.) : mx == s.g ? (s.b - s.r) / d + 2. : (s.r - s.g) / d + 4.; return h / 6.; }
+    sh.fragmentShader = `uniform float hairOn; uniform vec3 hairCol, hairRef; varying float vHairW;
       ` + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
-      if (hairOn > .5 && vB.y > headY && (vB.z > faceZ || vB.y > browY)) {
+      if (hairOn > .5 && vHairW > .2) {
         vec3 s = pow(max(diffuseColor.rgb, vec3(0.)), vec3(1. / 2.2));
-        float mx = max(s.r, max(s.g, s.b)), sat = mx > 0. ? (mx - min(s.r, min(s.g, s.b))) / mx : 0., hu = hueOf(s);
-        if (mx > .13 && mx < .62 && (sat > .1 && (hu < .14 || hu > .95) || mx < .28)) diffuseColor.rgb = hairCol * clamp(mx / .3, .45, 1.35);
-      }`);
+        float k = (1. - smoothstep(.15, .25, distance(s, hairRef))) * smoothstep(.2, .7, vHairW);
+        float l = dot(s, vec3(.3, .59, .11)) / max(.05, dot(hairRef, vec3(.3, .59, .11)));
+        k *= smoothstep(.4, .6, l); // 눈동자처럼 머리보다 훨씬 어두운 곳은 그대로
+        diffuseColor.rgb = mix(diffuseColor.rgb, hairCol * clamp(l, .45, 1.6), k);
+      }`).replace("#include <opaque_fragment>", `{ float ndv = clamp(dot(normalize(normal), normalize(vViewPosition)), 0., 1.); outgoingLight += vec3(1., .95, .88) * pow(1. - ndv, 3.) * .2; } // 테두리 빛
+      #include <opaque_fragment>`);
   };
 }
 // 바탕 몸: 0 남자, 1 여자(단발머리가 어깨까지 와서 비옷·조끼를 그 아래·안쪽으로 자르고, 눈·입 높이가 다르다)
 const BASES = [
-  { file: "assets/avatar/base.glb?v=1", yaw: 90, prof: {}, eye: .735, mouth: .645, brow: .8, hairLow: .55, faceZone: true }, // 남자: 눈이 갈색이라 얼굴 앞쪽(눈썹 아래)은 칠하지 않는다
-  { file: "assets/avatar/girl.glb?v=1", yaw: 90, prof: { coatTop: .47, backZ: .16, sideX: .34, vestTop: .44, vestFront: -.19 }, eye: .71, mouth: .63, brow: .86, hairLow: .4 }, // 여자: 눈이 거의 검정이라 색으로만 가린다(앞머리가 얼굴보다 앞에 있어 위치로는 못 나눔)
+  { file: "assets/avatar/boy3.glb?v=1", yaw: 90, prof: { vestOpen: .03, vestW: .105 }, eye: .735, mouth: .645, brow: .8, hairLow: .55, faceZone: true }, // 남자: 눈이 갈색이라 얼굴 앞쪽(눈썹 아래)은 칠하지 않는다
+  { file: "assets/avatar/girl3.glb?v=1", yaw: 90, prof: { vestOpen: .03, vestW: .105 }, eye: .71, mouth: .63 }, // 여자: 눈이 거의 검정이라 색으로만 가린다(앞머리가 얼굴보다 앞에 있어 위치로는 못 나눔)
 ];
 const baseCache = {};
 function loadBase(i) {
@@ -702,7 +729,8 @@ function loadBase(i) {
     // 모델이 쥔 주먹 끝(가장 앞쪽 점)에서 우리 낚싯대가 이어진다
     let tip = null;
     for (const p of bodyPoints(turn, 3)) if (p.y > .3 && p.y < 1.1 && (!tip || p.z < tip.z)) tip = p;
-    return { turn, toBody, S: analyze(mesh, toBody), shells: {}, hand: tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) };
+    const S = analyze(mesh, toBody);
+    return { turn, toBody, S, hairRef: hairMask(mesh, toBody, S.A.H), shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
   });
 }
 async function loadAngler(i = 0) {
@@ -713,8 +741,7 @@ async function loadAngler(i = 0) {
   AVA.base = i; AVA.S = b.S; AVA.shells = b.shells; HAND.copy(b.hand);
   const A = b.S.A, B = BASES[i];
   HAIR.toBody.value.copy(b.toBody); HAIR.fromBody.value.copy(b.toBody).invert(); HAIR.center.value.set(A.head.cx, A.head.cz);
-  // 머리카락 칠하기: hairLow 위만. 남자는 얼굴 앞쪽 눈썹 아래를 빼서 갈색 눈을 지킨다
-  HAIR.headY.value = A.H * B.hairLow; HAIR.faceZ.value = B.faceZone ? A.head.front + A.H * .1 : -1e9; HAIR.browY.value = A.H * B.brow;
+  HAIR.ref.value.copy(b.hairRef);
   applyGear(GEAR.me); // 몸이 바뀌면 옷도 다시 맞춘다
 }
 
@@ -722,12 +749,12 @@ async function loadAngler(i = 0) {
 // yaw: 앞이 -z(낚시꾼 앞)가 되게 돌리는 각도. at: 붙이는 자리, w: 너비(머리·몸통 너비 배수 또는 m), 나머지는 자리별 미세 조정
 const ITEM_FIT = {
   // 모자: line=모자 아랫단 높이(키 배수), crown=모자 높이 중 머리가 들어갈 몫, cover=머리를 가로로 줄이는 비율
-  hat_bucket: { at: "head", w: .92, line: .8, crown: .8, cover: .86 },
-  hat_straw: { at: "head", w: 1.35, line: .82, crown: .85, cover: .86, base: .4 }, // base: 턱끈처럼 아랫단보다 아래로 늘어진 몫
+  hat_bucket: { at: "head", w: .92, line: .8, crown: .5, cover: .74 },
+  hat_straw: { at: "head", w: 1.3, line: .83, crown: .6, cover: .8 }, // base: 턱끈처럼 아랫단보다 아래로 늘어진 몫
   hat_beanie: { at: "head", w: .88, line: .79, crown: .78, cover: .84 },
   hat_pirate: { at: "head", w: 1.05, line: .83, crown: .8, yaw: 90, cover: .86 },
   crown: { at: "head", w: .55, sink: .2 },
-  cap: { at: "head", w: .88, line: .8, crown: .85, yaw: 90, z: -.04, cover: .86 },
+  cap: { at: "head", w: .82, line: .8, crown: .6, yaw: 90, z: -.04, cover: .82 },
   flower: { at: "pin", w: .2, yaw: 90 },
   bunny: { at: "head", w: .8, sink: .3, yaw: 90 },
   glasses: { at: "face", w: .62, yaw: 90 },
@@ -735,14 +762,15 @@ const ITEM_FIT = {
   mustache: { at: "mouth", w: .3, yaw: 90 },
   backpack: { at: "back", w: .34, yaw: -90 },
   flag: { at: "pole", w: .38, yaw: -90 },
-  wings: { at: "wings", w: .9, yaw: 90 },
+  wings: { at: "wings", w: .8, yaw: 90 },
   cape: { at: "cape", w: .46 },
   chair: { at: "deck", w: .52 }, fire: { at: "deck", w: .5 }, cooler: { at: "deck", w: .42 }, lantern: { at: "deck", w: .2 }, cat: { at: "deck", w: .32, yaw: 90 },
 };
+const ITEM_V2 = new Set(["hat_bucket", "hat_straw", "hat_beanie", "hat_pirate", "crown", "cap", "flower", "bunny", "glasses", "roundglasses", "mustache", "backpack", "wings", "cape"]); // Tripo v3 정밀로 다시 만든 것
 const AVA = { base: -1, want: -1, S: null, shells: {}, items: {}, loading: {} };
 function itemModel(id) {
   if (!ITEM_FIT[id]) return Promise.resolve(null);
-  return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=1`).then((g) => {
+  return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=${ITEM_V2.has(id) ? 2 : 1}`).then((g) => {
     const turn = new THREE.Group(); turn.add(g.scene);
     g.scene.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); } });
     turn.rotation.y = THREE.MathUtils.degToRad(ITEM_FIT[id].yaw || 0);
@@ -785,6 +813,72 @@ function placeItem(id, parent, tint) {
 function shellOf(kind) {
   if (!AVA.S) return null;
   return AVA.shells[kind] ??= shell(AVA.S, cut(AVA.S, kind, BASES[AVA.base].prof), { coat: .014, vest: .02, boots: .012 }[kind], toon("#ffffff", { side: THREE.DoubleSide })).geometry;
+}
+// 옷 셰이더: 껍데기는 몸을 부풀린 것이라 무늬가 없다 → 텍스처 없이 화면에서 바로 그린다(크롬북도 가볍게)
+// 자른 면을 따라 단(밑단·소매·목) 띠와 박음질, 비옷은 지퍼·주머니·반짝이는 비닐 광택, 조끼는 테두리·주머니 줄, 장화는 고무 밑창·발목 띠
+// 좌표는 몸 좌표(발바닥 0, 앞 -z, 키 H). 모든 옷에 테두리 빛(rim)과 아주 옅은 천 결
+const CLOTH_GLSL = `
+  uniform vec4 cPlanes[8], cSph[2]; uniform float cH, cFront, cGloss, cTrimW; uniform vec3 cTrim, cDark;
+  varying vec3 vC;
+  float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.55); }
+  float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+  float edgeDist() { float d = 1e3; for (int i = 0; i < 8; i++) { if (dot(cPlanes[i].xyz, cPlanes[i].xyz) < .5) continue; d = min(d, dot(cPlanes[i].xyz, vC) + cPlanes[i].w); } for (int i = 0; i < 2; i++) if (cSph[i].w > 0.) d = min(d, length(vC - cSph[i].xyz) - cSph[i].w); return d; }
+  float rect(vec2 p, vec2 lo, vec2 hi, float w) { vec2 a = step(lo, p) * step(p, hi); float inside = a.x * a.y; vec2 b = step(lo + w, p) * step(p, hi - w); return inside - b.x * b.y; } // 테두리만 1
+  float inRect(vec2 p, vec2 lo, vec2 hi) { vec2 a = step(lo, p) * step(p, hi); return a.x * a.y; }
+`;
+function clothMat(kind, col, planes) {
+  const m = toon(col, { side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), H = AVA.S.A.H, c = new THREE.Color(col); // 살짝 앞으로 그려서 속옷이 비치지 않게
+  const pl = planes.filter((x) => x.length === 4), sp = planes.filter((x) => x.length === 5);
+  const P = Array.from({ length: 8 }, (_, i) => new THREE.Vector4(...(pl[i] || [0, 0, 0, 0]))), SP = Array.from({ length: 2 }, (_, i) => sp[i] ? new THREE.Vector4(sp[i][1], sp[i][2], sp[i][3], sp[i][4]) : new THREE.Vector4());
+  const front = AVA.S.A.torso.front + (kind === "vest" ? AVA.S.A.H * .03 : 0);
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, { cPlanes: { value: P }, cSph: { value: SP }, cH: { value: H }, cFront: { value: front }, cGloss: { value: kind === "vest" ? .15 : kind === "boots" ? 1 : .8 },
+      cTrim: { value: c.clone().offsetHSL(0, -.05, kind === "coat" ? -.14 : -.09) }, cTrimW: { value: kind === "vest" ? .012 : .024 }, cDark: { value: c.clone().multiplyScalar(.35) } });
+    sh.vertexShader = "varying vec3 vC;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n vC = position;");
+    sh.fragmentShader = CLOTH_GLSL + "#define CLOTH_" + kind.toUpperCase() + "\n" + sh.fragmentShader
+      .replace("#include <color_fragment>", `#include <color_fragment>
+      {
+        float e = edgeDist() / cH, y = vC.y / cH, ax = abs(vC.x) / cH;
+        vec3 col = diffuseColor.rgb;
+        col *= .96 + .08 * vnoise(vC.xy / cH * 90.) ; // 천 결
+        float trim = 1. - step(cTrimW, e), stitch = step(cTrimW + .007, e) * (1. - step(cTrimW + .013, e)) * step(.5, fract((vC.x + vC.y + vC.z) / cH * 60.));
+        #ifdef CLOTH_COAT
+          bool fr = vC.z < cFront + .06 * cH; // 앞면
+          float zip = fr ? 1. - step(.009, ax) : 0., teeth = zip * step(.5, fract(y * 160.));
+          col = mix(col, cDark * 1.4, zip); col = mix(col, vec3(.85), teeth * .6);
+          float pl = fr ? step(.022, ax) * (1. - step(.027, ax)) * step(.5, fract(y * 70.)) : 0.; // 지퍼 옆 박음질
+          vec2 pk = vec2(ax, y);
+          float pocket = fr ? rect(pk, vec2(.045, .235), vec2(.115, .305), .006) : 0., flap = fr ? inRect(pk, vec2(.042, .29), vec2(.118, .312)) : 0.;
+          col = mix(col, cTrim, max(flap * .7, pocket));
+          col = mix(col, cDark * 1.6, pl * .8);
+        #endif
+        #ifdef CLOTH_VEST
+          bool fr = vC.z < cFront + .05 * cH;
+          vec2 pk = vec2(ax, y);
+          float p1 = fr ? rect(pk, vec2(.035, .3), vec2(.1, .35), .005) : 0., p2 = fr ? rect(pk, vec2(.04, .37), vec2(.095, .41), .005) : 0.;
+          float ring = fr ? 1. - step(.006, length(pk - vec2(.07, .43))) : 0.;
+          col = mix(col, cTrim, max(p1, p2)); col = mix(col, vec3(.8, .78, .7), ring);
+          col *= .93 + .07 * step(.5, fract(vC.x / cH * 45.) ) * step(.5, fract(vC.y / cH * 45.)); // 그물 결
+        #endif
+        #ifdef CLOTH_BOOTS
+          float sole = 1. - step(.028, y), toe = (1. - step(.06, y)) * step(.028, y) * (vC.z < cFront ? 1. : 0.);
+          col = mix(col, vec3(.16, .16, .19), sole); col = mix(col, col * 1.15 + .05, toe * .7);
+          col = mix(col, col * .7, (1. - step(.012, abs(y - .028))) * .8);
+        #endif
+        col = mix(col, cTrim, trim); col = mix(col, cDark * 1.8, stitch * .55);
+        diffuseColor.rgb = col;
+      }`)
+      .replace("#include <opaque_fragment>", `{
+        vec3 V = normalize(vViewPosition), N = normalize(normal);
+        float ndv = clamp(dot(N, V), 0., 1.), rim = pow(1. - ndv, 3.);
+        vec3 Lh = normalize(vec3(-.35, .75, .55) + V);
+        float spec = smoothstep(.95, .985, dot(N, Lh)) * cGloss; // 만화 같은 반짝 하이라이트(비닐·고무)
+        outgoingLight += vec3(1., .97, .9) * (rim * .2 + spec * .3);
+      }
+      #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => "cloth-" + kind;
+  return m;
 }
 
 class Fish {
@@ -885,10 +979,9 @@ function applyGear(me) {
   HAIR.on.value = L.hair ? 1 : 0; HAIR.col.value.set(P.hair[L.hair || 0]).convertSRGBToLinear();
   if (AVA.S) {
     const A = AVA.S.A, H = A.H;
-    const wearShell = (kind, col) => { const g = shellOf(kind); if (g) gearGroup.add(new THREE.Mesh(g, toon(col, { side: THREE.DoubleSide }))); };
+    const wearShell = (kind, col) => { const g = shellOf(kind); if (g) gearGroup.add(new THREE.Mesh(g, clothMat(kind, col, cut(AVA.S, kind, BASES[AVA.base].prof)))); };
     if (w.body === "vest") {
       wearShell("vest", "#4f7a3a");
-      for (const sx of [-1, 1]) { const pk = new THREE.Mesh(new THREE.BoxGeometry(H * .06, H * .05, H * .02), toon("#3a5a2a")); pk.position.set(sx * H * .055, H * .335, (BASES[AVA.base].prof.vestFront ?? A.torso.front) - H * .02); gearGroup.add(pk); }
     } else if (w.body !== "cape") wearShell("coat", P.coat[L.coat || 0]);
     wearShell("boots", P.boots[L.boots || 0]);
     if (w.body === "scarf") {
@@ -2629,7 +2722,7 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=11").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=12").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
