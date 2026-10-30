@@ -7,7 +7,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=2";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL } from "./town.js?v=10";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=11";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -923,7 +923,7 @@ let avatarDirty = true;
 const AV = { cv: $("charView"), r: null, sc: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, .1, 40), g: new THREE.Group(), spin: 0, drag: null, w: 0, h: 0, ht: 1.4 };
 AV.sc.add(new THREE.HemisphereLight("#ffffff", "#556070", 2.3)); { const d = new THREE.DirectionalLight("#ffffff", 1.5); d.position.set(-2, 3, -3); AV.sc.add(d); } AV.sc.add(AV.g);
 function stepAvatar(dt, t) {
-  const cv = AV.cv, slot = $("charSlot"); if (!cv) return; // 꾸미기 탭이 다시 그려져도 캔버스를 잃지 않게 참조를 쥐고 있는다
+  const cv = AV.cv, slot = $("lobby").hidden ? $("charSlot") : $("lobbySlot"); if (!cv) return; // 꾸미기 탭이 다시 그려져도 캔버스를 잃지 않게 참조를 쥐고 있는다
   if ($("town").hidden && slot && cv.parentElement !== slot) slot.append(cv);
   if (!cv.offsetParent) return;
   if (!AV.r) {
@@ -2481,7 +2481,10 @@ function start() {
   if (show) { show.fish.dispose(); show = null; }
   const w = Math.random();
   const g = DEV_FREE ? {} : gate();
-  Object.assign(G, { playing: true, time: g.room?.roundSec || 180, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
+  // 학급 대회: 모두 같은 순간에 끝나도록 서버 시계로 남은 시간을 잰다
+  const left = g.room?.endAt ? Math.max(3, (g.room.endAt - serverNow()) / 1000) : 180;
+  if (g.room) G.round = g.room.round;
+  Object.assign(G, { playing: true, time: left, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
     streak: 0, fever: 0, bossSpawned: false, stat: { barPerfect: 0, circlePerfect: 0 }, weather: w < .5 ? "sunny" : w < .75 ? "rain" : "sunset" });
   applyWeather(); setBait(G.bait);
   $("score").textContent = 0; $("count").textContent = 0; $("timerChip").classList.remove("low");
@@ -2538,9 +2541,48 @@ function applyGate() {
   const g = DEV_FREE ? { ok: true } : gate();
   document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = !MODELS_READY || !g.ok || (g.room && g.room.place !== "any" && g.room.place !== b.dataset.place); });
   if (MODELS_READY) $("loadText").textContent = g.ok ? (g.room ? `낚시터가 열렸어요! ${g.room.place === "any" ? "낚시터를 골라요" : (g.room.place === "sea" ? "바다" : "민물") + " 낚시터로 가요"}` : "낚시터를 골라요!") : g.why;
-  // 낚시 중에 선생님이 방을 닫으면 그 판을 마친다
-  if (G.playing && !g.ok && NET.role === "student") { shout("낚시터가 닫혔어요", "cream", 1.4); finish(); }
+  // 낚시 중에 선생님이 방을 닫거나 대기실로 돌리면 그 판을 마친다
+  if (G.playing && !g.ok && NET.role === "student") { shout(phaseNow() === "closed" ? "낚시터가 닫혔어요" : "대기실로!", "cream", 1.4); finish(); }
+  screens();
 }
+// ------------------------------------------------------------------ 학급 대회: 학생 전용 주소(/student)·입장·대기실·다 같이 시작
+const STUDENT_PAGE = /\/student\/?$/.test(location.pathname);
+let lobPlace = "fresh"; try { lobPlace = localStorage.getItem("jamfish-place") === "sea" ? "sea" : "fresh"; } catch {}
+let autoStarting = false;
+// 지금 보여 줄 화면: 낚시 중·끝 화면이면 그대로, 학생은 대기실, 학생 주소에서 아직 안 들어왔으면 입장 화면
+function screens() {
+  const student = NET.role === "student" || (hasTicket() && !NET.ready);
+  document.body.classList.toggle("student", student);
+  $("againBtn").hidden = student; $("placeBtn").textContent = student ? "대기실로" : "메인 화면으로";
+  if (G.playing || autoStarting || !$("end").hidden) { $("lobby").hidden = $("join").hidden = true; return; }
+  $("join").hidden = !(STUDENT_PAGE && !student);
+  $("lobby").hidden = !student;
+  $("start").hidden = student || STUDENT_PAGE;
+  if (student) { renderLobby(); if (!lobbyTut && NET.ready) { lobbyTut = true; let seen = false; try { seen = localStorage.getItem("jamfish-tut") === "1"; } catch {} if (!seen) tutOpen(); } }
+}
+let lobbyTut = false;
+function lobbyTick() {
+  if (NET.role !== "student") { $("countdown").hidden = true; return; }
+  const r = NET.room, ph = phaseNow();
+  const cd = $("countdown"), sec = ph === "countdown" ? Math.max(1, Math.ceil((r.startAt - serverNow()) / 1000)) : 0;
+  cd.hidden = !sec;
+  if (sec && cd.dataset.n !== String(sec)) { cd.dataset.n = sec; const b = cd.querySelector("b"); b.textContent = sec; b.style.animation = "none"; void b.offsetWidth; b.style.animation = ""; SFX.bite(); }
+  if (ph === "countdown" || ph === "play") { const pl = r.place === "any" ? lobPlace : r.place; loadPlace(pl); }
+  // 시작! 아직 이번 판을 안 했으면 바로 낚시터로(늦게 들어와도 남은 시간만큼)
+  if (ph === "play" && !G.playing && !autoStarting && G.round !== r.round && MODELS_READY) {
+    autoStarting = true;
+    for (const id of ["town", "book", "tut", "end", "lobby", "start"]) $(id).hidden = true;
+    $("tutVid").pause();
+    choosePlace(r.place === "any" ? lobPlace : r.place).finally(() => { autoStarting = false; });
+  }
+}
+setInterval(lobbyTick, 200);
+function setLobPlace(p) { lobPlace = p; try { localStorage.setItem("jamfish-place", p); } catch {} document.querySelectorAll("[data-lobplace]").forEach((b) => b.classList.toggle("on", b.dataset.lobplace === p)); }
+document.querySelectorAll("[data-lobplace]").forEach((b) => b.addEventListener("click", () => { audio(); setLobPlace(b.dataset.lobplace); }));
+setLobPlace(lobPlace);
+document.querySelectorAll("[data-tut]").forEach((b) => b.addEventListener("click", () => tutOpen()));
+bindJoin();
+screens();
 async function choosePlace(place) {
   audio();
   const g = DEV_FREE ? { ok: true } : gate();
@@ -2582,19 +2624,19 @@ $("tutClose").addEventListener("click", tutClose);
 $("tutPrev").addEventListener("click", () => tutShow(tutI - 1));
 $("tutNext").addEventListener("click", () => (tutI === TUT.length - 1 ? tutClose() : tutShow(tutI + 1)));
 $("tutDots").addEventListener("click", (e) => { const k = e.target.dataset?.k; if (k != null) tutShow(+k); });
-setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate, mountAvatar }), 600);
+setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate, onLobby: () => { if (!$("lobby").hidden) renderLobby(); }, mountAvatar }), 600);
 const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
-if (!tutSeen) tutOpen();
+if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 $("againBtn").addEventListener("click", start);
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=10").then((m) => m.renderTown()); }); } }, true);
-$("placeBtn").addEventListener("click", () => { $("end").hidden = true; $("start").hidden = false; });
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=11").then((m) => m.renderTown()); }); } }, true);
+$("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
 let last = performance.now(), clock = 0, perfT = 0, perfN = 0, perfSum = 0, perfGood = 0;
 function frame(now) {
   // 메뉴만 떠 있을 때는 초당 30번만 그린다(배경은 거의 안 움직이니까)
-  const menu = !G.playing && (!$("start").hidden || !$("town").hidden || !$("end").hidden);
+  const menu = !G.playing && (!$("start").hidden || !$("town").hidden || !$("end").hidden || !$("lobby").hidden || !$("join").hidden || !$("host").hidden);
   if (menu && now - last < 31) { requestAnimationFrame(frame); return; }
   const raw = (now - last) / 1000;
   const dt = Math.min(.05, raw); last = now; clock += dt;

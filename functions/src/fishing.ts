@@ -170,9 +170,11 @@ export const fishCatch = onCall(options, async (req) => {
   const t = (cm - S.len[0]) / (S.len[1] - S.len[0]);
   const fish: Fish = { sp: sp!, cm: Math.round(cm), kg: Math.round(kg * 1000) / 1000, grade: gradeOf(t) };
   const day = kstDay();
-  if (uid.startsWith("s_")) { const room = await roomOf(uid.split("_")[1]); if (!roomOpen(room)) throw new HttpsError("failed-precondition", "낚시터가 닫혀 있어요. 선생님이 열어 줄 때 낚시해요."); }
+  let room: Room | null = null;
+  if (uid.startsWith("s_")) { room = await roomOf(uid.split("_")[1]); if (!roomPlaying(room)) throw new HttpsError("failed-precondition", "지금은 대회 시간이 아니에요. 선생님이 시작하면 낚시해요."); }
+  const lob = room ? lobbyCol(uid.split("_")[1]).doc(uid.split("_")[2]) : null;
   return db().runTransaction(async (tx) => {
-    const d = await readMe(tx, uid), now = Date.now();
+    const d = await readMe(tx, uid), now = Date.now(), lb = lob ? (await tx.get(lob)).data() : undefined;
     if (now - (d.lastCatchAt || 0) < GAP_MS) throw new HttpsError("resource-exhausted", "너무 빨라요! 잠깐 쉬었다 잡아요.");
     const count = d.day === day ? d.dayCount || 0 : 0;
     if (count >= DAY_MAX) throw new HttpsError("resource-exhausted", "오늘은 충분히 잡았어요. 내일 또 와요!");
@@ -184,6 +186,8 @@ export const fishCatch = onCall(options, async (req) => {
     let saved = false;
     if (!release && !full) { tx.create(meRef(uid).collection("bag").doc(), { ...fish, at: now }); upd.bagN = FieldValue.increment(1); saved = true; }
     tx.update(meRef(uid), upd);
+    // 교사 화면 순위: 이번 판 손맛·마리
+    if (lob) tx.set(lob, lb?.round === room!.round ? { pts: FieldValue.increment(taste), n: FieldValue.increment(1), at: now } : { name: d.name, round: room!.round || 0, pts: taste, n: 1, at: now }, { merge: true });
     return { taste, saved, full, release, price: priceOf(fish, day), grade: fish.grade };
   });
 });
@@ -290,12 +294,30 @@ async function isTeacherUid(req: CallableRequest) {
   if (isAdmin(req)) return true;
   return (await db().doc(`users/${req.auth.uid}`).get()).data()?.role === "teacher";
 }
-// 낚시 방: 교사가 열면 그 학급 학생만 낚시할 수 있다(시간·장소·한 판 시간·문제)
+// 낚시 방: 교사가 열면 대기실(lobby)이 생기고, 학생이 다 들어오면 교사가 "시작"을 눌러 모두 같이 한 판(play)을 한다(블루킷처럼)
+// 열어 둘 시간이 지나면 저절로 닫힌다. 한 판이 끝나면(done) 교사가 대기실로 돌려 다음 판을 시작한다
 type Quiz = { q: string; o: string[]; a: number };
-type Room = { open: boolean; closesAt: number; place: "fresh" | "sea" | "any"; roundSec: number; quizOn: boolean; quiz: Quiz[] };
+type Room = { open: boolean; closesAt: number; place: "fresh" | "sea" | "any"; roundSec: number; quizOn: boolean; quiz: Quiz[]; phase?: "lobby" | "play"; round?: number; startAt?: number; endAt?: number };
 const roomOpen = (r: Room | null) => !!r && r.open && Date.now() < r.closesAt;
+// 학생이 지금 물고기를 잡을 수 있나(한 판 중). 끝난 뒤 마지막 한 마리를 올릴 틈 30초
+const roomPlaying = (r: Room | null) => roomOpen(r) && r!.phase === "play" && Date.now() >= (r!.startAt || 0) - 2000 && Date.now() < (r!.endAt || 0) + 30e3;
+const phaseOf = (r: Room | null) => { if (!roomOpen(r)) return "closed"; if (r!.phase !== "play") return "lobby"; const n = Date.now(); return n < (r!.startAt || 0) ? "countdown" : n < (r!.endAt || 0) ? "play" : "done"; };
 async function roomOf(cid: string): Promise<Room | null> { return ((await db().doc(`fishClasses/${cid}`).get()).data()?.room as Room) || null; }
-const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), closesAt: r.closesAt, place: r.place, roundSec: r.roundSec, quizOn: !!r.quizOn && r.quiz?.length > 0, quizN: r.quiz?.length || 0, ...(withQuiz && r.quizOn ? { quiz: r.quiz } : {}) } : { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0 };
+const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), closesAt: r.closesAt, place: r.place, roundSec: r.roundSec, quizOn: !!r.quizOn && r.quiz?.length > 0, quizN: r.quiz?.length || 0, ...(withQuiz && r.quizOn ? { quiz: r.quiz } : {}),
+  phase: phaseOf(r), round: r.round || 0, startAt: r.startAt || 0, endAt: r.endAt || 0, now: Date.now() } : { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0, phase: "closed", round: 0, startAt: 0, endAt: 0, now: Date.now() };
+// 대기실 명단: fishClasses/{cid}/lobby/{sid} = { name, at(마지막으로 보인 때), round, pts(이번 판 손맛), n(이번 판 마리) }
+const lobbyCol = (cid: string) => db().collection(`fishClasses/${cid}/lobby`);
+const HERE_MS = 30e3;
+// 학생 화면에 보여 줄 같은 반 친구 이름(함수 하나가 3초 동안 기억해서 읽기를 줄인다)
+const lobbyCache = new Map<string, { t: number; names: string[] }>();
+async function lobbyNames(cid: string) {
+  const c = lobbyCache.get(cid), now = Date.now();
+  if (c && now - c.t < 3000) return c.names;
+  const s = await lobbyCol(cid).where("at", ">", now - HERE_MS).limit(80).get();
+  const names = s.docs.map((d) => String(d.data().name || "")).filter(Boolean).sort((a, b) => a.localeCompare(b, "ko"));
+  lobbyCache.set(cid, { t: now, names });
+  return names;
+}
 
 export const fishClassCreate = onCall(options, async (req) => {
   const uid = teacherOf(req), name = cleanName(req.data?.name) || "우리 반";
@@ -374,6 +396,15 @@ export const fishJoin = onCall(options, async (req) => {
   if (!(await me.get()).exists) await me.set({ name, cid, money: 0, romance: 0, taste: 0, rod: 1, own: {}, wear: {}, stock: { ramen: 1 }, cooked: {}, bagN: 0, caught: 0, best: 0, createdAt: FieldValue.serverTimestamp() });
   return { st, name, className: cls.data()?.name || "" };
 });
+// 학생 입장 1단계: 학급 코드가 맞는지와 학급 이름
+export const fishCodeCheck = onCall(options, async (req) => {
+  const code = String(req.data?.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length !== 6) throw new HttpsError("invalid-argument", "학급 코드 6자리를 확인해 주세요.");
+  const c = await db().doc(`fishCodes/${code}`).get();
+  if (!c.exists) throw new HttpsError("not-found", "그런 학급 코드가 없어요. 칠판의 코드를 다시 봐요.");
+  const cls = await db().doc(`fishClasses/${c.data()!.cid}`).get();
+  return { code, name: cls.data()?.name || "" };
+});
 export const fishLeave = onCall(options, async (req) => {
   const st = req.data?.st;
   if (typeof st === "string" && st.length >= 20 && st.length <= 80) await db().doc(`fishTokens/${sha(st)}`).delete();
@@ -426,20 +457,40 @@ export const fishAdmin = onCall(options, async (req) => {
     logs: logs.docs.map((d) => ({ id: d.id, ...d.data() })) };
 });
 
-// 학생: 내 학급 방 상태(열렸는지·남은 시간·문제) — 대기 화면이 몇 초마다 묻는다
+// 학생: 내 학급 방 상태(대기실·카운트다운·한 판·끝)와 대기실 친구들 — 대기 화면이 몇 초마다 묻는다. here 면 "나 여기 있어요"를 남긴다
 export const fishRoom = onCall(options, async (req) => {
   const key = await who(req);
   if (!key.startsWith("s_")) return { room: null };
-  return { room: roomPub(await roomOf(key.split("_")[1])) };
+  const [, cid, sid] = key.split("_"), room = await roomOf(cid);
+  if (!roomOpen(room)) return { room: roomPub(room), players: [] };
+  if (req.data?.here) {
+    const ref = lobbyCol(cid).doc(sid), name = String((await meRef(key).get()).data()?.name || "");
+    await ref.set({ name, at: Date.now() }, { merge: true });
+    const c = lobbyCache.get(cid); if (c && name && !c.names.includes(name)) c.names = [...c.names, name].sort((a, b) => a.localeCompare(b, "ko"));
+  }
+  return { room: roomPub(room), players: await lobbyNames(cid) };
 });
-// 교사: 방 열기·닫기·설정(열어 둘 시간, 한 판 시간, 장소, 문제)
+// 교사: 대기실 화면(들어온 학생·아직 안 온 학생·이번 판 순위)
+export const fishLobby = onCall(options, async (req) => {
+  const uid = teacherOf(req), cid = cut(req.data?.cid, 64);
+  if (!/^[\w-]{1,64}$/.test(cid)) throw new HttpsError("invalid-argument", "학급을 골라 주세요.");
+  const c = await db().doc(`fishClasses/${cid}`).get();
+  if (c.data()?.teacher !== uid && !isAdmin(req)) throw new HttpsError("permission-denied", "내 학급이 아니에요.");
+  const room = (c.data()?.room as Room) || null, now = Date.now(), round = room?.round || 0;
+  const [st, lb] = await Promise.all([c.ref.collection("students").limit(80).get(), lobbyCol(cid).limit(80).get()]);
+  const L = new Map(lb.docs.map((d) => [d.id, d.data()]));
+  const players = st.docs.map((d) => { const l = L.get(d.id), mine = l?.round === round;
+    return { sid: d.id, name: String(d.data().name || ""), here: !!l && now - (l.at || 0) < HERE_MS, pts: mine ? l!.pts || 0 : 0, n: mine ? l!.n || 0 : 0 }; });
+  return { name: c.data()?.name || "", code: c.data()?.code || "", room: roomPub(room, false), players };
+});
+// 교사: 방 열기(대기실)·시작·대기실로·닫기·설정(열어 둘 시간, 한 판 시간, 장소, 문제)
 export const fishRoomSet = onCall(options, async (req) => {
   const uid = teacherOf(req), cid = cut(req.data?.cid, 64);
   if (!/^[\w-]{1,64}$/.test(cid)) throw new HttpsError("invalid-argument", "학급을 골라 주세요.");
   const ref = db().doc(`fishClasses/${cid}`), c = await ref.get();
   if (c.data()?.teacher !== uid && !isAdmin(req)) throw new HttpsError("permission-denied", "내 학급이 아니에요.");
   const old: Room = c.data()?.room || { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quiz: [] };
-  const d = req.data || {}, room: Room = { ...old };
+  const d = req.data || {}, room: Room = { ...old }, now = Date.now();
   if (d.place !== undefined) room.place = (["fresh", "sea", "any"] as const).includes(d.place) ? d.place : "any";
   if (d.roundSec !== undefined) room.roundSec = Math.min(900, Math.max(60, Math.round(Number(d.roundSec) || 180)));
   if (d.quizOn !== undefined) room.quizOn = !!d.quizOn;
@@ -448,8 +499,14 @@ export const fishRoomSet = onCall(options, async (req) => {
     room.quiz = (d.quiz as unknown[]).map((x) => { const q = x as Quiz; const o = Array.isArray(q?.o) ? q.o.map((v) => cut(v, 120)).filter(Boolean).slice(0, 5) : [];
       return { q: cut(q?.q, 300), o, a: Math.round(Number(q?.a)) }; }).filter((q) => q.q && q.o.length >= 2 && q.a >= 0 && q.a < q.o.length);
   }
-  if (d.open === true) { room.open = true; room.closesAt = Date.now() + Math.min(240, Math.max(5, Math.round(Number(d.minutes) || 40))) * 60e3; }
-  if (d.open === false) { room.open = false; room.closesAt = 0; }
+  if (d.open === true) { room.open = true; room.phase = "lobby"; room.closesAt = now + Math.min(240, Math.max(5, Math.round(Number(d.minutes) || 40))) * 60e3; }
+  if (d.open === false) { room.open = false; room.closesAt = 0; room.phase = "lobby"; }
+  if (d.start === true) { // 모두 같이 시작: 4초 카운트다운 뒤 한 판
+    if (!roomOpen(room)) throw new HttpsError("failed-precondition", "먼저 낚시터를 열어 주세요.");
+    room.phase = "play"; room.round = (room.round || 0) + 1; room.startAt = now + 4000; room.endAt = room.startAt + room.roundSec * 1000;
+    if (room.endAt > room.closesAt) room.closesAt = room.endAt + 60e3; // 한 판 중에 닫히지 않게
+  }
+  if (d.lobby === true) { room.phase = "lobby"; if (room.endAt && room.endAt > now) room.endAt = now; } // 그만하고 대기실로
   await ref.update({ room });
   return { room: roomPub(room, false) };
 });

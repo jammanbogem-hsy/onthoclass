@@ -94,6 +94,14 @@
       "target": "main",
       "rewrites": [
         {
+          "source": "/fish/student",
+          "destination": "/fish/index.html"
+        },
+        {
+          "source": "/fish/student/**",
+          "destination": "/fish/index.html"
+        },
+        {
           "source": "/api/jamworld/**",
           "function": {
             "functionId": "jamworldApi",
@@ -245,6 +253,16 @@
               "value": "model/gltf-binary"
             }
           ]
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "/student",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/student/**",
+          "destination": "/index.html"
         }
       ]
     }
