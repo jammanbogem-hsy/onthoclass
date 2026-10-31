@@ -286,8 +286,22 @@
   .minidom .grid { display: grid; grid-template-columns: repeat(3, clamp(62px, 17vw, 82px)); gap: 12px; }
   .minidom .hole { --pb: 4px; aspect-ratio: 1; background: #1d5f8a; position: relative; overflow: hidden; padding: 0; cursor: pointer; }
   .minidom .hole i { position: absolute; left: 5px; top: 3px; font-style: normal; font-size: 12px; color: var(--muted); }
-  .minidom .hole::after { content: ""; position: absolute; left: 18%; right: 18%; top: 30%; bottom: 30%; background: #ffd23f; border-radius: 40% 60% 60% 40%; transform: translateY(260%); transition: transform .08s steps(2); box-shadow: inset -6px 0 0 #ff9f1c; }
-  .minidom .hole.up::after { transform: translateY(0); } .minidom .hole.up { background: #2a7fb3; }
+  .minidom .hole::before { content: ""; position: absolute; left: 10%; right: 10%; bottom: 8%; height: 22%; background: #13162e; border-radius: 50%; opacity: .55; } /* 구멍 */
+  .minidom .hole .wf { position: absolute; left: 4%; right: 4%; top: 18%; bottom: 14%; background: center / contain no-repeat; transform: translateY(120%); transition: transform .09s steps(2); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .35)); image-rendering: pixelated; }
+  .minidom .hole.up .wf { transform: translateY(0) rotate(-6deg); } .minidom .hole.up { background: #2a7fb3; }
+  /* 번쩍 잡아채기 · 물고기 세기 · 거품 터뜨리기 */
+  .minidom .rfx { width: min(320px, 80vw); height: 120px; border: 0; cursor: pointer; background: #2a3160; color: var(--cream); font-family: inherit; font-size: 34px; box-shadow: var(--pxbox); }
+  .minidom .rfx.go { background: var(--hot); color: #fff; animation: beat .25s steps(2) infinite; }
+  .minidom .cpond, .minidom .bpond { position: relative; width: min(360px, 84vw); height: 170px; background: linear-gradient(#2a7fb3, #1d5f8a); overflow: hidden; box-shadow: var(--pxbox); }
+  .minidom .cpond img { position: absolute; width: 18%; image-rendering: pixelated; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .3)); }
+  .minidom .cpond.hide img { opacity: 0; transition: opacity .15s; } .minidom .cpond.hide::after { content: "몇 마리였을까?"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 24px; text-shadow: var(--pxs); }
+  .minidom .copts { display: flex; gap: 8px; justify-content: center; } .minidom .copts button { font-size: 20px; padding: 8px 14px; } .minidom .copts i { font-style: normal; font-size: 12px; color: var(--muted); }
+  .minidom .bub { position: absolute; width: calc(46px * var(--s)); height: calc(46px * var(--s)); border-radius: 50%; border: 3px solid rgba(255, 255, 255, .85); background: radial-gradient(circle at 32% 30%, rgba(255, 255, 255, .9) 0 12%, rgba(255, 255, 255, .15) 13% 60%, rgba(178, 107, 255, .25) 61%); cursor: pointer; padding: 0; transform: translateX(-50%); }
+  .minidom .bub img { width: 76%; image-rendering: pixelated; } .minidom .bub.pop { transform: translateX(-50%) scale(1.5); opacity: 0; transition: .16s; }
+  .lobpractice { display: flex; flex-direction: column; align-items: center; gap: 2px; } .lobpractice small { font-size: 12px; color: var(--muted); }
+  .practag { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; background: var(--sun); color: var(--ink); padding: 4px 12px; font-size: 14px; box-shadow: var(--pxbox); pointer-events: none; }
+  .hitc.dual { background: radial-gradient(circle at 38% 34%, #fff8e8 0 18%, #ffd23f 19% 100%); } .hitc.dual small { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); white-space: nowrap; font-size: 13px; text-shadow: var(--pxs); color: var(--sun); }
+  .hitc.done { opacity: .35; pointer-events: none; transform: translate(-50%, -50%) scale(.85); }
   .minidom .hole.bonk { background: var(--lime); }
   .minidom .whackinfo { font-size: 16px; text-shadow: var(--pxs); }
   .k-mini { color: var(--ink); } .k-mini .kb { font-size: 13px; }
@@ -722,9 +736,10 @@
   </div>
 </div>
 
+<div class="practag" id="practag" hidden>연습 중 · 도감에 안 들어가요</div>
 <div class="screen" id="end" hidden>
   <div class="panel">
-    <h1>대회 <em>끝!</em></h1>
+    <h1 id="endTitle">대회 <em>끝!</em></h1>
     <small class="endlabel">이번 판 손맛 점수</small>
     <div class="big" id="endScore">0</div>
     <p class="best" id="endBest">최고 기록 0</p>
@@ -753,6 +768,7 @@
       <div class="lobside">
         <div class="lobplaces" id="lobPlaces" hidden><small>어디서 낚시할까요?</small><button class="go alt" data-lobplace="fresh">민물</button><button class="go alt" data-lobplace="sea">바다</button></div>
         <button class="go lobgo" id="lobGo" hidden>낚시하러 가기 ▶</button>
+        <button class="go alt lobpractice" id="lobPractice" hidden>기다리는 동안 연습하기 🎣<small>연습에서 잡은 물고기는 도감·살림망에 안 들어가요</small></button>
         <div class="lobwho"><b id="lobCount"></b><div class="chips" id="lobPlayers"></div></div>
       </div>
     </div>
@@ -790,6 +806,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=42"></script>
+<script type="module" src="game.js?v=43"></script>
 </body>
 </html>

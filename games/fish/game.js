@@ -7,7 +7,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=6";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=16";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=17";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -139,6 +139,9 @@ Object.assign(SPECIES, {
 });
 Object.assign(PLAY_STYLE, {"gakshi": "circle", "galgyeoni": "circle", "eunuh": "circle", "rainbowtrout": "circle", "lenok": "circle", "hwangsso": "circle", "arapaima": "mix", "arowana": "mix", "halfbeak": "circle", "bollak": "circle", "samchi": "circle", "octopus": "circle", "dolddom": "circle", "salmon": "circle", "swordfish": "mix", "manta": "mix", "whaleshark": "mix"});
 for (const [id, m] of Object.entries({"bingeo": ["simon", "track"], "loach": ["spin", "bar"], "beodeulchi": ["hold", "dodge"], "gakshi": ["hold", "simon"], "galgyeoni": ["jump", "bar"], "moraemuji": ["dodge", "typing"], "kkeuri": ["bar", "hold"], "gangjunchi": ["spin", "feed"], "eunuh": ["hold", "typing"], "rainbowtrout": ["hold", "dodge"], "tilapia": ["spin", "bar"], "dongsari": ["jump", "hold"], "chamge": ["typing", "jump"], "lenok": ["bar", "jump", "spin"], "jara": ["bar", "typing", "feed"], "hwangsso": ["dodge", "track", "whack"], "arapaima": ["spin", "track", "dodge"], "arowana": ["hold", "jump", "whack"], "anchovy": ["dodge", "track"], "saury": ["hold", "jump"], "halfbeak": ["jump", "typing"], "bollak": ["simon", "hold"], "noraemi": ["dodge", "hold"], "jwichi": ["jump", "bar"], "dodari": ["jump", "typing"], "gamsungdom": ["rhythm", "dodge"], "samchi": ["spin", "simon"], "squid": ["rhythm", "jump"], "octopus": ["rhythm", "simon", "whack"], "monkfish": ["typing", "track", "feed"], "dolddom": ["hold", "jump", "whack"], "salmon": ["dodge", "rhythm", "simon"], "stingray": ["rhythm", "whack", "hold"], "swordfish": ["hold", "dodge", "spin"], "manta": ["track", "simon", "feed"], "whaleshark": ["rhythm", "spin", "bar"]})) { SPECIES[id].minis = m; if (PLAY_STYLE[id]) SPECIES[id].play = PLAY_STYLE[id]; }
+// 새 미니게임(번쩍 잡아채기·물고기 세기·거품 터뜨리기)을 고르게 나눠 준다. 보스는 셋 다
+{ const NEW = ["reflex", "count", "bubble"]; let k = 0;
+  for (const id of Object.keys(SPECIES)) { const sp = SPECIES[id]; if (!sp.minis) continue; if (sp.boss) sp.minis = [...sp.minis, ...NEW]; else if (k++ % 2 === 0) sp.minis = [...sp.minis, NEW[(k >> 1) % 3]]; } }
 // 미끼: 등급별로 잘 무는 정도가 다르다
 const BAITS = {
   worm: { name: "지렁이", key: "1", tip: "흔한 물고기가 잘 물어요", mul: { "꽝": 1, "흔함": 1.6, "보통": 1, "희귀": .6, "전설": .5 }, wait: 1 },
@@ -1631,7 +1634,29 @@ function mashNote(sp, sizeT, final) {
   return { type: "mash", dir: "any", hold: hold * (GEAR.rod >= 3 ? .9 : 1), grow: .65 / (2 * dur), win: 22, final };
 }
 // 미니게임 칸: 크기·등급이 클수록 영역이 좁고 빠르다(큰 물고기·보스가 너무 어렵다는 피드백으로 차이를 줄임)
-function miniNote(type, sp, sizeT) {
+function miniNote(type, sp, sizeT, hard = false) {
+  const o = miniNote0(type, sp, sizeT);
+  if (hard) HARD_MINI[o.type]?.(o, sp);
+  return o;
+}
+// 어려운 물고기(S급·월척·보스)의 미니게임: 칸이 좁고, 더 많이, 더 빠르게
+const HARD_MINI = {
+  bar: (o) => { o.zone *= .72; o.speed *= 1.2; o.need = 3; o.win += 3; },
+  rhythm: (o) => { o.need += 3; o.gap *= .85; o.win = 1.2 + (o.need + 4) * o.gap + 2.5; },
+  dodge: (o) => { o.lanes = 5; o.gap *= .62; o.speed *= 1.15; o.dur += 2; o.win = o.dur + 4; }, // 세 줄 → 다섯 줄, 장애물 많이
+  jump: (o) => { o.gap *= .78; o.speed *= 1.15; o.dur += 2; o.win = o.dur + 4; },
+  feed: (o) => { o.need += 2; o.fall *= 1.2; o.gap *= .85; o.win = 6 + o.need * 1.6; },
+  hold: (o) => { o.need *= 1.25; o.jerk *= 1.3; },
+  simon: (o) => { o.len += 2; },
+  spin: (o) => { o.need += 1; o.win += 2.6; },
+  whack: (o) => { o.need += 3; o.stay *= .72; o.double = true; o.win = 6 + o.need * 1.8; }, // 두 마리가 같이 튀어나오기도
+  track: (o) => { o.box *= .8; o.speed *= 1.25; },
+  typing: (o) => { const L = Math.min(4, o.word.length + 1), list = WORDS.filter((w) => w.length === L); o.word = list[Math.floor(Math.random() * list.length)]; o.win = 4 + L * 2.4; },
+  reflex: (o) => { o.need += 1; o.react *= .7; o.win += 3; },
+  count: (o) => { o.need += 1; o.show *= .65; o.lo += 2; o.hi += 3; },
+  bubble: (o) => { o.need += 4; o.rise *= 1.4; o.gap *= .7; o.win = 6 + o.need * 1.2; },
+};
+function miniNote0(type, sp, sizeT) {
   const power = Math.min(1, sp.points / 320) * .6; sizeT *= .6;
   // 타이밍 바: 초록 칸 넓게, 바늘 느리게. 빗나가도 하트는 안 깎이고 시간만 조금 줄어든다
   if (type === "bar") return { type, dir: "any", win: 8, zone: .32 - power * .08 - sizeT * .07, speed: .42 + power * .35 + sizeT * .3, need: 2 };
@@ -1659,10 +1684,13 @@ function miniNote(type, sp, sizeT) {
   if (type === "simon") return { type, dir: "simon", len: 3 + Math.round(power * 1.5 + sizeT), win: 40 };
   if (type === "spin") { const need = 2 + Math.round(power * 1.5 + sizeT); return { type, dir: "spin", need, win: 4 + need * 2.6 }; }
   if (type === "whack") { const need = 5 + Math.round(power * 2 + sizeT * 2); return { type, dir: "whack", need, stay: 1.25 - power * .3 - sizeT * .2, win: 6 + need * 2 }; }
+  if (type === "reflex") { const need = 3; return { type, dir: "any", need, react: .7 - power * .15, win: 8 + need * 3 }; } // 번쩍 잡아채기
+  if (type === "count") return { type, dir: "count", need: 2, show: 1.7 - power * .3, lo: 3, hi: 6 + Math.round(power * 2), win: 60 }; // 물고기 세기
+  if (type === "bubble") { const need = 7 + Math.round(power * 2 + sizeT * 2); return { type, dir: "bubble", need, rise: .3 + power * .1, gap: .6 - power * .1, win: 6 + need * 1.3 }; } // 거품 터뜨리기
   // 따라잡기: 물고기가 느긋하게 헤엄치고 상자는 넉넉하게
   return { type: "track", dir: "track", win: 18, box: .38 - power * .07 - sizeT * .05, speed: .13 + power * .13 + sizeT * .09 };
 }
-function makeChart(sp, sizeT) {
+function makeChart(sp, sizeT, hard = false) {
   const notes = [];
   let last = "";
   const arrow = () => { let d = DIRS[Math.floor(rand(0, 4))]; if (d === last && Math.random() < .6) d = DIRS[(DIRS.indexOf(d) + 1 + Math.floor(rand(0, 3))) % 4]; last = d; return d; };
@@ -1702,11 +1730,14 @@ function makeChart(sp, sizeT) {
       do { nx = clamp(px + rand(-.3, .3), .16, .84); ny = clamp(py + rand(-.2, .2), .34, .72); } while (Math.hypot(nx - px, (ny - py) * .6) < .14 && ++tries < 12);
       px = nx; py = ny;
       Object.assign(n, { type: "circle", dir: "circle", x: px, y: py, no: ++no, win: n.win * (n.burst ? 1.5 : 1.3) + .2 });
+      if (hard && !n.burst && Math.random() < (sp.boss ? .6 : .45)) { // 어려운 물고기: 원 두 개를 둘 다 눌러야 한다
+        const sx = px > .5 ? -1 : 1; n.x2 = clamp(px + sx * rand(.2, .3), .14, .86); n.y2 = clamp(py + rand(-.14, .14), .34, .72); n.win *= 1.3;
+      }
     }
   }
   // 미니게임을 사이사이에 고르게 끼운다. 목록에서 무작위로 몇 개만: 보스 3, 전설 2, 나머지 1
-  const minis = [...(sp.minis || [])].sort(() => Math.random() - .5).slice(0, sp.boss ? 3 : sp.tier === "전설" ? 2 : 1);
-  minis.forEach((type, k) => notes.splice(Math.round((notes.length * (k + 1)) / (minis.length + 1)) + k, 0, miniNote(type, sp, sizeT)));
+  const minis = [...(sp.minis || [])].sort(() => Math.random() - .5).slice(0, (sp.boss ? 3 : sp.tier === "전설" ? 2 : 1) + (hard ? 1 : 0));
+  minis.forEach((type, k) => notes.splice(Math.round((notes.length * (k + 1)) / (minis.length + 1)) + k, 0, miniNote(type, sp, sizeT, hard)));
   notes.push(mashNote(sp, sizeT, true)); // 마지막 끌어올리기
   if (GEAR.rod >= 3) for (const n of notes) if (MINI_TYPES.has(n.type)) n.win *= 1.15; // 카본 낚싯대: 미니게임 시간 넉넉히
   return notes;
@@ -1720,10 +1751,11 @@ function hook() {
   splash(R.target.x, R.target.z, 26, 1.2); ripple(R.target.x, R.target.z, 1.6);
   const sizeT = SPECIES[R.species].boss ? rand(.93, 1) : clamp((s?.sizeT ?? Math.random()) + (s?.castBonus || 0) + (GEAR.rod >= 5 ? .08 : 0), 0, 1);
   const fish = new Fish(R.species, sizeT);
-  const chart = makeChart(sp, sizeT);
+  const hard = !!sp.boss || sizeT >= .72; // S급·월척·보스: 원 두 개 동시, 다섯 줄 피하기 등 더 어렵게
+  const chart = makeChart(sp, sizeT, hard);
   const weight = chart.reduce((a, n) => a + (MINI_TYPES.has(n.type) || n.type === "mash" ? 3 : n.finisher ? 2 : 1), 0);
   F = { fish, sp, sizeT, cond: rand(.85, 1.15), chart, i: 0, weight, got: 0, hearts: (sp.boss ? 5 : 3) + (GEAR.rod >= 4 ? 1 : 0), maxHearts: (sp.boss ? 5 : 3) + (GEAR.rod >= 4 ? 1 : 0), ms: null, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0, tapT: [], rate: 0, mood: "", tug: 0, tugSide: 1,
-    from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1 };
+    hard, from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1 };
   R.state = "fight"; hint(""); document.body.classList.add("fighting");
   $("fight").hidden = false;
   const gr = gradeOf(sizeT), cm = Math.round(lerp(sp.len[0], sp.len[1], sizeT)), junk = sp.tier === "꽝";
@@ -1795,7 +1827,8 @@ function press(dir) {
   if (n.type === "dodge") return dodgePress(n, dir);
   if (n.type === "jump") { const m = F.ms; if (m.y <= .01) { m.vy = 112; sample("bait", { rate: 1.6, vol: .5 }); } return; }
   if (n.type === "feed") return; // 좌우로 옮기기는 updateMini 가 본다
-  if (n.type === "typing" || n.type === "whack") return; // 글자·칸은 따로 받는다
+  if (n.type === "reflex") return reflexPress(n);
+  if (n.type === "typing" || n.type === "whack" || n.type === "count" || n.type === "bubble") return; // 글자·칸·답·거품은 따로 받는다
   if (n.type === "hold" || n.type === "track") return; // 누르고 있기·따라가기는 updateMini 가 본다
   if (n.type === "mash") { // 무엇을 눌러도 된다. 원의 크기는 연타 속도로 정해진다(updateFight)
     F.tugSide = -F.tugSide; F.tug = F.tugSide; // 누를 때마다 물고기가 좌우로 휘청이며 끌려온다
@@ -1863,14 +1896,23 @@ function showCircles(n) {
   if (!n || n.type !== "circle") return;
   const next = F.chart[F.i + 1];
   if (next?.type === "circle") box.insertAdjacentHTML("beforeend", `<div class="hitc ghost" style="left:${next.x * 100}%;top:${next.y * 100}%"><b>${next.no}</b></div>`);
-  box.insertAdjacentHTML("beforeend", `<div class="hitc" id="hitc" style="left:${n.x * 100}%;top:${n.y * 100}%"><i class="appr" id="appr"></i><b>${n.no}</b></div>`);
-  $("hitc").addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); press("circle"); });
+  const two = n.x2 != null; // 원 두 개: 둘 다 눌러야 한 번
+  box.insertAdjacentHTML("beforeend", `<div class="hitc ${two ? "dual" : ""}" id="hitc" style="left:${n.x * 100}%;top:${n.y * 100}%"><i class="appr" id="appr"></i><b>${n.no}</b>${two ? "<small>둘 다!</small>" : ""}</div>`
+    + (two ? `<div class="hitc dual" id="hitc2" style="left:${n.x2 * 100}%;top:${n.y2 * 100}%"><i class="appr"></i><b>${n.no}</b><small>둘 다!</small></div>` : ""));
+  for (const el of box.querySelectorAll(".hitc:not(.ghost)")) el.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!two) return press("circle");
+    if (el.classList.contains("done") || !F || F.intro > 0) return;
+    el.classList.add("done"); sample("tap", { rate: 1.3, vol: .6 }) || SFX.hit("up", false);
+    if (box.querySelectorAll(".hitc.done").length >= 2) press("circle");
+  });
 }
 function ringCircle(n) {
-  const a = $("appr"); if (!a) return;
   const k = clamp(F.noteT / n.win, 0, 1);
-  a.style.transform = `translate(-50%, -50%) scale(${(1 + 2.3 * (1 - k)).toFixed(3)})`;
-  a.classList.toggle("now", k >= .55);
+  for (const a of $("circles").querySelectorAll(".hitc:not(.ghost) .appr")) {
+    a.style.transform = `translate(-50%, -50%) scale(${(1 + 2.3 * (1 - k)).toFixed(3)})`;
+    a.classList.toggle("now", k >= .55);
+  }
 }
 function popCircle(n, perfect) {
   const el = document.createElement("div");
@@ -1879,7 +1921,7 @@ function popCircle(n, perfect) {
   $("fight").appendChild(el); setTimeout(() => el.remove(), 500);
 }
 // ------------------------------------------------------------------ 미니게임: 타이밍 바 · 줄 텐션 · 물고기 따라잡기
-const MINI_TYPES = new Set(["bar", "hold", "track", "typing", "simon", "spin", "whack", "rhythm", "dodge", "jump", "feed"]);
+const MINI_TYPES = new Set(["bar", "hold", "track", "typing", "simon", "spin", "whack", "rhythm", "dodge", "jump", "feed", "reflex", "count", "bubble"]);
 // 타자 낚시 단어(한글). 클수록 긴 단어
 const WORDS = ["낚시", "바다", "강물", "붕어", "잉어", "미끼", "파도", "거품", "연못", "고래", "조개", "그물", "바람", "노을", "수달", "문어", "모래", "등대",
   "물고기", "낚싯대", "물방울", "소나기", "무지개", "물보라", "지렁이", "개구리", "해파리", "오징어", "갈매기", "뱃고동",
@@ -1900,6 +1942,9 @@ const MODES = {
   dodge: { title: "장애물 피하기", tip: "↑ ↓ 로 물고기를 옮겨 바위·수초·깡통을 모두 피해요!", tipTouch: "화면 위·아래를 눌러 바위·수초·깡통을 모두 피해요!", color: "#9cf25a", short: "피하기" },
   jump: { title: "점프 넘기", tip: "통나무가 오면 스페이스로 폴짝!", tipTouch: "통나무가 오면 화면을 톡 — 폴짝!", color: "#ffd23f", short: "점프" },
   feed: { title: "먹이 받기", tip: "← → 로 뜰채를 옮겨 지렁이만 받아요!", tipTouch: "화면을 좌우로 끌어 지렁이만 받아요!", color: "#ff9f1c", short: "먹이" },
+  reflex: { title: "번쩍 잡아채기", tip: "'지금!'이 뜨면 바로 아무 키나! 먼저 누르면 안 돼요", tipTouch: "'지금!'이 뜨면 바로 톡! 먼저 누르면 안 돼요", color: "#ff4d6d", short: "번쩍" },
+  count: { title: "물고기 세기", tip: "잠깐 보인 물고기는 몇 마리? (1 2 3 키)", tipTouch: "잠깐 보인 물고기는 몇 마리?", color: "#3ec7ff", short: "세기" },
+  bubble: { title: "거품 터뜨리기", tip: "올라가는 거품을 클릭해 터뜨려요!", tipTouch: "올라가는 거품을 톡톡 터뜨려요!", color: "#b26bff", short: "거품" },
   mash: { title: "연타!", tip: "아무 키나 빠르게 마구!", tipTouch: "화면을 빠르게 톡톡톡!", color: "#ff4d6d" },
 };
 const modeOf = (n) => (n.type === "tap" ? "arrow" : n.type);
@@ -1932,6 +1977,9 @@ const MINI_CAP = {
   dodge: '<span class="kb-desk">↑ ↓ 로</span><span class="kb-touch">화면 위·아래를 눌러</span> 물고기를 옮겨 <b style="color:var(--hot)">바위·수초·깡통 모두</b> 피해요! 3번 부딪히면 실패',
   jump: '통나무가 다가오면 <span class="kb-desk">스페이스(아무 키)</span><span class="kb-touch">화면 톡</span>으로 폴짝 뛰어넘어요! 3번 부딪히면 실패',
   feed: '<span class="kb-desk">← → 로</span><span class="kb-touch">화면을 좌우로 끌어</span> 뜰채를 옮겨 <b style="color:var(--sun)">지렁이</b>는 받고 <b style="color:var(--hot)">깡통</b>은 피해요! 깡통 3개면 실패',
+  reflex: '<b style="color:var(--hot)">지금!</b>이 뜨면 바로 <span class="kb-desk">아무 키</span><span class="kb-touch">화면 톡</span>! 먼저 누르거나 늦으면 X, 3번이면 실패',
+  count: '잠깐 보인 물고기를 세어 맞는 수를 골라요 <span class="kb-desk">(1 2 3 키)</span>',
+  bubble: '거품이 위로 빠져나가기 전에 <span class="kb-desk">클릭</span><span class="kb-touch">톡</span>! 4개 놓치면 실패',
   track: '<span class="kb-desk">← → 를 눌러</span><span class="kb-touch">화면을 좌우로 끌어</span> 상자로 물고기를 따라가요!',
 };
 function startMini(n) {
@@ -1947,15 +1995,22 @@ function startMini(n) {
     : n.type === "simon" ? { seq: Array.from({ length: n.len }, () => DIRS[Math.floor(Math.random() * 4)]), phase: "watch", t: -.3, idx: 0, limit: 2.5 + n.len * 1.1 }
     : n.type === "spin" ? { turns: 0, last: -1, pa: null }
     : n.type === "rhythm" ? { notes: rhythmNotes(n), hits: 0, esc: 0, cool: 0, flash: 0 }
-    : n.type === "dodge" ? { lane: 1, y: 1, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
+    : n.type === "dodge" ? { lane: (n.lanes || 3) >> 1, y: (n.lanes || 3) >> 1, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
     : n.type === "jump" ? { y: 0, vy: 0, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
     : n.type === "feed" ? { bx: .5, drops: [], spawn: .4, got: 0, bad: 0, lost: 0, pop: 0 }
+    : n.type === "reflex" ? { phase: "wait", t: rand(1.1, 2.3), hits: 0, bad: 0 }
+    : n.type === "count" ? { ok: 0, phase: "show", t: 0, k: 0 }
+    : n.type === "bubble" ? { bubs: [], spawn: .2, hits: 0, esc: 0, id: 0 }
     : { cell: -1, t: 0, next: .5, hits: 0, esc: 0 };
-  const dom = ["typing", "simon", "whack"].includes(n.type);
+  const dom = DOM_MINIS.has(n.type);
   $("miniCv").hidden = dom; $("miniDom").hidden = !dom;
   $("miniCap").innerHTML = MINI_CAP[n.type] || "";
   renderMiniDom(n);
 }
+const DOM_MINIS = new Set(["typing", "simon", "whack", "reflex", "count", "bubble"]);
+// 이 낚시터 물고기 그림(3D 모델을 찍은 것): 두더지·세기·거품 미니게임에 쓴다
+const fishPics = () => { const ids = realIds(PLACE).filter((id) => models[SPECIES[id].model || id]); return ids.length ? ids : realIds(PLACE); };
+const fishPic = () => { const ids = fishPics(); return fishThumb(ids[Math.floor(Math.random() * ids.length)]); };
 // 점프 넘기·먹이 받기에 떨어질/떠내려올 것 하나 만들기
 const feedDrop = () => ({ x: rand(8, 120), y: -4, bad: Math.random() < .3, k: Math.floor(rand(0, 3)) });
 const tri = (x) => { const f = x % 2; return f < 1 ? f : 2 - f; };
@@ -1996,9 +2051,47 @@ function renderMiniDom(n) {
     box.innerHTML = `<div class="phase" id="simonPhase">잘 봐요!</div><div class="slots">${m.seq.map((d, i) => `<div class="key px slot" data-i="${i}"></div>`).join("")}</div>`;
   } else if (n.type === "whack") {
     box.className = "minidom whack";
-    box.innerHTML = `<div class="grid">${WHACK_KEYS.map((k, i) => `<button class="hole px" data-cell="${i}"><i class="kb-desk">${k.slice(3)}</i></button>`).join("")}</div><div class="whackinfo" id="whackInfo"></div>`;
+    box.innerHTML = `<div class="grid">${WHACK_KEYS.map((k, i) => `<button class="hole px" data-cell="${i}"><b class="wf"></b><i class="kb-desk">${k.slice(3)}</i></button>`).join("")}</div><div class="whackinfo" id="whackInfo"></div>`;
     box.querySelectorAll("[data-cell]").forEach((b) => b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); whackCell(+b.dataset.cell); }));
+  } else if (n.type === "reflex") {
+    box.className = "minidom reflex";
+    box.innerHTML = `<button class="rfx px" id="rfx"><b id="rfxT">기다려…</b></button><div class="whackinfo" id="rfxInfo"></div>`;
+    $("rfx").addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); press("tap"); });
+  } else if (n.type === "count") {
+    box.className = "minidom count";
+    box.innerHTML = `<div class="cpond px" id="cpond"></div><div class="copts" id="copts"></div><div class="whackinfo" id="cntInfo"></div>`;
+    countRound(n);
+  } else if (n.type === "bubble") {
+    box.className = "minidom bubble";
+    box.innerHTML = `<div class="bpond px" id="bpond"></div><div class="whackinfo" id="bubInfo"></div>`;
   } else { box.className = "minidom"; box.innerHTML = ""; }
+}
+// ---- 물고기 세기: 물고기를 잠깐 보여 주고 몇 마리였는지 고른다
+function countRound(n) {
+  const m = F.ms, k = Math.floor(rand(n.lo, n.hi + 1)), pond = $("cpond"), used = [];
+  m.k = k; m.phase = "show"; m.t = 0;
+  const pics = Array.from({ length: k }, () => { let x, y, tries = 0; do { x = rand(4, 80); y = rand(6, 70); } while (used.some((u) => Math.hypot(u[0] - x, (u[1] - y) * .8) < 15) && ++tries < 30); used.push([x, y]); return `<img alt="" src="${fishPic()}" style="left:${x}%;top:${y}%;transform:scaleX(${Math.random() < .5 ? -1 : 1})">`; });
+  pond.innerHTML = pics.join(""); pond.classList.remove("hide");
+  const opts = [...new Set([k, k + (Math.random() < .5 ? 1 : -1), k + (Math.random() < .5 ? 2 : -2), k + 1, k - 1])].filter((v) => v > 0).slice(0, 3).sort((a, b) => a - b);
+  $("copts").innerHTML = opts.map((v, i) => `<button class="go alt px" data-cnt="${v}" disabled><i class="kb-desk">${i + 1}</i> ${v}마리</button>`).join("");
+  $("copts").querySelectorAll("[data-cnt]").forEach((b) => b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); countPick(n, +b.dataset.cnt); }));
+  $("cntInfo").textContent = `${m.ok} / ${n.need}번 맞히기`;
+}
+function countPick(n, v) {
+  const m = F.ms; if (!F || F.intro > 0 || m.phase !== "pick") return;
+  if (v !== m.k) { m.phase = "wrong"; $("cpond").classList.remove("hide"); return miss(`${m.k}마리였어!`); }
+  m.ok++; sample("ding", { rate: 1.2 }) || SFX.hit("up", true); goodHit(true); judge("정답!", "perfect");
+  if (m.ok >= n.need) return miniWin(n);
+  countRound(n);
+}
+// ---- 번쩍 잡아채기: '지금!'이 뜨면 바로 누른다(먼저 누르면 헛손질)
+function reflexPress(n) {
+  const m = F.ms, el = $("rfx");
+  if (m.phase === "wait") { m.bad++; m.t = rand(1, 2); judge("너무 빨라!", "miss"); SFX.nibble(); shake = Math.max(shake, .25); if (m.bad >= 3) return miss("헛손질 세 번!"); return; }
+  const perfect = m.t > n.react * .5;
+  m.hits++; m.phase = "wait"; m.t = rand(.9, 2.1); el?.classList.remove("go"); $("rfxT").textContent = "기다려…";
+  judge(perfect ? "번쩍 PERFECT!" : "잡았다!", perfect ? "perfect" : "good"); sample("bait", { rate: 1.5 }) || SFX.hit("up", perfect); goodHit(perfect);
+  if (m.hits >= n.need) miniWin(n);
 }
 function goodHit(perfect) {
   const fp = F.fish.group.position;
@@ -2062,9 +2155,9 @@ function spinAdd(n, d) {
 function whackCell(i) {
   if (!F || F.intro > 0) return;
   const n = F.chart[F.i]; if (n.type !== "whack") return;
-  const m = F.ms;
-  if (i !== m.cell) return;
-  m.hits++; m.cell = -1; m.next = rand(.15, .4);
+  const m = F.ms, k = (m.up || []).findIndex((u) => u.c === i);
+  if (k < 0) return;
+  m.hits++; m.up.splice(k, 1); m.next = Math.min(m.next, rand(.15, .4));
   const b = $("miniDom").querySelector(`[data-cell="${i}"]`); if (b) { b.classList.remove("up"); b.classList.add("bonk"); setTimeout(() => b.classList.remove("bonk"), 200); }
   sample("bait", { rate: 1.3 }) || SFX.hit("up", true); goodHit(true);
   if (m.hits >= n.need) miniWin(n);
@@ -2086,10 +2179,48 @@ function updateDomMini(n, dt) {
     m.danger = m.phase === "input" ? .4 + .6 * (1 - F.noteT / m.limit) : 1;
     return;
   }
-  // whack
-  if (m.cell < 0) { m.next -= dt; if (m.next <= 0) { let c; do c = Math.floor(Math.random() * 9); while (c === m.last); m.cell = m.last = c; m.t = n.stay; } }
-  else { m.t -= dt; if (m.t <= 0) { m.esc++; m.cell = -1; m.next = rand(.2, .5); SFX.nibble(); if (m.esc >= 3) return miss("다 도망갔어!"); } }
-  $("miniDom").querySelectorAll(".hole").forEach((b, i) => b.classList.toggle("up", i === m.cell));
+  if (n.type === "reflex") {
+    m.t -= dt; const el = $("rfx");
+    if (m.phase === "wait" && m.t <= 0) { m.phase = "go"; m.t = n.react; el?.classList.add("go"); $("rfxT").textContent = "지금!"; sample("tap", { rate: 1.4 }) || SFX.bite(); }
+    else if (m.phase === "go" && m.t <= 0) { m.bad++; m.phase = "wait"; m.t = rand(1, 2); el?.classList.remove("go"); $("rfxT").textContent = "기다려…"; judge("늦었어!", "miss"); SFX.nibble(); if (m.bad >= 3) return miss("너무 늦었어!"); }
+    $("rfxInfo").textContent = `${m.hits} / ${n.need}번 · 헛손질 ${m.bad}/3`;
+    m.danger = m.bad >= 2 ? .3 : 1; return;
+  }
+  if (n.type === "count") {
+    m.t += dt;
+    if (m.phase === "show") { F.noteT = 0; if (m.t >= n.show) { m.phase = "pick"; m.t = 0; $("cpond").classList.add("hide"); $("copts").querySelectorAll("button").forEach((b) => { b.disabled = false; }); } }
+    else if (m.phase === "pick" && m.t > 6) { m.phase = "wrong"; $("cpond").classList.remove("hide"); return miss(`시간 초과! ${m.k}마리였어`); }
+    m.danger = m.phase === "pick" ? .4 + .6 * (1 - m.t / 6) : 1; return;
+  }
+  if (n.type === "bubble") {
+    const pond = $("bpond"); if (!pond) return;
+    m.spawn -= dt;
+    if (m.spawn <= 0) {
+      m.spawn = n.gap * rand(.7, 1.3);
+      const b = { id: ++m.id, x: rand(6, 86), y: 100, s: rand(.85, 1.2), w: rand(0, 6) }, el = document.createElement("button");
+      el.className = "bub"; el.style.left = b.x + "%"; el.style.setProperty("--s", b.s); if (Math.random() < .35) el.innerHTML = `<img alt="" src="${fishPic()}">`;
+      el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); if (b.done || !F || F.intro > 0) return; b.done = true; el.classList.add("pop"); setTimeout(() => el.remove(), 180); m.hits++; sample("tap", { rate: 1.5 + Math.random() * .3, vol: .7 }) || SFX.hit("up", true); goodHit(false); if (m.hits >= n.need) miniWin(n); });
+      pond.appendChild(el); b.el = el; m.bubs.push(b);
+    }
+    for (const b of m.bubs) if (!b.done) {
+      b.y -= n.rise * 100 * dt; b.el.style.top = b.y + "%"; b.el.style.marginLeft = Math.sin(F.t * 3 + b.w) * 6 + "px";
+      if (b.y < -14) { b.done = true; b.el.remove(); m.esc++; SFX.nibble(); if (m.esc >= 4) return miss("거품이 다 날아갔어!"); }
+    }
+    m.bubs = m.bubs.filter((b) => !b.done);
+    $("bubInfo").textContent = `${m.hits} / ${n.need}개 · 놓침 ${m.esc}/4`;
+    m.danger = m.esc >= 3 ? .3 : 1; return;
+  }
+  // whack: 구멍마다 이 낚시터 물고기 그림. 어려운 물고기는 두 마리가 같이 튀어나오기도
+  m.up ??= [];
+  m.up = m.up.filter((u) => { u.t -= dt; if (u.t > 0) return true; m.esc++; SFX.nibble(); return false; });
+  if (m.esc >= 3) return miss("다 도망갔어!");
+  m.next -= dt;
+  if (m.next <= 0 && m.up.length < (n.double ? 2 : 1)) {
+    let c; do c = Math.floor(Math.random() * 9); while (c === m.last || m.up.some((u) => u.c === c));
+    m.last = c; m.up.push({ c, t: n.stay }); m.next = n.double && Math.random() < .5 ? rand(.05, .2) : rand(.25, .5);
+    const w = $("miniDom").querySelector(`[data-cell="${c}"] .wf`); if (w) w.style.backgroundImage = `url(${fishPic()})`;
+  }
+  $("miniDom").querySelectorAll(".hole").forEach((b, i) => b.classList.toggle("up", m.up.some((u) => u.c === i)));
   $("whackInfo").textContent = `${m.hits} / ${n.need}마리 · 놓침 ${m.esc}/3`;
   m.danger = m.esc >= 2 ? .3 : 1;
 }
@@ -2115,18 +2246,18 @@ function rhythmPress(n) {
 function dodgePress(n, dir) {
   const m = F.ms;
   if (dir === "up") m.lane = Math.max(0, m.lane - 1);
-  else if (dir === "down") m.lane = Math.min(2, m.lane + 1);
+  else if (dir === "down") m.lane = Math.min((n.lanes || 3) - 1, m.lane + 1);
   else return;
   sample("bait", { rate: 1.4, vol: .5 });
 }
 function miniWin(n) {
   F.got += 3; F.combo += 2;
-  judge({ bar: "명중!!", hold: "버텨냈다!", track: "따라잡았다!", rhythm: "박자 완벽!", dodge: "다 피했다!", jump: "다 넘었다!", feed: "배불리 먹였다!", typing: "다 쳤다!", simon: "기억 완벽!", spin: "감았다!", whack: "다 잡았다!" }[n.type] || "성공!", "perfect");
+  judge({ bar: "명중!!", hold: "버텨냈다!", track: "따라잡았다!", rhythm: "박자 완벽!", dodge: "다 피했다!", jump: "다 넘었다!", feed: "배불리 먹였다!", typing: "다 쳤다!", simon: "기억 완벽!", spin: "감았다!", whack: "다 잡았다!", reflex: "번개 손!", count: "다 맞혔다!", bubble: "다 터뜨렸다!" }[n.type] || "성공!", "perfect");
   flash("white"); SFX.mashDone(); pxWave(); shake = .45; punch = 1.2; A.kick = 1.5; F.leapV = 4.5;
   nextNote();
 }
 function updateMini(n, dt, t) {
-  if (n.type === "typing" || n.type === "simon" || n.type === "whack") return updateDomMini(n, dt);
+  if (DOM_MINIS.has(n.type)) return updateDomMini(n, dt);
   const m = F.ms, holding = HOLD.space || HOLD.ptr;
   if (n.type === "spin") {
     if (HOLD.ptr) { // 화면을 릴 중심 둘레로 돌리면 감긴다(시계 방향)
@@ -2150,12 +2281,14 @@ function updateMini(n, dt, t) {
   }
   if (n.type === "dodge") {
     m.t += dt; m.inv = Math.max(0, m.inv - dt);
-    if (HOLD.ptr) { const r = $("miniCv").getBoundingClientRect(); m.lane = clamp(Math.floor((HOLD.cy - r.top) / r.height * 3), 0, 2); }
+    const NL = n.lanes || 3;
+    if (HOLD.ptr) { const r = $("miniCv").getBoundingClientRect(); m.lane = clamp(Math.floor((HOLD.cy - r.top) / r.height * NL), 0, NL - 1); }
     m.y = lerp(m.y, m.lane, ease(16, dt));
     m.spawn -= dt;
     if (m.spawn <= 0 && m.t < n.dur - 1.2) {
       m.spawn = n.gap * rand(.8, 1.25);
-      const lanes = [0, 1, 2].sort(() => Math.random() - .5).slice(0, m.t > 1.5 && Math.random() < .45 ? 2 : 1); // 늘 한 줄은 비어 있다
+      const many = NL > 3 ? 1 + Math.floor(rand(1, NL - 1)) : m.t > 1.5 && Math.random() < .45 ? 2 : 1; // 늘 한 줄은 비어 있다(다섯 줄은 2~3개씩)
+      const lanes = Array.from({ length: NL }, (_, i) => i).sort(() => Math.random() - .5).slice(0, Math.min(NL - 1, many));
       for (const l of lanes) { const r = Math.random(); m.obs.push({ x: 134, lane: l, weed: r < .35, can: r > .78 }); }
     }
     for (const o of m.obs) o.x -= n.speed * dt;
@@ -2291,15 +2424,16 @@ function drawMini(n, t) {
     for (let i = 0; i < n.need; i++) box(64 - n.need * 3 + i * 6, 2, 4, 4, i < m.got ? "#ffd23f" : "rgba(255,248,232,.3)");
     for (let i = 0; i < 3; i++) box(110 + i * 6, 9, 4, 4, i < m.bad ? "#ff4d6d" : "rgba(255,248,232,.35)");
   } else if (n.type === "dodge") {
+    const NL = n.lanes || 3, LH = 32 / NL, oh = Math.min(8, LH - 1.5), oy = (LH - oh) / 2; // 줄 높이(세 줄 10.7, 다섯 줄 6.4)
     box(0, 2, 128, 32, "#1d5f8a");
-    for (let l = 1; l < 3; l++) for (let x = 0; x < 128; x += 8) box((x - t * n.speed) % 128 + (x - t * n.speed < 0 ? 128 : 0), 2 + l * 10.67, 4, 1, "#3e8fbf");
+    for (let l = 1; l < NL; l++) for (let x = 0; x < 128; x += 8) box((x - t * n.speed) % 128 + (x - t * n.speed < 0 ? 128 : 0), 2 + l * LH, 4, 1, "#3e8fbf");
     for (const o of m.obs) {
-      const y = 2 + o.lane * 10.67;
-      if (o.weed) { for (let k = 0; k < 3; k++) box(o.x - 4 + k * 3, y + 2 + Math.sin(t * 6 + k) , 2, 9, "#3f8f5a"); }
-      else if (o.can) { box(o.x - 4, y + 2, 8, 8, "#13162e"); box(o.x - 3, y + 3, 6, 6, "#d94a5a"); box(o.x - 3, y + 5, 6, 1, "#fff8e8"); }
-      else { box(o.x - 5, y + 2, 10, 8, "#13162e"); box(o.x - 4, y + 3, 8, 6, "#8a8f9c"); box(o.x - 3, y + 3, 3, 2, "#c4c8d2"); }
+      const y = 2 + o.lane * LH + oy;
+      if (o.weed) { for (let k = 0; k < 3; k++) box(o.x - 4 + k * 3, y + Math.sin(t * 6 + k) * .6, 2, oh + 1, "#3f8f5a"); }
+      else if (o.can) { box(o.x - 4, y, 8, oh, "#13162e"); box(o.x - 3, y + 1, 6, oh - 2, "#d94a5a"); box(o.x - 3, y + oh / 2 - .5, 6, 1, "#fff8e8"); }
+      else { box(o.x - 5, y, 10, oh, "#13162e"); box(o.x - 4, y + 1, 8, oh - 2, "#8a8f9c"); box(o.x - 3, y + 1, 3, 2, "#c4c8d2"); }
     }
-    const fy = 2 + m.y * 10.67 + 3, blink = m.inv > 0 && Math.sin(t * 40) > 0;
+    const fy = 2 + m.y * LH + (LH - 5) / 2, blink = m.inv > 0 && Math.sin(t * 40) > 0;
     if (!blink) { box(17, fy, 10, 5, "#ffd23f"); box(13, fy + (Math.sin(t * 20) > 0 ? 0 : 1), 4, 5, "#ff9f1c"); box(24, fy + 1, 1, 1, "#13162e"); }
     box(2, 35, 124, 4, "#13162e"); box(3, 36, 122 * clamp(m.t / n.dur, 0, 1), 2, "#9cf25a");
     for (let i = 0; i < 3; i++) box(110 + i * 6, 28, 4, 4, i < m.hit ? "#ff4d6d" : "rgba(255,248,232,.35)");
@@ -2399,10 +2533,10 @@ function endFight(result) {
     const cond = f.cond || 1, kg = junk ? 0 : kgOf(f.fish.id, cm, cond);
     const base = sp.points * (.5 + 1.5 * f.sizeT ** 1.2) * cond ** 1.5 * (gr.release ? .5 : 1);
     const fever = G.fever > 0 && !junk;
-    const { isNew, record } = junk ? {} : bookAdd(f.fish.id, cm, gr.name, kg);
+    const { isNew, record } = junk || G.practice ? {} : bookAdd(f.fish.id, cm, gr.name, kg); // 연습은 도감에 안 넣는다
     const pts = Math.round((base * (1 + f.perfect * .04) + (sp.points ? f.maxCombo * 2 : 0)) * f.bonus * (fever ? 2 : 1) * (record ? 1.3 : 1));
     if (isNew || record) { sample("stamp"); if (isNew) missionEvent("newfish"); }
-    if (!junk) {
+    if (!junk && !G.practice) {
       if (gr.name === "월척") missionEvent("wolchuk");
       if (sp.tier === "전설") missionEvent("legend");
       if (sp.boss) { missionEvent("boss"); sample("bigsplash"); }
@@ -2421,7 +2555,7 @@ function endFight(result) {
     $("cardName").textContent = sp.name; $("cardSize").textContent = junk ? `${cm}cm` : `${cm}cm · ${kgText(kg)}`;
     $("cardPoints").textContent = pts ? `+${pts}` : "꽝!";
     $("cardBonus").textContent = [f.perfect ? `PERFECT ${f.perfect}` : "", f.maxCombo > 2 ? `최대 ${f.maxCombo}콤보` : "", f.bonus > 1 ? "무지개 ×2" : "", fever ? "피버 ×2" : "", record ? "내 기록 경신 ×1.3" : "", !junk && gr.release ? "작으니까 다시 놓아줘요" : ""].filter(Boolean).join(" · ");
-    if (!junk && NET.me) saveCatch(f.fish.id, cm, kg, G.score, pts).then((r) => {
+    if (!junk && NET.me && !G.practice) saveCatch(f.fish.id, cm, kg, G.score, pts).then((r) => {
       if (!r) return;
       toast(r.release ? `물로 돌려보냈어요 · 손맛 +${r.taste}` : r.saved ? `살림망에 넣었어요 · 오늘 시세 <b style="color:var(--sun)">${r.price.toLocaleString("ko-KR")}원</b>` : "살림망이 꽉 찼어요! 수산시장에서 팔아요");
     });
@@ -2486,6 +2620,7 @@ addEventListener("keydown", (e) => {
   const cn = F?.chart[F.i];
   if (cn?.type === "typing" && !TOUCH) { $("typeIn")?.focus(); return; } // 입력칸 밖에서 눌러도 입력칸으로
   if (cn?.type === "whack" && WHACK_KEYS.includes(e.code)) { e.preventDefault(); return whackCell(WHACK_KEYS.indexOf(e.code)); }
+  if (cn?.type === "count" && /^(Digit|Numpad)[123]$/.test(e.code)) { e.preventDefault(); const b = $("copts")?.querySelectorAll("button")[+e.code.slice(-1) - 1]; if (b) countPick(cn, +b.dataset.cnt); return; }
   if (!F && R.state === "idle" && BAIT_KEYS[e.key]) return setBait(BAIT_KEYS[e.key]);
   if (dir) { pressPad(dir); press(dir); }
   else if (e.code === "Space") { if (F) { pressPad("reel"); press("reel"); } else if (R.state === "idle" && !show) aimStart(null); else if (["bite", "waiting", "nibble"].includes(R.state)) press("up"); }
@@ -2630,26 +2765,29 @@ function start() {
   audio(); beatStop(); document.body.classList.remove("fighting", "fever", "finale", "boss-fight", "big-fight");
   if (F) { F.fish.dispose(); F = null; }
   if (show) { show.fish.dispose(); show = null; }
-  const w = Math.random();
-  const g = DEV_FREE ? {} : gate();
+  const w = Math.random(), practice = practiceNext; practiceNext = false;
+  const g = DEV_FREE || practice ? {} : gate();
   // 학급 대회: 모두 같은 순간에 끝나도록 서버 시계로 남은 시간을 잰다
   const left = g.room?.endAt && !g.free ? Math.max(3, (g.room.endAt - serverNow()) / 1000) : g.room?.roundSec || 180; // 자유 낚시는 판마다 한 판 시간
   if (g.room) G.round = g.room.round;
-  Object.assign(G, { playing: true, time: left, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
+  Object.assign(G, { playing: true, practice, time: practice ? 60 : left, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
     streak: 0, fever: 0, bossSpawned: false, stat: { barPerfect: 0, circlePerfect: 0 }, weather: w < .5 ? "sunny" : w < .75 ? "rain" : "sunset" });
   applyWeather(); setBait(G.bait);
   $("score").textContent = 0; $("count").textContent = 0; $("timerChip").classList.remove("low");
-  $("start").hidden = true; $("end").hidden = true; $("fight").hidden = true; $("card").hidden = true;
+  $("start").hidden = true; $("end").hidden = true; $("fight").hidden = true; $("card").hidden = true; $("practag").hidden = !practice;
   resetSpots(); resetRod(); updateBag();
-  shout(G.weather === "rain" ? "비 오는 날!" : G.weather === "sunset" ? "노을 낚시!" : "시작!", "sun", 1.1);
+  shout(practice ? "연습 시작!" : G.weather === "rain" ? "비 오는 날!" : G.weather === "sunset" ? "노을 낚시!" : "시작!", "sun", 1.1);
 }
 function finish() {
   if (!G.playing) return;
   G.playing = false; G.ending = false; resetRod(); hint("");
+  $("practag").hidden = true;
+  $("endTitle").innerHTML = G.practice ? "연습 <em>끝!</em>" : "대회 <em>끝!</em>";
+  if (G.practice) $("againBtn").hidden = true;
   refresh().catch(() => {}); // 살림망·손맛 점수를 서버 값으로
-  missionEvent("score", G.score);
+  if (!G.practice) missionEvent("score", G.score);
   document.body.classList.remove("fever"); if (rainLoop) { rainLoop.stop(); rainLoop = null; }
-  let best = 0; try { best = +localStorage.getItem("jamfish-best") || 0; if (G.score > best) { best = G.score; localStorage.setItem("jamfish-best", String(best)); } } catch { best = Math.max(best, G.score); }
+  let best = 0; try { best = +localStorage.getItem("jamfish-best") || 0; if (G.score > best && !G.practice) { best = G.score; localStorage.setItem("jamfish-best", String(best)); } } catch { best = Math.max(best, G.score); }
   $("endScore").textContent = `${G.score}점`;
   const totalKg = G.caught.reduce((t, c) => t + (c.kg || 0), 0);
   $("endBest").textContent = (G.score >= best && G.score > 0 ? "최고 기록이에요!" : `최고 기록 ${best}점`) + (totalKg ? ` · 잡은 무게 ${kgText(totalKg)}` : "");
@@ -2693,7 +2831,7 @@ function applyGate() {
   document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = !MODELS_READY || !g.ok || (g.room && g.room.mode !== "free" && (g.room.place === "sea" ? "sea" : "fresh") !== b.dataset.place); });
   if (MODELS_READY) $("loadText").textContent = g.ok ? (g.room ? `낚시터가 열렸어요! ${g.room.mode === "free" ? "낚시터를 골라요" : (g.room.place === "sea" ? "바다" : "민물") + " 낚시터로 가요"}` : "낚시터를 골라요!") : g.why;
   // 낚시 중에 선생님이 방을 닫거나 대기실로 돌리면 그 판을 마친다
-  if (G.playing && !g.ok && NET.role === "student") { shout(phaseNow() === "closed" ? "낚시터가 닫혔어요" : "대기실로!", "cream", 1.4); finish(); }
+  if (G.playing && !g.ok && NET.role === "student" && !G.practice) { shout(phaseNow() === "closed" ? "낚시터가 닫혔어요" : "대기실로!", "cream", 1.4); finish(); }
   screens();
 }
 // ------------------------------------------------------------------ 학급 대회: 학생 전용 주소(/student)·입장·대기실·다 같이 시작
@@ -2721,7 +2859,7 @@ function lobbyTick() {
   const cd = $("countdown"), sec = ph === "countdown" ? Math.max(1, Math.ceil((r.startAt - serverNow()) / 1000)) : 0;
   cd.hidden = !sec;
   if (sec && cd.dataset.n !== String(sec)) { cd.dataset.n = sec; const b = cd.querySelector("b"); b.textContent = sec; b.style.animation = "none"; void b.offsetWidth; b.style.animation = ""; SFX.bite(); }
-  if (ph === "countdown" || ph === "play") { const pl = placeFor(r); loadPlace(pl); }
+  if (ph === "countdown" || ph === "play") { const pl = placeFor(r); loadPlace(pl); if (G.practice) stopPractice("연습 끝! 대회 시작!"); }
   // 시작! 아직 이번 판을 안 했으면 바로 낚시터로(늦게 들어와도 남은 시간만큼)
   if (ph === "play" && !G.playing && !autoStarting && G.round !== r.round && MODELS_READY) {
     autoStarting = true;
@@ -2735,6 +2873,17 @@ function setLobPlace(p) { lobPlace = p; try { localStorage.setItem("jamfish-plac
 document.querySelectorAll("[data-lobplace]").forEach((b) => b.addEventListener("click", () => { audio(); setLobPlace(b.dataset.lobplace); }));
 setLobPlace(lobPlace);
 document.querySelectorAll("[data-tut]").forEach((b) => b.addEventListener("click", () => tutOpen()));
+// 연습: 대회를 기다리는 동안 1분짜리 판. 잡은 물고기는 도감·살림망·미션에 안 들어가고, 선생님이 시작하면 바로 멈추고 대회로
+let practiceNext = false;
+$("lobPractice").addEventListener("click", () => {
+  if (!MODELS_READY || autoStarting || !["lobby", "done"].includes(phaseNow())) return;
+  autoStarting = true; $("lobby").hidden = true;
+  choosePlace(placeFor(NET.room), true).finally(() => { autoStarting = false; });
+});
+function stopPractice(text) {
+  if (!G.playing || !G.practice) return;
+  if (F) endFight("lost"); finish(); $("end").hidden = true; shout(text, "sun", 1.2);
+}
 // 자유 낚시: 대기실에서 바로 낚시터로
 $("lobGo").addEventListener("click", () => {
   const r = NET.room; if (!MODELS_READY || autoStarting || phaseNow() !== "free") return;
@@ -2743,15 +2892,15 @@ $("lobGo").addEventListener("click", () => {
 });
 bindJoin();
 screens();
-async function choosePlace(place) {
+async function choosePlace(place, practice = false) {
   audio();
-  const g = DEV_FREE ? { ok: true } : gate();
+  const g = DEV_FREE || practice ? { ok: true } : gate();
   if (!g.ok) { toast(g.why); return; }
   document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = true; });
   setPlace(place); renderLegend(); bgmStart();
   await loadPlace(place);
   applyGate();
-  start();
+  practiceNext = practice; start();
 }
 document.querySelectorAll("[data-place]").forEach((b) => b.addEventListener("click", () => choosePlace(b.dataset.place)));
 
@@ -2790,7 +2939,7 @@ let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
 $("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=16").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=17").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -2882,4 +3031,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { get AVA() { return AVA; }, get PLACE() { return PLACE; }, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
+window.__fish = { get AVA() { return AVA; }, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };

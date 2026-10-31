@@ -592,4 +592,5 @@ export function renderLobby() {
   P.forEach((n) => seen.add(n));
   $("lobPlaces").hidden = ph !== "free"; // 자유시간에만 학생이 낚시터를 고른다
   $("lobGo").hidden = ph !== "free";
+  $("lobPractice").hidden = !(ph === "lobby" || ph === "done"); // 대회를 기다리는 동안 연습(도감·살림망에 안 들어감)
 }
