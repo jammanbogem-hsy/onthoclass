@@ -1880,6 +1880,24 @@ function fishThumb(id) {
   } catch { thumbs[id] = ""; }
   return thumbs[id];
 }
+// 기존 3D 모델에서 미리 렌더링한 투명 WebP. 추가 WebGL 컨텍스트 없이 바로 표시한다.
+function miniFishThumb(id) {
+  const sp = SPECIES[id];
+  return `assets/minigames/fish/${sp ? sp.model || id : "minnow"}.webp`;
+}
+const fishImages = new Map();
+function fishImage(id) {
+  const src = miniFishThumb(id);
+  if (!fishImages.has(src)) {
+    const img = new Image(); img.src = src;
+    fishImages.set(src, img);
+  }
+  return fishImages.get(src);
+}
+const portraitLoads = {};
+function preloadFishPics(place) {
+  return portraitLoads[place] ||= Promise.all(MINI_FISH[place].map((id) => fishImage(id).decode().catch(() => {})));
+}
 function updateBag() {
   const by = new Map();
   for (const c of G.caught) { const e = by.get(c.id) || { n: 0, top: null, at: 0 }; e.n++; e.at = by.size + G.caught.indexOf(c); if (!e.top || c.cm > e.top.cm) e.top = c; by.delete(c.id); by.set(c.id, e); }
@@ -1965,6 +1983,8 @@ function endIntro() {
 }
 const HOLD = { space: false, left: false, right: false, ptr: false, px: .5 };
 const miniCtx = $("miniCv").getContext("2d");
+// 판정 좌표는 128×40 그대로 두고, 그림만 4배 해상도로 그려 눈·지느러미를 살린다.
+miniCtx.setTransform(4, 0, 0, 4, 0, 0);
 let tensionLoop = null;
 const MINI_CAP = {
   typing: '<span class="kb-desk">입력칸에 한글로 쳐요 (영어가 나오면 <b style="color:var(--sun)">한/영</b> 키!)</span><span class="kb-touch">아래 글자를 순서대로 눌러요</span>',
@@ -2008,9 +2028,22 @@ function startMini(n) {
   renderMiniDom(n);
 }
 const DOM_MINIS = new Set(["typing", "simon", "whack", "reflex", "count", "bubble"]);
-// 이 낚시터 물고기 그림(3D 모델을 찍은 것): 두더지·세기·거품 미니게임에 쓴다
-const fishPics = () => { const ids = realIds(PLACE).filter((id) => models[SPECIES[id].model || id]); return ids.length ? ids : realIds(PLACE); };
-const fishPic = () => { const ids = fishPics(); return fishThumb(ids[Math.floor(Math.random() * ids.length)]); };
+// 작은 칸에서도 눈·꼬리가 잘 구별되는 종을 사용한다. 이미지 디코딩을 마친 뒤에만 등장시킨다.
+const MINI_FISH = {
+  fresh: ["minnow", "pirami", "gakshi", "crucian", "bluegill", "carp", "bass", "trout", "mandarin", "goldkoi"],
+  sea: ["jack", "mackerel", "puffer", "seabream", "yellowtail", "tuna", "bollak", "gamsungdom"],
+};
+const fishPics = () => MINI_FISH[PLACE].filter((id) => { const img = fishImage(id); return img.complete && img.naturalWidth; });
+const fishPic = () => { const ids = fishPics(); return miniFishThumb(ids[Math.floor(Math.random() * ids.length)]); };
+function drawMiniFish(c, x, y, w, h, dir = 1, angle = 0) {
+  const preferred = PLACE === "sea" ? "puffer" : "pirami";
+  let img = fishImage(preferred);
+  if (!img.complete || !img.naturalWidth) img = fishImage(fishPics()[0]);
+  if (!img.complete || !img.naturalWidth) return;
+  c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(angle);
+  c.shadowColor = "rgba(19, 22, 46, .55)"; c.shadowBlur = 0; c.shadowOffsetY = 2;
+  c.drawImage(img, -w / 2, -h / 2, w, h); c.restore();
+}
 // 점프 넘기·먹이 받기에 떨어질/떠내려올 것 하나 만들기
 const feedDrop = () => ({ x: rand(8, 120), y: -4, bad: Math.random() < .3, k: Math.floor(rand(0, 3)) });
 const tri = (x) => { const f = x % 2; return f < 1 ? f : 2 - f; };
@@ -2051,7 +2084,7 @@ function renderMiniDom(n) {
     box.innerHTML = `<div class="phase" id="simonPhase">잘 봐요!</div><div class="slots">${m.seq.map((d, i) => `<div class="key px slot" data-i="${i}"></div>`).join("")}</div>`;
   } else if (n.type === "whack") {
     box.className = "minidom whack";
-    box.innerHTML = `<div class="grid">${WHACK_KEYS.map((k, i) => `<button class="hole px" data-cell="${i}"><b class="wf"></b><i class="kb-desk">${k.slice(3)}</i></button>`).join("")}</div><div class="whackinfo" id="whackInfo"></div>`;
+    box.innerHTML = `<div class="grid">${WHACK_KEYS.map((k, i) => `<button class="hole px" data-cell="${i}" aria-label="${k.slice(3)} 칸 물고기 잡기"><img class="wf" alt="" src="${fishPic()}" draggable="false"><i class="kb-desk">${k.slice(3)}</i></button>`).join("")}</div><div class="whackinfo" id="whackInfo"></div>`;
     box.querySelectorAll("[data-cell]").forEach((b) => b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); whackCell(+b.dataset.cell); }));
   } else if (n.type === "reflex") {
     box.className = "minidom reflex";
@@ -2218,7 +2251,7 @@ function updateDomMini(n, dt) {
   if (m.next <= 0 && m.up.length < (n.double ? 2 : 1)) {
     let c; do c = Math.floor(Math.random() * 9); while (c === m.last || m.up.some((u) => u.c === c));
     m.last = c; m.up.push({ c, t: n.stay }); m.next = n.double && Math.random() < .5 ? rand(.05, .2) : rand(.25, .5);
-    const w = $("miniDom").querySelector(`[data-cell="${c}"] .wf`); if (w) w.style.backgroundImage = `url(${fishPic()})`;
+    const w = $("miniDom").querySelector(`[data-cell="${c}"] .wf`); if (w) w.src = fishPic();
   }
   $("miniDom").querySelectorAll(".hole").forEach((b, i) => b.classList.toggle("up", m.up.some((u) => u.c === i)));
   $("whackInfo").textContent = `${m.hits} / ${n.need}마리 · 놓침 ${m.esc}/3`;
@@ -2378,7 +2411,7 @@ function updateMini(n, dt, t) {
   }
   drawMini(n, t);
 }
-// 128×40 캔버스를 키워 픽셀로 그린다
+// 128×40 논리 좌표: 픽셀 UI와 고해상도 물고기 이미지를 함께 그린다.
 function drawMini(n, t) {
   const c = miniCtx, m = F.ms;
   c.clearRect(0, 0, 128, 40);
@@ -2409,7 +2442,7 @@ function drawMini(n, t) {
     for (const o of m.obs) { box(o.x, 19, o.w, 6, "#13162e"); box(o.x + 1, 20, o.w - 2, 4, "#8a5a2b"); box(o.x + 1, 20, 2, 4, "#c48a4a"); }
     const fy = 19 - m.y, blink = m.inv > 0 && Math.sin(t * 40) > 0;
     if (m.y > 1) box(16, 25, 10, 1, "rgba(255,248,232,.35)");
-    if (!blink) { box(17, fy, 10, 5, "#ffd23f"); box(13, fy + (Math.sin(t * 20) > 0 ? 0 : 1), 4, 5, "#ff9f1c"); box(24, fy + 1, 1, 1, "#13162e"); }
+    if (!blink) drawMiniFish(c, 21, fy + 2, 18, 11, 1, m.y > 1 ? -.16 : Math.sin(t * 9) * .04);
     box(2, 35, 124, 4, "#13162e"); box(3, 36, 122 * clamp(m.t / n.dur, 0, 1), 2, "#ffd23f");
     for (let i = 0; i < 3; i++) box(110 + i * 6, 2, 4, 4, i < m.hit ? "#ff4d6d" : "rgba(255,248,232,.35)");
   } else if (n.type === "feed") {
@@ -2434,7 +2467,7 @@ function drawMini(n, t) {
       else { box(o.x - 5, y, 10, oh, "#13162e"); box(o.x - 4, y + 1, 8, oh - 2, "#8a8f9c"); box(o.x - 3, y + 1, 3, 2, "#c4c8d2"); }
     }
     const fy = 2 + m.y * LH + (LH - 5) / 2, blink = m.inv > 0 && Math.sin(t * 40) > 0;
-    if (!blink) { box(17, fy, 10, 5, "#ffd23f"); box(13, fy + (Math.sin(t * 20) > 0 ? 0 : 1), 4, 5, "#ff9f1c"); box(24, fy + 1, 1, 1, "#13162e"); }
+    if (!blink) drawMiniFish(c, 21, fy + 2.5, Math.min(18, LH * 1.6), Math.min(11, LH), 1, Math.sin(t * 9) * .04);
     box(2, 35, 124, 4, "#13162e"); box(3, 36, 122 * clamp(m.t / n.dur, 0, 1), 2, "#9cf25a");
     for (let i = 0; i < 3; i++) box(110 + i * 6, 28, 4, 4, i < m.hit ? "#ff4d6d" : "rgba(255,248,232,.35)");
   } else if (n.type === "spin") {
@@ -2459,7 +2492,7 @@ function drawMini(n, t) {
     c.strokeStyle = inBox ? "#9cf25a" : "#fff8e8"; c.lineWidth = 2; c.strokeRect(Math.round(bx) + 1, 8, Math.round(bw) - 2, 16);
     box(bx, 8, bw, 16, inBox ? "rgba(156,242,90,.25)" : "rgba(255,248,232,.12)");
     const fx = 4 + m.fx * 120, dir = m.ft > m.fx ? 1 : -1;
-    box(fx - 4, 13, 8, 5, "#ffd23f"); box(fx - 4 - dir * 3, 12 + (Math.sin(t * 20) > 0 ? 0 : 2), 3, 5, "#ff9f1c"); box(fx + dir * 2, 14, 1, 1, "#13162e");
+    drawMiniFish(c, fx, 16, 16, 10, dir, Math.sin(t * 9) * .04);
     box(2, 30, 124, 8, "#13162e"); box(4, 32, 120 * clamp(m.prog, 0, 1), 4, m.prog < .25 ? "#ff4d6d" : "#9cf25a");
   }
 }
@@ -3017,10 +3050,10 @@ function loadPlace(place) {
   let done = 0;
   const show = () => { $("loadText").textContent = `${PLACES[place].name} 물고기 부르는 중… ${done}/${list.length}`; };
   show();
-  return (loading[place] = Promise.all(list.map(async (m) => {
+  return (loading[place] = Promise.all([preloadFishPics(place), ...list.map(async (m) => {
     try { await loadFish(m.id, m.file, m.yaw, m.roll, m.spin); } catch (e) { console.warn("모델", m.id, e); }
     done++; show();
-  })).then(() => { if (MODELS_READY) applyGate(); else $("loadText").textContent = "준비 완료!"; }));
+  })]).then(() => { if (MODELS_READY) applyGate(); else $("loadText").textContent = "준비 완료!"; }));
 }
 (async () => {
   try { MODEL_LIST = await (await fetch("models.json", { cache: "no-cache" })).json(); } catch { MODEL_LIST = []; }

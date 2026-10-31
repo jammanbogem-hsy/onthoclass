@@ -287,7 +287,7 @@
   .minidom .hole { --pb: 4px; aspect-ratio: 1; background: #1d5f8a; position: relative; overflow: hidden; padding: 0; cursor: pointer; }
   .minidom .hole i { position: absolute; left: 5px; top: 3px; font-style: normal; font-size: 12px; color: var(--muted); }
   .minidom .hole::before { content: ""; position: absolute; left: 10%; right: 10%; bottom: 8%; height: 22%; background: #13162e; border-radius: 50%; opacity: .55; } /* 구멍 */
-  .minidom .hole .wf { position: absolute; left: 4%; right: 4%; top: 18%; bottom: 14%; background: center / contain no-repeat; transform: translateY(120%); transition: transform .09s steps(2); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .35)); image-rendering: pixelated; }
+  .minidom .hole .wf { position: absolute; left: 2%; top: 16%; width: 96%; height: 72%; object-fit: contain; pointer-events: none; transform: translateY(120%); transition: transform .09s steps(2); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .35)); image-rendering: pixelated; }
   .minidom .hole.up .wf { transform: translateY(0) rotate(-6deg); } .minidom .hole.up { background: #2a7fb3; }
   /* 번쩍 잡아채기 · 물고기 세기 · 거품 터뜨리기 */
   .minidom .rfx { width: min(320px, 80vw); height: 120px; border: 0; cursor: pointer; background: #2a3160; color: var(--cream); font-family: inherit; font-size: 34px; box-shadow: var(--pxbox); }
@@ -297,13 +297,15 @@
   .minidom .cpond.hide img { opacity: 0; transition: opacity .15s; } .minidom .cpond.hide::after { content: "몇 마리였을까?"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 24px; text-shadow: var(--pxs); }
   .minidom .copts { display: flex; gap: 8px; justify-content: center; } .minidom .copts button { font-size: 20px; padding: 8px 14px; } .minidom .copts i { font-style: normal; font-size: 12px; color: var(--muted); }
   .minidom .bub { position: absolute; width: calc(46px * var(--s)); height: calc(46px * var(--s)); border-radius: 50%; border: 3px solid rgba(255, 255, 255, .85); background: radial-gradient(circle at 32% 30%, rgba(255, 255, 255, .9) 0 12%, rgba(255, 255, 255, .15) 13% 60%, rgba(178, 107, 255, .25) 61%); cursor: pointer; padding: 0; transform: translateX(-50%); }
-  .minidom .bub img { width: 76%; image-rendering: pixelated; } .minidom .bub.pop { transform: translateX(-50%) scale(1.5); opacity: 0; transition: .16s; }
+  .minidom .bub img { width: 90%; height: 80%; object-fit: contain; vertical-align: middle; image-rendering: pixelated; pointer-events: none; } .minidom .bub.pop { transform: translateX(-50%) scale(1.5); opacity: 0; transition: .16s; }
   .lobpractice { display: flex; flex-direction: column; align-items: center; gap: 2px; } .lobpractice small { font-size: 12px; color: var(--muted); }
   .practag { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; background: var(--sun); color: var(--ink); padding: 4px 12px; font-size: 14px; box-shadow: var(--pxbox); pointer-events: none; }
   .hitc.dual { background: radial-gradient(circle at 38% 34%, #fff8e8 0 18%, #ffd23f 19% 100%); } .hitc.dual small { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); white-space: nowrap; font-size: 13px; text-shadow: var(--pxs); color: var(--sun); }
   .hitc.done { opacity: .35; pointer-events: none; transform: translate(-50%, -50%) scale(.85); }
   .minidom .hole.bonk { background: var(--lime); }
   .minidom .whackinfo { font-size: 16px; text-shadow: var(--pxs); }
+  @media (max-width: 560px) and (max-height: 760px) { .minigame:has(.whack) { top: 60%; } }
+  @media (prefers-reduced-motion: reduce) { .minidom .hole .wf { transition: none; } }
   .k-mini { color: var(--ink); } .k-mini .kb { font-size: 13px; }
   /* 위쪽 칩들 */
   .chips.left { justify-content: flex-start; }
@@ -667,7 +669,7 @@
     <div class="queue" id="queue"></div>
   </div>
   <div class="circles" id="circles"></div>
-  <div class="minigame" id="mini" hidden><canvas id="miniCv" width="128" height="40"></canvas><div class="minidom" id="miniDom" hidden></div><p id="miniCap"></p></div>
+  <div class="minigame" id="mini" hidden><canvas id="miniCv" width="512" height="160"></canvas><div class="minidom" id="miniDom" hidden></div><p id="miniCap"></p></div>
   <div class="modecard" id="modeCard" hidden><small>MODE</small><b id="modeTitle">방향키 콤보</b><p id="modeTip"></p><i></i></div>
   <div class="judge" id="judge"></div>
   <div class="combo" id="combo" hidden><b id="comboN">0</b><span>COMBO</span></div>
@@ -806,6 +808,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=43"></script>
+<script type="module" src="game.js?v=44"></script>
 </body>
 </html>
