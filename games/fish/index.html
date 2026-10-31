@@ -484,6 +484,9 @@
   .hostaway { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: center; color: var(--muted); font-size: 15px; } .hostaway small { width: 100%; text-align: center; } .hostaway span { opacity: .7; }
   .hostbtns { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
   .hoststart { font-size: 40px; padding: 18px 60px; background: var(--lime); }
+  .hostplace { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; } .hostplace small { color: var(--muted); font-size: 16px; }
+  .hostplace button { font-family: inherit; font-size: 18px; padding: 8px 16px; border: 0; cursor: pointer; background: var(--panel); color: var(--cream); box-shadow: var(--pxbox); }
+  .hostplace button.on { background: var(--sun); color: var(--ink); } .hostplace button:disabled { opacity: .6; }
   .hostset { text-align: center; color: var(--muted); font-size: 15px; margin: 0; }
   .hostmid { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 0; } .hostmid h2 { margin: 0; font-size: 40px; }
   .hostbig { font-size: 220px; color: var(--sun); text-shadow: var(--stroke); line-height: 1; }
@@ -780,6 +783,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=39"></script>
+<script type="module" src="game.js?v=40"></script>
 </body>
 </html>

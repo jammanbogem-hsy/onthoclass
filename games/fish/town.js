@@ -417,13 +417,15 @@ document.addEventListener("click", (e) => {
 });
 
 // ---------------------------------------------------------------- 교사: 낚시터 방 열기·설정
+// 고르기만 하고 아직 저장 안 한 설정: 학급 목록이 새로 와서 화면을 다시 그려도 고른 값이 그대로 남게(바다로 골랐는데 '학생이 고르기'로 열리던 문제)
+const DRAFT = {};
 function roomBox(c) {
-  const r = c.room, open = r.open && r.closesAt > Date.now();
+  const r = { ...c.room, ...DRAFT[c.cid] }, open = c.room.open && c.room.closesAt > Date.now();
   const opt = (vals, cur) => vals.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${t}</option>`).join("");
   return `<div class="roombox ${open ? "open" : ""}" data-room="${c.cid}">
     <b>${open ? `낚시터 열림 · ${Math.ceil((r.closesAt - Date.now()) / 60000)}분 남음 · ${{ lobby: "대기실", countdown: "곧 시작", play: "대회 중", done: "한 판 끝", free: "자유 낚시" }[r.phase] || "대기실"}` : "낚시터 닫힘"}</b>
     <div class="roomset">
-      <label title="이 시간이 지나면 낚시터가 저절로 닫혀요">열어 둘 시간 <small>(지나면 자동으로 닫힘)</small><select name="minutes">${opt([[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], 40)}</select></label>
+      <label title="이 시간이 지나면 낚시터가 저절로 닫혀요">열어 둘 시간 <small>(지나면 자동으로 닫힘)</small><select name="minutes">${opt([[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], r.minutes || 40)}</select></label>
       <label title="학생이 한 번 대회할 때 타이머 길이">한 판 시간 <small>(대회 한 번 타이머)</small><select name="roundSec">${opt([[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec)}</select></label>
       <label title="대회: 대기실에서 다 같이 시작 · 자유: 열려 있는 동안 학생이 언제든 여러 판">방식<select name="mode">${opt([["contest", "대회 (대기실에서 다 같이)"], ["free", "자유 낚시 (언제든 여러 판)"]], r.mode || "contest")}</select></label>
       <label>낚시터<select name="place">${opt([["any", "학생이 고르기"], ["fresh", "민물만"], ["sea", "바다만"]], r.place)}</select></label>
@@ -438,8 +440,9 @@ const settings = (box) => ({ mode: box.querySelector("[name=mode]").value, minut
 function bindRoom(box) {
   const cid = box.dataset.room, save = (extra) => {
     box.querySelectorAll("button").forEach((b) => { b.disabled = true; }); box.querySelector(".townact")?.insertAdjacentHTML("beforeend", `<small class="saving">저장 중…</small>`);
-    return act(async () => { const r = await call("fishRoomSet", { cid, ...settings(box), ...extra }); const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; }).finally(renderTown);
+    return act(async () => { const r = await call("fishRoomSet", { cid, ...settings(box), ...extra }); delete DRAFT[cid]; const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; }).finally(renderTown);
   };
+  box.querySelectorAll(".roomset select, [name=quizOn]").forEach((x) => x.addEventListener("change", () => { DRAFT[cid] = settings(box); }));
   box.querySelector("[data-roomopen]")?.addEventListener("click", () => save({ open: true }).then(() => { const c = CLASSES?.find((x) => x.cid === cid); if (c?.room?.open) openHost(cid); }));
   box.querySelector("[data-host]")?.addEventListener("click", () => openHost(cid));
   box.querySelector("[data-roomclose]")?.addEventListener("click", () => save({ open: false }));
@@ -513,6 +516,8 @@ function hostAct(extra) {
   call("fishRoomSet", { cid: h.cid, ...extra }).then((r) => { if (HOST !== h) return; h.d.room = { ...r.room }; h.skew = r.room.now - Date.now(); const c = CLASSES?.find((x) => x.cid === h.cid); if (c) c.room = r.room; if (extra.start) h.d.players.forEach((p) => { p.pts = 0; p.n = 0; }); })
     .catch(() => {}).finally(() => { h.busy = false; if (HOST === h) renderHost(); if (!$("town").hidden && tab === "class") renderTown(); });
 }
+// 칠판 화면에서 바로 보이고 바꿀 수 있는 낚시터(학생 화면은 몇 초 안에 따라 바뀜)
+const hostPlace = (r, b) => `<div class="hostplace"><small>낚시터</small>${[["sea", "🌊 바다"], ["fresh", "🏞️ 민물"], ["any", "학생이 고르기"]].map(([v, t]) => `<button class="${r.place === v ? "on" : ""}" data-hplace="${v}" ${b}>${t}</button>`).join("")}</div>`;
 function renderHost() {
   const el = $("host"); if (!HOST) return;
   const d = HOST.d; if (!d) { el.innerHTML = `<div class="hostp"><p class="empty">불러오는 중…</p></div>`; return; }
@@ -527,11 +532,11 @@ function renderHost() {
     <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<p class="empty">학생들이 들어오면 여기에 이름이 떠요</p>`}</div>
     ${away.length ? `<div class="hostaway"><small>아직 안 들어온 친구 ${away.length}명</small>${away.map((p) => `<span>${esc(p.name)}</span>`).join("")}</div>` : ""}
     <div class="hostbtns"><button class="go hoststart" data-hstart ${b || (here.length ? "" : "disabled")}>${HOST.busy ? "시작하는 중…" : here.length && !away.length ? "모두 왔어요! 시작 ▶" : "시작 ▶"}</button></div>
-    <p class="hostset"><button class="acctout" data-hmode="free" ${b}>자유 낚시로 바꾸기</button> · 한 판 ${Math.round(r.roundSec / 60)}분 · ${PLACE_NAME[r.place]}${r.quizOn ? " · 문제 풀고 던지기" : ""} · 낚시터는 ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 저절로 닫혀요</p>`;
+    ${hostPlace(r, b)}<p class="hostset"><button class="acctout" data-hmode="free" ${b}>자유 낚시로 바꾸기</button> · 한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""} · 낚시터는 ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 저절로 닫혀요</p>`;
   else if (ph === "free") main = `<div class="hostplay"><b class="hostclock">자유 낚시</b><small>${here.length} / ${P.length}명 들어옴 · 학생이 원할 때 한 판씩(${Math.round(r.roundSec / 60)}분) · ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 닫힘</small></div>
     <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<p class="empty">학생들이 들어오면 여기에 이름이 떠요</p>`}</div>
     ${rank.some((p) => p.pts) ? `<div class="hostrank">${rank.filter((p) => p.pts).slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${Math.max(4, p.pts / rank[0].pts * 100)}%;--c:${chipCol(p.name)}"></em><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>` : ""}
-    <div class="hostbtns"><button class="go" data-hmode="contest" ${b}>대회로 바꾸기 (대기실)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div>`;
+    ${hostPlace(r, b)}<div class="hostbtns"><button class="go" data-hmode="contest" ${b}>대회로 바꾸기 (대기실)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div>`;
   else if (ph === "countdown") main = `<div class="hostmid"><h2>준비!</h2><b class="hostbig" data-hclock>${Math.max(1, Math.ceil((r.startAt - hnow()) / 1000))}</b></div>`;
   else if (ph === "play") main = `<div class="hostplay"><b class="hostclock" data-hclock>0:00</b><small>${here.length}명 낚시 중</small></div>
     <div class="hostrank">${rank.slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${rank[0]?.pts ? Math.max(4, p.pts / rank[0].pts * 100) : 4}%;--c:${chipCol(p.name)}"></em><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>
@@ -548,6 +553,7 @@ function renderHost() {
   el.querySelector("[data-hlobby]")?.addEventListener("click", () => hostAct({ lobby: true }));
   el.querySelector("[data-hopen]")?.addEventListener("click", () => hostAct({ open: true, minutes: 40 }));
   el.querySelector("[data-hclose2]")?.addEventListener("click", () => hostAct({ open: false }));
+  el.querySelectorAll("[data-hplace]").forEach((x) => x.addEventListener("click", () => { if (x.dataset.hplace !== HOST.d.room.place) hostAct({ place: x.dataset.hplace }); }));
   el.querySelectorAll("[data-hmode]").forEach((x) => x.addEventListener("click", () => hostAct({ mode: x.dataset.hmode })));
 }
 
