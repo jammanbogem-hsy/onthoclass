@@ -6,9 +6,10 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { analyze, shell, cut } from "./avatar.js?v=7";
+import { analyze, shell, cut } from "./avatar.js?v=8";
 import { buildRig, skinWeights, poseRig, handPos } from "./rig.js?v=3";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=18";
+import { scanFace, pushToSkin, lensOf, scanBack, pushOntoBack, wornPoints, ringAt, frontAtP, nearestOf, settle } from "./fit.js?v=1";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=19";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -782,7 +783,7 @@ function loadBase(i) {
     // 모델이 쥔 주먹 끝(가장 앞쪽 점)에서 우리 낚싯대가 이어진다
     let tip = null;
     for (const p of bodyPoints(turn, 3)) if (p.y > .3 && p.y < 1.1 && (!tip || p.z < tip.z)) tip = p;
-    const S = analyze(mesh, toBody, BASES[i].prof), hairRef = hairMask(mesh, toBody, S.A.H);
+    const S = analyze(mesh, toBody, BASES[i].prof), hairRef = hairMask(mesh, toBody, S.A.H), face = scanFace(renderer, mesh, toBody, S.A); // 얼굴 재기: 피부 깊이·눈·목
     // 뼈대 심기: 몸을 SkinnedMesh로 바꾸고 W(몸 좌표 묶음) 안에 몸 모델과 뼈를 같이 둔다
     const rig = buildRig(S, BASES[i].prof);
     skinWeights(mesh.geometry, rig, toBody);
@@ -790,7 +791,7 @@ function loadBase(i) {
     mesh.parent.add(sk); mesh.parent.remove(mesh);
     const W = new THREE.Group(); W.add(turn, rig.root); W.updateMatrixWorld(true);
     sk.bind(rig.skeleton, sk.matrixWorld.clone()); sk.frustumCulled = false;
-    return { turn: W, rig, toBody, S, hairRef, shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
+    return { turn: W, rig, toBody, S, hairRef, face, geo: mesh.geometry, shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
   });
 }
 async function loadAngler(i = 0) {
@@ -798,7 +799,7 @@ async function loadAngler(i = 0) {
   const b = await loadBase(i);
   if (AVA.want !== i) return; // 받는 사이 다른 몸을 골랐으면 그쪽이 이어서 입힌다
   body.remove(anglerModel); anglerModel = b.turn; body.add(b.turn);
-  AVA.base = i; AVA.S = b.S; AVA.shells = b.shells; AVA.rig = b.rig; HAND.copy(b.hand);
+  AVA.base = i; AVA.S = b.S; AVA.face = b.face; AVA.body = { geometry: b.geo, matrix: b.toBody }; AVA.shells = b.shells; AVA.rig = b.rig; HAND.copy(b.hand);
   const A = b.S.A, B = BASES[i];
   HAIR.toBody.value.copy(b.toBody); HAIR.fromBody.value.copy(b.toBody).invert(); 
   HAIR.ref.value.copy(b.hairRef);
@@ -814,11 +815,11 @@ const ITEM_FIT = {
   hat_beanie: { at: "head", w: .88, line: .79 },
   hat_pirate: { at: "head", w: 1.05, line: .8, yaw: 90 },
   crown: { at: "head", w: .55, sink: .2 },
-  hat_sailor: { at: "head", w: .95, line: .8, yaw: 90 }, hat_chef: { at: "head", w: .9, line: .8 }, hat_frog: { at: "head", w: 1.08, line: .75, yaw: 90 }, hat_cowboy: { at: "head", w: 1.3, line: .8, yaw: 180 },
-  ribbon: { at: "pin", w: .1, yaw: 90 }, goggles: { at: "face", w: .66, yaw: 90 }, starglasses: { at: "face", w: .64, yaw: 90 },
+  hat_sailor: { at: "head", w: .95, line: .8, yaw: 90 }, hat_chef: { at: "head", w: .9, line: .8 }, hat_frog: { at: "head", w: 1.0, line: .78, base: .2, yaw: 90 }, hat_cowboy: { at: "head", w: 1.3, line: .8, yaw: 180 },
+  ribbon: { at: "pin", w: .1, yaw: 90 }, goggles: { at: "face", w: .7, yaw: 90, temples: false }, starglasses: { at: "face", w: .64, yaw: 90 },
   fishbag: { at: "back", w: .36, yaw: -90 }, turtlebag: { at: "back", w: .4, yaw: -90 },
   cap: { at: "head", w: .82, line: .8, yaw: 90, z: -.04 },
-  flower: { at: "pin", w: .2, yaw: 90 },
+  flower: { at: "pin", w: .12, yaw: 90 },
   bunny: { at: "head", w: .8, sink: .3, yaw: 90 },
   glasses: { at: "face", w: .62, yaw: 90 },
   roundglasses: { at: "face", w: .62, yaw: 90 },
@@ -830,11 +831,12 @@ const ITEM_FIT = {
   chair: { at: "deck", w: .52 }, fire: { at: "deck", w: .5 }, cooler: { at: "deck", w: .42 }, lantern: { at: "deck", w: .2 }, cat: { at: "deck", w: .32, yaw: 90 },
   parasol: { at: "deck", w: .8 }, bucket: { at: "deck", w: .3 }, radio: { at: "deck", w: .28, yaw: 90 },
 };
+const ITEM_VER = { hat_chef: 3, goggles: 3 }; // 다시 만든 모델(요리사 모자: 속이 빈 모자, 물안경: 머리 없는 물안경)
 const ITEM_V2 = new Set(["hat_bucket", "hat_straw", "hat_beanie", "hat_pirate", "crown", "cap", "flower", "bunny", "glasses", "roundglasses", "mustache", "backpack", "wings", "cape"]); // Tripo v3 정밀로 다시 만든 것
-const AVA = { base: -1, want: -1, S: null, rig: null, shells: {}, items: {}, loading: {}, onBones: [] };
+const AVA = { base: -1, want: -1, S: null, face: null, fitLog: {}, rig: null, shells: {}, items: {}, loading: {}, onBones: [] };
 function itemModel(id) {
   if (!ITEM_FIT[id]) return Promise.resolve(null);
-  return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=${ITEM_V2.has(id) ? 2 : 1}`).then((g) => {
+  return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=${ITEM_VER[id] ?? (ITEM_V2.has(id) ? 2 : 1)}`).then((g) => {
     const turn = new THREE.Group(); turn.add(g.scene);
     g.scene.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); } });
     turn.rotation.y = THREE.MathUtils.degToRad(ITEM_FIT[id].yaw || 0);
@@ -867,6 +869,25 @@ function hatCavity(holder, sz, base) {
   return { cx, cz, rx, ry, rz };
 }
 // 몸 기준 자리에 맞춰 복제해 놓는다. 아직 안 받았으면 받고 나서 옷을 다시 입힌다
+// 안경 다리: 테(앞부분)는 그대로 두고 그 뒤 꼭짓점만 귀(머리 가운데 깊이)까지 뒤로 펴고, 얼굴 옆 피부보다 좁으면 경첩에서 바깥으로 벌린다(볼을 뚫지 않게)
+function stretchTemples(o, zEar, slab, face, cx) {
+  o.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(o), zs = box.min.z + (box.max.z - box.min.z) * slab, k = Math.min(3, Math.max(1, (zEar - zs) / Math.max(1e-4, box.max.z - zs)));
+  const v = new THREE.Vector3(), inv = new THREE.Matrix4(); let half = 0, y0 = 1e9, y1 = -1e9;
+  o.traverse((m) => { if (!m.isMesh) return; const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); if (v.z > zs) { half = Math.max(half, Math.abs(v.x - cx)); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); } } });
+  const H = AVA.S.A.H, need = face ? face.sideAt(y0 - H * .01, y1 + H * .01, zs, zEar - H * .02) + H * .006 : 0, kx = half > 0 && need > half ? need / half : 1, ramp = H * .02;
+  if (k <= 1.01 && kx <= 1.001) return { k, kx };
+  o.traverse((m) => {
+    if (!m.isMesh) return; m.geometry = m.geometry.clone(); inv.copy(m.matrixWorld).invert(); const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); if (v.z <= zs) continue;
+      const t = Math.min(1, (v.z - zs) / ramp); v.x = cx + (v.x - cx) * (1 + (kx - 1) * t); v.z = zs + (v.z - zs) * k;
+      v.applyMatrix4(inv); p.setXYZ(i, v.x, v.y, v.z);
+    }
+    m.geometry.computeBoundingBox(); m.geometry.computeBoundingSphere();
+  });
+  return { k, kx };
+}
 function placeItem(id, parent, tint) {
   const it = AVA.items[id], f = ITEM_FIT[id], S = AVA.S;
   if (!it) { itemModel(id).then((r) => { if (r) applyGear(GEAR.me); }); return null; }
@@ -884,24 +905,44 @@ function placeItem(id, parent, tint) {
       HAIR.cav.value.set(x + c.cx * w, line, z + c.cz * w); HAIR.rad.value.set(c.rx * k, c.ry * k, c.rz * k);
     } else y = Math.min(hd.top, H * (BASES[AVA.base].skullTop || 1)) - sz.y * w * f.sink;
   }
-  else if (f.at === "pin") { w *= H; x = hd.cx + hd.w * .26; y = A.Y(.86); z = hd.front + (hd.back - hd.front) * .45; o.rotation.z = -.5; }
-  else if (f.at === "face") { // 안경: 렌즈 가운데를 눈 높이(BASES eye)에, 테 앞면을 콧등 바로 앞에, 다리는 귀(머리 가운데 깊이)까지 닿게 앞뒤로 늘인다
-    w *= hd.w; x = hd.cx; const ey = H * BASES[AVA.base].eye; y = ey - sz.y * w * (f.lensY ?? .5);
-    const front = A.frontAt(ey) - hd.w * (f.gap ?? .03), dz = Math.min(2.6, Math.max(1, (hd.cz - front) / Math.max(1e-3, sz.z * w)));
-    z = front + sz.z * w * dz / 2; o.scale.set(w, w, w * dz); o.position.set(x, y, z); parent.add(o); return o;
+  else if (f.at === "pin") { // 머리핀: 머리 가운데에서 위·옆 방향으로 머리카락 겉면을 찾아 그 위에, 바깥(조금 앞)을 보게 꽂는다
+    w *= H; o.scale.setScalar(w);
+    const cy = ((AVA.face?.eyeY ?? H * BASES[AVA.base].eye) + hd.top) / 2, c = new THREE.Vector3(hd.cx, cy, hd.cz), d = new THREE.Vector3(...(f.dir || [.75, .6, -.15])).normalize(), P = S.P, q = new THREE.Vector3();
+    let far = hd.w * .45; for (let i = 0; i < S.n; i++) { q.set(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]).sub(c); const l = q.length(); if (l > 1e-6 && q.dot(d) / l > .985) far = Math.max(far, l); }
+    const face = new THREE.Vector3(d.x, d.y * .4, d.z - .9).normalize(); o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), face);
+    o.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(o), mid = bb.getCenter(new THREE.Vector3()); // 아이템 가운데를 겉면 바로 바깥(두께의 ⅓)에
+    o.position.copy(c).addScaledVector(d, far + sz.z * w * .3).sub(mid);
+    AVA.fitLog[id] = { gap: settle(o, nearestOf(P, H * .02), d, H * .003) / H }; // 머리카락에 닿을 때까지 머리 쪽으로
+    parent.add(o); return o;
   }
-  else if (f.at === "mouth") { w *= hd.w; x = hd.cx; const my = H * BASES[AVA.base].mouth; y = my - sz.y * w / 2; z = A.frontAt(my) - hd.w * .027 + sz.z * w / 2; }
-  else if (f.at === "back") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.27); z = A.torso.back + sz.z * w / 2 - H * .1; } // 앞쪽 멜빵은 몸속에 묻히게 붙인다
+  else if (f.at === "face" || f.at === "mouth") { // 안경·수염: 잰 눈 높이(없으면 BASES)에 렌즈 가운데를 두고, 앞부분 뒷면이 피부(콧등·볼)에 닿을 때까지 뒤로 민다
+    const F = AVA.face, B = BASES[AVA.base], eye = f.at === "face";
+    w *= hd.w; o.scale.setScalar(w);
+    const ay = eye ? F?.eyeY ?? H * B.eye : H * B.mouth;
+    o.position.set(eye && F?.eyeX != null ? F.eyeX : hd.cx, 0, hd.front - sz.z * w - H * .05);
+    y = f.lensY != null ? ay - sz.y * w * f.lensY : ay - lensOf(o).y; o.position.y = y;
+    if (F) { const r = pushToSkin(renderer, o, F, { gap: H * (f.gap ?? .004), yMax: eye ? ay + H * .006 : 1e9 }); AVA.fitLog[id] = { dz: r.dz, hits: r.hits, eyeY: ay, from: F.eyeY != null ? "scan" : "table" }; }
+    else o.position.z = A.frontAt(ay) + sz.z * w / 2;
+    if (eye && f.temples !== false) { const t = stretchTemples(o, hd.cz, f.slab ?? .4, F, o.position.x); if (AVA.fitLog[id]) Object.assign(AVA.fitLog[id], t); }
+    parent.add(o); return o;
+  }
+  else if (f.at === "back" || f.at === "wings") { // 가방·날개: 뒤에서 앞으로 당겨 몸통(입은 옷 겉면)에 닿게. 앞쪽 멜빵(skip)은 몸속에 묻힌다
+    w *= H * (BASES[AVA.base].prof.itemK ?? 1); o.scale.setScalar(w); o.position.set(0, A.Y(f.at === "back" ? .27 : .28), A.torso.back + sz.z * w + H * .1);
+    if (AVA.back) { const r = pushOntoBack(renderer, o, AVA.back, { skip: f.skip ?? (f.at === "wings" ? .1 : .2), gap: H * .004 }); AVA.fitLog[id] = r; }
+    else o.position.z = A.torso.back + sz.z * w / 2 - H * .1;
+    parent.add(o); return o;
+  }
   else if (f.at === "pole") { w *= H; x = H * .08; y = A.Y(.3); z = A.torso.back + H * .03; }
-  else if (f.at === "wings") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.28); z = A.torso.back + sz.z * w / 2; }
   else if (f.at === "cape") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.52) - sz.y * w; z = (A.torso.front + A.torso.back) / 2 + H * .03; } // 어깨에 두르는 망토(목 둘레가 뚫린 모양)
   else w = f.w; // 데크 장식은 m 단위
   o.scale.setScalar(w); o.position.set(x, y, z); parent.add(o);
   return o;
 }
+// coatLow: 목도리를 두를 때 비옷 깃을 목도리 아래(잰 목 높이)까지 낮춘 것
+function cutOf(kind) { const P = BASES[AVA.base].prof, nk = AVA.face?.neck; return kind === "coatLow" ? cut(AVA.S, "coat", { ...P, coatTopH: nk ? (nk.y - AVA.S.A.H * .02) / AVA.S.A.H : undefined }) : cut(AVA.S, kind, P); }
 function shellOf(kind) {
   if (!AVA.S) return null;
-  if (!AVA.shells[kind]) { const off = { coat: .014, vest: .02, boots: .012 }[kind], g = shell(AVA.S, cut(AVA.S, kind, BASES[AVA.base].prof), off, toon("#ffffff", { side: THREE.DoubleSide })).geometry; if (AVA.rig) skinWeights(g, AVA.rig, null, off); AVA.shells[kind] = g; }
+  if (!AVA.shells[kind]) { const off = { coat: .014, coatLow: .014, vest: .02, boots: .012 }[kind], g = shell(AVA.S, cutOf(kind), off, toon("#ffffff", { side: THREE.DoubleSide })).geometry; if (AVA.rig) skinWeights(g, AVA.rig, null, off); AVA.shells[kind] = g; }
   return AVA.shells[kind];
 }
 // 옷 셰이더: 껍데기는 몸을 부풀린 것이라 무늬가 없다 → 텍스처 없이 화면에서 바로 그린다(크롬북도 가볍게)
@@ -1075,27 +1116,37 @@ function applyGear(me) {
   if (AVA.S) {
     const A = AVA.S.A, H = A.H;
     // 옷 껍데기는 몸과 같은 뼈를 따라 움직인다(껍데기 좌표 = 몸 좌표라 묶는 행렬은 단위행렬)
-    const wearShell = (kind, col) => { const g = shellOf(kind); if (!g) return; const mat = clothMat(kind, col, cut(AVA.S, kind, BASES[AVA.base].prof)); if (AVA.rig && g.attributes.skinIndex) { const m = new THREE.SkinnedMesh(g, mat); m.bind(AVA.rig.skeleton, new THREE.Matrix4()); m.frustumCulled = false; gearGroup.add(m); } else gearGroup.add(new THREE.Mesh(g, mat)); };
+    const worn = AVA.body ? [AVA.body] : [], wearShell = (kind, col) => { const g = shellOf(kind); if (!g) return; worn.push({ geometry: g, matrix: new THREE.Matrix4() }); const mat = clothMat(kind === "coatLow" ? "coat" : kind, col, cutOf(kind)); if (AVA.rig && g.attributes.skinIndex) { const m = new THREE.SkinnedMesh(g, mat); m.bind(AVA.rig.skeleton, new THREE.Matrix4()); m.frustumCulled = false; gearGroup.add(m); } else gearGroup.add(new THREE.Mesh(g, mat)); };
     // 아이템은 붙는 자리의 뼈에 단다(모자·안경은 머리, 배낭·날개·망토·목도리·깃발은 가슴)
     const toBone = (o, bone) => { if (!o || !AVA.rig) return o; const j = AVA.rig.J[bone]; o.position.x -= j[0]; o.position.y -= j[1]; o.position.z -= j[2]; AVA.rig.bones[bone].add(o); AVA.onBones.push(o); return o; };
-    const put = (id, tint) => { const f = ITEM_FIT[id]; return toBone(placeItem(id, gearGroup, tint), f && ["head", "face", "mouth", "pin"].includes(f.at) ? "head" : "chest"); };
+    const put = (id, tint) => { const f = ITEM_FIT[id], o = placeItem(id, gearGroup, tint); if (o) o.userData.fitId = id; return toBone(o, f && ["head", "face", "mouth", "pin"].includes(f.at) ? "head" : "chest"); };
     if (w.body === "vest" || w.body === "lifevest") {
       wearShell("vest", w.body === "lifevest" ? "#ff7a1a" : "#4f7a3a"); // 구명조끼는 조끼 모양에 주황
-    } else if (w.body !== "cape") wearShell("coat", P.coat[L.coat || 0]);
+    } else if (w.body !== "cape") wearShell(w.body === "scarf" ? "coatLow" : "coat", P.coat[L.coat || 0]);
     wearShell("boots", P.boots[L.boots || 0]);
-    if (w.body === "scarf") {
-      const k = A.head.w / (H * .42); // 목도리 굵기는 머리 너비에 맞춘다(실제 비율 몸은 머리가 작다)
-      const r = new THREE.Mesh(new THREE.TorusGeometry(H * .1 * k, H * .035 * k, 8, 20), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.position.set(0, A.Y(.48), (A.torso.front + A.torso.back) / 2); gearGroup.add(r); toBone(r, "chest");
-      for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(H * .06 * k, H * .05 * k, H * .03 * k), toon(i % 2 ? "#f4f1e8" : "#e0483c")); t.position.set(H * .06 * k, A.Y(.47) - H * i * .05 * k, A.torso.front - H * .05 * k); gearGroup.add(t); toBone(t, "chest"); }
+    AVA.back = worn.length ? scanBack(renderer, worn, A) : null; AVA.worn = worn; // 입은 몸의 등 표면: 가방·날개·깃발이 여기에 닿게
+    if (w.body === "scarf") { // 목도리: 잰 목 높이에서 입은 옷(비옷 깃) 겉면 둘레를 재 그 위에 감고, 꼬리는 가슴 겉면을 따라 늘어뜨린다
+      const nk = AVA.face?.neck, P = wornPoints(worn), rt = H * .022, y = nk ? nk.y - rt * .3 : A.Y(.48), cz = nk ? (nk.zf + nk.zb) / 2 : (A.torso.front + A.torso.back) / 2;
+      const ring = ringAt(AVA.body ? wornPoints([AVA.body]) : P, y, rt, A.head.cx, cz, nk ? nk.r + H * .015 : H * .1) || { cx: 0, cz, rx: H * .07, rz: H * .07 }, R = (ring.rx + ring.rz) / 2 + rt * .75;
+      const r = new THREE.Mesh(new THREE.TorusGeometry(R, rt, 10, 28), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.scale.set((ring.rx + rt * .75) / R, (ring.rz + rt * .75) / R, 1);
+      r.position.set(ring.cx, y, ring.cz); r.userData.fitId = "scarf"; gearGroup.add(r); toBone(r, "chest"); AVA.fitLog.scarf = { y: y / H, ring };
+      const tx = ring.cx + ring.rx * .45, th = H * .018, seg = H * .032, noFist = P.slice();
+      for (let i = 0; i < P.length; i += 3) if (A.fists.some((f) => Math.hypot(P[i] - f[0], P[i + 1] - f[1], P[i + 2] - f[2]) < H * .08)) noFist[i + 1] = -1e9; // 주먹 앞으로 뜨지 않게 가슴만
+      for (let i = 0; i < 3; i++) {
+        const ty = y - rt * .6 - seg * (i + .5), fz = frontAtP(noFist, tx, ty, H * .02), t = new THREE.Mesh(new THREE.BoxGeometry(H * .045, seg * 1.02, th), toon(i % 2 ? "#f4f1e8" : "#e0483c"));
+        t.position.set(tx + i * H * .004, ty, (fz < 1e8 ? fz : ring.cz - ring.rz) - th * .4); t.rotation.z = .08; t.userData.fitId = "scarf_tail"; gearGroup.add(t); toBone(t, "chest");
+      }
     }
     put(w.head || "hat_bucket", w.head ? null : P.hat[L.hat || 0]);
     if (w.face) put(w.face);
-    if (w.back === "flag") { // 깃발은 도형: 등에 꽂은 막대 + 펄럭이는 삼각 천 + 금색 공
-      const g = new THREE.Group(); g.position.set(H * .1, A.Y(.3), A.torso.back + H * .03); g.rotation.z = -.12; gearGroup.add(g); toBone(g, "chest");
+    if (w.back === "flag") { // 깃발은 도형: 등에 멘 막대(꽂이 고리) + 펄럭이는 삼각 천 + 금색 공. 막대는 입은 등 겉면에 닿을 때까지 앞으로 당긴다
+      const g = new THREE.Group(); g.userData.fitId = "flag"; g.position.set(H * .1, A.Y(.3), A.torso.back + H * .08); g.rotation.z = -.12;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(H * .008, H * .008, H * 1.22, 6), toon("#c4c8d2")); pole.position.y = H * .61; g.add(pole);
+      for (const hy of [.06, .2]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(H * .016, H * .016, H * .03, 10), toon("#5b3a24")); c.position.y = H * hy; g.add(c); } // 등에 맨 꽂이 고리 둘
       const tri = new THREE.Shape(); tri.moveTo(0, 0); tri.lineTo(H * .22, -H * .06); tri.lineTo(0, -H * .13);
       const cloth = new THREE.Mesh(new THREE.ShapeGeometry(tri), toon("#e0483c", { side: THREE.DoubleSide })); cloth.position.set(0, H * 1.2, 0); cloth.rotation.y = -.3; g.add(cloth); gearGroup.userData.flag = cloth;
       const ball = new THREE.Mesh(new THREE.SphereGeometry(H * .018, 8, 6), toon("#ffd23f", { emissive: "#5a3a00" })); ball.position.y = H * 1.23; g.add(ball);
+      settle(g, nearestOf(wornPoints(worn), H * .02), new THREE.Vector3(0, 0, 1), H * .003); gearGroup.add(g); toBone(g, "chest");
     } else if (w.back) put(w.back);
     if (w.body === "cape") put("cape");
   }
@@ -3083,7 +3134,7 @@ let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
 $("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=18").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=19").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -3175,4 +3226,37 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, poseRig, POSE, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
+// 검증용: 실제 장면의 낚시꾼(미리보기 복제본 아님)을 직교 카메라로 찍는다. a: 정면에서 돈 각(라디안), yk: 볼 높이(키 비율), zoom: 화면 반높이(키 비율), pose: poseRig 값
+function headShot({ a = 0, yk = .86, zoom = .17, px = 600, pose = null } = {}) {
+  const A = AVA.S.A, H = A.H, W = anglerModel;
+  if (pose && AVA.rig) poseRig(AVA.rig, pose);
+  body.updateMatrixWorld(true);
+  const c = W.localToWorld(new THREE.Vector3(A.head.cx, H * yk, (A.head.front + A.head.back) / 2)), dir = W.localToWorld(new THREE.Vector3(A.head.cx, H * yk, A.head.front - 1)).sub(c).setY(0).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), a);
+  const s = zoom * H * W.getWorldScale(new THREE.Vector3()).y, cam = new THREE.OrthographicCamera(-s, s, s, -s, .01, 20); cam.position.copy(c).addScaledVector(dir, 3); cam.lookAt(c); cam.updateMatrixWorld(true);
+  const rt = new THREE.WebGLRenderTarget(px, px, { samples: 4 }), buf = new Uint8Array(px * px * 4), prev = renderer.getRenderTarget();
+  // 낚시꾼(몸·옷·아이템)만 남기고 정면 조명으로: 낚싯대·배경·역광에 가리지 않게
+  const hidden = []; for (let o = body; o.parent; o = o.parent) for (const k of o.parent.children) if (k !== o && k.visible && !k.isLight) { k.visible = false; hidden.push(k); }
+  for (const k of body.children) if (k !== anglerModel && k !== gearGroup && k.visible) { k.visible = false; hidden.push(k); }
+  const bg = scene.background, fog = scene.fog, lit = [new THREE.HemisphereLight("#ffffff", "#667788", 1.2), new THREE.DirectionalLight("#ffffff", 1.2)];
+  lit[1].position.copy(cam.position).add(new THREE.Vector3(0, 2, 0)); scene.add(...lit); scene.background = new THREE.Color("#d8e4ec"); scene.fog = null;
+  renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, cam);
+  scene.remove(...lit); scene.background = bg; scene.fog = fog; hidden.forEach((o) => { o.visible = true; }); renderer.readRenderTargetPixels(rt, 0, 0, px, px, buf); renderer.setRenderTarget(prev); rt.dispose();
+  const cv = document.createElement("canvas"); cv.width = cv.height = px; const x = cv.getContext("2d"), im = x.createImageData(px, px);
+  for (let j = 0; j < px; j++) im.data.set(buf.subarray((px - 1 - j) * px * 4, (px - j) * px * 4), j * px * 4);
+  x.putImageData(im, 0, 0); return cv.toDataURL();
+}
+// 검증용: 지금 착장의 아이템마다 '가장 가까운 입은 몸 겉면까지 거리'(뜬 정도, 키 비율)와 안경 렌즈-눈 높이 차이를 잰다(쉬는 자세)
+function fitReport() {
+  if (!AVA.S || !AVA.worn) return null;
+  const H = AVA.S.A.H, P = wornPoints(AVA.worn), v = new THREE.Vector3(), out = {};
+  if (AVA.rig) poseRig(AVA.rig, {}); body.updateMatrixWorld(true);
+  const near = nearestOf(P, H * .02);
+  for (const o of AVA.onBones) {
+    const id = o.userData.fitId || o.type; let gap = Infinity, n = 0;
+    o.traverse((m) => { if (!m.isMesh) return; const a = m.geometry.attributes.position, st = Math.max(1, Math.floor(a.count / 400)); for (let i = 0; i < a.count; i += st) { v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld); anglerModel.worldToLocal(v); gap = Math.min(gap, near(v)); n++; } });
+    const r = out[id] = { gap: +(gap / H).toFixed(4) };
+    if (ITEM_FIT[id]?.at === "face" && AVA.face?.eyeY) { const L = lensOf(o, .4, .35, anglerModel.matrixWorld.clone().invert()); r.lensVsEye = +((L.y - AVA.face.eyeY) / H).toFixed(4); }
+  }
+  return out;
+}
+window.__fish = { headShot, fitReport, ITEM_FIT, get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, poseRig, POSE, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };

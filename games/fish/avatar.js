@@ -92,7 +92,7 @@ export function cut(S, kind, P = {}) {
   const above = (y) => [0, 1, 0, -y], below = (y) => [0, -1, 0, y], behind = (z) => [0, 0, 1, -z];
   const hairOut = [...(P.backZ != null ? [[0, 0, -1, P.backZ]] : []), ...(P.sideX != null ? [[1, 0, 0, P.sideX], [-1, 0, 0, P.sideX]] : [])];
   const fists = (r) => S.A.fists.map((f) => ["s", f[0], f[1], f[2], R(r)]);
-  if (kind === "coat") return [above(P.coatLo != null ? P.coatLo * H : Y(.195)), below(Y(P.coatTop ?? .497)), ...(P.handPlane ? [behind(hand + Y(.07))] : fists(.06)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
+  if (kind === "coat") return [above(P.coatLo != null ? P.coatLo * H : Y(.195)), below(P.coatTopH != null ? P.coatTopH * H : Y(P.coatTop ?? .497)), ...(P.handPlane ? [behind(hand + Y(.07))] : fists(.06)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
   // 조끼: 앞이 트인 모양(팔뚝은 가슴 앞에 있어서 그 앞은 뺀다)
   // 조끼: 어깨선(vestTopH)까지, 목둘레는 앞이 파이게(뒤보다 앞이 낮게), 옆은 몸통 폭에서 잘라 소매·팔은 밖에,
   // 가슴 앞으로 모은 팔뚝·주먹은 배 앞면보다 vestFwd 이상 앞이면 뺀다(손목에 초록 띠가 감기지 않게)
