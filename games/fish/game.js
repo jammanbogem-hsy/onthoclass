@@ -6,8 +6,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { analyze, shell, cut } from "./avatar.js?v=6";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=17";
+import { analyze, shell, cut } from "./avatar.js?v=7";
+import { buildRig, skinWeights, poseRig, handPos } from "./rig.js?v=3";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=18";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -761,8 +762,8 @@ function hairShader(mesh) {
 }
 // 바탕 몸: 0 남자, 1 여자(단발머리가 어깨까지 와서 비옷·조끼를 그 아래·안쪽으로 자르고, 눈·입 높이가 다르다)
 const BASES = [ // 실제 아이 비율(머리가 키의 1/5). land: 기준(2등신) 몸 높이 → 이 몸 높이 표(avatar.js landY)
-  { file: "assets/avatar/boy4.glb?v=1", yaw: 90, prof: { land: [[0, 0], [.2, .3], [.45, .8], [1, 1]], fistY: [.6, .74], fistR: .03, fistK: .55, coatLo: .26, vestW: .1, vestK: .6, vestFront: -9, bootTop: .17, decoK: 1.5, itemK: .7 }, hatDrop: -.035, hatK: 1.12, eye: .895, mouth: .84 },
-  { file: "assets/avatar/girl4.glb?v=1", yaw: 90, prof: { land: [[0, 0], [.2, .32], [.45, .74], [1, 1]], fistY: [.55, .69], fistR: .03, fistK: .55, coatLo: .28, vestW: .1, vestK: .6, vestFront: -9, bootTop: .17, decoK: 1.5, itemK: .7 }, hatDrop: -.035, hatK: 1.12, skullTop: .955, eye: .85, mouth: .8 } // 여자: 머리 묶음이 정수리 위로 솟아 왕관·토끼 귀는 머리통 꼭대기(skullTop)에,
+  { file: "assets/avatar/boy4.glb?v=1", yaw: 90, prof: { land: [[0, 0], [.2, .3], [.45, .8], [1, 1]], fistY: [.6, .74], fistR: .03, fistK: .55, coatLo: .26, vestW: .102, vestK: .12, vestTopH: .772, vestScoop: .5, vestFwd: .035, bootTop: .17, decoK: 1.5, itemK: .7 }, hatDrop: -.035, hatK: 1.12, eye: .878, mouth: .84 },
+  { file: "assets/avatar/girl4.glb?v=1", yaw: 90, prof: { land: [[0, 0], [.2, .32], [.45, .74], [1, 1]], fistY: [.55, .69], fistR: .03, fistK: .55, coatLo: .28, vestW: .094, vestK: .12, vestTopH: .718, vestScoop: .5, vestFwd: 0, bootTop: .17, decoK: 1.5, itemK: .7 }, hatDrop: -.035, hatK: 1.12, skullTop: .955, eye: .842, mouth: .8 } // 여자: 머리 묶음이 정수리 위로 솟아 왕관·토끼 귀는 머리통 꼭대기(skullTop)에,
 ];
 const baseCache = {};
 function loadBase(i) {
@@ -781,8 +782,15 @@ function loadBase(i) {
     // 모델이 쥔 주먹 끝(가장 앞쪽 점)에서 우리 낚싯대가 이어진다
     let tip = null;
     for (const p of bodyPoints(turn, 3)) if (p.y > .3 && p.y < 1.1 && (!tip || p.z < tip.z)) tip = p;
-    const S = analyze(mesh, toBody, BASES[i].prof);
-    return { turn, toBody, S, hairRef: hairMask(mesh, toBody, S.A.H), shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
+    const S = analyze(mesh, toBody, BASES[i].prof), hairRef = hairMask(mesh, toBody, S.A.H);
+    // 뼈대 심기: 몸을 SkinnedMesh로 바꾸고 W(몸 좌표 묶음) 안에 몸 모델과 뼈를 같이 둔다
+    const rig = buildRig(S, BASES[i].prof);
+    skinWeights(mesh.geometry, rig, toBody);
+    const sk = new THREE.SkinnedMesh(mesh.geometry, mesh.material); sk.name = mesh.name; sk.position.copy(mesh.position); sk.quaternion.copy(mesh.quaternion); sk.scale.copy(mesh.scale);
+    mesh.parent.add(sk); mesh.parent.remove(mesh);
+    const W = new THREE.Group(); W.add(turn, rig.root); W.updateMatrixWorld(true);
+    sk.bind(rig.skeleton, sk.matrixWorld.clone()); sk.frustumCulled = false;
+    return { turn: W, rig, toBody, S, hairRef, shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
   });
 }
 async function loadAngler(i = 0) {
@@ -790,7 +798,7 @@ async function loadAngler(i = 0) {
   const b = await loadBase(i);
   if (AVA.want !== i) return; // 받는 사이 다른 몸을 골랐으면 그쪽이 이어서 입힌다
   body.remove(anglerModel); anglerModel = b.turn; body.add(b.turn);
-  AVA.base = i; AVA.S = b.S; AVA.shells = b.shells; HAND.copy(b.hand);
+  AVA.base = i; AVA.S = b.S; AVA.shells = b.shells; AVA.rig = b.rig; HAND.copy(b.hand);
   const A = b.S.A, B = BASES[i];
   HAIR.toBody.value.copy(b.toBody); HAIR.fromBody.value.copy(b.toBody).invert(); 
   HAIR.ref.value.copy(b.hairRef);
@@ -806,6 +814,9 @@ const ITEM_FIT = {
   hat_beanie: { at: "head", w: .88, line: .79 },
   hat_pirate: { at: "head", w: 1.05, line: .8, yaw: 90 },
   crown: { at: "head", w: .55, sink: .2 },
+  hat_sailor: { at: "head", w: .95, line: .8, yaw: 90 }, hat_chef: { at: "head", w: .9, line: .8 }, hat_frog: { at: "head", w: 1.08, line: .75, yaw: 90 }, hat_cowboy: { at: "head", w: 1.3, line: .8, yaw: 180 },
+  ribbon: { at: "pin", w: .1, yaw: 90 }, goggles: { at: "face", w: .66, yaw: 90 }, starglasses: { at: "face", w: .64, yaw: 90 },
+  fishbag: { at: "back", w: .36, yaw: -90 }, turtlebag: { at: "back", w: .4, yaw: -90 },
   cap: { at: "head", w: .82, line: .8, yaw: 90, z: -.04 },
   flower: { at: "pin", w: .2, yaw: 90 },
   bunny: { at: "head", w: .8, sink: .3, yaw: 90 },
@@ -817,9 +828,10 @@ const ITEM_FIT = {
   wings: { at: "wings", w: .8, yaw: 90 },
   cape: { at: "cape", w: .46 },
   chair: { at: "deck", w: .52 }, fire: { at: "deck", w: .5 }, cooler: { at: "deck", w: .42 }, lantern: { at: "deck", w: .2 }, cat: { at: "deck", w: .32, yaw: 90 },
+  parasol: { at: "deck", w: .8 }, bucket: { at: "deck", w: .3 }, radio: { at: "deck", w: .28, yaw: 90 },
 };
 const ITEM_V2 = new Set(["hat_bucket", "hat_straw", "hat_beanie", "hat_pirate", "crown", "cap", "flower", "bunny", "glasses", "roundglasses", "mustache", "backpack", "wings", "cape"]); // Tripo v3 정밀로 다시 만든 것
-const AVA = { base: -1, want: -1, S: null, shells: {}, items: {}, loading: {} };
+const AVA = { base: -1, want: -1, S: null, rig: null, shells: {}, items: {}, loading: {}, onBones: [] };
 function itemModel(id) {
   if (!ITEM_FIT[id]) return Promise.resolve(null);
   return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=${ITEM_V2.has(id) ? 2 : 1}`).then((g) => {
@@ -873,7 +885,11 @@ function placeItem(id, parent, tint) {
     } else y = Math.min(hd.top, H * (BASES[AVA.base].skullTop || 1)) - sz.y * w * f.sink;
   }
   else if (f.at === "pin") { w *= H; x = hd.cx + hd.w * .26; y = A.Y(.86); z = hd.front + (hd.back - hd.front) * .45; o.rotation.z = -.5; }
-  else if (f.at === "face") { w *= hd.w; x = hd.cx; const ey = H * BASES[AVA.base].eye; y = ey - sz.y * w / 2; z = A.frontAt(ey) - hd.w * .067 + sz.z * w / 2; }
+  else if (f.at === "face") { // 안경: 렌즈 가운데를 눈 높이(BASES eye)에, 테 앞면을 콧등 바로 앞에, 다리는 귀(머리 가운데 깊이)까지 닿게 앞뒤로 늘인다
+    w *= hd.w; x = hd.cx; const ey = H * BASES[AVA.base].eye; y = ey - sz.y * w * (f.lensY ?? .5);
+    const front = A.frontAt(ey) - hd.w * (f.gap ?? .03), dz = Math.min(2.6, Math.max(1, (hd.cz - front) / Math.max(1e-3, sz.z * w)));
+    z = front + sz.z * w * dz / 2; o.scale.set(w, w, w * dz); o.position.set(x, y, z); parent.add(o); return o;
+  }
   else if (f.at === "mouth") { w *= hd.w; x = hd.cx; const my = H * BASES[AVA.base].mouth; y = my - sz.y * w / 2; z = A.frontAt(my) - hd.w * .027 + sz.z * w / 2; }
   else if (f.at === "back") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.27); z = A.torso.back + sz.z * w / 2 - H * .1; } // 앞쪽 멜빵은 몸속에 묻히게 붙인다
   else if (f.at === "pole") { w *= H; x = H * .08; y = A.Y(.3); z = A.torso.back + H * .03; }
@@ -885,7 +901,8 @@ function placeItem(id, parent, tint) {
 }
 function shellOf(kind) {
   if (!AVA.S) return null;
-  return AVA.shells[kind] ??= shell(AVA.S, cut(AVA.S, kind, BASES[AVA.base].prof), { coat: .014, vest: .02, boots: .012 }[kind], toon("#ffffff", { side: THREE.DoubleSide })).geometry;
+  if (!AVA.shells[kind]) { const off = { coat: .014, vest: .02, boots: .012 }[kind], g = shell(AVA.S, cut(AVA.S, kind, BASES[AVA.base].prof), off, toon("#ffffff", { side: THREE.DoubleSide })).geometry; if (AVA.rig) skinWeights(g, AVA.rig, null, off); AVA.shells[kind] = g; }
+  return AVA.shells[kind];
 }
 // 옷 셰이더: 껍데기는 몸을 부풀린 것이라 무늬가 없다 → 텍스처 없이 화면에서 바로 그린다(크롬북도 가볍게)
 // 자른 면을 따라 단(밑단·소매·목) 띠와 박음질, 비옷은 지퍼·주머니·반짝이는 비닐 광택, 조끼는 테두리·주머니 줄, 장화는 고무 밑창·발목 띠
@@ -1052,30 +1069,35 @@ function applyGear(me) {
   const want = me?.look?.base === 1 ? 1 : 0;
   if (AVA.base >= 0 && want !== AVA.base && AVA.want !== want) { AVA.want = want; loadAngler(want).catch((e) => console.warn("낚시꾼", e)); }
   gearGroup.clear(); gearGroup.userData.flag = null; HAIR.cut.value = 1e9;
+  for (const o of AVA.onBones) o.removeFromParent(); AVA.onBones.length = 0;
   const w = GEAR.wear, L = me?.look || {}, P = LOOK_PAL;
   HAIR.on.value = L.hair ? 1 : 0; HAIR.col.value.set(P.hair[L.hair || 0]).convertSRGBToLinear();
   if (AVA.S) {
     const A = AVA.S.A, H = A.H;
-    const wearShell = (kind, col) => { const g = shellOf(kind); if (g) gearGroup.add(new THREE.Mesh(g, clothMat(kind, col, cut(AVA.S, kind, BASES[AVA.base].prof)))); };
-    if (w.body === "vest") {
-      wearShell("vest", "#4f7a3a");
+    // 옷 껍데기는 몸과 같은 뼈를 따라 움직인다(껍데기 좌표 = 몸 좌표라 묶는 행렬은 단위행렬)
+    const wearShell = (kind, col) => { const g = shellOf(kind); if (!g) return; const mat = clothMat(kind, col, cut(AVA.S, kind, BASES[AVA.base].prof)); if (AVA.rig && g.attributes.skinIndex) { const m = new THREE.SkinnedMesh(g, mat); m.bind(AVA.rig.skeleton, new THREE.Matrix4()); m.frustumCulled = false; gearGroup.add(m); } else gearGroup.add(new THREE.Mesh(g, mat)); };
+    // 아이템은 붙는 자리의 뼈에 단다(모자·안경은 머리, 배낭·날개·망토·목도리·깃발은 가슴)
+    const toBone = (o, bone) => { if (!o || !AVA.rig) return o; const j = AVA.rig.J[bone]; o.position.x -= j[0]; o.position.y -= j[1]; o.position.z -= j[2]; AVA.rig.bones[bone].add(o); AVA.onBones.push(o); return o; };
+    const put = (id, tint) => { const f = ITEM_FIT[id]; return toBone(placeItem(id, gearGroup, tint), f && ["head", "face", "mouth", "pin"].includes(f.at) ? "head" : "chest"); };
+    if (w.body === "vest" || w.body === "lifevest") {
+      wearShell("vest", w.body === "lifevest" ? "#ff7a1a" : "#4f7a3a"); // 구명조끼는 조끼 모양에 주황
     } else if (w.body !== "cape") wearShell("coat", P.coat[L.coat || 0]);
     wearShell("boots", P.boots[L.boots || 0]);
     if (w.body === "scarf") {
       const k = A.head.w / (H * .42); // 목도리 굵기는 머리 너비에 맞춘다(실제 비율 몸은 머리가 작다)
-      const r = new THREE.Mesh(new THREE.TorusGeometry(H * .1 * k, H * .035 * k, 8, 20), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.position.set(0, A.Y(.48), (A.torso.front + A.torso.back) / 2); gearGroup.add(r);
-      for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(H * .06 * k, H * .05 * k, H * .03 * k), toon(i % 2 ? "#f4f1e8" : "#e0483c")); t.position.set(H * .06 * k, A.Y(.47) - H * i * .05 * k, A.torso.front - H * .05 * k); gearGroup.add(t); }
+      const r = new THREE.Mesh(new THREE.TorusGeometry(H * .1 * k, H * .035 * k, 8, 20), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.position.set(0, A.Y(.48), (A.torso.front + A.torso.back) / 2); gearGroup.add(r); toBone(r, "chest");
+      for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(H * .06 * k, H * .05 * k, H * .03 * k), toon(i % 2 ? "#f4f1e8" : "#e0483c")); t.position.set(H * .06 * k, A.Y(.47) - H * i * .05 * k, A.torso.front - H * .05 * k); gearGroup.add(t); toBone(t, "chest"); }
     }
-    placeItem(w.head || "hat_bucket", gearGroup, w.head ? null : P.hat[L.hat || 0]);
-    if (w.face) placeItem(w.face, gearGroup);
+    put(w.head || "hat_bucket", w.head ? null : P.hat[L.hat || 0]);
+    if (w.face) put(w.face);
     if (w.back === "flag") { // 깃발은 도형: 등에 꽂은 막대 + 펄럭이는 삼각 천 + 금색 공
-      const g = new THREE.Group(); g.position.set(H * .1, A.Y(.3), A.torso.back + H * .03); g.rotation.z = -.12; gearGroup.add(g);
+      const g = new THREE.Group(); g.position.set(H * .1, A.Y(.3), A.torso.back + H * .03); g.rotation.z = -.12; gearGroup.add(g); toBone(g, "chest");
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(H * .008, H * .008, H * 1.22, 6), toon("#c4c8d2")); pole.position.y = H * .61; g.add(pole);
       const tri = new THREE.Shape(); tri.moveTo(0, 0); tri.lineTo(H * .22, -H * .06); tri.lineTo(0, -H * .13);
       const cloth = new THREE.Mesh(new THREE.ShapeGeometry(tri), toon("#e0483c", { side: THREE.DoubleSide })); cloth.position.set(0, H * 1.2, 0); cloth.rotation.y = -.3; g.add(cloth); gearGroup.userData.flag = cloth;
       const ball = new THREE.Mesh(new THREE.SphereGeometry(H * .018, 8, 6), toon("#ffd23f", { emissive: "#5a3a00" })); ball.position.y = H * 1.23; g.add(ball);
-    } else if (w.back) placeItem(w.back, gearGroup);
-    if (w.body === "cape") placeItem("cape", gearGroup);
+    } else if (w.back) put(w.back);
+    if (w.body === "cape") put("cape");
   }
   // 장식: 데크 위(Tripo 모델). 모닥불은 불꽃만 움직이는 도형, 고양이는 숨 쉬듯 들썩
   decoGroup.clear(); decoGroup.userData.flames = []; decoGroup.userData.cat = null;
@@ -1087,6 +1109,9 @@ function applyGear(me) {
   deco("cooler", -.55, .85, .3);
   deco("lantern", .5, -.25, 0);
   decoGroup.userData.cat = deco("cat", .6, .9, 2.6);
+  deco("parasol", -1.0, 1.3, 0);
+  deco("bucket", .95, -.15, .4);
+  deco("radio", -.7, -.4, -.5);
   avatarDirty = true;
 }
 // 시작 화면·꾸미기에서 보는 내 낚시꾼(작은 화면에 따로 그린다). 끌어서 돌려 볼 수 있다
@@ -1106,7 +1131,7 @@ function stepAvatar(dt, t) {
   const w = cv.clientWidth, h = cv.clientHeight;
   if (w !== AV.w || h !== AV.h) { AV.w = w; AV.h = h; AV.r.setSize(w, h, false); AV.cam.aspect = w / Math.max(1, h); AV.cam.updateProjectionMatrix(); }
   if (avatarDirty) {
-    AV.g.clear(); const holder = new THREE.Group(); holder.add(anglerModel.clone(), gearGroup.clone());
+    AV.g.clear(); const holder = new THREE.Group(); holder.add(cloneAngler());
     const box = new THREE.Box3().setFromObject(holder), c = box.getCenter(new THREE.Vector3());
     holder.position.set(-c.x, -box.min.y, -c.z); AV.g.add(holder); AV.ht = Math.max(.5, box.max.y - box.min.y); avatarDirty = false;
   }
@@ -1114,6 +1139,15 @@ function stepAvatar(dt, t) {
   const d = AV.ht * .5 / Math.tan(THREE.MathUtils.degToRad(13)) / Math.min(1, AV.cam.aspect * 1.25);
   AV.cam.position.set(0, AV.ht * (AV.pitch ?? .62), -d); AV.cam.lookAt(0, AV.ht * .5, 0);
   AV.r.render(AV.sc, AV.cam);
+}
+// 미리보기용 복제: 몸·옷이 같은 뼈를 쓰므로 둘을 한 덩어리로 복제(SkeletonUtils)하고, 복제본은 쉬는 자세로
+function cloneAngler() {
+  const tmp = new THREE.Group(); tmp.children = [anglerModel, gearGroup]; // 부모를 바꾸지 않고 묶어서 복제만
+  const c = SkeletonUtils.clone(tmp); tmp.children = [];
+  c.traverse((o) => { if (o.isBone && o.userData.rest) { o.position.copy(o.userData.rest); o.quaternion.identity(); } });
+  // 뼈 행렬을 쉬는 자세로 갱신한 뒤 크기를 다시 잰다(안 하면 원본 자세·위치로 재서 미리보기가 치우친다)
+  c.updateMatrixWorld(true); c.traverse((o) => { if (o.isSkinnedMesh) { o.skeleton.update(); o.computeBoundingBox(); o.frustumCulled = false; } });
+  return c;
 }
 function mountAvatar(el) { if (AV.cv && el) el.append(AV.cv); }
 function stepDeco(t) { const fl = gearGroup.userData.flag; if (fl) fl.rotation.y = -.3 + Math.sin(t * 5) * .35; const cat = decoGroup.userData.cat; if (cat) { cat.scale.set(1, 1 + Math.sin(t * 2.4) * .04, 1); cat.rotation.y = 2.6 + Math.sin(t * .7) * .25; } decoGroup.userData.flames?.forEach((f, i) => { f.scale.set(1 + Math.sin(t * 13 + i) * .12, 1 + Math.sin(t * 17 + i * 2) * .25, 1 + Math.cos(t * 11 + i) * .12); f.rotation.y = t * (2 + i); }); }
@@ -2730,17 +2764,40 @@ function updateAngler(dt, t) {
   const mashing = F?.chart[F.i]?.type === "mash";
   const wantLean = F ? .28 + A.kick * .22 + (mashing ? .15 + Math.sin(t * 40) * .05 : 0) : A.cast > .5 ? -.35 : A.cast > 0 ? .3 : 0;
   A.lean = lerp(A.lean, wantLean - A.slump * .35, ease(10, dt));
-  body.rotation.x = A.lean; // + 뒤로 젖힘
+  body.rotation.x = A.lean; // + 뒤로 젖힘(몸 전체. 뼈대는 허리를 조금만 더 굽힌다: 팔꿈치가 허리에 붙은 모델이라 크게 굽히면 옷이 늘어난다)
+  if (AVA.rig) poseAngler(dt, t, mashing);
   body.rotation.z = -A.side * .32 + (F ? Math.sin(t * 13) * .03 : 0) + A.slump * Math.sin(t * 20) * .1;
   const breathe = 1 + Math.sin(t * 2.4) * .015;
   body.scale.set(1 + A.kick * .06, breathe - A.kick * .06, 1 + A.kick * .06);
   body.updateMatrixWorld(true);
-  handW.copy(HAND).applyMatrix4(body.matrixWorld);
+  if (AVA.rig) handPos(AVA.rig, handW); else handW.copy(HAND).applyMatrix4(body.matrixWorld);
   const target = F ? F.fish.group.position : R.state !== "idle" ? bobber.position : _a.set(angler.position.x, 0, angler.position.z - 6);
   rodDir.set(target.x - handW.x, 0, target.z - handW.z).normalize().multiplyScalar(.75);
   rodDir.y = F ? .95 + A.kick * .25 : .75; // 싸울 때는 세워 든다
   if (A.cast > .5) rodDir.set(rodDir.x * -.3, 1.4, -rodDir.z * .3 + .3); // 던지기 직전 뒤로 젖힘
+  if (aimRing.visible) rodDir.set(-rodDir.x * .5, 1.6, -rodDir.z * .5); // 조준하는 동안 낚싯대를 머리 뒤로 든다
   rodDir.normalize();
+}
+// 낚시꾼 동작(뼈대): 상황마다 목표 자세를 정하고 부드럽게 따라간다. 던질 때·챔질·버티기·감기·실패·잡았을 때
+const POSE = { lean: 0, twist: 0, tilt: 0, crouch: 0, arm: 0, elbow: 0, armL: 0, armR: 0, reach: 0, nod: 0 };
+const POSE_GOAL = { ...POSE };
+function poseAngler(dt, t, mashing) {
+  const g = POSE_GOAL; for (const k in g) g[k] = 0;
+  let speed = 8;
+  // Tripo 몸은 팔뚝이 배에 붙은 한 덩어리라 팔을 크게 들면 옷이 늘어난다 → 팔은 조금만, 큰 몸짓은 허리·가슴·무릎·점프로
+  if (show || body.position.y > .01) { g.arm = .35; g.elbow = .25; g.lean = .15; g.nod = -.25; g.crouch = -.1; speed = 10; } // 잡았다! 가슴 펴고 번쩍
+  else if (A.slump > .05) { g.nod = .5 * Math.min(1, A.slump); g.arm = -.12; g.lean = -.18; g.crouch = .3; } // 놓쳤다… 축 처짐
+  else if (F) { // 버티기: 무릎을 굽혀 버티고(몸 전체는 뒤로), 칠 때마다 홱, 연타는 들썩이며 감기
+    g.lean = .1 + A.kick * .1; g.crouch = .6 + A.kick * .25; g.arm = -.05 + A.kick * .15; g.tilt = -A.side * .2; g.twist = A.side * .2 + Math.sin(t * 9) * .03;
+    if (mashing) { g.armR = Math.sin(t * 28) * .08; g.crouch += Math.sin(t * 28) * .08; }
+    speed = 14;
+  } else if (aimRing.visible) { g.arm = .2; g.lean = .15; g.twist = .3; g.crouch = .25; g.nod = -.1; speed = 6; } // 조준: 허리를 비틀고 무릎을 굽혀 힘 모으기(낚싯대는 머리 뒤로)
+  else if (A.cast > 0) { g.arm = -.08; g.elbow = .15; g.lean = -.2; g.twist = -.25; g.crouch = .2; speed = 24; } // 휙! 앞으로 숙이며 휘두르기
+  else if (R.state === "bite") { g.arm = .12; g.nod = .1; speed = 16; }
+  else if (R.state === "waiting" || R.state === "nibble") { g.arm = .03 + Math.sin(t * 1.3) * .02; g.nod = .12; g.armR = R.state === "nibble" ? .05 : 0; }
+  else { g.arm = Math.sin(t * 1.2) * .02; g.nod = Math.sin(t * .7) * .05; g.twist = Math.sin(t * .5) * .06; } // 숨쉬기·두리번
+  const k = ease(speed, dt); for (const key in POSE) POSE[key] = lerp(POSE[key], g[key], k);
+  poseRig(AVA.rig, POSE);
 }
 function updateRodAndLine(dt, t) {
   let pullTo = bobber.position, bend = .05, slack = .35;
@@ -3026,7 +3083,7 @@ let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
 $("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=17").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=18").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -3118,4 +3175,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
+window.__fish = { get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, poseRig, POSE, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };

@@ -228,8 +228,8 @@ const COOK = { gui: { verb: "굽기", done: "구움", sound: "지글지글…", 
 const cookOf = (k) => COOK[k] || { verb: "끓이기", done: "끓임", sound: "보글보글…", art: "pot" };
 const FOOD_ART = { ramen: "🍜", seafoodRamen: "🍜", gui: "🐟", maeuntang: "🍲", haemultang: "🦀", hoe: "🍣" };
 // 옷·장식은 3D 모델을 찍은 그림(assets/avatar/thumb), 그 밖(라면·낚싯대)은 이모지
-const THUMB = new Set(["hat_bucket","hat_straw","hat_beanie","hat_pirate","crown","cap","flower","bunny","glasses","roundglasses","mustache","backpack","flag","wings","cape","chair","fire","cooler","lantern","cat","vest","scarf"]);
-const art = (k) => THUMB.has(k) ? `<img class="ia" src="assets/avatar/thumb/${k}.webp?v=3" alt="">` : (SHOP_ART[k] || "🎁");
+const THUMB = new Set(["hat_bucket","hat_straw","hat_beanie","hat_pirate","crown","cap","flower","bunny","glasses","roundglasses","mustache","backpack","flag","wings","cape","chair","fire","cooler","lantern","cat","vest","scarf","hat_sailor","hat_frog","hat_chef","hat_cowboy","ribbon","goggles","starglasses","lifevest","fishbag","turtlebag","parasol","bucket","radio"]);
+const art = (k) => THUMB.has(k) ? `<img class="ia" src="assets/avatar/thumb/${k}.webp?v=4" alt="">` : (SHOP_ART[k] || "🎁");
 const SHOP_ART = { hat_straw: "👒", hat_beanie: "🧶", glasses: "🕶️", vest: "🦺", hat_pirate: "🏴‍☠️", crown: "👑", chair: "🪑", fire: "🔥", ramen: "🍜",
   cap: "🧢", flower: "🌸", bunny: "🐰", roundglasses: "👓", mustache: "🥸", scarf: "🧣", cape: "🦸", backpack: "🎒", flag: "🚩", wings: "🪽", cooler: "🧊", lantern: "🏮", cat: "🐈" };
 const LOOK_LABEL = { coat: "비옷", boots: "장화", hat: "벙거지", hair: "머리카락" };

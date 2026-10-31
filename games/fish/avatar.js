@@ -94,7 +94,14 @@ export function cut(S, kind, P = {}) {
   const fists = (r) => S.A.fists.map((f) => ["s", f[0], f[1], f[2], R(r)]);
   if (kind === "coat") return [above(P.coatLo != null ? P.coatLo * H : Y(.195)), below(Y(P.coatTop ?? .497)), ...(P.handPlane ? [behind(hand + Y(.07))] : fists(.06)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
   // 조끼: 앞이 트인 모양(팔뚝은 가슴 앞에 있어서 그 앞은 뺀다)
-  if (kind === "vest") { const k = P.vestK ?? .9, w = H * (P.vestW ?? .118), y0 = Y(.38); return [above(Y(.26)), below(Y(P.vestTop ?? .49)), behind(P.vestFront ?? torso.front + H * (P.vestOpen ?? 0)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...fists(.075), ...hairOut]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
+  // 조끼: 어깨선(vestTopH)까지, 목둘레는 앞이 파이게(뒤보다 앞이 낮게), 옆은 몸통 폭에서 잘라 소매·팔은 밖에,
+  // 가슴 앞으로 모은 팔뚝·주먹은 배 앞면보다 vestFwd 이상 앞이면 뺀다(손목에 초록 띠가 감기지 않게)
+  if (kind === "vest") {
+    const k = P.vestK ?? .9, w = H * (P.vestW ?? .118), y0 = Y(.38), top = P.vestTopH != null ? P.vestTopH * H : Y(P.vestTop ?? .49), scoop = P.vestScoop ?? 0;
+    const front = P.vestFwd != null ? torso.front - P.vestFwd * H : P.vestFront ?? torso.front + H * (P.vestOpen ?? 0);
+    const zm = (torso.front + torso.back) / 2; // 목둘레: 몸통 가운데보다 앞쪽일수록 낮게(뒤는 top 그대로)
+    return [above(Y(.26)), below(top), [0, -1, scoop, top - scoop * zm], behind(front), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...fists(.075), ...hairOut];
+  }
   if (kind === "boots") return [below(P.bootTop != null ? P.bootTop * H : Y(.19))];
   return [];
 }
