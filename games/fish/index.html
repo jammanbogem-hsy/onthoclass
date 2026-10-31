@@ -288,7 +288,7 @@
   .minidom .hole i { position: absolute; left: 5px; top: 3px; font-style: normal; font-size: 12px; color: var(--muted); }
   .minidom .hole::before { content: ""; position: absolute; left: 10%; right: 10%; bottom: 8%; height: 22%; background: #13162e; border-radius: 50%; opacity: .55; } /* 구멍 */
   .minidom .hole .wf { position: absolute; left: 2%; top: 16%; width: 96%; height: 72%; object-fit: contain; pointer-events: none; transform: translateY(120%); transition: transform .09s steps(2); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .35)); image-rendering: pixelated; }
-  .minidom .hole.up .wf { transform: translateY(0) rotate(-6deg); } .minidom .hole.up { background: #2a7fb3; }
+  .minidom .hole.up .wf { transform: translateY(0); } .minidom .hole.up { background: #2a7fb3; }
   /* 번쩍 잡아채기 · 물고기 세기 · 거품 터뜨리기 */
   .minidom .rfx { width: min(320px, 80vw); height: 120px; border: 0; cursor: pointer; background: #2a3160; color: var(--cream); font-family: inherit; font-size: 34px; box-shadow: var(--pxbox); }
   .minidom .rfx.go { background: var(--hot); color: #fff; animation: beat .25s steps(2) infinite; }
@@ -808,6 +808,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=44"></script>
+<script type="module" src="game.js?v=45"></script>
 </body>
 </html>

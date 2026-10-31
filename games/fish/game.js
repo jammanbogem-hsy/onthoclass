@@ -704,9 +704,10 @@ async function loadFish(id, file, yaw = 0, roll = 0, spin = 0) {
 }
 // 낚시꾼: 바탕 몸(반팔·반바지) 위에 옷 껍데기(비옷·조끼·장화)와 아이템(모자·안경·배낭…)을 입힌다(avatar.js)
 // 머리카락 색만 바탕 몸 셰이더에서 바꾼다(머리 높이의 갈색. 눈은 거의 검정이라 빠지고, 눈썹은 머리색을 따라간다)
-// 모자를 쓰면 모자 아래선(cut)보다 위의 머리를 머리 가운데로 눌러 모자 속에 넣는다(머리카락이 모자를 뚫고 나오지 않게)
+// 모자를 쓰면 모자 아랫단(cut)보다 위의 머리를 그 모자의 실제 안쪽 공간(반타원체, hatCavity로 잰 것) 안으로 끌어당긴다
+// 머리 모양(포니테일·삐친 머리)이 어떻든 모자 겉면을 뚫지 않는다. 아랫단 아래(뒤로 내려온 포니테일·옆머리)는 그대로 둔다
 const HAIR = { on: { value: 0 }, col: { value: new THREE.Color() }, ref: { value: new THREE.Color() }, toBody: { value: new THREE.Matrix4() }, fromBody: { value: new THREE.Matrix4() },
-  cut: { value: 1e9 }, squash: { value: new THREE.Vector3(1, 1, .05) }, center: { value: new THREE.Vector2() } };
+  cut: { value: 1e9 }, cav: { value: new THREE.Vector3() }, rad: { value: new THREE.Vector3(1, 1, 1) }, band: { value: .02 } };
 // 머리카락 칠할 곳: 정수리 텍스처 색(= 그 모델의 머리색)과 비슷한 색인 꼭짓점만 hairW=1 (모델이 바뀌어도 그대로 맞는다). 눈·피부는 색이 달라 빠지고, 눈썹은 머리색을 따라간다
 function hairMask(mesh, toBody, H) {
   const g = mesh.geometry, uv = g.attributes.uv, pos = g.attributes.position, n = pos.count, w = new Float32Array(n), img = mesh.material.map?.image, ref = new THREE.Color(.35, .22, .14);
@@ -734,15 +735,17 @@ function hairMask(mesh, toBody, H) {
 }
 function hairShader(mesh) {
   mesh.material.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, { hairOn: HAIR.on, hairCol: HAIR.col, hairRef: HAIR.ref, toBody: HAIR.toBody, fromBody: HAIR.fromBody, hatCut: HAIR.cut, hatSquash: HAIR.squash, hatCenter: HAIR.center });
-    sh.vertexShader = "uniform mat4 toBody, fromBody; uniform float hatCut; uniform vec3 hatSquash; uniform vec2 hatCenter; attribute float hairW; varying float vHairW;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+    Object.assign(sh.uniforms, { hairOn: HAIR.on, hairCol: HAIR.col, hairRef: HAIR.ref, toBody: HAIR.toBody, fromBody: HAIR.fromBody, hatCut: HAIR.cut, hatCav: HAIR.cav, hatRad: HAIR.rad, hatBand: HAIR.band });
+    sh.vertexShader = "uniform mat4 toBody, fromBody; uniform float hatCut, hatBand; uniform vec3 hatCav, hatRad; attribute float hairW; varying float vHairW;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
       vHairW = hairW;
       vec3 vB = (toBody * vec4(position, 1.)).xyz;
-      if (vB.y > hatCut - hatSquash.z) {
-        vec3 q = vB; float k = smoothstep(hatCut - hatSquash.z, hatCut, q.y);
-        q.xz = hatCenter + (q.xz - hatCenter) * mix(1., hatSquash.x, k);
-        q.y = q.y > hatCut ? hatCut + (q.y - hatCut) * hatSquash.y : q.y;
-        transformed = (fromBody * vec4(q, 1.)).xyz;
+      if (vB.y > hatCut - hatBand) {
+        vec3 d = vB - hatCav; d.y = max(d.y, 0.); // 아랫단 아래는 옆으로만
+        float L = length(d / hatRad), k = smoothstep(hatCut - hatBand, hatCut, vB.y);
+        if (L > 1.) {
+          vec3 q = hatCav + d / L; q.y = vB.y > hatCut ? q.y : vB.y;
+          transformed = (fromBody * vec4(mix(vB, q, k), 1.)).xyz;
+        }
       }`);
     sh.fragmentShader = `uniform float hairOn; uniform vec3 hairCol, hairRef; varying float vHairW;
       ` + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
@@ -789,7 +792,7 @@ async function loadAngler(i = 0) {
   body.remove(anglerModel); anglerModel = b.turn; body.add(b.turn);
   AVA.base = i; AVA.S = b.S; AVA.shells = b.shells; HAND.copy(b.hand);
   const A = b.S.A, B = BASES[i];
-  HAIR.toBody.value.copy(b.toBody); HAIR.fromBody.value.copy(b.toBody).invert(); HAIR.center.value.set(A.head.cx, A.head.cz);
+  HAIR.toBody.value.copy(b.toBody); HAIR.fromBody.value.copy(b.toBody).invert(); 
   HAIR.ref.value.copy(b.hairRef);
   applyGear(GEAR.me); // 몸이 바뀌면 옷도 다시 맞춘다
 }
@@ -797,13 +800,13 @@ async function loadAngler(i = 0) {
 // 아이템(Tripo, assets/avatar/<id>.glb): 처음 입을 때 받아 두고 다시 쓴다
 // yaw: 앞이 -z(낚시꾼 앞)가 되게 돌리는 각도. at: 붙이는 자리, w: 너비(머리·몸통 너비 배수 또는 m), 나머지는 자리별 미세 조정
 const ITEM_FIT = {
-  // 모자: line=모자 아랫단 높이(키 배수), crown=모자 높이 중 머리가 들어갈 몫, cover=머리를 가로로 줄이는 비율
-  hat_bucket: { at: "head", w: .92, line: .8, crown: .5, cover: .74 },
-  hat_straw: { at: "head", w: 1.3, line: .83, crown: .6, cover: .8 }, // base: 턱끈처럼 아랫단보다 아래로 늘어진 몫
-  hat_beanie: { at: "head", w: .88, line: .79, crown: .78, cover: .84 },
-  hat_pirate: { at: "head", w: 1.05, line: .83, crown: .55, yaw: 90, cover: .86 },
+  // 모자: line=모자 아랫단 높이(기준 몸 키 배수). 머리는 모자 안쪽 공간(hatCavity)으로 저절로 들어간다
+  hat_bucket: { at: "head", w: .92, line: .8 },
+  hat_straw: { at: "head", w: 1.3, line: .83 }, // base: 턱끈처럼 아랫단보다 아래로 늘어진 몫
+  hat_beanie: { at: "head", w: .88, line: .79 },
+  hat_pirate: { at: "head", w: 1.05, line: .8, yaw: 90 },
   crown: { at: "head", w: .55, sink: .2 },
-  cap: { at: "head", w: .82, line: .8, crown: .6, yaw: 90, z: -.04, cover: .82 },
+  cap: { at: "head", w: .82, line: .8, yaw: 90, z: -.04 },
   flower: { at: "pin", w: .2, yaw: 90 },
   bunny: { at: "head", w: .8, sink: .3, yaw: 90 },
   glasses: { at: "face", w: .62, yaw: 90 },
@@ -829,8 +832,27 @@ function itemModel(id) {
     turn.position.set(-(b2.min.x + b2.max.x) / 2, -b2.min.y, -(b2.min.z + b2.max.z) / 2); // 바닥 가운데가 원점, 너비 1
     const holder = new THREE.Group(); holder.add(turn);
     AVA.items[id] = { holder, size: b2.getSize(new THREE.Vector3()) };
+    if (ITEM_FIT[id].line) AVA.items[id].cav = hatCavity(holder, AVA.items[id].size, ITEM_FIT[id].base || 0);
     return AVA.items[id];
   }).catch((e) => { console.warn("아이템", id, e); return null; });
+}
+// 모자 안쪽 공간 재기(너비 1 기준): 아랫단 조금 위 가운데에서 사방·위로 광선을 쏴 처음 닿는 벽까지 = 반타원체(가운데 x,z·반지름 rx,ry,rz)
+// 속이 막힌 모델이어도 겉벽에서 멈추니 그대로 쓸 수 있다. 챙·턱끈이 아니라 정수리 쪽 벽을 재려고 아랫단보다 조금 위에서 잰다
+function hatCavity(holder, sz, base) {
+  holder.updateMatrixWorld(true);
+  const meshes = []; holder.traverse((o) => { if (o.isMesh) { o.material.side = THREE.DoubleSide; meshes.push(o); } });
+  const rc = new THREE.Raycaster(), yo = sz.y * base, y0 = yo + (sz.y - yo) * .12, o = new THREE.Vector3(), dir = new THREE.Vector3();
+  const hit = (x, y, z, dx, dy, dz, miss) => { rc.set(o.set(x, y, z), dir.set(dx, dy, dz).normalize()); const h = rc.intersectObjects(meshes, false)[0]; return h ? h.distance : miss; };
+  const px = hit(0, y0, 0, 1, 0, 0, .5), nx = hit(0, y0, 0, -1, 0, 0, .5), pz = hit(0, y0, 0, 0, 0, 1, sz.z / 2), nz = hit(0, y0, 0, 0, 0, -1, sz.z / 2);
+  const cx = (px - nx) / 2, cz = (pz - nz) / 2, rx = (px + nx) / 2, rz = (pz + nz) / 2;
+  let ry = hit(cx, yo + .001, cz, 0, 1, 0, sz.y - yo); // 아랫단에서 정수리 안쪽까지
+  // 대각선으로도 재서 둥근 정수리가 반타원체보다 좁으면 그만큼 낮춘다(챙 모자처럼 위가 좁은 모자)
+  for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const ex = Math.cos(a) * rx * .7, ez = Math.sin(a) * rz * .7, d = hit(cx, yo + .001, cz, ex, ry * .7, ez, 1e3), want = Math.hypot(ex, ry * .7, ez);
+    if (d < want) ry *= Math.max(.5, d / want);
+  }
+  holder.traverse((m) => { if (m.isMesh) m.material.side = THREE.FrontSide; });
+  return { cx, cz, rx, ry, rz };
 }
 // 몸 기준 자리에 맞춰 복제해 놓는다. 아직 안 받았으면 받고 나서 옷을 다시 입힌다
 function placeItem(id, parent, tint) {
@@ -843,9 +865,11 @@ function placeItem(id, parent, tint) {
   let w = f.w, x = 0, y = 0, z = 0;
   if (f.at === "head") {
     w *= hd.w * (BASES[AVA.base].hatK || 1); x = hd.cx; z = hd.cz + (f.z || 0) * H;
-    if (f.cover) { // 모자 아랫단을 머리의 정해진 높이에 두고, 그 위 머리를 모자 속 높이·너비에 맞게 누른다
-      const line = A.Y(f.line) + H * (BASES[AVA.base].hatDrop || 0), below = sz.y * w * (f.base || 0); y = line - below; const room = (sz.y * w - below) * f.crown, cut = line + H * .02;
-      HAIR.cut.value = cut; HAIR.squash.value.set(f.cover, Math.min(1, Math.max(.3, (line + room - cut) / Math.max(.01, hd.top - cut))), H * .06);
+    if (f.line) { // 모자 아랫단을 머리의 정해진 높이에 두고, 그 위 머리를 모자 안쪽 공간에 넣는다
+      const line = A.Y(f.line) + H * (BASES[AVA.base].hatDrop || 0), below = sz.y * w * (f.base || 0); y = line - below;
+      const c = it.cav, k = w * .9; // 안쪽 벽보다 10% 안쪽(모자 두께)
+      HAIR.cut.value = line; HAIR.band.value = H * .05;
+      HAIR.cav.value.set(x + c.cx * w, line, z + c.cz * w); HAIR.rad.value.set(c.rx * k, c.ry * k, c.rz * k);
     } else y = Math.min(hd.top, H * (BASES[AVA.base].skullTop || 1)) - sz.y * w * f.sink;
   }
   else if (f.at === "pin") { w *= H; x = hd.cx + hd.w * .26; y = A.Y(.86); z = hd.front + (hd.back - hd.front) * .45; o.rotation.z = -.5; }
@@ -1894,9 +1918,41 @@ function fishImage(id) {
   }
   return fishImages.get(src);
 }
+// 미니게임은 픽셀(도트) 화면이라 물고기도 도트로: 3D 모델을 찍은 그림을 가로 24칸으로 줄이고, 색을 몇 단계로 묶고, 남색 테두리 1칸을 두른다
+// 종마다 모양·색은 그대로 살고 그림체는 미니게임 도트와 같아진다. 한 번 만든 것은 캔버스(그리기용)·data URL(두더지·거품·세기용)로 둔다
+const sprites = new Map();
+function pixelFish(img, W = 24) {
+  const big = document.createElement("canvas"); big.width = img.naturalWidth; big.height = img.naturalHeight;
+  const bx = big.getContext("2d", { willReadFrequently: true }); bx.drawImage(img, 0, 0);
+  const a = bx.getImageData(0, 0, big.width, big.height).data; let x0 = big.width, y0 = big.height, x1 = 0, y1 = 0;
+  for (let y = 0; y < big.height; y++) for (let x = 0; x < big.width; x++) if (a[(y * big.width + x) * 4 + 3] > 40) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  if (x1 <= x0) return null;
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1, h = Math.max(4, Math.min(Math.round(W * .75), Math.round(W * bh / bw)));
+  // 반씩 줄여 가며 작게(한 번에 줄이면 얇은 지느러미가 끊긴다)
+  let src = big, sx = x0, sy = y0, sw = bw, sh = bh;
+  while (sw > W * 4) { const c = document.createElement("canvas"); c.width = Math.ceil(sw / 2); c.height = Math.ceil(sh / 2); const cx = c.getContext("2d"); cx.imageSmoothingQuality = "high"; cx.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height); src = c; sx = sy = 0; sw = c.width; sh = c.height; }
+  const cv = document.createElement("canvas"); cv.width = W + 2; cv.height = h + 2;
+  const cx = cv.getContext("2d", { willReadFrequently: true }); cx.imageSmoothingQuality = "high"; cx.drawImage(src, sx, sy, sw, sh, 1, 1, W, h);
+  const d = cx.getImageData(0, 0, cv.width, cv.height), p = d.data, N = cv.width * cv.height, on = new Uint8Array(N);
+  const q = (v) => Math.round(Math.min(255, v * .96) / 42.5) * 42.5; // 7단계 색(흰 물고기가 하얗게 날아가지 않게 살짝 어둡게)
+  for (let i = 0; i < N; i++) { const k = i * 4; if (p[k + 3] > 110) { on[i] = 1; const al = p[k + 3] / 255; p[k] = q(p[k] / al); p[k + 1] = q(p[k + 1] / al); p[k + 2] = q(p[k + 2] / al); p[k + 3] = 255; } else p[k + 3] = 0; }
+  for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+    const i = y * cv.width + x; if (on[i]) continue;
+    if ((x > 0 && on[i - 1]) || (x < cv.width - 1 && on[i + 1]) || (y > 0 && on[i - cv.width]) || (y < cv.height - 1 && on[i + cv.width])) { const k = i * 4; p[k] = 19; p[k + 1] = 22; p[k + 2] = 46; p[k + 3] = 255; }
+  }
+  cx.putImageData(d, 0, 0);
+  return { cv, url: cv.toDataURL() };
+}
+// W=24: 두더지·거품·세기 칸(크게) / W=12: 캔버스 미니게임(도트 한 칸 = 미니게임 화면 한 칸, 예전 노란 물고기 크기)
+function fishSprite(id, W = 24) {
+  const key = id + ":" + W; if (sprites.has(key)) return sprites.get(key);
+  const img = fishImage(id); if (!img.complete || !img.naturalWidth) return null;
+  let sp = null; try { sp = pixelFish(img, W); } catch (e) { console.warn("도트 물고기", id, e); }
+  sprites.set(key, sp); return sp;
+}
 const portraitLoads = {};
 function preloadFishPics(place) {
-  return portraitLoads[place] ||= Promise.all(MINI_FISH[place].map((id) => fishImage(id).decode().catch(() => {})));
+  return portraitLoads[place] ||= Promise.all(MINI_FISH[place].map((id) => fishImage(id).decode().then(() => { fishSprite(id); fishSprite(id, 12); }).catch(() => {})));
 }
 function updateBag() {
   const by = new Map();
@@ -2033,16 +2089,14 @@ const MINI_FISH = {
   fresh: ["minnow", "pirami", "gakshi", "crucian", "bluegill", "carp", "bass", "trout", "mandarin", "goldkoi"],
   sea: ["jack", "mackerel", "puffer", "seabream", "yellowtail", "tuna", "bollak", "gamsungdom"],
 };
-const fishPics = () => MINI_FISH[PLACE].filter((id) => { const img = fishImage(id); return img.complete && img.naturalWidth; });
-const fishPic = () => { const ids = fishPics(); return miniFishThumb(ids[Math.floor(Math.random() * ids.length)]); };
-function drawMiniFish(c, x, y, w, h, dir = 1, angle = 0) {
-  const preferred = PLACE === "sea" ? "puffer" : "pirami";
-  let img = fishImage(preferred);
-  if (!img.complete || !img.naturalWidth) img = fishImage(fishPics()[0]);
-  if (!img.complete || !img.naturalWidth) return;
-  c.save(); c.translate(x, y); c.scale(dir, 1); c.rotate(angle);
-  c.shadowColor = "rgba(19, 22, 46, .55)"; c.shadowBlur = 0; c.shadowOffsetY = 2;
-  c.drawImage(img, -w / 2, -h / 2, w, h); c.restore();
+const fishPics = () => MINI_FISH[PLACE].filter((id) => fishSprite(id));
+const fishPic = () => { const ids = fishPics(); return ids.length ? fishSprite(ids[Math.floor(Math.random() * ids.length)]).url : BLANK_PX; };
+// 캔버스 미니게임(점프·피하기·따라가기): 도트 한 칸이 화면 픽셀 정수배가 되게 크기를 맞춰 또렷하게(캔버스는 4배 해상도)
+function drawMiniFish(c, x, y, w, h, dir = 1) {
+  const sp = fishSprite(PLACE === "sea" ? "seabream" : "pirami", 12) || fishSprite(fishPics()[0], 12); if (!sp) return;
+  const W = sp.cv.width, Hh = sp.cv.height, k = Math.max(2, Math.min(4, Math.round(Math.min(w / W, h / Hh) * 4))) / 4; // 도트 한 칸 = 2~4 화면 픽셀
+  c.save(); c.imageSmoothingEnabled = false; c.translate(Math.round(x * 4) / 4, Math.round(y * 4) / 4); c.scale(dir, 1);
+  c.drawImage(sp.cv, Math.round(-W * k * 2) / 4, Math.round(-Hh * k * 2) / 4, W * k, Hh * k); c.restore();
 }
 // 점프 넘기·먹이 받기에 떨어질/떠내려올 것 하나 만들기
 const feedDrop = () => ({ x: rand(8, 120), y: -4, bad: Math.random() < .3, k: Math.floor(rand(0, 3)) });
@@ -2442,7 +2496,7 @@ function drawMini(n, t) {
     for (const o of m.obs) { box(o.x, 19, o.w, 6, "#13162e"); box(o.x + 1, 20, o.w - 2, 4, "#8a5a2b"); box(o.x + 1, 20, 2, 4, "#c48a4a"); }
     const fy = 19 - m.y, blink = m.inv > 0 && Math.sin(t * 40) > 0;
     if (m.y > 1) box(16, 25, 10, 1, "rgba(255,248,232,.35)");
-    if (!blink) drawMiniFish(c, 21, fy + 2, 18, 11, 1, m.y > 1 ? -.16 : Math.sin(t * 9) * .04);
+    if (!blink) drawMiniFish(c, 21, fy + 2 + (m.y > 1 ? 0 : Math.sin(t * 9) > 0 ? 0 : .5), 18, 11, 1);
     box(2, 35, 124, 4, "#13162e"); box(3, 36, 122 * clamp(m.t / n.dur, 0, 1), 2, "#ffd23f");
     for (let i = 0; i < 3; i++) box(110 + i * 6, 2, 4, 4, i < m.hit ? "#ff4d6d" : "rgba(255,248,232,.35)");
   } else if (n.type === "feed") {
@@ -2467,7 +2521,7 @@ function drawMini(n, t) {
       else { box(o.x - 5, y, 10, oh, "#13162e"); box(o.x - 4, y + 1, 8, oh - 2, "#8a8f9c"); box(o.x - 3, y + 1, 3, 2, "#c4c8d2"); }
     }
     const fy = 2 + m.y * LH + (LH - 5) / 2, blink = m.inv > 0 && Math.sin(t * 40) > 0;
-    if (!blink) drawMiniFish(c, 21, fy + 2.5, Math.min(18, LH * 1.6), Math.min(11, LH), 1, Math.sin(t * 9) * .04);
+    if (!blink) drawMiniFish(c, 21, fy + 2.5 + (Math.sin(t * 9) > 0 ? 0 : .5), Math.min(18, LH * 1.6), Math.min(11, LH), 1);
     box(2, 35, 124, 4, "#13162e"); box(3, 36, 122 * clamp(m.t / n.dur, 0, 1), 2, "#9cf25a");
     for (let i = 0; i < 3; i++) box(110 + i * 6, 28, 4, 4, i < m.hit ? "#ff4d6d" : "rgba(255,248,232,.35)");
   } else if (n.type === "spin") {
@@ -2492,7 +2546,7 @@ function drawMini(n, t) {
     c.strokeStyle = inBox ? "#9cf25a" : "#fff8e8"; c.lineWidth = 2; c.strokeRect(Math.round(bx) + 1, 8, Math.round(bw) - 2, 16);
     box(bx, 8, bw, 16, inBox ? "rgba(156,242,90,.25)" : "rgba(255,248,232,.12)");
     const fx = 4 + m.fx * 120, dir = m.ft > m.fx ? 1 : -1;
-    drawMiniFish(c, fx, 16, 16, 10, dir, Math.sin(t * 9) * .04);
+    drawMiniFish(c, fx, 16 + (Math.sin(t * 9) > 0 ? 0 : .5), 16, 10, dir);
     box(2, 30, 124, 8, "#13162e"); box(4, 32, 120 * clamp(m.prog, 0, 1), 4, m.prog < .25 ? "#ff4d6d" : "#9cf25a");
   }
 }
@@ -3064,4 +3118,4 @@ function loadPlace(place) {
 })();
 
 // 점검용 훅
-window.__fish = { get AVA() { return AVA; }, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
+window.__fish = { get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
