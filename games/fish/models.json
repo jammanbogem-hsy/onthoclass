@@ -134,11 +134,6 @@
     "roll": 90
   },
   {
-    "id": "angler",
-    "file": "assets/avatar/base.glb?v=1",
-    "yaw": 90
-  },
-  {
     "id": "bagrid",
     "file": "assets/fish/bagrid.glb?v=2",
     "yaw": 90
@@ -187,5 +182,208 @@
     "id": "sailfish",
     "file": "assets/fish/sailfish.glb?v=2",
     "yaw": 90
+  },
+  {
+    "id": "bingeo",
+    "file": "assets/fish/bingeo.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "loach",
+    "file": "assets/fish/loach.glb?v=1",
+    "yaw": 0
+  },
+  {
+    "id": "beodeulchi",
+    "file": "assets/fish/beodeulchi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "gakshi",
+    "file": "assets/fish/gakshi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "galgyeoni",
+    "file": "assets/fish/galgyeoni.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "moraemuji",
+    "file": "assets/fish/moraemuji.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "kkeuri",
+    "file": "assets/fish/kkeuri.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "gangjunchi",
+    "file": "assets/fish/gangjunchi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "eunuh",
+    "file": "assets/fish/eunuh.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "rainbowtrout",
+    "file": "assets/fish/rainbowtrout.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "tilapia",
+    "file": "assets/fish/tilapia.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "chamge",
+    "file": "assets/fish/chamge.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "lenok",
+    "file": "assets/fish/lenok.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "jara",
+    "file": "assets/fish/jara.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "hwangsso",
+    "file": "assets/fish/hwangsso.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "arapaima",
+    "file": "assets/fish/arapaima.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "anchovy",
+    "file": "assets/fish/anchovy.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "saury",
+    "file": "assets/fish/saury.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "halfbeak",
+    "file": "assets/fish/halfbeak.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "bollak",
+    "file": "assets/fish/bollak.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "noraemi",
+    "file": "assets/fish/noraemi.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "jwichi",
+    "file": "assets/fish/jwichi.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "dodari",
+    "file": "assets/fish/dodari.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "gamsungdom",
+    "file": "assets/fish/gamsungdom.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "samchi",
+    "file": "assets/fish/samchi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "squid",
+    "file": "assets/fish/squid.glb?v=1",
+    "yaw": 0,
+    "roll": 90,
+    "spin": -90
+  },
+  {
+    "id": "octopus",
+    "file": "assets/fish/octopus.glb?v=1",
+    "yaw": 0
+  },
+  {
+    "id": "dolddom",
+    "file": "assets/fish/dolddom.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "dongsari",
+    "file": "assets/fish/dongsari.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "arowana",
+    "file": "assets/fish/arowana.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "salmon",
+    "file": "assets/fish/salmon.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "stingray",
+    "file": "assets/fish/stingray.glb?v=1",
+    "yaw": 90,
+    "spin": 90
+  },
+  {
+    "id": "swordfish",
+    "file": "assets/fish/swordfish.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "manta",
+    "file": "assets/fish/manta.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "whaleshark",
+    "file": "assets/fish/whaleshark.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "bossgar",
+    "file": "assets/fish/bossgar.glb?v=1",
+    "yaw": 0
+  },
+  {
+    "id": "bosskoi",
+    "file": "assets/fish/bosskoi.glb?v=1",
+    "yaw": 90
+  },
+  {
+    "id": "bossshark",
+    "file": "assets/fish/bossshark.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "bosskraken",
+    "file": "assets/fish/bosskraken.glb?v=1",
+    "yaw": -90
+  },
+  {
+    "id": "monkfish",
+    "file": "assets/fish/monkfish.glb?v=1",
+    "yaw": 0
   }
 ]

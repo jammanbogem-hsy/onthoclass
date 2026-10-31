@@ -3,7 +3,14 @@
 import * as THREE from "three";
 
 // mesh: 바탕 몸 메시, toLocal: 메시 좌표 → 낚시꾼 몸 좌표(발바닥 y=0, 앞이 -z, 옆 x)
-export function analyze(mesh, toLocal) {
+// prof.land: 몸마다 다른 비율을 맞추는 높이 표 [[기준 키 비율, 이 몸의 키 비율]…]. 기준은 2등신 몸(목 .45, 가랑이 .2)이라
+//   실제 아이 비율 몸은 [[0,0],[.2,.3],[.45,.8],[1,1]] 처럼 적으면 옷·모자·소품 높이가 저절로 옮겨진다
+export function landY(prof = {}) {
+  const L = prof.land || [[0, 0], [1, 1]];
+  return (k) => { for (let i = 1; i < L.length; i++) if (k <= L[i][0] || i === L.length - 1) { const [a, b] = L[i - 1], [c, d] = L[i]; return b + (k - a) / (c - a) * (d - b); } return k; };
+}
+export function analyze(mesh, toLocal, prof = {}) {
+  const M = landY(prof);
   const g = mesh.geometry, pos = g.attributes.position, n = pos.count;
   if (!g.attributes.normal) g.computeVertexNormals();
   const nor = g.attributes.normal, P = new Float32Array(n * 3), N = new Float32Array(n * 3);
@@ -23,23 +30,23 @@ export function analyze(mesh, toLocal) {
   let tb = -1e9, tf = 1e9, hand = 1e9;
   for (let i = 0; i < n; i++) {
     const x = P[i * 3], y = P[i * 3 + 1] / H, z = P[i * 3 + 2];
-    if (y > .55) { hx.push(x); hz.push(z); }
-    if (y > .3 && y < .4 && Math.abs(x) < .08 * H) { tb = Math.max(tb, z); } // 등(어깨까지 내려온 머리카락은 빼려고 가슴 아래만)
-    if (y > .3 && y < .5) hand = Math.min(hand, z);
-    if (y > .24 && y < .3) tf = Math.min(tf, z); // 배(팔 아래)
+    if (y > M(.55)) { hx.push(x); hz.push(z); }
+    if (y > M(.3) && y < M(.4) && Math.abs(x) < .08 * H) { tb = Math.max(tb, z); } // 등(어깨까지 내려온 머리카락은 빼려고 가슴 아래만)
+    if (y > M(.3) && y < M(.5)) hand = Math.min(hand, z);
+    if (y > M(.24) && y < M(.3)) tf = Math.min(tf, z); // 배(팔 아래)
   }
   hx.sort((a, b) => a - b); hz.sort((a, b) => a - b);
   const A = {
-    H, hand,
+    H, hand, Y: (k) => M(k) * H, // 기준 몸 높이 비율 → 이 몸의 높이(m)
     head: { top: H, cx: (q(hx, .02) + q(hx, .98)) / 2, cz: (q(hz, .02) + q(hz, .98)) / 2, w: q(hx, .995) - q(hx, .005), front: q(hz, .003), back: q(hz, .997) },
     torso: { back: tb, front: tf },
   };
   // 주먹: 양쪽(x<0, x>0)에서 가장 앞(z 최소)인 점 둘레의 가운데. 비옷·조끼는 이 둘레(구)를 빼서 주먹을 밖에 둔다
   A.fists = [-1, 1].map((sx) => {
-    let tip = -1; for (let i = 0; i < n; i++) { const x = P[i * 3], y = P[i * 3 + 1] / H; if (y > .28 && y < .47 && x * sx > 0 && (tip < 0 || P[i * 3 + 2] < P[tip * 3 + 2])) tip = i; }
+    let tip = -1; for (let i = 0; i < n; i++) { const x = P[i * 3], y = P[i * 3 + 1] / H; if (y > (prof.fistY?.[0] ?? .28) && y < (prof.fistY?.[1] ?? .47) && x * sx > 0 && (tip < 0 || P[i * 3 + 2] < P[tip * 3 + 2])) tip = i; }
     if (tip < 0) return null;
     const c = [0, 0, 0]; let m = 0;
-    for (let i = 0; i < n; i++) if (Math.hypot(P[i * 3] - P[tip * 3], P[i * 3 + 1] - P[tip * 3 + 1], P[i * 3 + 2] - P[tip * 3 + 2]) < .055 * H) { c[0] += P[i * 3]; c[1] += P[i * 3 + 1]; c[2] += P[i * 3 + 2]; m++; }
+    for (let i = 0; i < n; i++) if (Math.hypot(P[i * 3] - P[tip * 3], P[i * 3 + 1] - P[tip * 3 + 1], P[i * 3 + 2] - P[tip * 3 + 2]) < (prof.fistR ?? .055) * H) { c[0] += P[i * 3]; c[1] += P[i * 3 + 1]; c[2] += P[i * 3 + 2]; m++; }
     return c.map((v) => v / m);
   }).filter(Boolean);
   // 높이 y 에서 얼굴 가운데 앞면(z 가장 작은 값): 안경·수염 붙일 자리
@@ -81,13 +88,13 @@ export function shell(S, planes, off, material) {
 
 // 옷 모양(상자). 좌표는 낚시꾼 몸 기준(키 H, 앞 -z, 옆 x). P: 몸마다 다른 값(단발머리처럼 어깨까지 내려온 머리는 빼야 하니까)
 export function cut(S, kind, P = {}) {
-  const { H, hand, torso } = S.A, Y = (k) => k * H;
+  const { H, hand, torso } = S.A, Y = S.A.Y, R = (k) => k * H * (P.fistK ?? 1);
   const above = (y) => [0, 1, 0, -y], below = (y) => [0, -1, 0, y], behind = (z) => [0, 0, 1, -z];
   const hairOut = [...(P.backZ != null ? [[0, 0, -1, P.backZ]] : []), ...(P.sideX != null ? [[1, 0, 0, P.sideX], [-1, 0, 0, P.sideX]] : [])];
-  const fists = (r) => S.A.fists.map((f) => ["s", f[0], f[1], f[2], Y(r)]);
-  if (kind === "coat") return [above(Y(.195)), below(Y(P.coatTop ?? .497)), ...(P.handPlane ? [behind(hand + Y(.07))] : fists(.06)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
+  const fists = (r) => S.A.fists.map((f) => ["s", f[0], f[1], f[2], R(r)]);
+  if (kind === "coat") return [above(P.coatLo != null ? P.coatLo * H : Y(.195)), below(Y(P.coatTop ?? .497)), ...(P.handPlane ? [behind(hand + Y(.07))] : fists(.06)), ...hairOut]; // 반바지까지 덮는 긴 비옷, 주먹은 밖에
   // 조끼: 앞이 트인 모양(팔뚝은 가슴 앞에 있어서 그 앞은 뺀다)
-  if (kind === "vest") { const k = .9, w = Y(P.vestW ?? .118), y0 = Y(.38); return [above(Y(.26)), below(Y(P.vestTop ?? .49)), behind(P.vestFront ?? torso.front + Y(P.vestOpen ?? 0)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...fists(.075), ...hairOut]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
-  if (kind === "boots") return [below(Y(.19))];
+  if (kind === "vest") { const k = P.vestK ?? .9, w = H * (P.vestW ?? .118), y0 = Y(.38); return [above(Y(.26)), below(Y(P.vestTop ?? .49)), behind(P.vestFront ?? torso.front + H * (P.vestOpen ?? 0)), [-1, -k, 0, w + k * y0], [1, -k, 0, w + k * y0], ...fists(.075), ...hairOut]; } // 팔·소매는 밖에, 어깨로 갈수록 좁게
+  if (kind === "boots") return [below(P.bootTop != null ? P.bootTop * H : Y(.19))];
   return [];
 }

@@ -45,8 +45,49 @@ const SPECIES: Record<string, { w: "fresh" | "sea"; n: string; t: string; p: num
   hammerhead: { w: "sea", n: "상어", t: "전설", p: 280, len: [150, 350] },
   sailfish: { w: "sea", n: "돛새치", t: "전설", p: 300, len: [150, 330] },
   bossFresh: { w: "fresh", n: "메기 대왕", t: "보스", p: 800, len: [250, 320] }, bossSea: { w: "sea", n: "청새치 대왕", t: "보스", p: 900, len: [450, 600] },
+  // v24: 물고기 2배 + 보스 더
+  bingeo: { w: "fresh", n: "빙어", t: "흔함", p: 12, len: [7, 15] },
+  loach: { w: "fresh", n: "미꾸라지", t: "흔함", p: 16, len: [10, 20] },
+  beodeulchi: { w: "fresh", n: "버들치", t: "흔함", p: 13, len: [7, 15] },
+  gakshi: { w: "fresh", n: "각시붕어", t: "흔함", p: 15, len: [4, 8] },
+  galgyeoni: { w: "fresh", n: "갈겨니", t: "흔함", p: 18, len: [10, 20] },
+  moraemuji: { w: "fresh", n: "모래무지", t: "보통", p: 38, len: [15, 30] },
+  kkeuri: { w: "fresh", n: "끄리", t: "보통", p: 46, len: [25, 50] },
+  gangjunchi: { w: "fresh", n: "강준치", t: "보통", p: 50, len: [40, 100] },
+  eunuh: { w: "fresh", n: "은어", t: "보통", p: 48, len: [15, 30] },
+  rainbowtrout: { w: "fresh", n: "무지개송어", t: "보통", p: 56, len: [30, 70] },
+  tilapia: { w: "fresh", n: "틸라피아", t: "보통", p: 42, len: [20, 45] },
+  dongsari: { w: "fresh", n: "동사리", t: "보통", p: 40, len: [10, 25] },
+  chamge: { w: "fresh", n: "참게", t: "보통", p: 44, len: [6, 10] },
+  lenok: { w: "fresh", n: "열목어", t: "희귀", p: 98, len: [30, 70] },
+  jara: { w: "fresh", n: "자라", t: "희귀", p: 110, len: [20, 40] },
+  hwangsso: { w: "fresh", n: "황쏘가리", t: "희귀", p: 120, len: [25, 55] },
+  arapaima: { w: "fresh", n: "피라루쿠", t: "전설", p: 300, len: [150, 300] },
+  arowana: { w: "fresh", n: "아로와나", t: "전설", p: 260, len: [60, 120] },
+  anchovy: { w: "sea", n: "멸치", t: "흔함", p: 8, len: [5, 15] },
+  saury: { w: "sea", n: "꽁치", t: "흔함", p: 15, len: [25, 35] },
+  halfbeak: { w: "sea", n: "학꽁치", t: "흔함", p: 17, len: [20, 40] },
+  bollak: { w: "sea", n: "볼락", t: "흔함", p: 22, len: [15, 30] },
+  noraemi: { w: "sea", n: "노래미", t: "흔함", p: 24, len: [20, 45] },
+  jwichi: { w: "sea", n: "쥐치", t: "보통", p: 40, len: [15, 35] },
+  dodari: { w: "sea", n: "도다리", t: "보통", p: 46, len: [20, 45] },
+  gamsungdom: { w: "sea", n: "감성돔", t: "보통", p: 58, len: [25, 60] },
+  samchi: { w: "sea", n: "삼치", t: "보통", p: 54, len: [50, 100] },
+  squid: { w: "sea", n: "오징어", t: "보통", p: 44, len: [20, 40] },
+  octopus: { w: "sea", n: "문어", t: "희귀", p: 95, len: [40, 120] },
+  monkfish: { w: "sea", n: "아귀", t: "희귀", p: 100, len: [40, 100] },
+  dolddom: { w: "sea", n: "돌돔", t: "희귀", p: 118, len: [25, 60] },
+  salmon: { w: "sea", n: "연어", t: "희귀", p: 105, len: [60, 100] },
+  stingray: { w: "sea", n: "가오리", t: "희귀", p: 112, len: [50, 120] },
+  swordfish: { w: "sea", n: "황새치", t: "전설", p: 310, len: [200, 450] },
+  manta: { w: "sea", n: "만타가오리", t: "전설", p: 290, len: [300, 600] },
+  whaleshark: { w: "sea", n: "고래상어", t: "전설", p: 330, len: [500, 1000] },
+  bossgar: { w: "fresh", n: "악어가아 대왕", t: "보스", p: 850, len: [250, 330] },
+  bosskoi: { w: "fresh", n: "황금 용잉어", t: "보스", p: 1000, len: [180, 240] },
+  bossshark: { w: "sea", n: "백상아리 대왕", t: "보스", p: 950, len: [500, 650] },
+  bosskraken: { w: "sea", n: "대왕오징어", t: "보스", p: 1000, len: [800, 1200] },
 };
-const WEIGHT_K: Record<string, number> = { mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
+const WEIGHT_K: Record<string, number> = { bingeo: 8, loach: 3, beodeulchi: 10, gakshi: 14, galgyeoni: 10, moraemuji: 9, kkeuri: 9, gangjunchi: 7, eunuh: 10, rainbowtrout: 11, tilapia: 20, dongsari: 12, chamge: 390, lenok: 11, jara: 74, hwangsso: 13, arapaima: 8, arowana: 6, anchovy: 8, saury: 3, halfbeak: 2.5, bollak: 13, noraemi: 11, jwichi: 20, dodari: 14, gamsungdom: 16, samchi: 7, squid: 8, octopus: 6, monkfish: 20, dolddom: 18, salmon: 11, stingray: 12, swordfish: 4, manta: 1.5, whaleshark: 1.2, bossgar: 6, bosskoi: 14, bossshark: 7, bosskraken: 1, mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
 const kgOf = (id: string, cm: number, cond: number) => (WEIGHT_K[id] || 12) * (cm / 100) ** 3 * cond;
 const GRADES: [number, string][] = [[.92, "월척"], [.72, "S급"], [.45, "A급"], [.18, "B급"], [0, "놔주자급"]];
 const gradeOf = (t: number) => GRADES.find(([min]) => t >= min)![1];
@@ -303,8 +344,9 @@ const roomOpen = (r: Room | null) => !!r && r.open && Date.now() < r.closesAt;
 const roomPlaying = (r: Room | null) => roomOpen(r) && r!.mode === "free" || roomOpen(r) && r!.phase === "play" && Date.now() >= (r!.startAt || 0) - 2000 && Date.now() < (r!.endAt || 0) + 30e3;
 const phaseOf = (r: Room | null) => { if (!roomOpen(r)) return "closed"; if (r!.mode === "free") return "free"; if (r!.phase !== "play") return "lobby"; const n = Date.now(); return n < (r!.startAt || 0) ? "countdown" : n < (r!.endAt || 0) ? "play" : "done"; };
 async function roomOf(cid: string): Promise<Room | null> { return ((await db().doc(`fishClasses/${cid}`).get()).data()?.room as Room) || null; }
-const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), closesAt: r.closesAt, place: r.place, roundSec: r.roundSec, quizOn: !!r.quizOn && r.quiz?.length > 0, quizN: r.quiz?.length || 0, ...(withQuiz && r.quizOn ? { quiz: r.quiz } : {}),
-  mode: r.mode || "contest", phase: phaseOf(r), round: r.round || 0, startAt: r.startAt || 0, endAt: r.endAt || 0, now: Date.now() } : { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0, mode: "contest", phase: "closed", round: 0, startAt: 0, endAt: 0, now: Date.now() };
+// 낚시터는 선생님이 정한다(민물/바다). 자유시간(mode free)에만 학생이 고른다. 예전 방의 "any"는 민물로
+const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), closesAt: r.closesAt, place: r.place === "sea" ? "sea" : "fresh", roundSec: r.roundSec, quizOn: !!r.quizOn && r.quiz?.length > 0, quizN: r.quiz?.length || 0, ...(withQuiz && r.quizOn ? { quiz: r.quiz } : {}),
+  mode: r.mode || "contest", phase: phaseOf(r), round: r.round || 0, startAt: r.startAt || 0, endAt: r.endAt || 0, now: Date.now() } : { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0, mode: "contest", phase: "closed", round: 0, startAt: 0, endAt: 0, now: Date.now() };
 // 대기실 명단: fishClasses/{cid}/lobby/{sid} = { name, at(마지막으로 보인 때), round, pts(이번 판 손맛), n(이번 판 마리) }
 const lobbyCol = (cid: string) => db().collection(`fishClasses/${cid}/lobby`);
 const HERE_MS = 30e3;
@@ -489,9 +531,9 @@ export const fishRoomSet = onCall(options, async (req) => {
   if (!/^[\w-]{1,64}$/.test(cid)) throw new HttpsError("invalid-argument", "학급을 골라 주세요.");
   const ref = db().doc(`fishClasses/${cid}`), c = await ref.get();
   if (c.data()?.teacher !== uid && !isAdmin(req)) throw new HttpsError("permission-denied", "내 학급이 아니에요.");
-  const old: Room = c.data()?.room || { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quiz: [] };
+  const old: Room = c.data()?.room || { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quiz: [] };
   const d = req.data || {}, room: Room = { ...old }, now = Date.now();
-  if (d.place !== undefined) room.place = (["fresh", "sea", "any"] as const).includes(d.place) ? d.place : "any";
+  if (d.place === "fresh" || d.place === "sea") room.place = d.place;
   if (d.roundSec !== undefined) room.roundSec = Math.min(900, Math.max(60, Math.round(Number(d.roundSec) || 180)));
   if (d.quizOn !== undefined) room.quizOn = !!d.quizOn;
   if (d.quiz !== undefined) {

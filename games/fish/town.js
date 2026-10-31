@@ -169,11 +169,11 @@ export const refresh = async () => { if (ST || NET.user) { Object.assign(NET, aw
 
 // 학생 전용 주소(/fish/student 또는 /student). 지금 주소의 폴더 기준
 export const studentUrl = (code = "") => location.origin + location.pathname.replace(/student\/?$/, "").replace(/[^/]*$/, "") + "student" + (code ? `?code=${code}` : "");
-const PLACE_NAME = { fresh: "민물", sea: "바다", any: "장소는 자유" };
+const PLACE_NAME = { fresh: "민물", sea: "바다", any: "민물" };
 function roomLine() {
   const r = NET.room, ph = phaseNow();
   if (ph === "closed") return `<div class="roomline wait">선생님이 낚시터를 열 때까지 기다려요… <small>(저절로 확인해요)</small></div>`;
-  return `<div class="roomline open">${{ lobby: "대기실", countdown: "곧 시작!", play: "대회 중", done: "이번 판 끝", free: "자유 낚시" }[ph]} · ${PLACE_NAME[r.place]} · 한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""}</div>`;
+  return `<div class="roomline open">${{ lobby: "대기실", countdown: "곧 시작!", play: "대회 중", done: "이번 판 끝", free: "자유시간" }[ph]} · ${ph === "free" ? "낚시터는 내가 골라요" : PLACE_NAME[r.place]} · 한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""}</div>`;
 }
 // ---------------------------------------------------------------- 시작·끝 화면의 계정 칸
 export function renderAcct() {
@@ -229,7 +229,7 @@ const cookOf = (k) => COOK[k] || { verb: "끓이기", done: "끓임", sound: "�
 const FOOD_ART = { ramen: "🍜", seafoodRamen: "🍜", gui: "🐟", maeuntang: "🍲", haemultang: "🦀", hoe: "🍣" };
 // 옷·장식은 3D 모델을 찍은 그림(assets/avatar/thumb), 그 밖(라면·낚싯대)은 이모지
 const THUMB = new Set(["hat_bucket","hat_straw","hat_beanie","hat_pirate","crown","cap","flower","bunny","glasses","roundglasses","mustache","backpack","flag","wings","cape","chair","fire","cooler","lantern","cat","vest","scarf"]);
-const art = (k) => THUMB.has(k) ? `<img class="ia" src="assets/avatar/thumb/${k}.webp?v=2" alt="">` : (SHOP_ART[k] || "🎁");
+const art = (k) => THUMB.has(k) ? `<img class="ia" src="assets/avatar/thumb/${k}.webp?v=3" alt="">` : (SHOP_ART[k] || "🎁");
 const SHOP_ART = { hat_straw: "👒", hat_beanie: "🧶", glasses: "🕶️", vest: "🦺", hat_pirate: "🏴‍☠️", crown: "👑", chair: "🪑", fire: "🔥", ramen: "🍜",
   cap: "🧢", flower: "🌸", bunny: "🐰", roundglasses: "👓", mustache: "🥸", scarf: "🧣", cape: "🦸", backpack: "🎒", flag: "🚩", wings: "🪽", cooler: "🧊", lantern: "🏮", cat: "🐈" };
 const LOOK_LABEL = { coat: "비옷", boots: "장화", hat: "벙거지", hair: "머리카락" };
@@ -318,7 +318,7 @@ export function renderTown() {
           : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 코드 <b>${c.code}</b>를 적어 주세요.</p>`}</div>`).join("") : `<p class="empty">아직 만든 학급이 없어요.</p>`}`;
     body.querySelectorAll("[data-room]").forEach((box) => bindRoom(box));
     body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "만드는 중…";
-      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "any", roundSec: 180, quizOn: false, quizN: 0 } }]; pop(r.code, "money", `${r.name} 학급 코드`); }).finally(renderTown); });
+      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0 } }]; pop(r.code, "money", `${r.name} 학급 코드`); }).finally(renderTown); });
     body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); b.disabled = true; b.textContent = "초기화 중…";
       act(async () => { await call("fishClassResetPin", { cid, sid }); const st = CLASSES?.find((c) => c.cid === cid)?.students.find((x) => x.sid === sid); if (st) st.hasPin = false; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); }).finally(renderTown); }));
   } else {
@@ -427,22 +427,22 @@ function roomBox(c) {
     <div class="roomset">
       <label title="이 시간이 지나면 낚시터가 저절로 닫혀요">열어 둘 시간 <small>(지나면 자동으로 닫힘)</small><select name="minutes">${opt([[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], r.minutes || 40)}</select></label>
       <label title="학생이 한 번 대회할 때 타이머 길이">한 판 시간 <small>(대회 한 번 타이머)</small><select name="roundSec">${opt([[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec)}</select></label>
-      <label title="대회: 대기실에서 다 같이 시작 · 자유: 열려 있는 동안 학생이 언제든 여러 판">방식<select name="mode">${opt([["contest", "대회 (대기실에서 다 같이)"], ["free", "자유 낚시 (언제든 여러 판)"]], r.mode || "contest")}</select></label>
-      <label>낚시터<select name="place">${opt([["any", "학생이 고르기"], ["fresh", "민물만"], ["sea", "바다만"]], r.place)}</select></label>
+      <label title="선생님이 정한 낚시터로 다 같이 해요. 자유시간에는 학생이 골라요">낚시터<select name="place">${opt([["fresh", "민물"], ["sea", "바다"]], r.place === "sea" ? "sea" : "fresh")}</select></label>
+      <label class="chk freetog" title="켜면 학생이 낚시터를 골라 언제든 여러 판, 끄면 하던 낚시를 마치고 대기실로"><input type="checkbox" name="free" ${r.mode === "free" ? "checked" : ""}> 자유시간 <small>(학생이 골라 마음껏)</small></label>
     </div>
     <div class="roomquiz"><label class="chk"><input type="checkbox" name="quizOn" ${r.quizOn ? "checked" : ""}> 던지기 전에 문제 풀기</label>
       <span>문제 ${r.quizN}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button class="acctout" data-tpl>양식 받기</button></div>
     <div class="townact">${open ? `<button class="go" data-host>대기실 화면 ▶</button><button class="go alt" data-roomsave>설정 바꾸기</button><button class="go alt" data-roomclose>낚시터 닫기</button>` : `<button class="go" data-roomopen>낚시터 열고 대기실 만들기</button><button class="go alt" data-roomsave>설정만 저장</button>`}</div>
-    <small class="roomhow">학생은 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와 대기실에서 기다려요. 다 들어오면 대기실 화면에서 <b>시작</b>을 눌러요</small>
+    <small class="roomhow">학생은 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와 대기실에서 기다려요. 다 들어오면 대기실 화면에서 <b>시작</b>을 눌러요. <b>자유시간</b>을 켜면 학생이 낚시터를 골라 마음껏, 끄면 모두 대기실로 돌아와요</small>
   </div>`;
 }
-const settings = (box) => ({ mode: box.querySelector("[name=mode]").value, minutes: +box.querySelector("[name=minutes]").value, roundSec: +box.querySelector("[name=roundSec]").value, place: box.querySelector("[name=place]").value, quizOn: box.querySelector("[name=quizOn]").checked });
+const settings = (box) => ({ mode: box.querySelector("[name=free]").checked ? "free" : "contest", minutes: +box.querySelector("[name=minutes]").value, roundSec: +box.querySelector("[name=roundSec]").value, place: box.querySelector("[name=place]").value, quizOn: box.querySelector("[name=quizOn]").checked });
 function bindRoom(box) {
   const cid = box.dataset.room, save = (extra) => {
     box.querySelectorAll("button").forEach((b) => { b.disabled = true; }); box.querySelector(".townact")?.insertAdjacentHTML("beforeend", `<small class="saving">저장 중…</small>`);
     return act(async () => { const r = await call("fishRoomSet", { cid, ...settings(box), ...extra }); delete DRAFT[cid]; const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; }).finally(renderTown);
   };
-  box.querySelectorAll(".roomset select, [name=quizOn]").forEach((x) => x.addEventListener("change", () => { DRAFT[cid] = settings(box); }));
+  box.querySelectorAll(".roomset select, .roomset input, [name=quizOn]").forEach((x) => x.addEventListener("change", () => { DRAFT[cid] = settings(box); }));
   box.querySelector("[data-roomopen]")?.addEventListener("click", () => save({ open: true }).then(() => { const c = CLASSES?.find((x) => x.cid === cid); if (c?.room?.open) openHost(cid); }));
   box.querySelector("[data-host]")?.addEventListener("click", () => openHost(cid));
   box.querySelector("[data-roomclose]")?.addEventListener("click", () => save({ open: false }));
@@ -517,7 +517,9 @@ function hostAct(extra) {
     .catch(() => {}).finally(() => { h.busy = false; if (HOST === h) renderHost(); if (!$("town").hidden && tab === "class") renderTown(); });
 }
 // 칠판 화면에서 바로 보이고 바꿀 수 있는 낚시터(학생 화면은 몇 초 안에 따라 바뀜)
-const hostPlace = (r, b) => `<div class="hostplace"><small>낚시터</small>${[["sea", "🌊 바다"], ["fresh", "🏞️ 민물"], ["any", "학생이 고르기"]].map(([v, t]) => `<button class="${r.place === v ? "on" : ""}" data-hplace="${v}" ${b}>${t}</button>`).join("")}</div>`;
+const hostPlace = (r, b) => `<div class="hostplace"><small>낚시터</small>${[["sea", "🌊 바다"], ["fresh", "🏞️ 민물"]].map(([v, t]) => `<button class="${(r.place === "sea" ? "sea" : "fresh") === v ? "on" : ""}" data-hplace="${v}" ${b}>${t}</button>`).join("")}</div>`;
+// 자유시간 토글: 켜면 학생이 낚시터를 골라 마음껏, 끄면 하던 낚시를 마치고 모두 대기실로(선생님이 다시 정함)
+const hostFree = (r, b) => `<button class="hostfree ${r.mode === "free" ? "on" : ""}" data-hfree ${b}><i></i><span>자유시간 ${r.mode === "free" ? "ON" : "OFF"}</span><small>${r.mode === "free" ? "끄면 모두 대기실로 돌아와요" : "켜면 학생이 낚시터를 골라 마음껏"}</small></button>`;
 function renderHost() {
   const el = $("host"); if (!HOST) return;
   const d = HOST.d; if (!d) { el.innerHTML = `<div class="hostp"><p class="empty">불러오는 중…</p></div>`; return; }
@@ -532,27 +534,28 @@ function renderHost() {
     <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<p class="empty">학생들이 들어오면 여기에 이름이 떠요</p>`}</div>
     ${away.length ? `<div class="hostaway"><small>아직 안 들어온 친구 ${away.length}명</small>${away.map((p) => `<span>${esc(p.name)}</span>`).join("")}</div>` : ""}
     <div class="hostbtns"><button class="go hoststart" data-hstart ${b || (here.length ? "" : "disabled")}>${HOST.busy ? "시작하는 중…" : here.length && !away.length ? "모두 왔어요! 시작 ▶" : "시작 ▶"}</button></div>
-    ${hostPlace(r, b)}<p class="hostset"><button class="acctout" data-hmode="free" ${b}>자유 낚시로 바꾸기</button> · 한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""} · 낚시터는 ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 저절로 닫혀요</p>`;
-  else if (ph === "free") main = `<div class="hostplay"><b class="hostclock">자유 낚시</b><small>${here.length} / ${P.length}명 들어옴 · 학생이 원할 때 한 판씩(${Math.round(r.roundSec / 60)}분) · ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 닫힘</small></div>
+    <div class="hostctl">${hostPlace(r, b)}${hostFree(r, b)}</div><p class="hostset">한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""} · 낚시터는 ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 저절로 닫혀요</p>`;
+  else if (ph === "free") main = `<div class="hostplay"><b class="hostclock">자유시간</b><small>${here.length} / ${P.length}명 들어옴 · 학생이 낚시터를 골라 원할 때 한 판씩(${Math.round(r.roundSec / 60)}분) · ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 닫힘</small></div>
     <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<p class="empty">학생들이 들어오면 여기에 이름이 떠요</p>`}</div>
     ${rank.some((p) => p.pts) ? `<div class="hostrank">${rank.filter((p) => p.pts).slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${Math.max(4, p.pts / rank[0].pts * 100)}%;--c:${chipCol(p.name)}"></em><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>` : ""}
-    ${hostPlace(r, b)}<div class="hostbtns"><button class="go" data-hmode="contest" ${b}>대회로 바꾸기 (대기실)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div>`;
+    <div class="hostctl">${hostFree(r, b)}</div><div class="hostbtns"><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div>`;
   else if (ph === "countdown") main = `<div class="hostmid"><h2>준비!</h2><b class="hostbig" data-hclock>${Math.max(1, Math.ceil((r.startAt - hnow()) / 1000))}</b></div>`;
   else if (ph === "play") main = `<div class="hostplay"><b class="hostclock" data-hclock>0:00</b><small>${here.length}명 낚시 중</small></div>
     <div class="hostrank">${rank.slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${rank[0]?.pts ? Math.max(4, p.pts / rank[0].pts * 100) : 4}%;--c:${chipCol(p.name)}"></em><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>
-    <div class="hostbtns"><button class="go alt" data-hlobby ${b}>그만하고 대기실로</button></div>`;
+    <div class="hostbtns"><button class="go alt" data-hlobby ${b}>그만하고 대기실로</button></div><div class="hostctl">${hostFree(r, b)}</div>`;
   else { const top = rank.slice(0, 3), order = [top[1], top[0], top[2]];
     main = `<h2 class="hostdone">대회 끝!</h2><div class="podium">${order.map((p, k) => p ? `<div class="pod p${[2, 1, 3][k]}"><span>${esc(p.name)}</span><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small><i>${[2, 1, 3][k]}</i></div>` : `<div class="pod empty"></div>`).join("")}</div>
     <div class="hostrank small">${rank.slice(3).map((p, i) => `<div><i>${i + 4}</i><span>${esc(p.name)}</span><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>
-    <div class="hostbtns"><button class="go" data-hlobby ${b}>다음 판 준비 (대기실로)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div>`; }
+    <div class="hostbtns"><button class="go" data-hlobby ${b}>다음 판 준비 (대기실로)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div><div class="hostctl">${hostFree(r, b)}</div>`; }
   here.forEach((p) => seen.add(p.sid));
-  el.innerHTML = `<div class="hostp hp-${ph}"><div class="hosttitle">${esc(d.name)} ${ph === "free" ? "자유 낚시터" : "낚시 대회"}</div>${head}${main}</div>`;
+  el.innerHTML = `<div class="hostp hp-${ph}"><div class="hosttitle">${esc(d.name)} ${ph === "free" ? "자유시간" : "낚시 대회"}</div>${head}${main}</div>`;
   tickHost();
   el.querySelector("[data-hclose]").addEventListener("click", closeHost);
   el.querySelector("[data-hstart]")?.addEventListener("click", () => hostAct({ start: true }));
   el.querySelector("[data-hlobby]")?.addEventListener("click", () => hostAct({ lobby: true }));
   el.querySelector("[data-hopen]")?.addEventListener("click", () => hostAct({ open: true, minutes: 40 }));
   el.querySelector("[data-hclose2]")?.addEventListener("click", () => hostAct({ open: false }));
+  el.querySelector("[data-hfree]")?.addEventListener("click", () => hostAct({ mode: HOST.d.room.mode === "free" ? "contest" : "free" }));
   el.querySelectorAll("[data-hplace]").forEach((x) => x.addEventListener("click", () => { if (x.dataset.hplace !== HOST.d.room.place) hostAct({ place: x.dataset.hplace }); }));
   el.querySelectorAll("[data-hmode]").forEach((x) => x.addEventListener("click", () => hostAct({ mode: x.dataset.hmode })));
 }
@@ -579,7 +582,7 @@ export function bindJoin() {
 export function renderLobby() {
   const ph = phaseNow(), r = NET.room, me = NET.me?.name;
   $("lobClass").textContent = NET.student?.className ? `${NET.student.className} · ${me || ""}` : me || "";
-  const T = { closed: ["낚시터 닫힘", "선생님이 낚시터를 열면 대기실에 들어가요"], lobby: ["대기실", "선생님이 시작하면 다 같이 낚시가 시작돼요!"], countdown: ["곧 시작!", "준비하세요!"], play: ["대회 중", "낚시터로 들어가요…"], done: ["이번 판 끝!", "선생님이 다음 판을 준비하고 있어요"], free: ["자유 낚시", "언제든 낚시하러 갈 수 있어요. 몇 판이든 OK!"] }[ph];
+  const T = { closed: ["낚시터 닫힘", "선생님이 낚시터를 열면 대기실에 들어가요"], lobby: ["대기실", `선생님이 시작하면 다 같이 ${r?.place === "sea" ? "바다" : "민물"} 낚시가 시작돼요!`], countdown: ["곧 시작!", "준비하세요!"], play: ["대회 중", "낚시터로 들어가요…"], done: ["이번 판 끝!", "선생님이 다음 판을 준비하고 있어요"], free: ["자유시간!", "낚시터를 골라 언제든 낚시하러 가요. 몇 판이든 OK!"] }[ph];
   $("lobTitle").textContent = T[0]; $("lobMsg").textContent = T[1];
   $("lobby").dataset.ph = ph;
   const P = ph === "closed" ? [] : NET.players || [];
@@ -587,6 +590,6 @@ export function renderLobby() {
   const seen = renderLobby.seen ??= new Set();
   $("lobPlayers").innerHTML = P.map((n) => `<span class="hchip ${n === me ? "me" : ""} ${seen.has(n) ? "old" : ""}" style="--c:${chipCol(n)}">${esc(n)}</span>`).join("");
   P.forEach((n) => seen.add(n));
-  $("lobPlaces").hidden = !(r && r.place === "any" && ph !== "closed");
+  $("lobPlaces").hidden = ph !== "free"; // 자유시간에만 학생이 낚시터를 고른다
   $("lobGo").hidden = ph !== "free";
 }

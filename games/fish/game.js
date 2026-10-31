@@ -6,8 +6,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { analyze, shell, cut } from "./avatar.js?v=5";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=14";
+import { analyze, shell, cut } from "./avatar.js?v=6";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=16";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -92,7 +92,53 @@ for (const id in MINIS) SPECIES[id].minis = MINIS[id];
 Object.assign(SPECIES, {
   bossFresh: { water: "fresh", name: "메기 대왕", tier: "보스", points: 800, disp: 3.4, len: [250, 320], model: "catfish", notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["bar", "typing", "track", "whack", "hold", "rhythm", "dodge", "jump", "feed"], boss: true },
   bossSea: { water: "sea", name: "청새치 대왕", tier: "보스", points: 900, disp: 4.2, len: [450, 600], model: "marlin", notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["spin", "simon", "track", "whack", "hold", "rhythm", "dodge", "jump", "feed"], boss: true },
+  // 보스 더(v24): 낚시터마다 셋 중 하나가 나온다
+  bossgar: { water: "fresh", name: "악어가아 대왕", tier: "보스", points: 850, disp: 3.6, len: [250, 330], notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["hold", "typing", "track", "dodge", "spin", "jump", "whack", "bar", "feed"], boss: true },
+  bosskoi: { water: "fresh", name: "황금 용잉어", tier: "보스", points: 1000, disp: 3, len: [180, 240], notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["rhythm", "simon", "bar", "typing", "feed", "jump", "whack", "track", "hold"], boss: true },
+  bossshark: { water: "sea", name: "백상아리 대왕", tier: "보스", points: 950, disp: 4, len: [500, 650], notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["dodge", "hold", "track", "spin", "whack", "jump", "bar", "typing", "rhythm"], boss: true },
+  bosskraken: { water: "sea", name: "대왕오징어", tier: "보스", points: 1000, disp: 4.4, len: [800, 1200], notes: 9, win: .95, mash: 1, zig: 1, play: "mix", minis: ["spin", "simon", "hold", "whack", "typing", "dodge", "feed", "rhythm", "track"], boss: true },
 });
+// 물고기 2배(v24): 민물 18종·바다 18종 추가
+Object.assign(SPECIES, {
+  bingeo: { water: "fresh", name: "빙어", tier: "흔함", points: 12, disp: .5, len: [7, 15], ...T_COMMON },
+  loach: { water: "fresh", name: "미꾸라지", tier: "흔함", points: 16, disp: .6, len: [10, 20], ...T_COMMON, zig: 1 },
+  beodeulchi: { water: "fresh", name: "버들치", tier: "흔함", points: 13, disp: .55, len: [7, 15], ...T_COMMON },
+  gakshi: { water: "fresh", name: "각시붕어", tier: "흔함", points: 15, disp: .5, len: [4, 8], ...T_COMMON, notes: 5, win: 1.4 },
+  galgyeoni: { water: "fresh", name: "갈겨니", tier: "흔함", points: 18, disp: .7, len: [10, 20], ...T_COMMON },
+  moraemuji: { water: "fresh", name: "모래무지", tier: "보통", points: 38, disp: .9, len: [15, 30], ...T_NORMAL },
+  kkeuri: { water: "fresh", name: "끄리", tier: "보통", points: 46, disp: 1.2, len: [25, 50], ...T_NORMAL },
+  gangjunchi: { water: "fresh", name: "강준치", tier: "보통", points: 50, disp: 1.4, len: [40, 100], ...T_NORMAL },
+  eunuh: { water: "fresh", name: "은어", tier: "보통", points: 48, disp: .9, len: [15, 30], ...T_NORMAL },
+  rainbowtrout: { water: "fresh", name: "무지개송어", tier: "보통", points: 56, disp: 1.2, len: [30, 70], ...T_NORMAL, zig: 1 },
+  tilapia: { water: "fresh", name: "틸라피아", tier: "보통", points: 42, disp: 1, len: [20, 45], ...T_NORMAL },
+  dongsari: { water: "fresh", name: "동사리", tier: "보통", points: 40, disp: .8, len: [10, 25], ...T_NORMAL },
+  chamge: { water: "fresh", name: "참게", tier: "보통", points: 44, disp: .55, len: [6, 10], ...T_NORMAL },
+  lenok: { water: "fresh", name: "열목어", tier: "희귀", points: 98, disp: 1.3, len: [30, 70], ...T_RARE },
+  jara: { water: "fresh", name: "자라", tier: "희귀", points: 110, disp: .9, len: [20, 40], ...T_RARE },
+  hwangsso: { water: "fresh", name: "황쏘가리", tier: "희귀", points: 120, disp: 1.2, len: [25, 55], ...T_RARE, notes: 10, win: .92 },
+  arapaima: { water: "fresh", name: "피라루쿠", tier: "전설", points: 300, disp: 2.8, len: [150, 300], ...T_LEGEND },
+  arowana: { water: "fresh", name: "아로와나", tier: "전설", points: 260, disp: 1.6, len: [60, 120], ...T_LEGEND, notes: 12, win: .84 },
+  anchovy: { water: "sea", name: "멸치", tier: "흔함", points: 8, disp: .4, len: [5, 15], ...T_COMMON, notes: 5, win: 1.4 },
+  saury: { water: "sea", name: "꽁치", tier: "흔함", points: 15, disp: .9, len: [25, 35], ...T_COMMON },
+  halfbeak: { water: "sea", name: "학꽁치", tier: "흔함", points: 17, disp: .8, len: [20, 40], ...T_COMMON },
+  bollak: { water: "sea", name: "볼락", tier: "흔함", points: 22, disp: .7, len: [15, 30], ...T_COMMON },
+  noraemi: { water: "sea", name: "노래미", tier: "흔함", points: 24, disp: .85, len: [20, 45], ...T_COMMON },
+  jwichi: { water: "sea", name: "쥐치", tier: "보통", points: 40, disp: .7, len: [15, 35], ...T_NORMAL },
+  dodari: { water: "sea", name: "도다리", tier: "보통", points: 46, disp: .9, len: [20, 45], ...T_NORMAL },
+  gamsungdom: { water: "sea", name: "감성돔", tier: "보통", points: 58, disp: 1.1, len: [25, 60], ...T_NORMAL },
+  samchi: { water: "sea", name: "삼치", tier: "보통", points: 54, disp: 1.5, len: [50, 100], ...T_NORMAL, zig: 1 },
+  squid: { water: "sea", name: "오징어", tier: "보통", points: 44, disp: .9, len: [20, 40], ...T_NORMAL },
+  octopus: { water: "sea", name: "문어", tier: "희귀", points: 95, disp: 1.1, len: [40, 120], ...T_RARE },
+  monkfish: { water: "sea", name: "아귀", tier: "희귀", points: 100, disp: 1.2, len: [40, 100], ...T_RARE },
+  dolddom: { water: "sea", name: "돌돔", tier: "희귀", points: 118, disp: 1, len: [25, 60], ...T_RARE, notes: 10, win: .92 },
+  salmon: { water: "sea", name: "연어", tier: "희귀", points: 105, disp: 1.5, len: [60, 100], ...T_RARE },
+  stingray: { water: "sea", name: "가오리", tier: "희귀", points: 112, disp: 1.4, len: [50, 120], ...T_RARE },
+  swordfish: { water: "sea", name: "황새치", tier: "전설", points: 310, disp: 2.8, len: [200, 450], ...T_LEGEND, notes: 12, win: .84 },
+  manta: { water: "sea", name: "만타가오리", tier: "전설", points: 290, disp: 2.6, len: [300, 600], ...T_LEGEND },
+  whaleshark: { water: "sea", name: "고래상어", tier: "전설", points: 330, disp: 3.2, len: [500, 1000], ...T_LEGEND },
+});
+Object.assign(PLAY_STYLE, {"gakshi": "circle", "galgyeoni": "circle", "eunuh": "circle", "rainbowtrout": "circle", "lenok": "circle", "hwangsso": "circle", "arapaima": "mix", "arowana": "mix", "halfbeak": "circle", "bollak": "circle", "samchi": "circle", "octopus": "circle", "dolddom": "circle", "salmon": "circle", "swordfish": "mix", "manta": "mix", "whaleshark": "mix"});
+for (const [id, m] of Object.entries({"bingeo": ["simon", "track"], "loach": ["spin", "bar"], "beodeulchi": ["hold", "dodge"], "gakshi": ["hold", "simon"], "galgyeoni": ["jump", "bar"], "moraemuji": ["dodge", "typing"], "kkeuri": ["bar", "hold"], "gangjunchi": ["spin", "feed"], "eunuh": ["hold", "typing"], "rainbowtrout": ["hold", "dodge"], "tilapia": ["spin", "bar"], "dongsari": ["jump", "hold"], "chamge": ["typing", "jump"], "lenok": ["bar", "jump", "spin"], "jara": ["bar", "typing", "feed"], "hwangsso": ["dodge", "track", "whack"], "arapaima": ["spin", "track", "dodge"], "arowana": ["hold", "jump", "whack"], "anchovy": ["dodge", "track"], "saury": ["hold", "jump"], "halfbeak": ["jump", "typing"], "bollak": ["simon", "hold"], "noraemi": ["dodge", "hold"], "jwichi": ["jump", "bar"], "dodari": ["jump", "typing"], "gamsungdom": ["rhythm", "dodge"], "samchi": ["spin", "simon"], "squid": ["rhythm", "jump"], "octopus": ["rhythm", "simon", "whack"], "monkfish": ["typing", "track", "feed"], "dolddom": ["hold", "jump", "whack"], "salmon": ["dodge", "rhythm", "simon"], "stingray": ["rhythm", "whack", "hold"], "swordfish": ["hold", "dodge", "spin"], "manta": ["track", "simon", "feed"], "whaleshark": ["rhythm", "spin", "bar"]})) { SPECIES[id].minis = m; if (PLAY_STYLE[id]) SPECIES[id].play = PLAY_STYLE[id]; }
 // 미끼: 등급별로 잘 무는 정도가 다르다
 const BAITS = {
   worm: { name: "지렁이", key: "1", tip: "흔한 물고기가 잘 물어요", mul: { "꽝": 1, "흔함": 1.6, "보통": 1, "희귀": .6, "전설": .5 }, wait: 1 },
@@ -708,9 +754,9 @@ function hairShader(mesh) {
   };
 }
 // 바탕 몸: 0 남자, 1 여자(단발머리가 어깨까지 와서 비옷·조끼를 그 아래·안쪽으로 자르고, 눈·입 높이가 다르다)
-const BASES = [
-  { file: "assets/avatar/boy3.glb?v=1", yaw: 90, prof: { vestOpen: .03, vestW: .105 }, eye: .735, mouth: .645, brow: .8, hairLow: .55, faceZone: true }, // 남자: 눈이 갈색이라 얼굴 앞쪽(눈썹 아래)은 칠하지 않는다
-  { file: "assets/avatar/girl3.glb?v=1", yaw: 90, prof: { vestOpen: .03, vestW: .105 }, eye: .71, mouth: .63 }, // 여자: 눈이 거의 검정이라 색으로만 가린다(앞머리가 얼굴보다 앞에 있어 위치로는 못 나눔)
+const BASES = [ // 실제 아이 비율(머리가 키의 1/5). land: 기준(2등신) 몸 높이 → 이 몸 높이 표(avatar.js landY)
+  { file: "assets/avatar/boy4.glb?v=1", yaw: 90, prof: { land: [[0, 0], [.2, .3], [.45, .8], [1, 1]], fistY: [.6, .74], fistR: .03, fistK: .55, coatLo: .26, vestW: .1, vestK: .6, vestFront: -9, bootTop: .17, decoK: 1.5, itemK: .7 }, hatDrop: -.035, hatK: 1.12, eye: .895, mouth: .84 },
+  { file: "assets/avatar/girl4.glb?v=1", yaw: 90, prof: { land: [[0, 0], [.2, .32], [.45, .74], [1, 1]], fistY: [.55, .69], fistR: .03, fistK: .55, coatLo: .28, vestW: .1, vestK: .6, vestFront: -9, bootTop: .17, decoK: 1.5, itemK: .7 }, hatDrop: -.035, hatK: 1.12, skullTop: .955, eye: .85, mouth: .8 } // 여자: 머리 묶음이 정수리 위로 솟아 왕관·토끼 귀는 머리통 꼭대기(skullTop)에,
 ];
 const baseCache = {};
 function loadBase(i) {
@@ -729,7 +775,7 @@ function loadBase(i) {
     // 모델이 쥔 주먹 끝(가장 앞쪽 점)에서 우리 낚싯대가 이어진다
     let tip = null;
     for (const p of bodyPoints(turn, 3)) if (p.y > .3 && p.y < 1.1 && (!tip || p.z < tip.z)) tip = p;
-    const S = analyze(mesh, toBody);
+    const S = analyze(mesh, toBody, BASES[i].prof);
     return { turn, toBody, S, hairRef: hairMask(mesh, toBody, S.A.H), shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
   });
 }
@@ -752,7 +798,7 @@ const ITEM_FIT = {
   hat_bucket: { at: "head", w: .92, line: .8, crown: .5, cover: .74 },
   hat_straw: { at: "head", w: 1.3, line: .83, crown: .6, cover: .8 }, // base: 턱끈처럼 아랫단보다 아래로 늘어진 몫
   hat_beanie: { at: "head", w: .88, line: .79, crown: .78, cover: .84 },
-  hat_pirate: { at: "head", w: 1.05, line: .83, crown: .8, yaw: 90, cover: .86 },
+  hat_pirate: { at: "head", w: 1.05, line: .83, crown: .55, yaw: 90, cover: .86 },
   crown: { at: "head", w: .55, sink: .2 },
   cap: { at: "head", w: .82, line: .8, crown: .6, yaw: 90, z: -.04, cover: .82 },
   flower: { at: "pin", w: .2, yaw: 90 },
@@ -793,19 +839,19 @@ function placeItem(id, parent, tint) {
   const A = S.A, H = A.H, hd = A.head;
   let w = f.w, x = 0, y = 0, z = 0;
   if (f.at === "head") {
-    w *= hd.w; x = hd.cx; z = hd.cz + (f.z || 0) * H;
+    w *= hd.w * (BASES[AVA.base].hatK || 1); x = hd.cx; z = hd.cz + (f.z || 0) * H;
     if (f.cover) { // 모자 아랫단을 머리의 정해진 높이에 두고, 그 위 머리를 모자 속 높이·너비에 맞게 누른다
-      const below = sz.y * w * (f.base || 0); y = H * f.line - below; const room = (sz.y * w - below) * f.crown, cut = H * f.line + H * .02;
-      HAIR.cut.value = cut; HAIR.squash.value.set(f.cover, Math.min(1, Math.max(.3, (H * f.line + room - cut) / Math.max(.01, hd.top - cut))), H * .06);
-    } else y = hd.top - sz.y * w * f.sink;
+      const line = A.Y(f.line) + H * (BASES[AVA.base].hatDrop || 0), below = sz.y * w * (f.base || 0); y = line - below; const room = (sz.y * w - below) * f.crown, cut = line + H * .02;
+      HAIR.cut.value = cut; HAIR.squash.value.set(f.cover, Math.min(1, Math.max(.3, (line + room - cut) / Math.max(.01, hd.top - cut))), H * .06);
+    } else y = Math.min(hd.top, H * (BASES[AVA.base].skullTop || 1)) - sz.y * w * f.sink;
   }
-  else if (f.at === "pin") { w *= H; x = hd.cx + hd.w * .26; y = H * .86; z = hd.front + H * .17; o.rotation.z = -.5; }
-  else if (f.at === "face") { w *= hd.w; x = hd.cx; const ey = H * BASES[AVA.base].eye; y = ey - sz.y * w / 2; z = A.frontAt(ey) - H * .03 + sz.z * w / 2; }
-  else if (f.at === "mouth") { w *= hd.w; x = hd.cx; const my = H * BASES[AVA.base].mouth; y = my - sz.y * w / 2; z = A.frontAt(my) - H * .012 + sz.z * w / 2; }
-  else if (f.at === "back") { w *= H; y = H * .27; z = A.torso.back + sz.z * w / 2 - H * .1; } // 앞쪽 멜빵은 몸속에 묻히게 붙인다
-  else if (f.at === "pole") { w *= H; x = H * .08; y = H * .3; z = A.torso.back + H * .03; }
-  else if (f.at === "wings") { w *= H; y = H * .28; z = A.torso.back + sz.z * w / 2; }
-  else if (f.at === "cape") { w *= H; y = H * .52 - sz.y * w; z = (A.torso.front + A.torso.back) / 2 + H * .03; } // 어깨에 두르는 망토(목 둘레가 뚫린 모양)
+  else if (f.at === "pin") { w *= H; x = hd.cx + hd.w * .26; y = A.Y(.86); z = hd.front + (hd.back - hd.front) * .45; o.rotation.z = -.5; }
+  else if (f.at === "face") { w *= hd.w; x = hd.cx; const ey = H * BASES[AVA.base].eye; y = ey - sz.y * w / 2; z = A.frontAt(ey) - hd.w * .067 + sz.z * w / 2; }
+  else if (f.at === "mouth") { w *= hd.w; x = hd.cx; const my = H * BASES[AVA.base].mouth; y = my - sz.y * w / 2; z = A.frontAt(my) - hd.w * .027 + sz.z * w / 2; }
+  else if (f.at === "back") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.27); z = A.torso.back + sz.z * w / 2 - H * .1; } // 앞쪽 멜빵은 몸속에 묻히게 붙인다
+  else if (f.at === "pole") { w *= H; x = H * .08; y = A.Y(.3); z = A.torso.back + H * .03; }
+  else if (f.at === "wings") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.28); z = A.torso.back + sz.z * w / 2; }
+  else if (f.at === "cape") { w *= H * (BASES[AVA.base].prof.itemK ?? 1); y = A.Y(.52) - sz.y * w; z = (A.torso.front + A.torso.back) / 2 + H * .03; } // 어깨에 두르는 망토(목 둘레가 뚫린 모양)
   else w = f.w; // 데크 장식은 m 단위
   o.scale.setScalar(w); o.position.set(x, y, z); parent.add(o);
   return o;
@@ -818,7 +864,7 @@ function shellOf(kind) {
 // 자른 면을 따라 단(밑단·소매·목) 띠와 박음질, 비옷은 지퍼·주머니·반짝이는 비닐 광택, 조끼는 테두리·주머니 줄, 장화는 고무 밑창·발목 띠
 // 좌표는 몸 좌표(발바닥 0, 앞 -z, 키 H). 모든 옷에 테두리 빛(rim)과 아주 옅은 천 결
 const CLOTH_GLSL = `
-  uniform vec4 cPlanes[8], cSph[2]; uniform float cH, cFront, cGloss, cTrimW; uniform vec3 cTrim, cDark;
+  uniform vec4 cPlanes[8], cSph[2]; uniform float cH, cFront, cGloss, cTrimW; uniform vec3 cTrim, cDark, cMap;
   varying vec3 vC;
   float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.55); }
   float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
@@ -833,12 +879,16 @@ function clothMat(kind, col, planes) {
   const front = AVA.S.A.torso.front + (kind === "vest" ? AVA.S.A.H * .03 : 0);
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, { cPlanes: { value: P }, cSph: { value: SP }, cH: { value: H }, cFront: { value: front }, cGloss: { value: kind === "vest" ? .15 : kind === "boots" ? 1 : .8 },
-      cTrim: { value: c.clone().offsetHSL(0, -.05, kind === "coat" ? -.14 : -.09) }, cTrimW: { value: kind === "vest" ? .012 : .024 }, cDark: { value: c.clone().multiplyScalar(.35) } });
+      cTrim: { value: c.clone().offsetHSL(0, -.05, kind === "coat" ? -.14 : -.09) }, cTrimW: { value: kind === "vest" ? .012 : .024 }, cDark: { value: c.clone().multiplyScalar(.35) },
+      cMap: { value: new THREE.Vector3(AVA.S.A.Y(.3) / H, .3, BASES[AVA.base].prof.decoK ?? 1) } });
     sh.vertexShader = "varying vec3 vC;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n vC = position;");
     sh.fragmentShader = CLOTH_GLSL + "#define CLOTH_" + kind.toUpperCase() + "\n" + sh.fragmentShader
       .replace("#include <color_fragment>", `#include <color_fragment>
       {
         float e = edgeDist() / cH, y = vC.y / cH, ax = abs(vC.x) / cH;
+        #ifndef CLOTH_BOOTS
+          y = cMap.y + (y - cMap.x) * cMap.z; ax *= cMap.z; // 주머니·지퍼 자리: 이 몸의 허리를 기준 몸 허리에 맞춘다(실제 비율 몸은 몸통이 길고 좁다)
+        #endif
         vec3 col = diffuseColor.rgb;
         col *= .96 + .08 * vnoise(vC.xy / cH * 90.) ; // 천 결
         float trim = 1. - step(cTrimW, e), stitch = step(cTrimW + .007, e) * (1. - step(cTrimW + .013, e)) * step(.5, fract((vC.x + vC.y + vC.z) / cH * 60.));
@@ -985,13 +1035,14 @@ function applyGear(me) {
     } else if (w.body !== "cape") wearShell("coat", P.coat[L.coat || 0]);
     wearShell("boots", P.boots[L.boots || 0]);
     if (w.body === "scarf") {
-      const r = new THREE.Mesh(new THREE.TorusGeometry(H * .1, H * .035, 8, 20), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.position.set(0, H * .5, (A.torso.front + A.torso.back) / 2); gearGroup.add(r);
-      for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(H * .06, H * .05, H * .03), toon(i % 2 ? "#f4f1e8" : "#e0483c")); t.position.set(H * .06, H * (.47 - i * .05), A.torso.front - H * .05); gearGroup.add(t); }
+      const k = A.head.w / (H * .42); // 목도리 굵기는 머리 너비에 맞춘다(실제 비율 몸은 머리가 작다)
+      const r = new THREE.Mesh(new THREE.TorusGeometry(H * .1 * k, H * .035 * k, 8, 20), toon("#e0483c")); r.rotation.x = Math.PI / 2; r.position.set(0, A.Y(.48), (A.torso.front + A.torso.back) / 2); gearGroup.add(r);
+      for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(H * .06 * k, H * .05 * k, H * .03 * k), toon(i % 2 ? "#f4f1e8" : "#e0483c")); t.position.set(H * .06 * k, A.Y(.47) - H * i * .05 * k, A.torso.front - H * .05 * k); gearGroup.add(t); }
     }
     placeItem(w.head || "hat_bucket", gearGroup, w.head ? null : P.hat[L.hat || 0]);
     if (w.face) placeItem(w.face, gearGroup);
     if (w.back === "flag") { // 깃발은 도형: 등에 꽂은 막대 + 펄럭이는 삼각 천 + 금색 공
-      const g = new THREE.Group(); g.position.set(H * .1, H * .3, A.torso.back + H * .03); g.rotation.z = -.12; gearGroup.add(g);
+      const g = new THREE.Group(); g.position.set(H * .1, A.Y(.3), A.torso.back + H * .03); g.rotation.z = -.12; gearGroup.add(g);
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(H * .008, H * .008, H * 1.22, 6), toon("#c4c8d2")); pole.position.y = H * .61; g.add(pole);
       const tri = new THREE.Shape(); tri.moveTo(0, 0); tri.lineTo(H * .22, -H * .06); tri.lineTo(0, -H * .13);
       const cloth = new THREE.Mesh(new THREE.ShapeGeometry(tri), toon("#e0483c", { side: THREE.DoubleSide })); cloth.position.set(0, H * 1.2, 0); cloth.rotation.y = -.3; g.add(cloth); gearGroup.userData.flag = cloth;
@@ -1330,9 +1381,16 @@ function bookAdd(id, cm, grade, kg) {
   return { isNew, record };
 }
 // 무게(kg) = 몸 모양 계수 × (길이 m)³ × 통통함. 길쭉한 물고기는 가볍고 둥근 물고기는 무겁다
-const WEIGHT_K = { mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
+const WEIGHT_K = { bingeo: 8, loach: 3, beodeulchi: 10, gakshi: 14, galgyeoni: 10, moraemuji: 9, kkeuri: 9, gangjunchi: 7, eunuh: 10, rainbowtrout: 11, tilapia: 20, dongsari: 12, chamge: 390, lenok: 11, jara: 74, hwangsso: 13, arapaima: 8, arowana: 6, anchovy: 8, saury: 3, halfbeak: 2.5, bollak: 13, noraemi: 11, jwichi: 20, dodari: 14, gamsungdom: 16, samchi: 7, squid: 8, octopus: 6, monkfish: 20, dolddom: 18, salmon: 11, stingray: 12, swordfish: 4, manta: 1.5, whaleshark: 1.2, bossgar: 6, bosskoi: 14, bossshark: 7, bosskraken: 1, mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
 const kgOf = (id, cm, cond) => Math.max(.01, (WEIGHT_K[id] || 12) * (cm / 100) ** 3 * cond);
 const kgText = (kg) => (kg >= 100 ? `${Math.round(kg)}kg` : kg >= 1 ? `${kg.toFixed(1)}kg` : `${Math.round(kg * 1000)}g`);
+// 보스: 이 낚시터 보스 중 하나. 도감에 아직 없는 보스가 두 배 잘 나온다
+function pickBoss() {
+  const ids = placeIds(PLACE).filter((id) => SPECIES[id].boss), w = ids.map((id) => BOOK[id] ? 1 : 2);
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < ids.length; i++) if ((r -= w[i]) <= 0) return ids[i];
+  return ids[0];
+}
 const realIds = (w) => placeIds(w).filter((id) => SPECIES[id].points && !SPECIES[id].boss);
 function titles() {
   const got = (w) => realIds(w).filter((id) => BOOK[id]).length, all = [...realIds("fresh"), ...realIds("sea")];
@@ -1342,7 +1400,7 @@ function titles() {
     { name: "민물 낚시왕", ok: got("fresh") === realIds("fresh").length },
     { name: "바다의 왕", ok: got("sea") === realIds("sea").length },
     { name: "월척 사냥꾼", ok: (BOOK._wol || 0) >= 5, tip: `월척 ${Math.min(5, BOOK._wol || 0)}/5` },
-    { name: "보스 헌터", ok: !!(BOOK.bossFresh || BOOK.bossSea) },
+    { name: "보스 헌터", ok: Object.keys(SPECIES).some((id) => SPECIES[id].boss && BOOK[id]) },
   ];
 }
 
@@ -1440,7 +1498,7 @@ function stepRain(dt) {
 // ------------------------------------------------------------------ 보스: 남은 시간 75초에 거대한 그림자
 function spawnBoss() {
   G.bossSpawned = true;
-  const s = newSpot("boss"); s.boss = true; s.fake = false;
+  const s = newSpot("boss"); s.boss = true; s.fake = false; s.bossId = pickBoss();
   makeShadow(s, 5.2);
   shout("거대한 그림자가…!!", "hot", 1.6); flash("red"); shake = .8; sample("boss") || SFX.legend();
   hint("<em>빨간 소용돌이</em>에 던지면 보스와 승부!");
@@ -1542,7 +1600,7 @@ function landed() {
     R.state = "missed"; setTimeout(() => { if (R.state === "missed") resetRod(); }, 900);
     return;
   }
-  R.species = s.boss ? (PLACE === "sea" ? "bossSea" : "bossFresh") : s.species || pickSpecies(s.fake ? FAKE_TABLE : s.T.table);
+  R.species = s.boss ? s.bossId || pickBoss() : s.species || pickSpecies(s.fake ? FAKE_TABLE : s.T.table);
   R.timer = (s.boss ? rand(1, 1.6) : rand(1.4, 3.6) * BAITS[G.bait].wait) * (R.cast === "perfect" ? .55 : 1); R.nibbles = s.boss ? 0 : Math.floor(rand(0, 3));
   R.state = "waiting"; hint("찌가 <em>쏙!</em> 들어가면 눌러요. 톡톡은 기다려요");
 }
@@ -2632,8 +2690,8 @@ let MODELS_READY = false;
 const DEV_FREE = (() => { try { return localStorage.getItem("jamfish-dev") === "1"; } catch { return false; } })(); // 점검용
 function applyGate() {
   const g = DEV_FREE ? { ok: true } : gate();
-  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = !MODELS_READY || !g.ok || (g.room && g.room.place !== "any" && g.room.place !== b.dataset.place); });
-  if (MODELS_READY) $("loadText").textContent = g.ok ? (g.room ? `낚시터가 열렸어요! ${g.room.place === "any" ? "낚시터를 골라요" : (g.room.place === "sea" ? "바다" : "민물") + " 낚시터로 가요"}` : "낚시터를 골라요!") : g.why;
+  document.querySelectorAll("[data-place]").forEach((b) => { b.disabled = !MODELS_READY || !g.ok || (g.room && g.room.mode !== "free" && (g.room.place === "sea" ? "sea" : "fresh") !== b.dataset.place); });
+  if (MODELS_READY) $("loadText").textContent = g.ok ? (g.room ? `낚시터가 열렸어요! ${g.room.mode === "free" ? "낚시터를 골라요" : (g.room.place === "sea" ? "바다" : "민물") + " 낚시터로 가요"}` : "낚시터를 골라요!") : g.why;
   // 낚시 중에 선생님이 방을 닫거나 대기실로 돌리면 그 판을 마친다
   if (G.playing && !g.ok && NET.role === "student") { shout(phaseNow() === "closed" ? "낚시터가 닫혔어요" : "대기실로!", "cream", 1.4); finish(); }
   screens();
@@ -2642,6 +2700,8 @@ function applyGate() {
 const STUDENT_PAGE = /\/student\/?$/.test(location.pathname);
 let lobPlace = "fresh"; try { lobPlace = localStorage.getItem("jamfish-place") === "sea" ? "sea" : "fresh"; } catch {}
 let autoStarting = false;
+// 낚시터: 자유시간에는 학생이 고른 곳, 아니면 선생님이 정한 곳
+const placeFor = (r) => r.mode === "free" ? lobPlace : r.place === "sea" ? "sea" : "fresh";
 // 지금 보여 줄 화면: 낚시 중·끝 화면이면 그대로, 학생은 대기실, 학생 주소에서 아직 안 들어왔으면 입장 화면
 function screens() {
   const student = NET.role === "student" || (hasTicket() && !NET.ready);
@@ -2661,13 +2721,13 @@ function lobbyTick() {
   const cd = $("countdown"), sec = ph === "countdown" ? Math.max(1, Math.ceil((r.startAt - serverNow()) / 1000)) : 0;
   cd.hidden = !sec;
   if (sec && cd.dataset.n !== String(sec)) { cd.dataset.n = sec; const b = cd.querySelector("b"); b.textContent = sec; b.style.animation = "none"; void b.offsetWidth; b.style.animation = ""; SFX.bite(); }
-  if (ph === "countdown" || ph === "play") { const pl = r.place === "any" ? lobPlace : r.place; loadPlace(pl); }
+  if (ph === "countdown" || ph === "play") { const pl = placeFor(r); loadPlace(pl); }
   // 시작! 아직 이번 판을 안 했으면 바로 낚시터로(늦게 들어와도 남은 시간만큼)
   if (ph === "play" && !G.playing && !autoStarting && G.round !== r.round && MODELS_READY) {
     autoStarting = true;
     for (const id of ["town", "book", "tut", "end", "lobby", "start"]) $(id).hidden = true;
     $("tutVid").pause();
-    choosePlace(r.place === "any" ? lobPlace : r.place).finally(() => { autoStarting = false; });
+    choosePlace(placeFor(r)).finally(() => { autoStarting = false; });
   }
 }
 setInterval(lobbyTick, 200);
@@ -2679,7 +2739,7 @@ document.querySelectorAll("[data-tut]").forEach((b) => b.addEventListener("click
 $("lobGo").addEventListener("click", () => {
   const r = NET.room; if (!MODELS_READY || autoStarting || phaseNow() !== "free") return;
   autoStarting = true; $("lobby").hidden = true;
-  choosePlace(r.place === "any" ? lobPlace : r.place).finally(() => { autoStarting = false; });
+  choosePlace(placeFor(r)).finally(() => { autoStarting = false; });
 });
 bindJoin();
 screens();
@@ -2729,8 +2789,8 @@ const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
-$("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && r.place !== "any" && r.place !== PLACE) { $("end").hidden = true; choosePlace(r.place); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=14").then((m) => m.renderTown()); }); } }, true);
+$("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=16").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -2815,7 +2875,6 @@ function loadPlace(place) {
 }
 (async () => {
   try { MODEL_LIST = await (await fetch("models.json", { cache: "no-cache" })).json(); } catch { MODEL_LIST = []; }
-  const a = MODEL_LIST.find((m) => m.id === "angler");
   $("loadText").textContent = "낚시꾼 준비 중…";
   try { await loadAngler(GEAR.me?.look?.base || 0); } catch (e) { console.warn("낚시꾼", e); }
   MODELS_READY = true; applyGate();
