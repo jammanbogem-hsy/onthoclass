@@ -1,7 +1,7 @@
 // 로그인 + 수산시장·낚시 가게·캠핑 요리·옷장 (서버: functions/src/fishing.ts)
 // 세 점수: 손맛 점수(잡은 물고기) · 돈(팔아서) · 낭만 점수(옷차림·장식·요리)
 // Firebase SDK는 게임이 뜬 뒤에 불러온다.
-// 누가 낚시할 수 있나: 교사(러닝크루 교사 계정)·최고 관리자는 언제나, 학생은 선생님이 방을 열었을 때만(gate)
+// 누가 낚시할 수 있나: 교사(낚시터 선생님 가입 또는 러닝크루 교사 계정)·최고 관리자는 언제나, 학생은 선생님이 방을 열었을 때만(gate)
 import { FB } from "./fb-config.js";
 
 const V = "12.13.0";
@@ -50,6 +50,7 @@ let ADM = null, ADMC = {}, admOpen = "";
 const changed = () => { renderAcct(); hooks.onProfile?.(NET.me); hooks.onGate?.(); if (!$("town").hidden) renderTown(); };
 
 // hooks: { SPECIES, fishThumb, toast, sample, onProfile }
+let wantTeacher = false;
 export async function initNet(h) {
   hooks = h;
   renderAcct();
@@ -64,6 +65,7 @@ export async function initNet(h) {
       }
       if (!ST && u) { try { Object.assign(NET, await call("fishMe")); } catch {} } else if (!ST) Object.assign(NET, { me: null, bag: [] });
       NET.ready = true; changed();
+      if (wantTeacher && u && NET.me && !ST) { wantTeacher = false; openTown("class"); } // 선생님 가입 버튼으로 로그인했으면 바로 가입 화면
     });
   } catch { NET.ready = true; NET.failed = true; renderAcct(); hooks.onGate?.(); }
 }
@@ -89,7 +91,7 @@ export function gate() {
     if (ph === "play" || (ph === "done" && serverNow() < r.endAt + 25e3)) return { ok: true, room: r }; // 끝난 직후 싸우던 물고기는 마저
     return { ok: false, why: ph === "closed" ? "선생님이 낚시터를 열면 대기실에 들어가요" : "선생님이 시작하면 다 같이 낚시해요" };
   }
-  if (NET.user) return { ok: false, why: "학생은 학급 코드로 입장해요 (선생님은 러닝크루 교사 계정으로 로그인)" };
+  if (NET.user) return { ok: false, why: "학생은 학급 코드로 입장해요 (선생님은 구글로 로그인한 뒤 낚시 학급 탭에서 선생님 가입)" };
   return { ok: false, why: "학급 코드로 입장하면 낚시할 수 있어요" };
 }
 // 학생: 방 상태를 자주 묻는다(대기실·카운트다운은 2.5초, 한 판 중은 5초). 10초마다 "나 여기 있어요"
@@ -115,11 +117,14 @@ async function pollRoom() {
 setTimeout(pollRoom, 1500);
 setInterval(() => { if (NET.role === "student") { renderAcct(); hooks.onGate?.(); } }, 30000); // 남은 시간 표시
 // 던지기 전 문제(선생님이 문제를 올리고 켜 두었을 때)
-export const quizNeeded = () => NET.role === "student" && !!NET.room?.quizOn && (NET.room.quiz?.length || 0) > 0;
+// 선생님 테스트 게임: 학급 설정(한 판 시간·낚시터·문제)으로 학생처럼 한 판. 기록은 안 남는다
+let TEST = null;
+export const endTest = () => { TEST = null; };
+export const quizNeeded = () => TEST ? TEST.quiz.length > 0 : NET.role === "student" && !!NET.room?.quizOn && (NET.room.quiz?.length || 0) > 0;
 let quizCool = 0;
 export function askQuiz(onPass) {
   if (Date.now() < quizCool) { hooks.toast?.("잠깐! 조금 뒤에 다시 풀어요"); return; }
-  const qs = NET.room.quiz, q = qs[Math.floor(Math.random() * qs.length)], el = $("quizBox");
+  const qs = TEST?.quiz.length ? TEST.quiz : NET.room.quiz, q = qs[Math.floor(Math.random() * qs.length)], el = $("quizBox");
   el.hidden = false;
   el.querySelector(".qq").textContent = q.q;
   el.querySelector(".qo").innerHTML = q.o.map((o, i) => `<button class="go alt" data-qi="${i}"><i>${i + 1}</i> ${esc(o)}</button>`).join("");
@@ -188,10 +193,11 @@ export function renderAcct() {
     if (!NET.me) {
       box.innerHTML = `<a class="go studentcta" href="${studentUrl()}">학생 입장하기 <small>학급 코드 입력 ▶</small></a>
         <p>선생님이 알려 준 학급 코드 6자리와 이름, 입장번호 4자리로 들어와요. 들어오면 대기실에서 친구들을 기다렸다가 다 같이 시작해요.</p>
-        <button class="acctout" data-login>선생님이세요? 구글로 로그인해 낚시 학급 만들기</button>`;
+        <button class="go teachercta" data-teacherjoin>선생님 가입하기 <small>구글 로그인 + 선생님 가입 코드 ▶</small></button>
+        <p>선생님은 낚시 학급을 만들고, 학생 화면 그대로 테스트 게임을 해 볼 수 있어요. 이미 가입했다면 같은 버튼으로 로그인해요.</p>`;
     } else {
       const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
-      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
+      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">${NET.role === "teacher" || NET.role === "admin" ? "낚시 학급 관리" : "선생님 가입하기"}</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         ${NET.student ? roomLine() : ""}
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
         <div class="townbtns"><button class="go alt" data-town="market">수산시장${NET.bag.length ? ` <i>${NET.bag.length}</i>` : ""}</button><button class="go alt" data-town="shop">낚시 가게</button><button class="go alt" data-town="cook">캠핑 요리</button></div>`;
@@ -199,6 +205,7 @@ export function renderAcct() {
     box.insertAdjacentHTML("beforeend", `<button class="acctout fbopen" data-feedback>의견·오류 알리기</button>`);
     box.querySelector("[data-feedback]").addEventListener("click", openFeedback);
     box.querySelector("[data-login]")?.addEventListener("click", login);
+    box.querySelector("[data-teacherjoin]")?.addEventListener("click", async () => { wantTeacher = true; await login(); if (NET.me && !NET.student) { wantTeacher = false; openTown("class"); } });
     box.querySelector("[data-logout]")?.addEventListener("click", logout);
     box.querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => openTown(b.dataset.town)));
     if (!NET.student && (NET.role === "teacher" || NET.role === "admin") && !CLASSES) loadClasses(); // 선생님은 학급 목록을 미리 받아 둔다(함수도 깨워 둠)
@@ -309,7 +316,14 @@ export function renderTown() {
     body.querySelector("[data-admclear]")?.addEventListener("click", () => act(async () => { const r = await call("fishAdmin", { action: "clearErrors" }); hooks.toast?.(`오류 로그 ${r.removed}개를 비웠어요`); ADM = null; renderTown(); }));
   } else if (tab === "class") {
     if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; loadClasses(); return; }
-    if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 계정만 학급을 만들 수 있어요. 러닝크루에서 교사로 가입한 구글 계정으로 로그인해 주세요.</p>`; return; }
+    if (NET.role !== "teacher" && NET.role !== "admin") {
+      body.innerHTML = `<h3>선생님 가입 <small>선생님 가입 코드를 넣으면 이 구글 계정으로 낚시 학급을 만들고 관리할 수 있어요</small></h3>
+        <form class="joinf" data-teacherjoin><input name="code" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="선생님 가입 코드" required><button class="go">선생님으로 가입</button></form>
+        <p class="empty">러닝크루 교사 계정이면 가입하지 않아도 바로 쓸 수 있어요.</p>`;
+      body.querySelector("[data-teacherjoin]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "확인 중…";
+        act(async () => { await call("fishTeacherJoin", { code: e.target.code.value }); CLASSES = null; await refresh(); hooks.toast?.("선생님 가입 완료! 이제 학급을 만들 수 있어요"); }).finally(renderTown); });
+      return;
+    }
     body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음). 학생은 선생님이 낚시터를 열었을 때만 낚시할 수 있어요</small></h3>
       <form class="joinf" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go">학급 만들기</button></form>
       ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>${roomBox(c)}
@@ -432,7 +446,7 @@ function roomBox(c) {
     </div>
     <div class="roomquiz"><label class="chk"><input type="checkbox" name="quizOn" ${r.quizOn ? "checked" : ""}> 던지기 전에 문제 풀기</label>
       <span>문제 ${r.quizN}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button class="acctout" data-tpl>양식 받기</button></div>
-    <div class="townact">${open ? `<button class="go" data-host>대기실 화면 ▶</button><button class="go alt" data-roomsave>설정 바꾸기</button><button class="go alt" data-roomclose>낚시터 닫기</button>` : `<button class="go" data-roomopen>낚시터 열고 대기실 만들기</button><button class="go alt" data-roomsave>설정만 저장</button>`}</div>
+    <div class="townact">${open ? `<button class="go" data-host>대기실 화면 ▶</button><button class="go alt" data-roomsave>설정 바꾸기</button><button class="go alt" data-roomclose>낚시터 닫기</button>` : `<button class="go" data-roomopen>낚시터 열고 대기실 만들기</button><button class="go alt" data-roomsave>설정만 저장</button>`}<button class="go alt" data-test title="학생 화면 그대로 한 판 해 봐요. 기록은 남지 않아요">테스트 게임 ▶</button></div>
     <small class="roomhow">학생은 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와 대기실에서 기다려요. 다 들어오면 대기실 화면에서 <b>시작</b>을 눌러요. <b>자유시간</b>을 켜면 학생이 낚시터를 골라 마음껏, 끄면 모두 대기실로 돌아와요</small>
   </div>`;
 }
@@ -445,6 +459,12 @@ function bindRoom(box) {
   box.querySelectorAll(".roomset select, .roomset input, [name=quizOn]").forEach((x) => x.addEventListener("change", () => { DRAFT[cid] = settings(box); }));
   box.querySelector("[data-roomopen]")?.addEventListener("click", () => save({ open: true }).then(() => { const c = CLASSES?.find((x) => x.cid === cid); if (c?.room?.open) openHost(cid); }));
   box.querySelector("[data-host]")?.addEventListener("click", () => openHost(cid));
+  box.querySelector("[data-test]")?.addEventListener("click", () => {
+    const c = CLASSES?.find((x) => x.cid === cid), st = settings(box), quiz = st.quizOn ? (c?.room?.quiz || []) : [];
+    if (st.quizOn && !quiz.length) hooks.toast?.("올린 문제가 없어서 문제 없이 해 봐요");
+    TEST = { place: st.place === "sea" ? "sea" : "fresh", roundSec: st.roundSec, quiz };
+    $("town").hidden = true; hooks.testPlay?.(TEST);
+  });
   box.querySelector("[data-roomclose]")?.addEventListener("click", () => save({ open: false }));
   box.querySelector("[data-roomsave]")?.addEventListener("click", () => save({}).then(() => hooks.toast?.("저장했어요")));
   box.querySelector("[data-tpl]").addEventListener("click", () => {

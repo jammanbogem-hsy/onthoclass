@@ -9,7 +9,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=8";
 import { buildRig, skinWeights, poseRig, handPos } from "./rig.js?v=3";
 import { scanFace, pushToSkin, lensOf, scanBack, pushOntoBack, wornPoints, ringAt, frontAtP, nearestOf, settle } from "./fit.js?v=1";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin } from "./town.js?v=19";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./town.js?v=21";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -2960,24 +2960,25 @@ function start() {
   audio(); beatStop(); document.body.classList.remove("fighting", "fever", "finale", "boss-fight", "big-fight");
   if (F) { F.fish.dispose(); F = null; }
   if (show) { show.fish.dispose(); show = null; }
-  const w = Math.random(), practice = practiceNext; practiceNext = false;
+  const w = Math.random(), test = testNext, practice = practiceNext || !!test; practiceNext = false; testNext = null; // 테스트도 연습처럼 기록 X
   const g = DEV_FREE || practice ? {} : gate();
   // 학급 대회: 모두 같은 순간에 끝나도록 서버 시계로 남은 시간을 잰다
   const left = g.room?.endAt && !g.free ? Math.max(3, (g.room.endAt - serverNow()) / 1000) : g.room?.roundSec || 180; // 자유 낚시는 판마다 한 판 시간
   if (g.room) G.round = g.room.round;
-  Object.assign(G, { playing: true, practice, time: practice ? 60 : left, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
+  Object.assign(G, { playing: true, practice, test, time: test ? test.roundSec : practice ? 60 : left, quizPass: false, score: 0, caught: [], book: new Set(), ending: false,
     streak: 0, fever: 0, bossSpawned: false, stat: { barPerfect: 0, circlePerfect: 0 }, weather: w < .5 ? "sunny" : w < .75 ? "rain" : "sunset" });
   applyWeather(); setBait(G.bait);
   $("score").textContent = 0; $("count").textContent = 0; $("timerChip").classList.remove("low");
-  $("start").hidden = true; $("end").hidden = true; $("fight").hidden = true; $("card").hidden = true; $("practag").hidden = !practice;
+  $("start").hidden = true; $("end").hidden = true; $("fight").hidden = true; $("card").hidden = true; $("practag").hidden = !practice; $("practag").textContent = test ? "테스트 게임 · 기록이 남지 않아요" : "연습 중 · 도감에 안 들어가요";
   resetSpots(); resetRod(); updateBag();
-  shout(practice ? "연습 시작!" : G.weather === "rain" ? "비 오는 날!" : G.weather === "sunset" ? "노을 낚시!" : "시작!", "sun", 1.1);
+  shout(test ? "테스트 시작!" : practice ? "연습 시작!" : G.weather === "rain" ? "비 오는 날!" : G.weather === "sunset" ? "노을 낚시!" : "시작!", "sun", 1.1);
 }
 function finish() {
   if (!G.playing) return;
   G.playing = false; G.ending = false; resetRod(); hint("");
   $("practag").hidden = true;
-  $("endTitle").innerHTML = G.practice ? "연습 <em>끝!</em>" : "대회 <em>끝!</em>";
+  $("endTitle").innerHTML = G.test ? "테스트 <em>끝!</em>" : G.practice ? "연습 <em>끝!</em>" : "대회 <em>끝!</em>";
+  if (G.test) { G.test = null; endTest(); }
   if (G.practice) $("againBtn").hidden = true;
   refresh().catch(() => {}); // 살림망·손맛 점수를 서버 값으로
   if (!G.practice) missionEvent("score", G.score);
@@ -3087,6 +3088,13 @@ $("lobGo").addEventListener("click", () => {
 });
 bindJoin();
 screens();
+let testNext = null;
+// 선생님 테스트 게임(town.js 학급 카드에서): 정한 낚시터·한 판 시간·문제로 학생처럼 한 판
+function testPlay(t) {
+  if (!MODELS_READY || autoStarting || G.playing) { toast("잠시 뒤에 다시 눌러 주세요"); return; }
+  $("start").hidden = true; autoStarting = true; testNext = t;
+  choosePlace(t.place, true).finally(() => { autoStarting = false; });
+}
 async function choosePlace(place, practice = false) {
   audio();
   const g = DEV_FREE || practice ? { ok: true } : gate();
@@ -3128,13 +3136,13 @@ $("tutClose").addEventListener("click", tutClose);
 $("tutPrev").addEventListener("click", () => tutShow(tutI - 1));
 $("tutNext").addEventListener("click", () => (tutI === TUT.length - 1 ? tutClose() : tutShow(tutI + 1)));
 $("tutDots").addEventListener("click", (e) => { const k = e.target.dataset?.k; if (k != null) tutShow(+k); });
-setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate, onLobby: () => { if (!$("lobby").hidden) renderLobby(); }, mountAvatar }), 600);
+setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate, testPlay, onLobby: () => { if (!$("lobby").hidden) renderLobby(); }, mountAvatar }), 600);
 const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
 $("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=19").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=21").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };

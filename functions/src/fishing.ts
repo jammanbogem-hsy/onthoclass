@@ -15,7 +15,7 @@
  */
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore, type Transaction, type DocumentData } from "firebase-admin/firestore";
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 const options = { region: "asia-northeast3", maxInstances: 10, timeoutSeconds: 20 };
 
@@ -342,12 +342,40 @@ export const fishCook = onCall(options, async (req) => {
 const CODE_CH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0·O·1·I 빼고
 const cleanName = (n: unknown) => String(n ?? "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, 12);
 const teacherOf = (req: CallableRequest) => { if (!req.auth) throw new HttpsError("unauthenticated", "선생님은 구글로 로그인해 주세요."); return req.auth.uid; };
-// 교사 = 러닝크루 교사 계정(users.role, claimTeacherRole 로만 부여) 또는 최고 관리자. 교사는 낚시터를 자유롭게 쓴다
+// 교사 = 낚시터 교사 가입(fishTeachers, 가입 코드로만) 또는 러닝크루 교사 계정(users.role) 또는 최고 관리자. 교사는 낚시터를 자유롭게 쓴다
 async function isTeacherUid(req: CallableRequest) {
   if (!req.auth) return false;
   if (isAdmin(req)) return true;
-  return (await db().doc(`users/${req.auth.uid}`).get()).data()?.role === "teacher";
+  const [fish, lms] = await Promise.all([db().doc(`fishTeachers/${req.auth.uid}`).get(), db().doc(`users/${req.auth.uid}`).get()]);
+  return fish.exists || lms.data()?.role === "teacher";
 }
+
+// 낚시터 교사 가입: 구글 로그인 + 가입 코드(서버 환경변수 FISH_TEACHER_CODE, 저장소에 안 올림). 5번 틀리면 10분 잠금
+const sameCode = (a: string, b: string) => { const x = createHash("sha256").update(a).digest(), y = createHash("sha256").update(b).digest(); return timingSafeEqual(x, y); };
+export const fishTeacherJoin = onCall(options, async (req) => {
+  const uid = teacherOf(req);
+  if (!req.auth?.token?.email_verified) throw new HttpsError("permission-denied", "구글 계정으로 로그인해 주세요.");
+  const secret = String(process.env.FISH_TEACHER_CODE || "").trim().toLowerCase();
+  if (!secret) throw new HttpsError("failed-precondition", "지금은 선생님 가입을 받을 수 없어요. 관리자에게 알려 주세요.");
+  if (await isTeacherUid(req)) return { ok: true, already: true };
+  const code = String(req.data?.code || "").normalize("NFC").trim().toLowerCase().slice(0, 64);
+  if (!code) throw new HttpsError("invalid-argument", "선생님 가입 코드를 입력해 주세요.");
+  const tries = db().doc(`fishTeacherTries/${uid}`);
+  const ok = await db().runTransaction(async (tx) => {
+    const t = (await tx.get(tries)).data() || {}, now = Date.now();
+    if ((t.lockUntil || 0) > now) throw new HttpsError("resource-exhausted", `코드를 여러 번 틀렸어요. ${Math.ceil((t.lockUntil - now) / 60000)}분 뒤에 다시 해 주세요.`);
+    if (!sameCode(code, secret)) {
+      const fails = (t.fails || 0) + 1;
+      tx.set(tries, fails >= 5 ? { fails: 0, lockUntil: now + 10 * 60e3 } : { fails, lockUntil: 0 });
+      return false;
+    }
+    tx.delete(tries);
+    tx.set(db().doc(`fishTeachers/${uid}`), { email: String(req.auth?.token?.email || ""), name: String(req.auth?.token?.name || "").slice(0, 40), joinedAt: now });
+    return true;
+  });
+  if (!ok) throw new HttpsError("permission-denied", "선생님 가입 코드가 맞지 않아요.");
+  return { ok: true };
+});
 // 낚시 방: 교사가 열면 대기실(lobby)이 생기고, 학생이 다 들어오면 교사가 "시작"을 눌러 모두 같이 한 판(play)을 한다(블루킷처럼)
 // 열어 둘 시간이 지나면 저절로 닫힌다. 한 판이 끝나면(done) 교사가 대기실로 돌려 다음 판을 시작한다
 type Quiz = { q: string; o: string[]; a: number };
@@ -376,7 +404,7 @@ async function lobbyNames(cid: string) {
 
 export const fishClassCreate = onCall(options, async (req) => {
   const uid = teacherOf(req), name = cleanName(req.data?.name) || "우리 반";
-  if (!(await isTeacherUid(req))) throw new HttpsError("permission-denied", "선생님 계정만 학급을 만들 수 있어요. 러닝크루에서 교사로 가입해 주세요.");
+  if (!(await isTeacherUid(req))) throw new HttpsError("permission-denied", "선생님 가입을 먼저 해 주세요(낚시 학급 탭에서 가입 코드 입력).");
   const mine = await db().collection("fishClasses").where("teacher", "==", uid).count().get();
   if (mine.data().count >= 20) throw new HttpsError("resource-exhausted", "학급은 20개까지 만들 수 있어요.");
   for (let i = 0; i < 8; i++) {
@@ -400,7 +428,7 @@ export const fishClassList = onCall(options, async (req) => {
     const st = await c.ref.collection("students").get();
     const profs = st.docs.length ? await db().getAll(...st.docs.map((d) => meRef(`s_${c.id}_${d.id}`))) : [];
     const students = st.docs.map((d, i) => { const p = profs[i]?.data() || {}; return { sid: d.id, name: d.data().name, hasPin: !!d.data().pinHash, taste: p.taste || 0, money: p.money || 0, romance: p.romance || 0, caught: p.caught || 0 }; });
-    return { cid: c.id, name: c.data().name, code: c.data().code, students, room: roomPub(c.data().room || null, false) };
+    return { cid: c.id, name: c.data().name, code: c.data().code, students, room: roomPub(c.data().room || null) }; // 내 학급 문제는 테스트 게임에 쓴다
   })) };
 });
 
