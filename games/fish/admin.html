@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>낚시터 관리</title>
+<meta name="robots" content="noindex">
+<style>
+  @font-face { font-family: 'Daeojamjil'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2302_01@1.0/TheJamsil3Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+  @font-face { font-family: 'Daeojamjil'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2302_01@1.0/TheJamsil5Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+  @font-face { font-family: 'Daeojamjil'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2302_01@1.0/TheJamsil6ExtraBold.woff2') format('woff2'); font-weight: 800; font-display: swap; }
+  :root {
+    color-scheme: light;
+    --ink: #13213a; --ink-2: #44536b; --muted: #8592a6; --line: #dfe6ef;
+    --bg: #eef3f8; --card: #fff;
+    --sea: #1f6fd1; --sea-bg: #e7f0fc; --warn: #c2410c; --warn-bg: #fff1e6; --ok: #1d7a60; --ok-bg: #e3f5ee; --bad: #c02a45; --bad-bg: #fde8ec; --gold: #b07a00; --gold-bg: #fff5d6;
+    --display: "Daeojamjil", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px var(--display); }
+  [hidden] { display: none !important; }
+  .top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: rgba(238, 243, 248, .94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .top h1 { margin: 0 auto 0 0; font-size: 19px; font-weight: 800; }
+  .top h1 small { font-size: 12px; font-weight: 700; color: #fff; background: var(--ink); border-radius: 6px; padding: 2px 7px; margin-left: 6px; vertical-align: 2px; }
+  .top h1 a { color: inherit; text-decoration: none; }
+  #who { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 40px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font: 700 14px var(--display); cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .btn.small { height: 32px; padding: 0 11px; font-size: 13px; border-radius: 8px; }
+  .btn.ghost { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .btn.ghost:hover { box-shadow: inset 0 0 0 1.5px var(--ink-2); }
+  .btn.danger { color: var(--bad); }
+  .btn[disabled] { opacity: .5; cursor: default; }
+  .btn:focus-visible, .tabs button:focus-visible, .link:focus-visible { outline: 3px solid var(--sea); outline-offset: 2px; }
+  .link { border: 0; background: none; color: var(--sea); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
+  .panel { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 1px 0 var(--line); }
+  .gate { max-width: 440px; margin: 12vh auto 0; text-align: center; }
+  .gate h2 { margin: 0 0 8px; font-size: 24px; }
+  .gate p { color: var(--ink-2); line-height: 1.6; }
+  .status { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; color: var(--ok); }
+  .status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .status.bad { color: var(--warn); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 2px solid var(--line); flex-wrap: wrap; }
+  .tabs button { border: 0; background: none; padding: 10px 14px; font: 700 15px var(--display); color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tabs .refresh { margin-left: auto; display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
+  .tabs .auto { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .tabs b { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px; background: var(--warn); color: #fff; font-size: 12px; line-height: 20px; }
+  .booting { text-align: center; margin-top: 18vh; color: var(--muted); font-size: 15px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
+  .tiles.five { grid-template-columns: repeat(5, 1fr); }
+  .tile { background: var(--card); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; box-shadow: 0 1px 0 var(--line); }
+  .tile b { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .tile b small { font-size: 15px; color: var(--muted); font-weight: 700; margin-left: 2px; }
+  .t-lbl { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+  .t-foot { font-size: 12px; color: var(--muted); }
+  h2.sec { font-size: 17px; margin: 0 0 12px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  h2.sec small { font-size: 12px; font-weight: 400; color: var(--muted); }
+  .issues { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .issues li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; }
+  .issues li.warn { background: var(--warn-bg); } .issues li.info { background: var(--sea-bg); } .issues li.ok { background: var(--ok-bg); }
+  .issues .ico { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; }
+  .issues .warn .ico { background: var(--warn); } .issues .info .ico { background: var(--sea); } .issues .ok .ico { background: var(--ok); }
+  .issues li > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .issues li span:not(.ico) { font-size: 13px; color: var(--ink-2); }
+  .filters { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+  .filters input, .filters select { height: 38px; border-radius: 10px; border: 1.5px solid var(--line); padding: 0 12px; font: 14px var(--display); background: #fff; color: var(--ink); }
+  .filters input { flex: 1; min-width: 180px; max-width: 360px; }
+  .filters .count { margin-left: auto; color: var(--muted); font-size: 13px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: var(--muted); padding: 8px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+  td { padding: 9px 8px; border-bottom: 1px solid #edf1f6; vertical-align: middle; }
+  .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .muted { color: var(--muted); }
+  .nowrap { white-space: nowrap; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .msgcell { word-break: break-all; font-size: 13px; max-width: 520px; }
+  .msgcell details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .msgcell pre { white-space: pre-wrap; font-size: 11px; color: var(--ink-2); margin: 4px 0 0; }
+  tr.done td { opacity: .5; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #eef1f5; color: var(--ink-2); white-space: nowrap; }
+  .badge.open { background: var(--ok-bg); color: var(--ok); } .badge.play { background: var(--bad-bg); color: var(--bad); } .badge.free { background: var(--gold-bg); color: var(--gold); }
+  .badge.err { background: var(--bad-bg); color: var(--bad); } .badge.fb { background: var(--sea-bg); color: var(--sea); }
+  .badge.code { background: var(--sea-bg); color: var(--sea); } .badge.lms { background: #efe9ff; color: #5b3aa7; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-top: 16px; }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 10px 0 0; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; line-height: 1.6; }
+  /* 대시보드 */
+  .bar { position: relative; height: 10px; border-radius: 5px; background: #edf1f6; min-width: 80px; overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--sea); }
+  .bar.ok i { background: var(--ok); } .bar.mid i { background: var(--gold); } .bar.low i { background: var(--bad); }
+  .pct { display: flex; align-items: center; gap: 8px; } .pct span { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+  .hbars { display: grid; gap: 7px; } .hbars div { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; font-size: 13px; }
+  .hbars .num { color: var(--ink-2); }
+  .days { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding-top: 8px; }
+  .days div { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; min-width: 0; }
+  .days i { display: block; width: 100%; max-width: 28px; border-radius: 4px 4px 0 0; background: var(--sea); min-height: 2px; }
+  .days small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 420px; overflow: auto; }
+  .feed li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 6px 4px; border-bottom: 1px solid #edf1f6; }
+  .feed time { color: var(--muted); font-size: 12px; min-width: 64px; font-variant-numeric: tabular-nums; }
+  .feed .ok { color: var(--ok); font-weight: 700; } .feed .no { color: var(--bad); font-weight: 700; }
+  .qtext { max-width: 380px; } .qtext .sub { word-break: break-all; }
+  @media (max-width: 1000px) { .tiles { grid-template-columns: repeat(3, 1fr); } .tiles.five { grid-template-columns: repeat(3, 1fr); } .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .tiles, .tiles.five { grid-template-columns: 1fr 1fr; } .wrap { padding: 16px; } .top { padding: 10px 16px; } .tile b { font-size: 24px; } .tabs .refresh { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1><a href="./">잠만보 낚시터</a><small id="roleTag">관리</small></h1>
+  <div id="who" hidden><span id="whoName"></span><button class="btn small ghost" id="logoutBtn" type="button">로그아웃하기</button></div>
+</header>
+<main class="wrap">
+  <p class="booting" id="booting">불러오는 중이에요…</p>
+  <section class="panel gate" id="gate" hidden>
+    <h2>선생님 로그인</h2>
+    <p id="gateMsg">낚시터에서 쓰는 구글 계정으로 로그인하면 내 학급 기록을 볼 수 있어요.</p>
+    <button class="btn" id="loginBtn" type="button">구글로 로그인하기</button>
+  </section>
+  <div id="app" hidden>
+    <div class="status" id="statusBar"><span id="status"></span></div>
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="tabOverview" data-admin aria-selected="false">개요 · 이상 감지<b id="issueCount" hidden>0</b></button>
+      <button type="button" role="tab" data-tab="tabDash" aria-selected="false">학급 기록</button>
+      <button type="button" role="tab" data-tab="tabClasses" data-admin aria-selected="false">전체 학급</button>
+      <button type="button" role="tab" data-tab="tabTeachers" data-admin aria-selected="false">선생님</button>
+      <button type="button" role="tab" data-tab="tabLogs" data-admin aria-selected="false">오류 로그·의견<b id="logCount" hidden>0</b></button>
+      <div class="refresh">
+        <label class="auto"><input type="checkbox" id="autoRefresh"> 30초마다 새로고침</label>
+        <button class="btn small" id="reloadBtn" type="button">↻ 새로고침</button>
+      </div>
+    </nav>
+
+    <section class="tab" id="tabOverview" hidden>
+      <div class="tiles" id="tiles"></div>
+      <div class="panel">
+        <h2 class="sec">이상 감지 <small>반복되는 오류 · 확인 안 한 오류와 의견 · 학생이 없는 학급</small></h2>
+        <ul class="issues" id="issues"></ul>
+      </div>
+    </section>
+
+    <section class="tab" id="tabDash" hidden>
+      <div class="panel" style="margin-bottom:16px">
+        <div class="filters" style="margin:0">
+          <select id="dashClass" aria-label="학급"></select>
+          <select id="dashDays" aria-label="기간"><option value="1">오늘(24시간)</option><option value="7" selected>최근 7일</option><option value="30">최근 30일</option><option value="365">1년</option></select>
+          <button class="btn small ghost" id="csvBtn" type="button">학생별 기록 CSV 받기</button>
+          <span class="count" id="dashInfo"></span>
+        </div>
+      </div>
+      <div id="dashBody"></div>
+    </section>
+
+    <section class="tab panel" id="tabClasses" hidden>
+      <div class="filters">
+        <input id="classSearch" type="search" placeholder="학급 이름, 코드, 선생님으로 찾기">
+        <select id="classStatus" aria-label="낚시터 상태"><option value="">모든 상태</option><option value="open">열림</option><option value="closed">닫힘</option></select>
+        <span class="count" id="classCount"></span>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>만든 때</th><th>학급</th><th>선생님</th><th>낚시터</th><th class="num">학생</th><th class="num">오늘 기록</th><th></th></tr></thead>
+        <tbody id="classRows"></tbody>
+      </table></div>
+    </section>
+
+    <section class="tab panel" id="tabTeachers" hidden>
+      <h2 class="sec">선생님 <small>가입 코드로 가입한 선생님과, 러닝크루 교사 계정으로 학급을 만든 선생님</small></h2>
+      <div class="scroll"><table>
+        <thead><tr><th>선생님</th><th>가입 방식</th><th>가입한 때</th><th class="num">학급</th></tr></thead>
+        <tbody id="teacherRows"></tbody>
+      </table></div>
+    </section>
+
+    <section class="tab panel" id="tabLogs" hidden>
+      <div class="filters">
+        <input id="logSearch" type="search" placeholder="내용, 이름, 이메일로 찾기">
+        <select id="logKind" aria-label="종류"><option value="">오류와 의견</option><option value="error">오류만</option><option value="feedback">의견만</option></select>
+        <select id="logDone" aria-label="확인"><option value="">전부</option><option value="todo" selected>확인 안 한 것</option><option value="done">확인한 것</option></select>
+        <button class="btn small ghost danger" id="clearLogs" type="button">오류 로그 모두 지우기</button>
+        <span class="count" id="logInfo"></span>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>때</th><th>종류</th><th>누가</th><th>내용</th><th>기기</th><th></th></tr></thead>
+        <tbody id="logRows"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+<script type="module" src="admin.js?v=1"></script>
+</body>
+</html>

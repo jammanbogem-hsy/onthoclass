@@ -241,6 +241,7 @@ export const fishCatch = onCall(options, async (req) => {
     if (!release && !full) { tx.create(meRef(uid).collection("bag").doc(), { ...fish, at: now }); upd.bagN = FieldValue.increment(1); saved = true; }
     tx.update(meRef(uid), upd);
     // 교사 화면 순위: 이번 판 손맛·마리
+    if (lob) tx.create(eventsCol(uid.split("_")[1]).doc(), { t: "catch", sid: uid.split("_")[2], name: d.name || "", sp: fish.sp, cm: fish.cm, kg: fish.kg, grade: fish.grade, taste, round: room!.round || 0, at: now });
     if (lob) tx.set(lob, lb?.round === room!.round ? { pts: FieldValue.increment(taste), n: FieldValue.increment(1), at: now } : { name: d.name, round: room!.round || 0, pts: taste, n: 1, at: now }, { merge: true });
     return { taste, saved, full, release, price: priceOf(fish, day), grade: fish.grade };
   });
@@ -390,6 +391,8 @@ const roomPub = (r: Room | null, withQuiz = true) => r ? { open: roomOpen(r), cl
   minutes: r.minutes || 40, mode: r.mode || "contest", phase: phaseOf(r), round: r.round || 0, startAt: r.startAt || 0, endAt: r.endAt || 0, now: Date.now() } : { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0, mode: "contest", phase: "closed", round: 0, startAt: 0, endAt: 0, now: Date.now() };
 // 대기실 명단: fishClasses/{cid}/lobby/{sid} = { name, at(마지막으로 보인 때), round, pts(이번 판 손맛), n(이번 판 마리) }
 const lobbyCol = (cid: string) => db().collection(`fishClasses/${cid}/lobby`);
+// 학급 기록(대시보드): fishClasses/{cid}/events = 잡은 물고기 { t:"catch", sid, name, sp, cm, kg, grade, taste } · 푼 문제 { t:"quiz", sid, name, q, pick, a, ok, ctx(cast 던지기 전·fight 낚는 중) }
+const eventsCol = (cid: string) => db().collection(`fishClasses/${cid}/events`);
 const HERE_MS = 30e3;
 // 학생 화면에 보여 줄 같은 반 친구 이름(함수 하나가 3초 동안 기억해서 읽기를 줄인다)
 const lobbyCache = new Map<string, { t: number; names: string[] }>();
@@ -534,9 +537,13 @@ export const fishAdmin = onCall(options, async (req) => {
   ]);
   const classes = await Promise.all(cls.docs.map(async (c) => {
     const d = c.data(), n = await c.ref.collection("students").count().get();
-    return { cid: c.id, name: d.name, code: d.code, teacherName: d.teacherName || "", teacher: d.teacher, createdAt: d.createdAt || 0, students: n.data().count };
+    const today = await eventsCol(c.id).where("at", ">=", Date.now() - 864e5).count().get();
+    return { cid: c.id, name: d.name, code: d.code, teacherName: d.teacherName || "", teacher: d.teacher, createdAt: d.createdAt || 0, students: n.data().count, room: roomPub((d.room as Room) || null, false), today: today.data().count };
   }));
-  return { fishers: fishers.data().count, classes: classes.sort((a, b) => b.createdAt - a.createdAt),
+  const ts = await db().collection("fishTeachers").get();
+  const teachers = new Map<string, { uid: string; email: string; name: string; joinedAt: number; classes: number; via: string }>(ts.docs.map((t) => [t.id, { uid: t.id, email: t.data().email || "", name: t.data().name || "", joinedAt: t.data().joinedAt || 0, classes: 0, via: "code" }]));
+  for (const c of classes) { const t = teachers.get(c.teacher) || (teachers.set(c.teacher, { uid: c.teacher, email: "", name: c.teacherName, joinedAt: 0, classes: 0, via: "lms" }), teachers.get(c.teacher)!); t.classes++; }
+  return { fishers: fishers.data().count, classes: classes.sort((a, b) => b.createdAt - a.createdAt), teachers: [...teachers.values()].sort((a, b) => b.joinedAt - a.joinedAt),
     logs: logs.docs.map((d) => ({ id: d.id, ...d.data() })) };
 });
 
@@ -566,6 +573,64 @@ export const fishLobby = onCall(options, async (req) => {
     return { sid: d.id, name: String(d.data().name || ""), here: !!l && now - (l.at || 0) < HERE_MS, pts: mine ? l!.pts || 0 : 0, n: mine ? l!.n || 0 : 0 }; });
   return { name: c.data()?.name || "", code: c.data()?.code || "", room: roomPub(room, false), players };
 });
+// 학생: 푼 문제 기록. 정답 여부는 서버가 학급 문제로 다시 매긴다
+export const fishQuiz = onCall(options, async (req) => {
+  const key = await who(req);
+  if (!key.startsWith("s_")) return { ok: false };
+  const [, cid, sid] = key.split("_"), room = await roomOf(cid);
+  const qi = Math.round(Number(req.data?.qi)), pick = Math.round(Number(req.data?.pick)), ctx = req.data?.ctx === "fight" ? "fight" : "cast";
+  const q = roomOpen(room) && room!.quizOn ? room!.quiz?.[qi] : undefined;
+  if (!q || !(pick >= 0 && pick < q.o.length)) return { ok: false };
+  const ref = meRef(key);
+  return db().runTransaction(async (tx) => {
+    const d = (await tx.get(ref)).data() || {}, now = Date.now();
+    if (now - (d.lastQuizAt || 0) < 600) return { ok: false }; // 연타로 기록을 부풀리지 않게
+    tx.update(ref, { lastQuizAt: now });
+    tx.create(eventsCol(cid).doc(), { t: "quiz", sid, name: d.name || "", qi, q: q.q, o: q.o, pick, a: q.a, ok: pick === q.a, ctx, round: room!.round || 0, at: now });
+    return { ok: pick === q.a };
+  });
+});
+
+// 교사(내 학급)·최고 관리자: 학급 대시보드 — 잡은 물고기·푼 문제를 학생별·문제별·물고기별로 모은다
+export const fishDash = onCall({ ...options, timeoutSeconds: 30 }, async (req) => {
+  const cid = cut(req.data?.cid, 64), days = Math.min(365, Math.max(1, Math.round(Number(req.data?.days) || 7)));
+  if (!/^[\w-]{1,64}$/.test(cid)) throw new HttpsError("invalid-argument", "학급을 골라 주세요.");
+  const c = await db().doc(`fishClasses/${cid}`).get();
+  if (!c.exists) throw new HttpsError("not-found", "학급을 찾지 못했어요.");
+  if (!isAdmin(req) && (!req.auth || c.data()?.teacher !== req.auth.uid)) throw new HttpsError("permission-denied", "내 학급만 볼 수 있어요.");
+  const since = Date.now() - days * 864e5;
+  const [st, ev] = await Promise.all([c.ref.collection("students").get(), eventsCol(cid).where("at", ">=", since).orderBy("at", "desc").limit(5000).get()]);
+  type S = { sid: string; name: string; catch: number; taste: number; best: { sp: string; n: string; cm: number; grade: string } | null; quiz: number; right: number; escaped: number; last: number };
+  const S = new Map<string, S>(st.docs.map((d) => [d.id, { sid: d.id, name: String(d.data().name || ""), catch: 0, taste: 0, best: null, quiz: 0, right: 0, escaped: 0, last: 0 }]));
+  const Q = new Map<string, { q: string; o: string[]; a: number; n: number; right: number; picks: number[]; fight: number }>(), SP = new Map<string, number>(), G: Record<string, number> = {};
+  const day = new Map<string, { catch: number; quiz: number; right: number }>();
+  const recent: unknown[] = [];
+  for (const doc of ev.docs) {
+    const e = doc.data(), s = S.get(e.sid) || (S.set(e.sid, { sid: e.sid, name: e.name || "?", catch: 0, taste: 0, best: null, quiz: 0, right: 0, escaped: 0, last: 0 }), S.get(e.sid)!);
+    s.last = Math.max(s.last, e.at);
+    const k = new Date(e.at + 9 * 36e5).toISOString().slice(0, 10), D = day.get(k) || (day.set(k, { catch: 0, quiz: 0, right: 0 }), day.get(k)!);
+    if (e.t === "catch") {
+      s.catch++; s.taste += e.taste || 0; D.catch++; SP.set(e.sp, (SP.get(e.sp) || 0) + 1); G[e.grade] = (G[e.grade] || 0) + 1;
+      if (!s.best || e.cm / (SPECIES[e.sp]?.len[1] || 1) * (SPECIES[e.sp]?.p || 1) > s.best.cm / (SPECIES[s.best.sp]?.len[1] || 1) * (SPECIES[s.best.sp]?.p || 1)) s.best = { sp: e.sp, n: SPECIES[e.sp]?.n || e.sp, cm: e.cm, grade: e.grade };
+    } else if (e.t === "quiz") {
+      s.quiz++; D.quiz++; if (e.ok) { s.right++; D.right++; } else if (e.ctx === "fight") s.escaped++;
+      const q = Q.get(e.q) || (Q.set(e.q, { q: e.q, o: e.o || [], a: e.a, n: 0, right: 0, picks: [], fight: 0 }), Q.get(e.q)!);
+      q.n++; if (e.ok) q.right++; q.picks[e.pick] = (q.picks[e.pick] || 0) + 1; if (e.ctx === "fight") q.fight++;
+    }
+    if (recent.length < 80) recent.push(e.t === "catch" ? { t: "catch", name: e.name, sp: SPECIES[e.sp]?.n || e.sp, cm: e.cm, grade: e.grade, at: e.at } : { t: "quiz", name: e.name, q: e.q, ok: !!e.ok, ctx: e.ctx, pick: e.o?.[e.pick] ?? "", at: e.at });
+  }
+  const students = [...S.values()];
+  const quiz = students.reduce((n, s) => n + s.quiz, 0), right = students.reduce((n, s) => n + s.right, 0);
+  return {
+    name: c.data()?.name || "", code: c.data()?.code || "", days, truncated: ev.size >= 5000, room: roomPub((c.data()?.room as Room) || null, false),
+    totals: { students: st.size, active: students.filter((s) => s.last).length, catch: students.reduce((n, s) => n + s.catch, 0), quiz, right, escaped: students.reduce((n, s) => n + s.escaped, 0) },
+    students: students.sort((a, b) => b.catch - a.catch || b.quiz - a.quiz || a.name.localeCompare(b.name, "ko")),
+    questions: [...Q.values()].sort((a, b) => a.right / a.n - b.right / b.n || b.n - a.n),
+    species: [...SP.entries()].map(([sp, n]) => ({ sp, n: SPECIES[sp]?.n || sp, tier: SPECIES[sp]?.t || "", count: n })).sort((a, b) => b.count - a.count),
+    grades: G, daily: [...day.entries()].map(([d, v]) => ({ d, ...v })).sort((a, b) => a.d.localeCompare(b.d)), recent,
+  };
+});
+
 // 교사: 방 열기(대기실)·시작·대기실로·닫기·설정(열어 둘 시간, 한 판 시간, 장소, 문제)
 export const fishRoomSet = onCall(options, async (req) => {
   const uid = teacherOf(req), cid = cut(req.data?.cid, 64);

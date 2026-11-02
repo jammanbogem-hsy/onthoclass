@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <script>/* 학생 전용 주소(/student, /fish/student)도 같은 게임 파일을 쓰게 기준 폴더를 한 단계 위로 */ if (/\/student\/?$/.test(location.pathname)) document.write('<base href="' + location.pathname.replace(/student\/?$/, "") + '">');</script>
+<script>/* 지난번 낚시꾼(몸·입은 아이템) 모델을 페이지를 읽자마자 미리 받기 시작(game.js 가 기억해 둔 주소) */ try { (JSON.parse(localStorage.getItem("jamfish-look") || "null")?.urls || ["assets/avatar/boy4.glb?v=1", "assets/avatar/hat_bucket.glb?v=2"]).slice(0, 6).forEach(function (u) { if (!/^assets\/avatar\/[\w-]+\.glb\?v=\d+$/.test(u)) return; var l = document.createElement("link"); l.rel = "preload"; l.as = "fetch"; l.crossOrigin = "anonymous"; l.href = u; document.head.appendChild(l); }); } catch (e) {}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>잠만보 낚시터</title>
 <meta name="description" content="보글보글 거품에 낚싯대를 던지고, 방향키 콤보로 물고기와 한판 승부! 3분 낚시 대회">
@@ -200,6 +201,10 @@
   .charcard { background: linear-gradient(180deg, #2c3a78, #1b2045 75%); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .08); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
   .charslot { height: 260px; position: relative; background: radial-gradient(ellipse 45% 10% at 50% 92%, rgba(0, 0, 0, .35), transparent 70%); }
   #charView { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  .avwait { position: relative; }
+  .avwait::after { content: "낚시꾼을 데려오는 중이에요"; position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-size: 14px; color: #cfd6ff; pointer-events: none; animation: avwait 1s ease-in-out infinite alternate; }
+  @keyframes avwait { from { opacity: .45; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .avwait::after { animation: none; } }
   .charinfo { display: flex; flex-direction: column; gap: 4px; text-align: center; }
   .charinfo b { font-size: 20px; } .charinfo small { color: var(--muted); font-size: 13px; line-height: 1.5; }
   /* 꾸미기 탭 */
@@ -411,7 +416,12 @@
   [data-newclass].joinf { grid-template-columns: 1fr auto; }
   @media (max-width: 520px) { .joinf { grid-template-columns: 1fr 1fr; } }
   .clsbox { display: flex; flex-direction: column; gap: 6px; padding: 10px; background: rgba(255, 248, 232, .05); }
-  .clshead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; } .clshead b { font-size: 18px; } .clshead em { font-style: normal; font-size: 22px; color: var(--sun); letter-spacing: .12em; } .clshead small { color: var(--muted); }
+  .clshead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; padding: 6px 4px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; } .clshead b { font-size: 18px; } .clshead em { font-style: normal; font-size: 22px; color: var(--sun); letter-spacing: .12em; } .clshead small { color: var(--muted); }
+  .clshead:hover { background: rgba(255, 248, 232, .06); } .clshead:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+  .clsstate { font-style: normal; font-size: 13px; padding: 3px 9px; background: rgba(255, 248, 232, .1); color: var(--muted); } .clsstate.on { background: var(--lime); color: var(--ink); }
+  .clsarrow { margin-left: auto; font-size: 22px; color: var(--cream); transition: transform .15s; } .clsbox:not(.open) .clsarrow { transform: rotate(-90deg); }
+  .clsbox:not(.open) .clsbody { display: none; } .clsbody { display: flex; flex-direction: column; gap: 6px; }
+  .clsdash { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0; } .clsdash .go { font-size: 16px; padding: 10px 16px; text-decoration: none; } .clsdash span { color: var(--muted); font-size: 14px; }
   .clstable { display: flex; flex-direction: column; font-size: 13px; overflow-x: auto; }
   .clstable > div { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr .8fr .8fr 1.3fr; gap: 6px; padding: 5px 4px; border-bottom: 1px solid rgba(255, 248, 232, .1); font-variant-numeric: tabular-nums; align-items: center; min-width: 460px; }
   .clstable .th { color: var(--muted); font-size: 11px; }
@@ -421,6 +431,9 @@
   .quizbox .qo i { font-style: normal; display: inline-block; min-width: 22px; color: var(--hot); }
   .quizbox .qo .right { background: var(--lime); } .quizbox .qo .wrong { background: var(--hot); color: var(--cream); }
   .quizbox .qmsg { min-height: 22px; font-size: 17px; color: var(--sun); text-align: center; }
+  .quizbox.fightq { background: rgba(60, 8, 24, .55); }
+  .quizbox.fightq .tutcard { box-shadow: 0 0 0 4px var(--hot), 0 0 40px rgba(255, 77, 109, .5); }
+  .quizbox.fightq .qtag { color: var(--hot); }
   @media (max-width: 520px) { .quizbox .qo { grid-template-columns: 1fr; } }
   .roomline { padding: 6px 10px; font-family: var(--px); font-size: 14px; } .roomline.open { background: rgba(156, 242, 90, .18); color: var(--lime); } .roomline.wait { background: rgba(255, 210, 63, .12); color: var(--sun); animation: blink 1.2s steps(2) infinite; }
   .roomline small { color: var(--muted); }
@@ -857,7 +870,7 @@
   <div class="townpop" id="townPop" hidden></div>
 </div>
 
-<div class="quizbox" id="quizBox" hidden><div class="tutcard px"><div class="tuthead"><b>문제를 맞히면 던질 수 있어요!</b></div>
+<div class="quizbox" id="quizBox" hidden><div class="tutcard px"><div class="tuthead"><b class="qtag">문제를 맞히면 던질 수 있어요</b></div>
   <p class="qq"></p><div class="qo"></div><p class="qmsg"></p></div></div>
 <div class="fbbox" id="fbBox" hidden><div class="tutcard px"><div class="tuthead"><b>의견·오류 알리기</b><button class="tutx" id="fbClose" aria-label="닫기">✕</button></div>
   <p>이상한 점, 안 되는 것, 바라는 것을 자유롭게 써 주세요. 최고 관리자 선생님이 읽어요.</p>
@@ -881,6 +894,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=53"></script>
+<script type="module" src="game.js?v=55"></script>
 </body>
 </html>

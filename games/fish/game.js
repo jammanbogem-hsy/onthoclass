@@ -9,7 +9,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=8";
 import { buildRig, skinWeights, poseRig, handPos } from "./rig.js?v=3";
 import { scanFace, pushToSkin, lensOf, scanBack, pushOntoBack, wornPoints, ringAt, frontAtP, nearestOf, settle } from "./fit.js?v=1";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./town.js?v=25";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, closeQuiz, quizOpen, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./town.js?v=27";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -794,6 +794,17 @@ function loadBase(i) {
     return { turn: W, rig, toBody, S, hairRef, face, geo: mesh.geometry, shells: {}, hand: S.A.fists.length === 2 ? new THREE.Vector3((S.A.fists[0][0] + S.A.fists[1][0]) / 2, (S.A.fists[0][1] + S.A.fists[1][1]) / 2, Math.min(S.A.fists[0][2], S.A.fists[1][2])) : tip ? tip.clone().add(new THREE.Vector3(0, 0, .02)) : new THREE.Vector3(0.05, .62, -.4) }; // 낚싯대는 두 주먹 사이
   });
 }
+let gearT = 0;
+const queueGear = () => { if (!gearT) gearT = setTimeout(() => { gearT = 0; applyGear(GEAR.me); }, 30); };
+// 지난번 낚시꾼(몸·입은 아이템)을 기억해 두고, 다음에 들어올 때 처음부터 그것을 같이 받는다(index.html 이 페이지를 읽자마자 미리 받기 시작)
+const LOOK_KEY = "jamfish-look";
+const itemUrl = (id) => `assets/avatar/${id}.glb?v=${ITEM_VER[id] ?? (ITEM_V2.has(id) ? 2 : 1)}`;
+function savedLook() { try { return JSON.parse(localStorage.getItem(LOOK_KEY) || "null"); } catch { return null; } }
+function rememberLook(me) {
+  const w = me?.wear || {}, base = me?.look?.base === 1 ? 1 : 0;
+  const items = [w.head || "hat_bucket", w.face, w.back !== "flag" && w.back, w.body === "cape" && "cape"].filter((id) => id && ITEM_FIT[id]);
+  try { localStorage.setItem(LOOK_KEY, JSON.stringify({ base, items, urls: [BASES[base].file, ...items.map(itemUrl)] })); } catch {}
+}
 async function loadAngler(i = 0) {
   AVA.want = i;
   const b = await loadBase(i);
@@ -836,7 +847,7 @@ const ITEM_V2 = new Set(["hat_bucket", "hat_straw", "hat_beanie", "hat_pirate", 
 const AVA = { base: -1, want: -1, S: null, face: null, fitLog: {}, rig: null, shells: {}, items: {}, loading: {}, onBones: [] };
 function itemModel(id) {
   if (!ITEM_FIT[id]) return Promise.resolve(null);
-  return AVA.loading[id] ??= loader.loadAsync(`assets/avatar/${id}.glb?v=${ITEM_VER[id] ?? (ITEM_V2.has(id) ? 2 : 1)}`).then((g) => {
+  return AVA.loading[id] ??= loader.loadAsync(itemUrl(id)).then((g) => {
     const turn = new THREE.Group(); turn.add(g.scene);
     g.scene.traverse((o) => { if (o.isMesh) { const m = o.material; if (m.map) m.map.colorSpace = THREE.SRGBColorSpace; o.material = new THREE.MeshToonMaterial({ map: m.map, color: m.map ? "#ffffff" : m.color, gradientMap: grad }); } });
     turn.rotation.y = THREE.MathUtils.degToRad(ITEM_FIT[id].yaw || 0);
@@ -890,7 +901,7 @@ function stretchTemples(o, zEar, slab, face, cx) {
 }
 function placeItem(id, parent, tint) {
   const it = AVA.items[id], f = ITEM_FIT[id], S = AVA.S;
-  if (!it) { itemModel(id).then((r) => { if (r) applyGear(GEAR.me); }); return null; }
+  if (!it) { itemModel(id).then((r) => { if (r) queueGear(); }); return null; }
   const o = it.holder.clone(true), sz = it.size;
   if (tint) o.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); m.material.color.set(tint); } });
   if (!S) return null;
@@ -1108,7 +1119,10 @@ function applyGear(me) {
   rodSegs.forEach((m, k) => { if (k <= 11) { m.material.dispose(); m.material = toon(k % 4 === 0 ? rc[0] : rc[1], GEAR.rod === 5 ? { emissive: "#5a3a00" } : {}); } });
   // 옷: 바탕 몸에 비옷(조끼를 입으면 조끼)·장화 껍데기, 모자(없으면 벙거지)·얼굴·등 아이템
   const want = me?.look?.base === 1 ? 1 : 0;
-  if (AVA.base >= 0 && want !== AVA.base && AVA.want !== want) { AVA.want = want; loadAngler(want).catch((e) => console.warn("낚시꾼", e)); }
+  if (want !== AVA.want) { if (want === AVA.base) AVA.want = want; else loadAngler(want).catch((e) => console.warn("낚시꾼", e)); } // 받는 중에 되돌리면 받던 몸은 쓰지 않는다
+  const key = JSON.stringify([GEAR.rod, GEAR.wear, me?.look || {}, GEAR.own, AVA.base, Object.keys(AVA.items).length]);
+  if (key === AVA.gearKey) return;
+  AVA.gearKey = key;
   gearGroup.clear(); gearGroup.userData.flag = null; HAIR.cut.value = 1e9;
   for (const o of AVA.onBones) o.removeFromParent(); AVA.onBones.length = 0;
   const w = GEAR.wear, L = me?.look || {}, P = LOOK_PAL;
@@ -1172,6 +1186,7 @@ AV.sc.add(new THREE.HemisphereLight("#ffffff", "#556070", 2.3)); { const d = new
 function stepAvatar(dt, t) {
   const cv = AV.cv, slot = $("lobby").hidden ? $("charSlot") : $("lobbySlot"); if (!cv) return; // 꾸미기 탭이 다시 그려져도 캔버스를 잃지 않게 참조를 쥐고 있는다
   if ($("town").hidden && slot && cv.parentElement !== slot) slot.append(cv);
+  cv.parentElement?.classList.toggle("avwait", AVA.base < 0);
   if (!cv.offsetParent) return;
   if (!AV.r) {
     AV.r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true }); AV.r.setPixelRatio(Math.min(1.5, devicePixelRatio));
@@ -1200,7 +1215,14 @@ function cloneAngler() {
   c.updateMatrixWorld(true); c.traverse((o) => { if (o.isSkinnedMesh) { o.skeleton.update(); o.computeBoundingBox(); o.frustumCulled = false; } });
   return c;
 }
-function mountAvatar(el) { if (AV.cv && el) el.append(AV.cv); }
+function mountAvatar(el) {
+  if (AV.cv && el) el.append(AV.cv);
+  if (!el || AV.warmed || !GEAR.me) return; AV.warmed = true;
+  const ids = Object.keys(GEAR.own || {}).filter((id) => ITEM_FIT[id] && ITEM_FIT[id].at !== "deck" && !AVA.loading[id]);
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
+  const next = () => { const id = ids.shift(); if (id) idle(() => itemModel(id).finally(next)); };
+  next();
+}
 function stepDeco(t) { const fl = gearGroup.userData.flag; if (fl) fl.rotation.y = -.3 + Math.sin(t * 5) * .35; const cat = decoGroup.userData.cat; if (cat) { cat.scale.set(1, 1 + Math.sin(t * 2.4) * .04, 1); cat.rotation.y = 2.6 + Math.sin(t * .7) * .25; } decoGroup.userData.flames?.forEach((f, i) => { f.scale.set(1 + Math.sin(t * 13 + i) * .12, 1 + Math.sin(t * 17 + i * 2) * .25, 1 + Math.cos(t * 11 + i) * .12); f.rotation.y = t * (2 + i); }); }
 
 // ------------------------------------------------------------------ 소리
@@ -1751,7 +1773,7 @@ function miniNote(type, sp, sizeT, hard = false) {
 // 어려운 물고기(S급·월척·보스)의 미니게임: 칸이 좁고, 더 많이, 더 빠르게
 const HARD_MINI = {
   bar: (o) => { o.zone *= .72; o.speed *= 1.2; o.need = 3; o.win += 3; },
-  rhythm: (o) => { o.need += 3; o.gap *= .85; o.win = 1.2 + (o.need + 4) * o.gap + 2.5; },
+  rhythm: (o) => { o.need += 3; o.gap *= .85; o.win = 1.2 + (o.need + 4) * o.gap * 1.35 + 2.5; }, // 쉼표 마디가 섞여도 시간이 모자라지 않게
   dodge: (o) => { o.lanes = 5; o.gap *= .62; o.speed *= 1.15; o.dur += 2; o.win = o.dur + 4; }, // 세 줄 → 다섯 줄, 장애물 많이
   jump: (o) => { o.gap *= .78; o.speed *= 1.15; o.dur += 2; o.win = o.dur + 4; },
   feed: (o) => { o.need += 2; o.fall *= 1.2; o.gap *= .85; o.win = 6 + o.need * 1.6; },
@@ -1771,7 +1793,7 @@ function miniNote0(type, sp, sizeT) {
   if (type === "bar") return { type, dir: "any", win: 8, zone: .32 - power * .08 - sizeT * .07, speed: .42 + power * .35 + sizeT * .3, need: 2 };
   if (type === "rhythm") { // 박자 낚시: 흘러오는 북을 선에 닿을 때 톡
     const need = 6 + Math.round(power * 3 + sizeT * 3), gap = .62 - power * .12 - sizeT * .1;
-    return { type, dir: "any", need, gap, speed: 62 + power * 20, win: 1.2 + (need + 4) * gap + 2.5 };
+    return { type, dir: "any", need, gap, speed: 62 + power * 20, win: 1.2 + (need + 4) * gap * 1.35 + 2.5 };
   }
   if (type === "dodge") { // 장애물 피하기: 물고기를 위아래로 옮겨 바위·수초·깡통을 모두 피한다
     const dur = 7 + power * 2 + sizeT * 2;
@@ -1864,7 +1886,8 @@ function hook() {
   const chart = makeChart(sp, sizeT, hard);
   const weight = chart.reduce((a, n) => a + (MINI_TYPES.has(n.type) || n.type === "mash" ? 3 : n.finisher ? 2 : 1), 0);
   F = { fish, sp, sizeT, cond: rand(.85, 1.15), chart, i: 0, weight, got: 0, hearts: (sp.boss ? 5 : 3) + (GEAR.rod >= 4 ? 1 : 0), maxHearts: (sp.boss ? 5 : 3) + (GEAR.rod >= 4 ? 1 : 0), ms: null, combo: 0, maxCombo: 0, perfect: 0, t: 0, noteT: 0, gauge: 0, taps: 0, gpop: 0, tapT: [], rate: 0, mood: "", tug: 0, tugSide: 1,
-    hard, from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1 };
+    hard, from: R.target.clone(), dist0: R.target.distanceTo(angler.position), leap: 0, leapV: 0, heading: 0, phase: 0, pulse: 0, bonus: s.fake ? 1 : s.T.bonus || 1,
+    quizAt: quizNeeded() && sp.points && chart.length >= 2 ? Math.max(1, Math.min(chart.length - 1, Math.round(chart.length * rand(.35, .65)))) : -1 }; // 낚는 도중 문제 한 번(꽝은 빼고)
   R.state = "fight"; hint(""); document.body.classList.add("fighting");
   $("fight").hidden = false;
   const gr = gradeOf(sizeT), cm = Math.round(lerp(sp.len[0], sp.len[1], sizeT)), junk = sp.tier === "꽝";
@@ -1972,7 +1995,17 @@ function nextNote() {
   c.classList.remove("bump"); void c.offsetWidth; c.classList.add("bump");
   F.i++;
   if (F.i >= F.chart.length) return endFight("caught");
+  if (F.i === F.quizAt) return fightQuiz();
   showNote();
+}
+// 낚는 도중 문제: 그동안 승부는 멈춘다. 맞히면 이어서 감고, 틀리면 물고기가 도망간다
+function fightQuiz() {
+  const f = F; f.quizAt = -1; f.intro = 1e9; f.quizWait = true; // 다음 음표는 아직 시작 전: 문제가 끝날 때까지 승부 갱신·그리기를 멈춘다 $("cur").classList.remove("urgent"); $("danger").style.boxShadow = "";
+  shout("물고기가 버텨요!", "sun", .9);
+  setTimeout(() => {
+    if (F !== f) return;
+    askQuiz(() => { if (F !== f) return; f.quizWait = false; f.intro = .01; shout("계속 감아요!", "lime", .8); showNote(); }, { ctx: "fight", onFail: () => { if (F === f) endFight("quiz"); } });
+  }, 450);
 }
 // 잡은 물고기(왼쪽 아래): 종마다 한 줄, 썸네일은 모델을 작은 화면에 한 번 그려 둔다
 let thumbR = null; const thumbs = {};
@@ -2397,9 +2430,19 @@ function updateDomMini(n, dt) {
   m.danger = m.esc >= 2 ? .3 : 1;
 }
 // ---- 박자 낚시: 북이 흘러와 선(x=16)에 닿을 때 누른다
+// 리듬 마디(박 단위: 다음 북까지 간격). 쉼표·점음표·셋잇단·연타를 섞어 매번 다른 박자가 나온다. 마디 첫 북은 큰 북(강박)
+const RHYTHMS = [
+  [1, 1, 1, 1], [1, 1, 2], [2, 1, 1], [1.5, .5, 1, 1], [1, .5, .5, 2], [.5, .5, 1, 1, 1], [1, 1, .5, .5, 1],
+  [2 / 3, 2 / 3, 2 / 3, 1, 1], [.5, .5, .5, .5, 2], [1.5, 1.5, 1], [1, 2, 1], [.75, .75, .5, 2],
+];
 function rhythmNotes(n) {
-  const out = []; let t = 1.2;
-  for (let k = 0; k < n.need + 4; k++) { out.push({ t, hit: false, gone: false, big: Math.random() < .2 }); t += k > 1 && Math.random() < .2 && n.gap > .5 ? n.gap / 2 : n.gap; }
+  const out = [], need = n.need + 4, short = .28; // 이보다 짧은 간격은 초등학생이 치기 어렵다
+  const ok = RHYTHMS.filter((r) => r.every((b) => b * n.gap >= short));
+  let t = 1.2, prev = -1;
+  while (out.length < need) {
+    let k; do k = Math.floor(Math.random() * ok.length); while (ok.length > 1 && k === prev); prev = k; // 같은 마디 두 번 연속 X
+    ok[k].forEach((b, i) => { if (out.length < need) out.push({ t, hit: false, gone: false, big: i === 0 }); t += b * n.gap; });
+  }
   return out;
 }
 function rhythmPress(n) {
@@ -2695,7 +2738,7 @@ function miss(text) {
 function endFight(result) {
   const f = F; if (!f) return;
   if (f.sp.boss) applyWeather(); // 보스 화면 색을 원래대로
-  F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting", "finale", "boss-fight", "big-fight"); showCircles(null); $("lane").classList.remove("circling"); startMini(null); endIntro();
+  closeQuiz(); F = null; G.lastResult = result; beatStop(); document.body.classList.remove("fighting", "finale", "boss-fight", "big-fight"); showCircles(null); $("lane").classList.remove("circling"); startMini(null); endIntro();
   $("fight").hidden = true; $("danger").style.boxShadow = "";
   if (R.spot) R.spot.age = R.spot.life; // 그 자리 거품은 끝
   if (result === "caught") {
@@ -2744,6 +2787,7 @@ function endFight(result) {
   } else {
     f.fish.dispose(); G.streak = 0;
     if (result === "snap") { shout("툭! 줄이 끊어졌다", "hot", 1.3); SFX.snap(); A.slump = 1.5; }
+    else if (result === "quiz") { shout("물고기가 도망갔어요…", "cream", 1.2); SFX.lose?.(); }
     else shout("놓쳤어요…", "cream", 1.2);
   }
   resetRod();
@@ -2886,7 +2930,7 @@ function updateRodAndLine(dt, t) {
   line.material.color.set(F && F.noteT > F.chart[F.i].win * .6 ? "#ff4d6d" : "#ffffff");
 }
 function updateFight(dt, t) {
-  if (!F) return;
+  if (!F || F.quizWait) return;
   const f = F, n = f.chart[f.i];
   const intro = f.intro > 0;
   if (intro) { f.intro -= dt; if (f.intro <= 0) endIntro(); }
@@ -2975,7 +3019,7 @@ function start() {
 }
 function finish() {
   if (!G.playing) return;
-  G.playing = false; G.ending = false; resetRod(); hint("");
+  G.playing = false; G.ending = false; closeQuiz(); resetRod(); hint(""); // 시간이 다 되면 풀던 문제 창도 닫는다
   $("practag").hidden = true;
   $("endTitle").innerHTML = G.test ? "테스트 <em>끝!</em>" : G.practice ? "연습 <em>끝!</em>" : "대회 <em>끝!</em>";
   if (G.test) { G.test = null; endTest(); }
@@ -3136,13 +3180,13 @@ $("tutClose").addEventListener("click", tutClose);
 $("tutPrev").addEventListener("click", () => tutShow(tutI - 1));
 $("tutNext").addEventListener("click", () => (tutI === TUT.length - 1 ? tutClose() : tutShow(tutI + 1)));
 $("tutDots").addEventListener("click", (e) => { const k = e.target.dataset?.k; if (k != null) tutShow(+k); });
-setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: applyGear, onGate: applyGate, testPlay, onLobby: () => { if (!$("lobby").hidden) renderLobby(); }, mountAvatar }), 600);
+setTimeout(() => initNet({ SPECIES, toast, sample, fishThumb: (id) => fishThumb(id) || BLANK_PX, onProfile: (me) => { rememberLook(me); applyGear(me); }, onGate: applyGate, testPlay, onLobby: () => { if (!$("lobby").hidden) renderLobby(); }, mountAvatar }), 600);
 const BLANK_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"; } catch {}
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
 $("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=25").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=27").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };
@@ -3163,6 +3207,8 @@ function frame(now) {
     }
   }
   const t = clock;
+  // 문제를 푸는 동안은 거품·입질·승부·미니게임을 멈춘다(물고기가 도망가지 않게). 남은 시간은 모두 같은 순간에 끝나도록 그대로 흐른다
+  const hold = G.playing && quizOpen(), gdt = hold ? 0 : dt;
   if (G.playing) {
     G.time -= dt;
     const left = Math.max(0, G.time);
@@ -3170,12 +3216,12 @@ function frame(now) {
     $("timerChip").classList.toggle("low", left < 20);
     if (G.time <= 0 && !G.ending) { if (F) { G.ending = true; shout("마지막 승부!", "hot", 1.2); } else finish(); }
   }
-  stepSpots(dt, t); stepJumpers(dt, t); stepAim(dt); stepDeco(t); stepAvatar(dt, t); stepBubbles(dt, t); stepRain(dt); stepFever(dt);
+  stepSpots(gdt, t); stepJumpers(gdt, t); stepAim(gdt); stepDeco(t); stepAvatar(dt, t); stepBubbles(dt, t); stepRain(dt); stepFever(gdt);
   if (G.playing && !G.bossSpawned && G.time < 75 && !F && !show) spawnBoss();
   $("baits").hidden = !G.playing || !!F || R.state !== "idle";
   updateAngler(dt, t);
-  updateFight(dt, t);
-  updateRodAndLine(dt, t);
+  if (!hold) updateFight(dt, t); // 승부 화면 그림도 멈춘 그대로
+  updateRodAndLine(gdt, t);
   updateShow(dt, t);
   stepDrops(dt); stepRings(dt);
   if (card > 0) { card -= dt; if (card <= 0) $("card").hidden = true; }
@@ -3226,9 +3272,12 @@ function loadPlace(place) {
   })]).then(() => { if (MODELS_READY) applyGate(); else $("loadText").textContent = "준비 완료!"; }));
 }
 (async () => {
-  try { MODEL_LIST = await (await fetch("models.json", { cache: "no-cache" })).json(); } catch { MODEL_LIST = []; }
+  const saved = savedLook();
+  for (const id of saved?.items || []) if (ITEM_FIT[id]) itemModel(id); // 입던 아이템은 몸과 같이 받는다
+  const list = fetch("models.json", { cache: "no-cache" }).then((r) => r.json()).catch(() => []);
   $("loadText").textContent = "낚시꾼 준비 중…";
-  try { await loadAngler(GEAR.me?.look?.base || 0); } catch (e) { console.warn("낚시꾼", e); }
+  try { await loadAngler(AVA.want >= 0 ? AVA.want : GEAR.me ? (GEAR.me.look?.base === 1 ? 1 : 0) : saved?.base === 1 ? 1 : 0); } catch (e) { console.warn("낚시꾼", e); }
+  MODEL_LIST = await list;
   MODELS_READY = true; applyGate();
   loadPlace("fresh"); // 미리 받아 두기
 })();
@@ -3267,4 +3316,4 @@ function fitReport() {
   }
   return out;
 }
-window.__fish = { headShot, fitReport, ITEM_FIT, get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, poseRig, POSE, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, spawnJumper, JUMPERS };
+window.__fish = { headShot, fitReport, ITEM_FIT, get AVA() { return AVA; }, get AV() { return AV; }, MINI_FISH, fishSprite, poseRig, POSE, get PLACE() { return PLACE; }, endFight, HAIR, avShot(spin, pitch = .62) { AV.spin = spin; AV.drag = 0; AV.pitch = pitch; stepAvatar(0, 0); AV.drag = null; AV.pitch = null; return AV.cv.toDataURL(); }, renderer, scene, get qLevel() { return qLevel; }, applyGear: (m) => applyGear(m ?? NET.me), screenOf(x, z) { tmpV.set(x, 0, z).project(camera); const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (tmpV.x + 1) / 2 * r.width, y: r.top + (1 - tmpV.y) / 2 * r.height }; }, CALM, miniNote, MINI_TYPES, aimStart, castRelease, AIM, stepAim, get ac() { return ac; }, jump(type) { const i = F.chart.findIndex((n) => n.type === type); if (i >= 0) { F.i = i; showNote(); } }, typeLetter, whackCell, BOOK, MS, missionEvent, startFever, spawnBoss, setBait, applyWeather, openBook, HOLD, PLAY_STYLE, setPlace, loadPlace, choosePlace, GRADES, SAMPLES, G, R, spots, SPECIES, castTo, press, start, finish, models, get F() { return F; }, newSpot, hook, nextNote, spawnJumper, JUMPERS };

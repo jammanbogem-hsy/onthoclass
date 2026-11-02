@@ -121,24 +121,48 @@ setInterval(() => { if (NET.role === "student") { renderAcct(); hooks.onGate?.()
 let TEST = null;
 export const endTest = () => { TEST = null; };
 export const quizNeeded = () => TEST ? TEST.quiz.length > 0 : NET.role === "student" && !!NET.room?.quizOn && (NET.room.quiz?.length || 0) > 0;
-let quizCool = 0;
-export function askQuiz(onPass) {
-  if (Date.now() < quizCool) { hooks.toast?.("잠깐! 조금 뒤에 다시 풀어요"); return; }
-  const qs = TEST?.quiz.length ? TEST.quiz : NET.room.quiz, q = qs[Math.floor(Math.random() * qs.length)], el = $("quizBox");
-  el.hidden = false;
+let quizCool = 0, quizKey = null, quizT = 0;
+// 문제 차례: 세트를 1번부터 끝까지 한 번씩 내고, 다 풀면 다시 1번부터. 이 기기에 기억해서 새로고침해도 이어서 낸다
+// 선생님이 문제를 바꾸면(내용이 달라지면) 1번부터 다시
+function nextQi(qs) {
+  let h = 5381; for (const q of qs) for (let i = 0; i < q.q.length; i++) h = (h * 33 + q.q.charCodeAt(i)) | 0;
+  const key = `${TEST ? "t" : "r"}:${qs.length}:${h}`;
+  let st = null; try { st = JSON.parse(localStorage.getItem("jamfish-qpos") || "null"); } catch {}
+  const i = st?.key === key && st.i >= 0 ? st.i % qs.length : 0;
+  try { localStorage.setItem("jamfish-qpos", JSON.stringify({ key, i: (i + 1) % qs.length })); } catch {}
+  return i;
+}
+// 문제 창이 떠 있는 동안(정답 표시 포함) 게임은 멈춘다
+export const quizOpen = () => !$("quizBox").hidden;
+// 문제 하나 내기. ctx: "cast"(던지기 전, 틀리면 잠깐 뒤 다시) · "fight"(낚는 중, 틀리면 onFail = 물고기를 놓친다)
+// 학생이 푼 문제는 학급 대시보드에 남는다(테스트 게임·연습은 남기지 않음)
+export function askQuiz(onPass, { ctx = "cast", onFail } = {}) {
+  if (ctx === "cast" && Date.now() < quizCool) { hooks.toast?.("잠깐! 조금 뒤에 다시 풀어요"); return; }
+  closeQuiz();
+  const qs = TEST?.quiz.length ? TEST.quiz : NET.room.quiz, qi = nextQi(qs), q = qs[qi], el = $("quizBox");
+  el.hidden = false; el.classList.toggle("fightq", ctx === "fight");
+  el.querySelector(".qtag").textContent = ctx === "fight" ? "물고기가 버텨요! 맞히면 계속 감고, 틀리면 놓쳐요" : "문제를 맞히면 던질 수 있어요";
   el.querySelector(".qq").textContent = q.q;
   el.querySelector(".qo").innerHTML = q.o.map((o, i) => `<button class="go alt" data-qi="${i}"><i>${i + 1}</i> ${esc(o)}</button>`).join("");
   const done = (i) => {
-    removeEventListener("keydown", key, true);
+    closeQuiz(true);
     const ok = i === q.a, btns = el.querySelectorAll("[data-qi]");
     btns.forEach((b, k) => { b.disabled = true; b.classList.toggle("right", k === q.a); b.classList.toggle("wrong", k === i && !ok); });
     hooks.sample?.(ok ? "perfect" : "miss");
-    el.querySelector(".qmsg").textContent = ok ? "정답! 이제 던질 수 있어요" : `아쉬워요! 정답은 ${q.a + 1}번`;
-    setTimeout(() => { el.hidden = true; el.querySelector(".qmsg").textContent = ""; if (ok) onPass(); else quizCool = Date.now() + 2500; }, ok ? 700 : 1600);
+    el.querySelector(".qmsg").textContent = ok ? (ctx === "fight" ? "정답! 계속 감아요" : "정답! 이제 던질 수 있어요") : `아쉬워요! 정답은 ${q.a + 1}번${ctx === "fight" ? "이에요. 물고기가 도망가요" : ""}`;
+    if (!TEST && NET.role === "student" && ST) sdk().then((a) => a.call("fishQuiz", { st: ST, qi, pick: i, ctx })).catch(() => {});
+    quizT = setTimeout(() => { quizT = 0; el.hidden = true; el.querySelector(".qmsg").textContent = ""; if (ok) onPass(); else if (onFail) onFail(); else quizCool = Date.now() + 2500; }, ok ? 700 : 1600);
   };
-  const key = (e) => { const n = +e.key; if (n >= 1 && n <= q.o.length) { e.preventDefault(); e.stopPropagation(); done(n - 1); } };
-  addEventListener("keydown", key, true);
+  quizKey = (e) => { const n = +e.key; if (n >= 1 && n <= q.o.length) { e.preventDefault(); e.stopPropagation(); done(n - 1); } };
+  addEventListener("keydown", quizKey, true);
   el.querySelectorAll("[data-qi]").forEach((b) => b.addEventListener("click", () => done(+b.dataset.qi)));
+}
+// 판이 끝나는 등 게임이 문제 창을 닫을 때(keepBox: 정답 표시는 남긴다)
+export function closeQuiz(keepBox) {
+  if (quizKey) { removeEventListener("keydown", quizKey, true); quizKey = null; }
+  if (keepBox) return;
+  clearTimeout(quizT); quizT = 0;
+  const el = $("quizBox"); if (el) { el.hidden = true; el.querySelector(".qmsg").textContent = ""; }
 }
 function setST(v, cls = "") { ST = v; try { if (v) { localStorage.setItem("jamfish-st", v); localStorage.setItem("jamfish-class", cls); } else { localStorage.removeItem("jamfish-st"); localStorage.removeItem("jamfish-class"); } } catch {} }
 // 학생 입장 1단계: 학급 코드 확인(학급 이름을 돌려받는다)
@@ -197,7 +221,7 @@ export function renderAcct() {
         <p class="rolehelp">학생은 선생님이 알려 준 <b>학급 코드</b>로 들어와요. 선생님은 학급을 만들고 낚시터를 열어 수업해요.</p>`;
     } else {
       const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
-      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
+      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<a class="acctout" href="admin.html" target="_blank" rel="noopener">관리자 화면 ↗</a>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         ${NET.student ? roomLine() : ""}
         ${!NET.student && (NET.role === "teacher" || NET.role === "admin") ? teacherSteps() : ""}
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
@@ -340,14 +364,16 @@ export function renderTown() {
     if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 가입을 마치면 낚시 학급을 만들 수 있어요.</p>`; openTeacherJoin(); return; }
     body.innerHTML = `<p class="clsintro">학생은 <b>학급 코드 + 이름 + 입장번호 4자리</b>로 들어와요(구글 계정 필요 없음). 선생님이 낚시터를 열었을 때만 낚시할 수 있어요.</p>
       <form class="joinf ${CLASSES.length ? "" : "sparkbox"}" data-newclass><input name="name" maxlength="12" placeholder="${CLASSES.length ? "학급 하나 더 만들기 (예: 5학년 4반)" : "반 이름 (예: 5학년 3반)"}"><button class="go ${CLASSES.length ? "" : "sparkle"}">학급 만들기</button></form>
-      ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>${roomBox(c)}
+      ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox ${clsOpen(c.cid) ? "open" : ""}"><button type="button" class="clshead" data-clstoggle="${c.cid}" aria-expanded="${clsOpen(c.cid)}"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small><i class="clsstate ${c.room?.open && c.room.closesAt > Date.now() ? "on" : ""}">${c.room?.open && c.room.closesAt > Date.now() ? "낚시터 열림" : "닫힘"}</i><span class="clsarrow" aria-hidden="true">▾</span></button><div class="clsbody">${roomBox(c)}
+        <div class="clsdash"><a class="go alt" href="admin.html?cid=${c.cid}" target="_blank" rel="noopener">학급 기록 보기 ↗</a><span>학생이 잡은 물고기와 푼 문제를 모아 봐요</span></div>
         ${c.students.length ? `<div class="clstable"><div class="th"><span>이름</span><span>손맛</span><span>돈</span><span>낭만</span><span>잡은 수</span><span></span></div>
           ${[...c.students].sort((a, b) => b.taste - a.taste).map((s) => `<div><span>${esc(s.name)}</span><span>${s.taste.toLocaleString("ko-KR")}</span><span class="money">${won(s.money)}</span><span class="romance">${s.romance}</span><span>${s.caught}</span><span><button class="acctout" data-reset="${c.cid}:${s.sid}">${s.hasPin ? "입장번호 초기화" : "초기화됨"}</button></span></div>`).join("")}</div>`
-          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 학급 코드 <b>${c.code}</b>를 적어 주면 학생이 들어올 수 있어요.</p>`}</div>`).join("") : `<p class="empty">아직 학급이 없어요. 반 이름을 쓰고 <b>학급 만들기</b>를 누르면 학생이 들어올 학급 코드가 생겨요.</p>`}`;
+          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 학급 코드 <b>${c.code}</b>를 적어 주면 학생이 들어올 수 있어요.</p>`}</div></div>`).join("") : `<p class="empty">아직 학급이 없어요. 반 이름을 쓰고 <b>학급 만들기</b>를 누르면 학생이 들어올 학급 코드가 생겨요.</p>`}`;
     if (!CLASSES.length) setTimeout(() => body.querySelector("[data-newclass] input")?.focus(), 60);
     body.querySelectorAll("[data-room]").forEach((box) => bindRoom(box));
+    body.querySelectorAll("[data-clstoggle]").forEach((b) => b.addEventListener("click", () => { const open = b.parentElement.classList.toggle("open"); b.setAttribute("aria-expanded", open); setClsOpen(b.dataset.clstoggle, open); }));
     body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "만드는 중…";
-      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0 } }]; pop(r.code, "money", `${r.name} 학급 코드`); }).finally(() => { renderTown(); renderAcct(); }); });
+      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0 } }]; setClsOpen(r.cid, true); pop(r.code, "money", `${r.name} 학급 코드`); }).finally(() => { renderTown(); renderAcct(); }); });
     body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); b.disabled = true; b.textContent = "초기화 중…";
       act(async () => { await call("fishClassResetPin", { cid, sid }); const st = CLASSES?.find((c) => c.cid === cid)?.students.find((x) => x.sid === sid); if (st) st.hasPin = false; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); }).finally(renderTown); }));
   } else {
@@ -474,6 +500,14 @@ document.addEventListener("click", (e) => {
 const DRAFT = {};
 const SEG = (name, vals, cur, disabled = false) => `<div class="seg" role="radiogroup">${vals.map(([v, t, sub]) => `<label class="segopt"><input type="radio" name="${name}" value="${v}" ${String(v) === String(cur) ? "checked" : ""} ${disabled ? "disabled" : ""}><span>${t}${sub ? `<small>${sub}</small>` : ""}</span></label>`).join("")}</div>`;
 const SETROW = (title, hint, control) => `<div class="setrow"><div class="setlbl"><b>${title}</b>${hint ? `<small>${hint}</small>` : ""}</div>${control}</div>`;
+// 학급 카드 접기·펴기(이 기기에 기억). 처음에는 학급이 하나면 펴 두고, 여러 개면 첫 학급만 편다
+let CLS_OPEN = null;
+function clsOpen(cid) {
+  if (!CLS_OPEN) { try { CLS_OPEN = JSON.parse(localStorage.getItem("jamfish-clsopen") || "null"); } catch {} }
+  if (!CLS_OPEN) CLS_OPEN = CLASSES?.[0] ? { [CLASSES[0].cid]: true } : {};
+  return !!CLS_OPEN[cid];
+}
+function setClsOpen(cid, open) { clsOpen(cid); if (open) CLS_OPEN[cid] = true; else delete CLS_OPEN[cid]; try { localStorage.setItem("jamfish-clsopen", JSON.stringify(CLS_OPEN)); } catch {} }
 function roomBox(c) {
   const r = { ...c.room, ...DRAFT[c.cid] }, open = c.room.open && c.room.closesAt > Date.now();
   const left = open ? Math.ceil((c.room.closesAt - Date.now()) / 60000) : 0;
@@ -486,7 +520,7 @@ function roomBox(c) {
       ${SETROW("한 판 시간", "대회 한 번 타이머", SEG("roundSec", [[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec || 180))}
       ${open ? SETROW("열어 둔 시간", "지나면 자동으로 닫혀요", `<span class="setnow">${left}분 남음</span>`)
         : SETROW("열어 둘 시간", "지나면 자동으로 닫혀요", SEG("minutes", [[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], r.minutes || 40))}
-      ${SETROW("문제 풀기", "던지기 전에 문제를 맞혀야 해요", `<div class="quizctl">${SEG("quizOn", [["0", "끄기"], ["1", "켜기"]], r.quizOn ? "1" : "0")}<span class="qn">문제 ${r.quizN || 0}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button type="button" class="acctout" data-tpl>양식 받기</button></div>`)}
+      ${SETROW("문제 풀기", "던질 때마다, 그리고 낚는 도중에 한 번 문제를 맞혀야 해요", `<div class="quizctl">${SEG("quizOn", [["0", "끄기"], ["1", "켜기"]], r.quizOn ? "1" : "0")}<span class="qn">문제 ${r.quizN || 0}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button type="button" class="acctout" data-tpl>양식 받기</button></div>`)}
     </div>
     <div class="roomacts">${open ? `<button type="button" class="go" data-host>대기실 화면 ▶</button><button type="button" class="go alt" data-roomclose>낚시터 닫기</button>` : `<button type="button" class="go" data-roomopen>낚시터 열기 ▶</button>`}<button type="button" class="go alt" data-test title="학생 화면 그대로 한 판 해 봐요. 기록은 남지 않아요">테스트 게임 ▶</button></div>
     <small class="roomhow">낚시터를 열면 대기실 화면이 떠요. 칠판에 띄워 두면 학생이 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와요. 다 모이면 <b>다 같이 시작하기</b>를 눌러요. <b>테스트 게임</b>은 이 설정 그대로 선생님이 먼저 해 보는 한 판이에요(기록은 남지 않아요).</small>
