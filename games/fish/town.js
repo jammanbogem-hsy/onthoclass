@@ -50,7 +50,6 @@ let ADM = null, ADMC = {}, admOpen = "";
 const changed = () => { renderAcct(); hooks.onProfile?.(NET.me); hooks.onGate?.(); if (!$("town").hidden) renderTown(); };
 
 // hooks: { SPECIES, fishThumb, toast, sample, onProfile }
-let wantTeacher = false;
 export async function initNet(h) {
   hooks = h;
   renderAcct();
@@ -65,7 +64,8 @@ export async function initNet(h) {
       }
       if (!ST && u) { try { Object.assign(NET, await call("fishMe")); } catch {} } else if (!ST) Object.assign(NET, { me: null, bag: [] });
       NET.ready = true; changed();
-      if (wantTeacher && u && NET.me && !ST) { wantTeacher = false; openTown("class"); } // 선생님 가입 버튼으로 로그인했으면 바로 가입 화면
+      // 구글 로그인은 선생님만: 교사·관리자가 아니면 가입 코드 모달. 코드 없이 닫으면 로그아웃(가입 안 된 계정은 로그인 상태로 두지 않는다)
+      if (!ST && u && NET.me && NET.role === "user") openTeacherJoin(); else closeTeacherJoin();
     });
   } catch { NET.ready = true; NET.failed = true; renderAcct(); hooks.onGate?.(); }
 }
@@ -91,7 +91,7 @@ export function gate() {
     if (ph === "play" || (ph === "done" && serverNow() < r.endAt + 25e3)) return { ok: true, room: r }; // 끝난 직후 싸우던 물고기는 마저
     return { ok: false, why: ph === "closed" ? "선생님이 낚시터를 열면 대기실에 들어가요" : "선생님이 시작하면 다 같이 낚시해요" };
   }
-  if (NET.user) return { ok: false, why: "학생은 학급 코드로 입장해요 (선생님은 구글로 로그인한 뒤 낚시 학급 탭에서 선생님 가입)" };
+  if (NET.user) return { ok: false, why: "학생은 학급 코드로 입장해요 (선생님은 '선생님 가입하기'로 들어와요)" };
   return { ok: false, why: "학급 코드로 입장하면 낚시할 수 있어요" };
 }
 // 학생: 방 상태를 자주 묻는다(대기실·카운트다운은 2.5초, 한 판 중은 5초). 10초마다 "나 여기 있어요"
@@ -197,7 +197,7 @@ export function renderAcct() {
         <p>선생님은 낚시 학급을 만들고, 학생 화면 그대로 테스트 게임을 해 볼 수 있어요. 이미 가입했다면 같은 버튼으로 로그인해요.</p>`;
     } else {
       const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
-      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">${NET.role === "teacher" || NET.role === "admin" ? "낚시 학급 관리" : "선생님 가입하기"}</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
+      box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         ${NET.student ? roomLine() : ""}
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
         <div class="townbtns"><button class="go alt" data-town="market">수산시장${NET.bag.length ? ` <i>${NET.bag.length}</i>` : ""}</button><button class="go alt" data-town="shop">낚시 가게</button><button class="go alt" data-town="cook">캠핑 요리</button></div>`;
@@ -205,7 +205,7 @@ export function renderAcct() {
     box.insertAdjacentHTML("beforeend", `<button class="acctout fbopen" data-feedback>의견·오류 알리기</button>`);
     box.querySelector("[data-feedback]").addEventListener("click", openFeedback);
     box.querySelector("[data-login]")?.addEventListener("click", login);
-    box.querySelector("[data-teacherjoin]")?.addEventListener("click", async () => { wantTeacher = true; await login(); if (NET.me && !NET.student) { wantTeacher = false; openTown("class"); } });
+    box.querySelector("[data-teacherjoin]")?.addEventListener("click", login);
     box.querySelector("[data-logout]")?.addEventListener("click", logout);
     box.querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => openTown(b.dataset.town)));
     if (!NET.student && (NET.role === "teacher" || NET.role === "admin") && !CLASSES) loadClasses(); // 선생님은 학급 목록을 미리 받아 둔다(함수도 깨워 둠)
@@ -316,14 +316,7 @@ export function renderTown() {
     body.querySelector("[data-admclear]")?.addEventListener("click", () => act(async () => { const r = await call("fishAdmin", { action: "clearErrors" }); hooks.toast?.(`오류 로그 ${r.removed}개를 비웠어요`); ADM = null; renderTown(); }));
   } else if (tab === "class") {
     if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; loadClasses(); return; }
-    if (NET.role !== "teacher" && NET.role !== "admin") {
-      body.innerHTML = `<h3>선생님 가입 <small>선생님 가입 코드를 넣으면 이 구글 계정으로 낚시 학급을 만들고 관리할 수 있어요</small></h3>
-        <form class="joinf" data-teacherjoin><input name="code" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="선생님 가입 코드" required><button class="go">선생님으로 가입</button></form>
-        <p class="empty">러닝크루 교사 계정이면 가입하지 않아도 바로 쓸 수 있어요.</p>`;
-      body.querySelector("[data-teacherjoin]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "확인 중…";
-        act(async () => { await call("fishTeacherJoin", { code: e.target.code.value }); CLASSES = null; await refresh(); hooks.toast?.("선생님 가입 완료! 이제 학급을 만들 수 있어요"); }).finally(renderTown); });
-      return;
-    }
+    if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 가입을 마치면 낚시 학급을 만들 수 있어요.</p>`; openTeacherJoin(); return; }
     body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음). 학생은 선생님이 낚시터를 열었을 때만 낚시할 수 있어요</small></h3>
       <form class="joinf" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go">학급 만들기</button></form>
       ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>${roomBox(c)}
@@ -418,6 +411,30 @@ function pop(big, cls, small) {
 document.addEventListener("click", (e) => { if (e.target.id === "townClose") $("town").hidden = true; });
 
 // 의견 보내기 창
+// ---------------------------------------------------------------- 선생님 가입 모달(구글 로그인 직후)
+let tjoinBusy = false;
+function openTeacherJoin() {
+  const el = $("tjoinBox"); if (!el || !el.hidden) return;
+  $("tjoinWho").textContent = `${NET.user?.email || "이 구글 계정"} 으로 로그인했어요. 선생님 가입 코드를 넣어 주세요.`;
+  $("tjoinErr").textContent = ""; $("tjoinCode").value = ""; el.hidden = false; $("town").hidden = true;
+  setTimeout(() => $("tjoinCode").focus(), 50);
+}
+function closeTeacherJoin() { const el = $("tjoinBox"); if (el) el.hidden = true; }
+document.addEventListener("submit", async (e) => {
+  if (e.target.id !== "tjoinForm") return;
+  e.preventDefault();
+  const code = $("tjoinCode").value.trim(), ok = $("tjoinOk");
+  if (!code) { $("tjoinErr").textContent = "가입 코드를 넣어 주세요"; return; }
+  if (tjoinBusy) return; tjoinBusy = true; ok.disabled = true; ok.textContent = "확인 중…"; $("tjoinErr").textContent = "";
+  try {
+    await (await sdk()).call("fishTeacherJoin", { code });
+    Object.assign(NET, await call("fishMe")); closeTeacherJoin(); CLASSES = null; changed();
+    hooks.toast?.("선생님 가입 완료! 낚시 학급을 만들 수 있어요"); openTown("class");
+  } catch (err) { $("tjoinErr").textContent = err?.message?.replace(/^.*?: /, "") || "가입하지 못했어요. 다시 해 주세요"; }
+  finally { tjoinBusy = false; ok.disabled = false; ok.textContent = "가입하기"; }
+});
+document.addEventListener("click", (e) => { if (e.target.id === "tjoinCancel") { closeTeacherJoin(); logout(); } });
+
 function openFeedback() {
   const el = $("fbBox"); el.hidden = false; const ta = el.querySelector("textarea"); ta.value = ""; setTimeout(() => ta.focus(), 50);
 }

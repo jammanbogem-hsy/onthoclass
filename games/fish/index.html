@@ -194,6 +194,7 @@
   @media (min-width: 1240px) {
     .panel.startp { width: min(1500px, calc(100% - 24px)); grid-template-columns: minmax(0, 1fr) minmax(0, .78fr) minmax(0, 1.15fr); grid-template-areas: "l c r"; }
     .charslot { height: 380px; }
+    .panel.startp .charcol { align-self: center; } /* 가운데 낚시꾼 카드를 세로 가운데로 */
   }
   /* 내 낚시꾼 카드 */
   .charcard { background: linear-gradient(180deg, #2c3a78, #1b2045 75%); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .08); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -451,6 +452,15 @@
   .studentcta small { font-size: 14px; opacity: .75; }
   .teachercta { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; margin-top: 14px; font-size: 22px; background: var(--sun); color: var(--ink); }
   .teachercta small { font-size: 13px; opacity: .75; }
+  .tjoin { width: min(460px, 100%); gap: 12px; }
+  .tjoin p { margin: 0; line-height: 1.5; }
+  .tjoinlbl { display: flex; flex-direction: column; gap: 6px; font-size: 15px; color: var(--sun); }
+  .tjoinlbl input { padding: 12px; border: 0; background: var(--ink); color: var(--cream); font: inherit; font-family: var(--px); font-size: 20px; box-shadow: inset 0 0 0 2px rgba(255, 248, 232, .25); }
+  .tjoinlbl input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--sun); }
+  .tjoin .tjoinerr { min-height: 1.2em; color: var(--hot); font-size: 14px; }
+  .tjoinbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tjoinbtns .go { font-size: 18px; }
+  .tjoinnote { opacity: .7; font-size: 13px; line-height: 1.5; }
   .joinp { align-items: stretch; text-align: center; width: min(460px, calc(100% - 8px)); }
   .joinp h1 { text-align: center; }
   .bigjoin { display: flex; flex-direction: column; gap: 10px; }
@@ -801,6 +811,14 @@
   <textarea maxlength="2000" rows="5" placeholder="예) 장애물 피하기가 너무 빨라요 / 휴대폰에서 버튼이 안 눌려요"></textarea>
   <div class="tutnav"><button class="go" id="fbSend">보내기</button></div></div></div>
 
+<div class="fbbox" id="tjoinBox" hidden><form class="tutcard px tjoin" id="tjoinForm" autocomplete="off"><div class="tuthead"><b>선생님 가입</b></div>
+  <p id="tjoinWho"></p>
+  <label class="tjoinlbl">선생님 가입 코드<input id="tjoinCode" maxlength="32" autocapitalize="off" spellcheck="false" placeholder="코드 입력"></label>
+  <p class="tjoinerr" id="tjoinErr" role="alert"></p>
+  <div class="tjoinbtns"><button type="button" class="go alt" id="tjoinCancel">취소하고 로그아웃</button><button class="go" id="tjoinOk">가입하기</button></div>
+  <small class="tjoinnote">코드를 넣어야 선생님으로 로그인돼요. 러닝크루 교사 계정은 코드 없이 바로 들어가요.</small>
+</form></div>
+
 <div class="screen" id="book" hidden>
   <div class="panel wide">
     <div class="bookhead"><h2>물고기 도감</h2><b id="bookCount">0 / 0종</b><button class="go alt close" id="bookClose" aria-label="닫기">닫기</button></div>
@@ -810,6 +828,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=49"></script>
+<script type="module" src="game.js?v=50"></script>
 </body>
 </html>
