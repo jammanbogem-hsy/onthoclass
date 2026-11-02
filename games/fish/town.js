@@ -252,9 +252,10 @@ const kgText = (kg) => (kg >= 100 ? `${Math.round(kg)}kg` : kg >= 1 ? `${kg.toFi
 
 export function renderTown() {
   const m = NET.me; if (!m) { $("townBody").innerHTML = `<p class="empty">로그인이 필요해요.</p>`; return; }
-  const tabs = { ...TABS, ...(NET.user && !NET.student ? { class: "낚시 학급" } : {}), ...(isAdminView() ? { admin: "관리자" } : {}) };
-  $("townTabs").innerHTML = Object.entries(tabs).map(([k, v]) => `<button class="go ${k === tab ? "" : "alt"} ${k === "class" && needClass() ? "sparkle" : ""}" data-tab="${k}">${v}</button>`).join("");
-  $("townTabs").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; pick = new Set(); cooking = null; renderTown(); }));
+  // 누른 버튼에 맞는 화면 하나만 보여 준다(다른 메뉴 탭 없음)
+  $("townTitle").textContent = { ...TABS, class: "낚시 학급", admin: "관리자" }[tab] || "낚시 마을";
+  $("townTabs").hidden = true;
+  $("townScores").hidden = tab === "class" || tab === "admin";
   $("townScores").innerHTML = `<span>손맛 <b>${m.taste.toLocaleString("ko-KR")}</b></span><span>돈 <b class="money">${won(m.money)}</b></span><span>낭만 <b class="romance">${m.romance.toLocaleString("ko-KR")}</b></span>`;
   const body = $("townBody"), S = hooks.SPECIES;
   if (tab === "market") {
@@ -320,7 +321,7 @@ export function renderTown() {
   } else if (tab === "class") {
     if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; loadClasses(); return; }
     if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 가입을 마치면 낚시 학급을 만들 수 있어요.</p>`; openTeacherJoin(); return; }
-    body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음). 학생은 선생님이 낚시터를 열었을 때만 낚시할 수 있어요</small></h3>
+    body.innerHTML = `<p class="clsintro">학생은 <b>학급 코드 + 이름 + 입장번호 4자리</b>로 들어와요(구글 계정 필요 없음). 선생님이 낚시터를 열었을 때만 낚시할 수 있어요.</p>
       <form class="joinf ${CLASSES.length ? "" : "sparkbox"}" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go ${CLASSES.length ? "" : "sparkle"}">학급 만들기</button></form>
       ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>${roomBox(c)}
         ${c.students.length ? `<div class="clstable"><div class="th"><span>이름</span><span>손맛</span><span>돈</span><span>낭만</span><span>잡은 수</span><span></span></div>
@@ -454,30 +455,50 @@ document.addEventListener("click", (e) => {
 // ---------------------------------------------------------------- 교사: 낚시터 방 열기·설정
 // 고르기만 하고 아직 저장 안 한 설정: 학급 목록이 새로 와서 화면을 다시 그려도 고른 값이 그대로 남게(바다로 골랐는데 '학생이 고르기'로 열리던 문제)
 const DRAFT = {};
+const SEG = (name, vals, cur, disabled = false) => `<div class="seg" role="radiogroup">${vals.map(([v, t, sub]) => `<label class="segopt"><input type="radio" name="${name}" value="${v}" ${String(v) === String(cur) ? "checked" : ""} ${disabled ? "disabled" : ""}><span>${t}${sub ? `<small>${sub}</small>` : ""}</span></label>`).join("")}</div>`;
+const SETROW = (title, hint, control) => `<div class="setrow"><div class="setlbl"><b>${title}</b>${hint ? `<small>${hint}</small>` : ""}</div>${control}</div>`;
 function roomBox(c) {
   const r = { ...c.room, ...DRAFT[c.cid] }, open = c.room.open && c.room.closesAt > Date.now();
-  const opt = (vals, cur) => vals.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${t}</option>`).join("");
-  return `<div class="roombox ${open ? "open" : ""}" data-room="${c.cid}">
-    <b>${open ? `낚시터 열림 · ${Math.ceil((r.closesAt - Date.now()) / 60000)}분 남음 · ${{ lobby: "대기실", countdown: "곧 시작", play: "대회 중", done: "한 판 끝", free: "자유 낚시" }[r.phase] || "대기실"}` : "낚시터 닫힘"}</b>
-    <div class="roomset">
-      <label title="이 시간이 지나면 낚시터가 저절로 닫혀요">열어 둘 시간 <small>(지나면 자동으로 닫힘)</small><select name="minutes">${opt([[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], r.minutes || 40)}</select></label>
-      <label title="학생이 한 번 대회할 때 타이머 길이">한 판 시간 <small>(대회 한 번 타이머)</small><select name="roundSec">${opt([[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec)}</select></label>
-      <label title="선생님이 정한 낚시터로 다 같이 해요. 자유시간에는 학생이 골라요">낚시터<select name="place">${opt([["fresh", "민물"], ["sea", "바다"]], r.place === "sea" ? "sea" : "fresh")}</select></label>
-      <label class="chk freetog" title="켜면 학생이 낚시터를 골라 언제든 여러 판, 끄면 하던 낚시를 마치고 대기실로"><input type="checkbox" name="free" ${r.mode === "free" ? "checked" : ""}> 자유시간 <small>(학생이 골라 마음껏)</small></label>
+  const left = open ? Math.ceil((c.room.closesAt - Date.now()) / 60000) : 0;
+  const phase = { lobby: "대기실", countdown: "곧 시작", play: "대회 중", done: "한 판 끝", free: "자유 낚시" }[c.room.phase] || "대기실";
+  return `<form class="roombox ${open ? "open" : ""}" data-room="${c.cid}" onsubmit="return false">
+    <div class="roomhead"><b>${open ? `낚시터 열림 · ${phase} · ${left}분 남음` : "낚시터 닫힘"}</b><span class="savest" data-savest>고르면 바로 저장돼요</span></div>
+    <div class="setrows">
+      ${SETROW("진행 방식", "", SEG("mode", [["contest", "다 같이 대회", "대기실에서 동시에 시작"], ["free", "자유시간", "학생이 골라 마음껏"]], r.mode === "free" ? "free" : "contest"))}
+      ${SETROW("낚시터", r.mode === "free" ? "자유시간에는 학생이 골라요" : "", SEG("place", [["fresh", "민물"], ["sea", "바다"]], r.place === "sea" ? "sea" : "fresh"))}
+      ${SETROW("한 판 시간", "대회 한 번 타이머", SEG("roundSec", [[120, "2분"], [180, "3분"], [300, "5분"], [600, "10분"]], r.roundSec || 180))}
+      ${open ? SETROW("열어 둔 시간", "지나면 자동으로 닫혀요", `<span class="setnow">${left}분 남음</span>`)
+        : SETROW("열어 둘 시간", "지나면 자동으로 닫혀요", SEG("minutes", [[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], r.minutes || 40))}
+      ${SETROW("문제 풀기", "던지기 전에 문제를 맞혀야 해요", `<div class="quizctl">${SEG("quizOn", [["0", "끄기"], ["1", "켜기"]], r.quizOn ? "1" : "0")}<span class="qn">문제 ${r.quizN || 0}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button type="button" class="acctout" data-tpl>양식 받기</button></div>`)}
     </div>
-    <div class="roomquiz"><label class="chk"><input type="checkbox" name="quizOn" ${r.quizOn ? "checked" : ""}> 던지기 전에 문제 풀기</label>
-      <span>문제 ${r.quizN}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button class="acctout" data-tpl>양식 받기</button></div>
-    <div class="townact">${open ? `<button class="go" data-host>대기실 화면 ▶</button><button class="go alt" data-roomsave>설정 바꾸기</button><button class="go alt" data-roomclose>낚시터 닫기</button>` : `<button class="go" data-roomopen>낚시터 열고 대기실 만들기</button><button class="go alt" data-roomsave>설정만 저장</button>`}<button class="go alt" data-test title="학생 화면 그대로 한 판 해 봐요. 기록은 남지 않아요">테스트 게임 ▶</button></div>
-    <small class="roomhow">학생은 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와 대기실에서 기다려요. 다 들어오면 대기실 화면에서 <b>시작</b>을 눌러요. <b>자유시간</b>을 켜면 학생이 낚시터를 골라 마음껏, 끄면 모두 대기실로 돌아와요</small>
-  </div>`;
+    <div class="roomacts">${open ? `<button type="button" class="go" data-host>대기실 화면 ▶</button><button type="button" class="go alt" data-roomclose>낚시터 닫기</button>` : `<button type="button" class="go" data-roomopen>낚시터 열고 대기실 만들기</button>`}<button type="button" class="go alt" data-test title="학생 화면 그대로 한 판 해 봐요. 기록은 남지 않아요">테스트 게임 ▶</button></div>
+    <small class="roomhow">학생은 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와 대기실에서 기다려요. 다 들어오면 대기실 화면에서 <b>시작</b>을 눌러요. <b>테스트 게임</b>은 이 설정 그대로 선생님이 한 판 해 보는 거예요(기록 안 남음).</small>
+  </form>`;
 }
-const settings = (box) => ({ mode: box.querySelector("[name=free]").checked ? "free" : "contest", minutes: +box.querySelector("[name=minutes]").value, roundSec: +box.querySelector("[name=roundSec]").value, place: box.querySelector("[name=place]").value, quizOn: box.querySelector("[name=quizOn]").checked });
+const pickVal = (box, n) => box.querySelector(`input[name=${n}]:checked`)?.value;
+const settings = (box) => ({ mode: pickVal(box, "mode") === "free" ? "free" : "contest", roundSec: +(pickVal(box, "roundSec") || 180), place: pickVal(box, "place") === "sea" ? "sea" : "fresh", quizOn: pickVal(box, "quizOn") === "1", ...(pickVal(box, "minutes") ? { minutes: +pickVal(box, "minutes") } : {}) });
 function bindRoom(box) {
   const cid = box.dataset.room, save = (extra) => {
-    box.querySelectorAll("button").forEach((b) => { b.disabled = true; }); box.querySelector(".townact")?.insertAdjacentHTML("beforeend", `<small class="saving">저장 중…</small>`);
+    box.querySelectorAll("button").forEach((b) => { b.disabled = true; }); box.querySelector("[data-savest]").textContent = "저장 중…";
     return act(async () => { const r = await call("fishRoomSet", { cid, ...settings(box), ...extra }); delete DRAFT[cid]; const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; }).finally(renderTown);
   };
-  box.querySelectorAll(".roomset select, .roomset input, [name=quizOn]").forEach((x) => x.addEventListener("change", () => { DRAFT[cid] = settings(box); }));
+  // 고르면 바로 저장(설정 저장 버튼 없음). 화면을 다시 그리지 않아 고른 모양이 그대로 남는다
+  const st = box.querySelector("[data-savest]"), say = (t, bad = false) => { st.textContent = t; st.classList.toggle("bad", bad); };
+  let timer = 0, seq = 0;
+  box.querySelectorAll(".setrows input[type=radio]").forEach((x) => x.addEventListener("change", () => {
+    DRAFT[cid] = settings(box); say("저장 중…"); clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      try {
+        const r = await (await sdk()).call("fishRoomSet", { cid, ...settings(box) });
+        if (my !== seq) return;
+        const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; delete DRAFT[cid];
+        say("저장됨 ✓");
+        const lbl = box.querySelector(".setrow:nth-child(2) .setlbl"); // 낚시터 안내(자유시간이면 학생이 고름)
+        if (lbl) lbl.innerHTML = `<b>낚시터</b>${settings(box).mode === "free" ? "<small>자유시간에는 학생이 골라요</small>" : ""}`;
+      } catch (e) { if (my === seq) say(`저장하지 못했어요 — ${e?.message?.replace(/^.*?: /, "") || "다시 골라 주세요"}`, true); }
+    }, 300);
+  }));
   box.querySelector("[data-roomopen]")?.addEventListener("click", () => save({ open: true }).then(() => { const c = CLASSES?.find((x) => x.cid === cid); if (c?.room?.open) openHost(cid); }));
   box.querySelector("[data-host]")?.addEventListener("click", () => openHost(cid));
   box.querySelector("[data-test]")?.addEventListener("click", () => {
@@ -487,7 +508,6 @@ function bindRoom(box) {
     $("town").hidden = true; hooks.testPlay?.(TEST);
   });
   box.querySelector("[data-roomclose]")?.addEventListener("click", () => save({ open: false }));
-  box.querySelector("[data-roomsave]")?.addEventListener("click", () => save({}).then(() => hooks.toast?.("저장했어요")));
   box.querySelector("[data-tpl]").addEventListener("click", () => {
     const csv = "\ufeff문제,보기1,보기2,보기3,보기4,정답\n붕어는 어디에 살까요?,바다,민물,하늘,사막,2\n3 + 4 = ?,6,7,8,9,7\napple의 뜻은?,사과,배,포도,,1\n";
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "낚시터_문제_양식.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
