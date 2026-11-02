@@ -199,6 +199,7 @@ export function renderAcct() {
       const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
       box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         ${NET.student ? roomLine() : ""}
+        ${needClass() ? `<button class="go sparkle newclasscta" data-town="class">첫 낚시 학급 만들기 <small>학급을 만들면 학생이 코드로 들어와요 ▶</small></button>` : ""}
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
         <div class="townbtns"><button class="go alt" data-town="market">수산시장${NET.bag.length ? ` <i>${NET.bag.length}</i>` : ""}</button><button class="go alt" data-town="shop">낚시 가게</button><button class="go alt" data-town="cook">캠핑 요리</button></div>`;
     }
@@ -223,8 +224,10 @@ export async function openTown(t = "market") {
 const TABS = { market: "수산시장", shop: "낚시 가게", cook: "캠핑 요리", closet: "꾸미기" };
 let CLASSES = null, classLoading = null;
 // 학급 목록: 있던 것을 바로 보여 주고 뒤에서 새로 받아 맞춘다(함수가 잠들어 있으면 몇 초 걸리니까)
+// 선생님인데 아직 학급이 없으면 '학급 만들기'를 반짝이게(처음 온 선생님이 어디서 시작할지 바로 보이게)
+const needClass = () => (NET.role === "teacher" || NET.role === "admin") && !NET.student && Array.isArray(CLASSES) && CLASSES.length === 0;
 function loadClasses() {
-  return classLoading ??= call("fishClassList").then((r) => { CLASSES = r.classes; if (tab === "class" && !$("town").hidden) renderTown(); }).catch(() => {}).finally(() => { classLoading = null; });
+  return classLoading ??= call("fishClassList").then((r) => { CLASSES = r.classes; renderAcct(); if (!$("town").hidden) renderTown(); }).catch(() => {}).finally(() => { classLoading = null; });
 }
 const RECIPE_OK = {
   ramen: () => true, seafoodRamen: (f, S) => S[f.sp]?.water === "sea", gui: (f) => ["월척", "S급", "A급"].includes(f.grade),
@@ -250,7 +253,7 @@ const kgText = (kg) => (kg >= 100 ? `${Math.round(kg)}kg` : kg >= 1 ? `${kg.toFi
 export function renderTown() {
   const m = NET.me; if (!m) { $("townBody").innerHTML = `<p class="empty">로그인이 필요해요.</p>`; return; }
   const tabs = { ...TABS, ...(NET.user && !NET.student ? { class: "낚시 학급" } : {}), ...(isAdminView() ? { admin: "관리자" } : {}) };
-  $("townTabs").innerHTML = Object.entries(tabs).map(([k, v]) => `<button class="go ${k === tab ? "" : "alt"}" data-tab="${k}">${v}</button>`).join("");
+  $("townTabs").innerHTML = Object.entries(tabs).map(([k, v]) => `<button class="go ${k === tab ? "" : "alt"} ${k === "class" && needClass() ? "sparkle" : ""}" data-tab="${k}">${v}</button>`).join("");
   $("townTabs").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; pick = new Set(); cooking = null; renderTown(); }));
   $("townScores").innerHTML = `<span>손맛 <b>${m.taste.toLocaleString("ko-KR")}</b></span><span>돈 <b class="money">${won(m.money)}</b></span><span>낭만 <b class="romance">${m.romance.toLocaleString("ko-KR")}</b></span>`;
   const body = $("townBody"), S = hooks.SPECIES;
@@ -318,14 +321,15 @@ export function renderTown() {
     if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; loadClasses(); return; }
     if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 가입을 마치면 낚시 학급을 만들 수 있어요.</p>`; openTeacherJoin(); return; }
     body.innerHTML = `<h3>낚시 학급 <small>학생은 학급 코드 + 이름 + 입장번호 4자리로 들어와요(구글 계정 필요 없음). 학생은 선생님이 낚시터를 열었을 때만 낚시할 수 있어요</small></h3>
-      <form class="joinf" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go">학급 만들기</button></form>
+      <form class="joinf ${CLASSES.length ? "" : "sparkbox"}" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go ${CLASSES.length ? "" : "sparkle"}">학급 만들기</button></form>
       ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>${roomBox(c)}
         ${c.students.length ? `<div class="clstable"><div class="th"><span>이름</span><span>손맛</span><span>돈</span><span>낭만</span><span>잡은 수</span><span></span></div>
           ${[...c.students].sort((a, b) => b.taste - a.taste).map((s) => `<div><span>${esc(s.name)}</span><span>${s.taste.toLocaleString("ko-KR")}</span><span class="money">${won(s.money)}</span><span class="romance">${s.romance}</span><span>${s.caught}</span><span><button class="acctout" data-reset="${c.cid}:${s.sid}">${s.hasPin ? "입장번호 초기화" : "초기화됨"}</button></span></div>`).join("")}</div>`
-          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 코드 <b>${c.code}</b>를 적어 주세요.</p>`}</div>`).join("") : `<p class="empty">아직 만든 학급이 없어요.</p>`}`;
+          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 코드 <b>${c.code}</b>를 적어 주세요.</p>`}</div>`).join("") : `<p class="empty">아직 만든 학급이 없어요. 학급 이름을 쓰고 <b>학급 만들기</b>를 눌러 첫 학급을 열어 보세요!</p>`}`;
+    if (!CLASSES.length) setTimeout(() => body.querySelector("[data-newclass] input")?.focus(), 60);
     body.querySelectorAll("[data-room]").forEach((box) => bindRoom(box));
     body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "만드는 중…";
-      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0 } }]; pop(r.code, "money", `${r.name} 학급 코드`); }).finally(renderTown); });
+      act(async () => { const r = await call("fishClassCreate", { name: e.target.name.value }); CLASSES = [...(CLASSES || []), { cid: r.cid, name: r.name, code: r.code, students: [], room: { open: false, closesAt: 0, place: "fresh", roundSec: 180, quizOn: false, quizN: 0 } }]; pop(r.code, "money", `${r.name} 학급 코드`); }).finally(() => { renderTown(); renderAcct(); }); });
     body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => { const [cid, sid] = b.dataset.reset.split(":"); b.disabled = true; b.textContent = "초기화 중…";
       act(async () => { await call("fishClassResetPin", { cid, sid }); const st = CLASSES?.find((c) => c.cid === cid)?.students.find((x) => x.sid === sid); if (st) st.hasPin = false; hooks.toast?.("초기화했어요. 학생이 다음에 들어올 때 새 번호를 정해요"); }).finally(renderTown); }));
   } else {
