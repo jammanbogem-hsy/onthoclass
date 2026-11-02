@@ -47,6 +47,16 @@ export const KIND_META: Record<
 
 export const CHANGELOG: readonly ChangeEntry[] = [
   {
+    version: "1.36.0",
+    date: "2026-11-01",
+    kind: "minor",
+    title: "모아 월드 도우미에 참고 자료",
+    items: [
+      "맵 도우미에게 그림·PDF·글 파일을 참고 자료로 붙일 수 있어요(붙이기 버튼, 끌어다 놓기, 붙여넣기). 대화하는 동안 요청할 때마다 함께 봐요.",
+      "선생님은 '링크 읽기'로 웹 페이지 주소를 주면 페이지를 열어 화면을 찍고 본문 글을 가져와 참고 자료로 붙일 수 있어요.",
+    ],
+  },
+  {
     version: "1.35.0",
     date: "2026-10-27",
     kind: "minor",

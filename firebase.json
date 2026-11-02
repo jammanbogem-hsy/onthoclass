@@ -102,6 +102,13 @@
           "destination": "/fish/index.html"
         },
         {
+          "source": "/api/jamworld/snapshot",
+          "function": {
+            "functionId": "jamworldSnapshot",
+            "region": "asia-northeast3"
+          }
+        },
+        {
           "source": "/api/jamworld/**",
           "function": {
             "functionId": "jamworldApi",

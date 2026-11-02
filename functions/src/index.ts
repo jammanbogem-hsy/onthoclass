@@ -4548,3 +4548,4 @@ export const getClassUsage = onCall({ memory: "256MiB", maxInstances: 10 }, asyn
 });
 
 export { jamworldApi, jamworldGenerate } from "./jamworld";
+export { jamworldSnapshot } from "./jamworld/snapshot";

@@ -12,6 +12,7 @@ import { useClassroom } from "./classroom-context";
 import { LessonEvidencePicker, LessonReviewView } from "./lesson-evidence";
 import { briefForEvidence, parseLessonEvidence, type LessonEvidence, type LessonReview } from "../lib/agent/lesson-evidence";
 import AgentAssets, { type AgentAssetTask } from "./agent-assets";
+import AgentAttachments, { attachmentPayload, useAttachmentAdder, type AgentAttachment } from "./agent-attachments";
 
 export type ProviderId = "openai" | "anthropic" | "demo";
 interface ProviderStatus { configured: boolean; model: string; reason?: string }
@@ -57,6 +58,11 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
   const latestBrief = [...log].reverse().find(e => e.brief)?.brief;
   const [brief, setBrief] = useState<LessonBrief>(latestBrief || EMPTY_BRIEF);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [attachError, setAttachError] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const addFiles = useAttachmentAdder(attachments, setAttachments, setAttachError);
+  const teacher = classroom?.me?.role === "teacher";
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -88,7 +94,8 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
     }
     const history = log.slice(-12).map(e => ({ role: e.role === "agent" ? "assistant" : "user", text: [e.text, ...(e.questions || [])].join("\n").slice(0, 3000) }));
     setText(""); setAnswers({});
-    setLog(l => [...l, { role: "user", text: request, ...(design ? { brief: design } : {}) }]);
+    const files = provider === "demo" ? [] : attachmentPayload(attachments);
+    setLog(l => [...l, { role: "user", text: request, ...(design ? { brief: design } : {}), ...(files.length ? { meta: [`참고 자료 ${files.length}개`] } : {}) }]);
     if (provider === "demo") {
       const plan = planDemo(doc, request);
       const err = plan.ops.length ? onProposal({ ...plan, provider: "demo", model: "rule-based", latencyMs: 0 }) : null;
@@ -99,7 +106,7 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
     sendingRef.current = true; setBusy(true);
     try {
       let proposal = await api<AgentProposal & { questions?: string[]; assets?: AgentAssetNeed[]; lessonReview?: LessonReview }>("/api/jamworld/agent", {
-        method: "POST", json: { provider, prompt: request, doc, history, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}) }, signal: ctrl.signal,
+        method: "POST", json: { provider, prompt: request, doc, history, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), ...(files.length ? { attachments: files } : {}) }, signal: ctrl.signal,
       });
       for (let attempt = 0; attempt < 2; attempt++) {
         if (ctrl.signal.aborted) return;
@@ -111,7 +118,7 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
         if (attempt) throw Error(`코드를 실행해 보니 문제가 남아 있어 적용하지 않았어요: ${diagnostic}`);
         proposal = await api<AgentProposal & { questions?: string[]; assets?: AgentAssetNeed[] }>("/api/jamworld/agent", {
           method: "POST", signal: ctrl.signal,
-          json: { provider, doc, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), history,
+          json: { provider, doc, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), ...(files.length ? { attachments: files } : {}), history,
             prompt: `${request}\n방금 만든 코드가 격리된 실행 검사에서 실패했습니다: ${diagnostic}\n기존 맵을 기준으로 모든 요청을 유지하면서 코드를 고쳐 다시 제출하세요.`,
             failedProposal: proposal,
           },
@@ -139,7 +146,7 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
     <div className="agent-design-toolbar"><GlassButton className="btn sm" disabled={disabled || busy} onClick={() => setDesignOpen(v => !v)}>{designOpen ? "설계 질문 접기" : latestBrief ? "수업 조건 바꾸기" : "수업에 맞춰 만들기"}</GlassButton></div>
     <div className="tab-body" ref={logRef}>
       {statusError && <p role="status">{statusError}</p>}
-      {classroom?.me?.role === "teacher" && <LessonEvidencePicker evidence={evidence} disabled={disabled || busy} onChange={packet=>{
+      {teacher && <LessonEvidencePicker evidence={evidence} disabled={disabled || busy} onChange={packet=>{
         const importedBrief = packet ? briefForEvidence(packet) : undefined;
         setLog(l=>[...l.map(e=>({...e,evidence:undefined,lessonReview:undefined})),{role:"user",text:packet?`수업 기록 불러옴: ${packet.lesson.title || "이전 수업"}`:"수업 기록 연결을 해제했어요.",...(packet?{evidence:packet,brief:importedBrief}:{})}]);
         if(importedBrief){setBrief(importedBrief);setDesignOpen(true);}
@@ -173,8 +180,14 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
         {busy && <div className="msg agent" role="status">맵과 동작을 만들고 확인하고 있어요…</div>}
       </div>
     </div>
-    <div className="agent-composer">
-      <textarea className="textarea" aria-label="맵 도우미 요청" placeholder="추가할 내용이나 바꾸고 싶은 것을 말해 주세요" value={text} maxLength={1000} disabled={disabled || busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send(); }} />
+    <div className={`agent-composer${dragging ? " dragging" : ""}`}
+      onDragOver={e => { if (provider !== "demo" && !busy && e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
+      onDrop={e => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); if (provider !== "demo" && !busy) void addFiles([...e.dataTransfer.files]); }}>
+      {provider !== "demo" && <AgentAttachments items={attachments} setItems={setAttachments} teacher={teacher} disabled={disabled || busy} error={attachError} setError={setAttachError} />}
+      <textarea className="textarea" aria-label="맵 도우미 요청" placeholder={provider === "demo" ? "추가할 내용이나 바꾸고 싶은 것을 말해 주세요" : "추가할 내용이나 바꾸고 싶은 것을 말해 주세요 (그림은 붙여넣거나 끌어다 놓아도 돼요)"} value={text} maxLength={1000} disabled={disabled || busy} onChange={e => setText(e.target.value)}
+        onPaste={e => { const files = [...e.clipboardData.files]; if (files.length && provider !== "demo") { e.preventDefault(); void addFiles(files); } }}
+        onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send(); }} />
       {busy ? <GlassButton className="btn" onClick={() => { abortRef.current?.abort(); setLog(l => [...l, { role: "agent", text: "요청을 취소했어요." }]); }}>취소</GlassButton>
         : <GlassButton className="btn primary" disabled={disabled || !text.trim() || !provider} onClick={() => void send()}>도우미에게 부탁하기</GlassButton>}
       {disabled && <p className="ws-note">미리보기를 적용하거나 취소한 뒤 다음 요청을 보내세요.</p>}

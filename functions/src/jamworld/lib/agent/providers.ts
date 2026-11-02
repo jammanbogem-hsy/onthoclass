@@ -18,9 +18,33 @@ export interface ProviderEnv {
   ANTHROPIC_MODEL?: string;
 }
 
+/** 사용자 차례에 붙는 참고 자료(그림·PDF). base64 본문, 접두어 없이 */
+export type TurnFile = { type: "image"; mime: "image/png" | "image/jpeg" | "image/webp" | "image/gif"; data: string } | { type: "pdf"; name: string; data: string };
+
 export interface Turn {
   role: "user" | "assistant";
   text: string;
+  files?: TurnFile[];
+}
+
+function anthropicContent(t: Turn): string | Anthropic.ContentBlockParam[] {
+  if (t.role !== "user" || !t.files?.length) return t.text;
+  return [
+    ...t.files.map((f): Anthropic.ContentBlockParam => f.type === "image"
+      ? { type: "image", source: { type: "base64", media_type: f.mime, data: f.data } }
+      : { type: "document", title: f.name, source: { type: "base64", media_type: "application/pdf", data: f.data } }),
+    { type: "text", text: t.text },
+  ];
+}
+
+function openaiContent(t: Turn) {
+  if (t.role !== "user" || !t.files?.length) return t.text;
+  return [
+    ...t.files.map(f => f.type === "image"
+      ? { type: "input_image" as const, image_url: `data:${f.mime};base64,${f.data}`, detail: "auto" as const }
+      : { type: "input_file" as const, filename: f.name, file_data: `data:application/pdf;base64,${f.data}` }),
+    { type: "input_text" as const, text: t.text },
+  ];
 }
 
 export interface ModelResult extends AgentResult {
@@ -74,7 +98,7 @@ async function callAnthropic(env: ProviderEnv, turns: Turn[], signal: AbortSigna
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{ name: TOOL_NAME, description: TOOL_DESCRIPTION, input_schema: TOOL_SCHEMA as unknown as Anthropic.Tool.InputSchema }],
         tool_choice: { type: "auto" },
-        messages: turns.map((t) => ({ role: t.role, content: t.text })),
+        messages: turns.map((t) => ({ role: t.role, content: anthropicContent(t) })),
       },
       { signal },
     );
@@ -105,7 +129,7 @@ async function callOpenAI(env: ProviderEnv, turns: Turn[], signal: AbortSignal):
       {
         model,
         instructions: SYSTEM_PROMPT,
-        input: turns.map((t) => ({ role: t.role, content: t.text })),
+        input: turns.map((t) => ({ role: t.role, content: openaiContent(t) })) as OpenAI.Responses.ResponseInput,
         tools: [{ type: "function", name: TOOL_NAME, description: TOOL_DESCRIPTION, parameters: TOOL_SCHEMA as unknown as Record<string, unknown>, strict: false }],
         tool_choice: "required",
         max_output_tokens: 16000,
