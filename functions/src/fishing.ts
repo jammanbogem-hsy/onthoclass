@@ -171,7 +171,7 @@ async function who(req: CallableRequest): Promise<string> {
   const st = req.data?.st;
   if (typeof st === "string" && st.length >= 20 && st.length <= 80) {
     const t = await db().doc(`fishTokens/${sha(st)}`).get();
-    if (!t.exists) throw new HttpsError("unauthenticated", "입장권이 만료됐어요. 다시 입장해 주세요.");
+    if (!t.exists) throw new HttpsError("unauthenticated", "들어온 지 오래돼서 다시 들어와야 해요. 학급 코드로 들어와 주세요.");
     return t.data()!.key as string;
   }
   if (!req.auth) throw new HttpsError("unauthenticated", "로그인이 필요해요.");
@@ -218,14 +218,14 @@ export const fishCatch = onCall(options, async (req) => {
   const { sp, cm, kg, run, pts } = (req.data || {}) as { sp?: string; cm?: number; kg?: number; run?: number; pts?: number };
   const S = sp ? SPECIES[sp] : undefined;
   if (!S || typeof cm !== "number" || typeof kg !== "number" || !isFinite(cm) || !isFinite(kg)) throw new HttpsError("invalid-argument", "물고기 정보를 확인해 주세요.");
-  if (cm < S.len[0] - 1 || cm > S.len[1] + 1) throw new HttpsError("invalid-argument", "그 물고기는 그런 크기가 될 수 없어요.");
+  if (cm < S.len[0] - 1 || cm > S.len[1] + 1) throw new HttpsError("invalid-argument", "물고기 크기를 다시 확인해 주세요.");
   const lo = kgOf(sp!, cm, .85) * .97, hi = kgOf(sp!, cm, 1.15) * 1.03;
-  if (kg < lo || kg > hi) throw new HttpsError("invalid-argument", "무게가 이상해요.");
+  if (kg < lo || kg > hi) throw new HttpsError("invalid-argument", "물고기 무게를 다시 확인해 주세요.");
   const t = (cm - S.len[0]) / (S.len[1] - S.len[0]);
   const fish: Fish = { sp: sp!, cm: Math.round(cm), kg: Math.round(kg * 1000) / 1000, grade: gradeOf(t) };
   const day = kstDay();
   let room: Room | null = null;
-  if (uid.startsWith("s_")) { room = await roomOf(uid.split("_")[1]); if (!roomPlaying(room)) throw new HttpsError("failed-precondition", "지금은 대회 시간이 아니에요. 선생님이 시작하면 낚시해요."); }
+  if (uid.startsWith("s_")) { room = await roomOf(uid.split("_")[1]); if (!roomPlaying(room)) throw new HttpsError("failed-precondition", "선생님이 시작하면 낚시할 수 있어요."); }
   const lob = room ? lobbyCol(uid.split("_")[1]).doc(uid.split("_")[2]) : null;
   return db().runTransaction(async (tx) => {
     const d = await readMe(tx, uid), now = Date.now(), lb = lob ? (await tx.get(lob)).data() : undefined;
@@ -327,7 +327,7 @@ export const fishCook = onCall(options, async (req) => {
   const me = await db().runTransaction(async (tx) => {
     const d = await readMe(tx, uid), bag = meRef(uid).collection("bag");
     const snaps = await Promise.all(ids.map((i) => tx.get(bag.doc(i))));
-    if (snaps.some((s) => !s.exists || !r.ok(s.data() as Fish))) throw new HttpsError("failed-precondition", "그 물고기로는 이 요리를 못 해요.");
+    if (snaps.some((s) => !s.exists || !r.ok(s.data() as Fish))) throw new HttpsError("failed-precondition", "이 요리에 맞는 물고기를 골라 주세요.");
     const ramen = d.stock?.ramen || 0;
     if (ramen < r.ramen) throw new HttpsError("failed-precondition", "라면이 없어요. 가게에서 사 와요!");
     snaps.forEach((s) => tx.delete(s.ref));
@@ -356,10 +356,10 @@ export const fishTeacherJoin = onCall(options, async (req) => {
   const uid = teacherOf(req);
   if (!req.auth?.token?.email_verified) throw new HttpsError("permission-denied", "구글 계정으로 로그인해 주세요.");
   const secret = String(process.env.FISH_TEACHER_CODE || "").trim().toLowerCase();
-  if (!secret) throw new HttpsError("failed-precondition", "지금은 선생님 가입을 받을 수 없어요. 관리자에게 알려 주세요.");
+  if (!secret) throw new HttpsError("failed-precondition", "지금은 선생님 가입을 잠시 멈췄어요. 관리자에게 알려 주세요.");
   if (await isTeacherUid(req)) return { ok: true, already: true };
   const code = String(req.data?.code || "").normalize("NFC").trim().toLowerCase().slice(0, 64);
-  if (!code) throw new HttpsError("invalid-argument", "선생님 가입 코드를 입력해 주세요.");
+  if (!code) throw new HttpsError("invalid-argument", "선생님 가입 코드를 넣어 주세요.");
   const tries = db().doc(`fishTeacherTries/${uid}`);
   const ok = await db().runTransaction(async (tx) => {
     const t = (await tx.get(tries)).data() || {}, now = Date.now();
@@ -404,7 +404,7 @@ async function lobbyNames(cid: string) {
 
 export const fishClassCreate = onCall(options, async (req) => {
   const uid = teacherOf(req), name = cleanName(req.data?.name) || "우리 반";
-  if (!(await isTeacherUid(req))) throw new HttpsError("permission-denied", "선생님 가입을 먼저 해 주세요(낚시 학급 탭에서 가입 코드 입력).");
+  if (!(await isTeacherUid(req))) throw new HttpsError("permission-denied", "선생님 가입 코드를 넣으면 학급을 만들 수 있어요.");
   const mine = await db().collection("fishClasses").where("teacher", "==", uid).count().get();
   if (mine.data().count >= 20) throw new HttpsError("resource-exhausted", "학급은 20개까지 만들 수 있어요.");
   for (let i = 0; i < 8; i++) {
@@ -449,14 +449,14 @@ export const fishJoin = onCall(options, async (req) => {
   if (!name) throw new HttpsError("invalid-argument", "이름을 써 주세요.");
   if (!/^\d{4}$/.test(pin)) throw new HttpsError("invalid-argument", "입장번호는 숫자 4자리예요.");
   const c = await db().doc(`fishCodes/${code}`).get();
-  if (!c.exists) throw new HttpsError("not-found", "그런 학급 코드가 없어요.");
+  if (!c.exists) throw new HttpsError("not-found", "학급 코드를 다시 확인해 주세요. 칠판에 적힌 6자리예요.");
   const cid = c.data()!.cid as string, cls = await db().doc(`fishClasses/${cid}`).get(), studs = cls.ref.collection("students");
   const found = await studs.where("name", "==", name).limit(1).get();
   const now = Date.now();
   const sid = await db().runTransaction(async (tx) => {
     if (found.empty) {
       const n = await tx.get(studs.limit(80));
-      if (n.size >= 80) throw new HttpsError("resource-exhausted", "학급 인원이 꽉 찼어요.");
+      if (n.size >= 80) throw new HttpsError("resource-exhausted", "이 학급은 자리가 다 찼어요. 선생님에게 말해 주세요.");
       const ref = studs.doc(), salt = randomBytes(8).toString("hex");
       tx.create(ref, { name, salt, pinHash: sha(salt + pin), fails: 0, lockUntil: 0, createdAt: now });
       return ref.id;
@@ -472,7 +472,7 @@ export const fishJoin = onCall(options, async (req) => {
     tx.update(ref, { fails: 0 });
     return ref.id;
   });
-  if (!sid) throw new HttpsError("permission-denied", "입장번호가 달라요. 잊었으면 선생님께 초기화를 부탁해요.");
+  if (!sid) throw new HttpsError("permission-denied", "입장번호가 달라요. 번호가 생각나지 않으면 선생님에게 초기화해 달라고 말해 주세요.");
   const key = `s_${cid}_${sid}`, st = randomBytes(24).toString("base64url");
   await db().doc(`fishTokens/${sha(st)}`).set({ key, cid, sid, at: now });
   const me = meRef(key);
@@ -484,7 +484,7 @@ export const fishCodeCheck = onCall(options, async (req) => {
   const code = String(req.data?.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (code.length !== 6) throw new HttpsError("invalid-argument", "학급 코드 6자리를 확인해 주세요.");
   const c = await db().doc(`fishCodes/${code}`).get();
-  if (!c.exists) throw new HttpsError("not-found", "그런 학급 코드가 없어요. 칠판의 코드를 다시 봐요.");
+  if (!c.exists) throw new HttpsError("not-found", "학급 코드를 다시 확인해 주세요. 칠판에 적힌 6자리예요.");
   const cls = await db().doc(`fishClasses/${c.data()!.cid}`).get();
   return { code, name: cls.data()?.name || "" };
 });
@@ -589,7 +589,7 @@ export const fishRoomSet = onCall(options, async (req) => {
   if (d.open === false) { room.open = false; room.closesAt = 0; room.phase = "lobby"; }
   if (d.start === true) { // 모두 같이 시작: 4초 카운트다운 뒤 한 판
     if (!roomOpen(room)) throw new HttpsError("failed-precondition", "먼저 낚시터를 열어 주세요.");
-    if (room.mode === "free") throw new HttpsError("failed-precondition", "자유 낚시 중이에요. 대회로 바꾼 뒤 시작해요.");
+    if (room.mode === "free") throw new HttpsError("failed-precondition", "지금은 자유시간이에요. 진행 방식을 '다 같이 대회'로 바꾸면 시작할 수 있어요.");
     room.phase = "play"; room.round = (room.round || 0) + 1; room.startAt = now + 4000; room.endAt = room.startAt + room.roundSec * 1000;
     if (room.endAt > room.closesAt) room.closesAt = room.endAt + 60e3; // 한 판 중에 닫히지 않게
   }

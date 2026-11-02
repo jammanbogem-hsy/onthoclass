@@ -91,8 +91,8 @@ export function gate() {
     if (ph === "play" || (ph === "done" && serverNow() < r.endAt + 25e3)) return { ok: true, room: r }; // 끝난 직후 싸우던 물고기는 마저
     return { ok: false, why: ph === "closed" ? "선생님이 낚시터를 열면 대기실에 들어가요" : "선생님이 시작하면 다 같이 낚시해요" };
   }
-  if (NET.user) return { ok: false, why: "학생은 학급 코드로 입장해요 (선생님은 '선생님 가입하기'로 들어와요)" };
-  return { ok: false, why: "학급 코드로 입장하면 낚시할 수 있어요" };
+  if (NET.user) return { ok: false, why: "학생은 학급 코드로 들어와요" };
+  return { ok: false, why: "학급 코드로 들어오면 낚시할 수 있어요" };
 }
 // 학생: 방 상태를 자주 묻는다(대기실·카운트다운은 2.5초, 한 판 중은 5초). 10초마다 "나 여기 있어요"
 let lastHere = 0;
@@ -177,7 +177,7 @@ export const studentUrl = (code = "") => location.origin + location.pathname.rep
 const PLACE_NAME = { fresh: "민물", sea: "바다", any: "민물" };
 function roomLine() {
   const r = NET.room, ph = phaseNow();
-  if (ph === "closed") return `<div class="roomline wait">선생님이 낚시터를 열 때까지 기다려요… <small>(저절로 확인해요)</small></div>`;
+  if (ph === "closed") return `<div class="roomline wait">선생님이 낚시터를 열면 바로 들어가요 <small>(저절로 확인해요)</small></div>`;
   return `<div class="roomline open">${{ lobby: "대기실", countdown: "곧 시작!", play: "대회 중", done: "이번 판 끝", free: "자유시간" }[ph]} · ${ph === "free" ? "낚시터는 내가 골라요" : PLACE_NAME[r.place]} · 한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""}</div>`;
 }
 // ---------------------------------------------------------------- 시작·끝 화면의 계정 칸
@@ -185,21 +185,21 @@ export function renderAcct() {
   const info = document.getElementById("charInfo");
   if (info) {
     const m = NET.me, worn = m ? Object.values(m.wear || {}).filter(Boolean).map((k) => `${art(k)} ${esc(NET.shop[k]?.name || "")}`) : [];
-    info.innerHTML = m ? `<b>${esc(m.name)}</b><small>${worn.length ? worn.join(" · ") : "아직 기본 차림이에요"}</small>` : `<b>내 낚시꾼</b><small>학급으로 입장하면 옷·악세서리·색을 바꿀 수 있어요</small>`;
+    info.innerHTML = m ? `<b>${esc(m.name)}</b><small>${worn.length ? worn.join(" · ") : "아직 기본 차림이에요"}</small>` : `<b>내 낚시꾼</b><small>학급으로 들어오면 옷·액세서리·색을 바꿀 수 있어요</small>`;
     document.querySelectorAll("[data-closet]").forEach((btn) => { btn.disabled = !m; });
   }
   document.querySelectorAll("[data-acct]").forEach((box) => {
     if (!NET.ready) { box.innerHTML = `<p class="acctwait">로그인 확인 중…</p>`; return; }
     if (!NET.me) {
-      box.innerHTML = `<a class="go studentcta" href="${studentUrl()}">학생 입장하기 <small>학급 코드 입력 ▶</small></a>
-        <p>선생님이 알려 준 학급 코드 6자리와 이름, 입장번호 4자리로 들어와요. 들어오면 대기실에서 친구들을 기다렸다가 다 같이 시작해요.</p>
-        <button class="go teachercta" data-teacherjoin>선생님 가입하기 <small>구글 로그인 + 선생님 가입 코드 ▶</small></button>
-        <p>선생님은 낚시 학급을 만들고, 학생 화면 그대로 테스트 게임을 해 볼 수 있어요. 이미 가입했다면 같은 버튼으로 로그인해요.</p>`;
+      box.innerHTML = `<p class="rolehead">누구인가요?</p>
+        <a class="go studentcta" href="${studentUrl()}">학생이에요 <small>학급 코드로 들어가기 ▶</small></a>
+        <button class="go teachercta" data-teacherjoin>선생님이에요 <small>구글 계정으로 시작하기 ▶</small></button>
+        <p class="rolehelp">학생은 선생님이 알려 준 <b>학급 코드</b>로 들어와요. 선생님은 학급을 만들고 낚시터를 열어 수업해요.</p>`;
     } else {
       const m = NET.me, who = NET.student ? `${esc(NET.student.className)} · ${esc(m.name)}` : esc(m.name);
       box.innerHTML = `<div class="acctrow"><b class="acctname">${who}</b>${!NET.student ? `<button class="acctout" data-town="class">낚시 학급 관리</button>` : ""}${isAdminView() ? `<button class="acctout" data-town="admin">관리자</button>` : ""}<button class="acctout" data-logout>${NET.student ? "나가기" : "로그아웃"}</button></div>
         ${NET.student ? roomLine() : ""}
-        ${needClass() ? `<button class="go sparkle newclasscta" data-town="class">첫 낚시 학급 만들기 <small>학급을 만들면 학생이 코드로 들어와요 ▶</small></button>` : ""}
+        ${!NET.student && (NET.role === "teacher" || NET.role === "admin") ? teacherSteps() : ""}
         <div class="scores3"><div><small>손맛 점수</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></div><div><small>돈</small><b class="money">${won(m.money || 0)}</b></div><div><small>낭만 점수</small><b class="romance">${(m.romance || 0).toLocaleString("ko-KR")}</b></div></div>
         <div class="townbtns"><button class="go alt" data-town="market">수산시장${NET.bag.length ? ` <i>${NET.bag.length}</i>` : ""}</button><button class="go alt" data-town="shop">낚시 가게</button><button class="go alt" data-town="cook">캠핑 요리</button></div>`;
     }
@@ -209,6 +209,12 @@ export function renderAcct() {
     box.querySelector("[data-teacherjoin]")?.addEventListener("click", login);
     box.querySelector("[data-logout]")?.addEventListener("click", logout);
     box.querySelectorAll("[data-town]").forEach((b) => b.addEventListener("click", () => openTown(b.dataset.town)));
+    box.querySelector("[data-tshost]")?.addEventListener("click", (e) => openHost(e.currentTarget.dataset.tshost));
+    box.querySelector("[data-tsopen]")?.addEventListener("click", (e) => {
+      const cid = e.currentTarget.dataset.tsopen; if (!cid) { openTown("class"); return; }
+      const b = e.currentTarget; b.disabled = true; b.firstChild.textContent = "낚시터를 여는 중… ";
+      act(async () => { const r = await call("fishRoomSet", { cid, open: true }); const c = CLASSES?.find((x) => x.cid === cid); if (c && r?.room) c.room = r.room; openHost(cid); }).finally(renderAcct);
+    });
     if (!NET.student && (NET.role === "teacher" || NET.role === "admin") && !CLASSES) loadClasses(); // 선생님은 학급 목록을 미리 받아 둔다(함수도 깨워 둠)
   });
 }
@@ -224,6 +230,17 @@ export async function openTown(t = "market") {
 const TABS = { market: "수산시장", shop: "낚시 가게", cook: "캠핑 요리", closet: "꾸미기" };
 let CLASSES = null, classLoading = null;
 // 학급 목록: 있던 것을 바로 보여 주고 뒤에서 새로 받아 맞춘다(함수가 잠들어 있으면 몇 초 걸리니까)
+// 선생님 수업 순서: ① 학급 만들기 → ② 낚시터 열기 → ③ 다 같이 시작하기. 지금 할 단계 하나만 큰 버튼으로
+function teacherSteps() {
+  if (!Array.isArray(CLASSES)) return `<div class="tsteps"><p class="acctwait">학급을 불러오고 있어요…</p></div>`;
+  const live = CLASSES.find((c) => c.room?.open && c.room.closesAt > Date.now()), last = CLASSES[CLASSES.length - 1];
+  const step = !CLASSES.length ? 0 : live ? 2 : 1;
+  const li = (i, t) => `<li class="${i < step ? "done" : i === step ? "now" : ""}"><i>${i < step ? "✓" : i + 1}</i>${t}</li>`;
+  const btn = step === 0 ? `<button class="go sparkle newclasscta" data-town="class">첫 학급 만들기 <small>반 이름만 쓰면 학급 코드가 생겨요 ▶</small></button>`
+    : step === 1 ? `<button class="go newclasscta" data-tsopen="${CLASSES.length === 1 ? last.cid : ""}">낚시터 열기 <small>${CLASSES.length === 1 ? `${esc(last.name)} · 학생이 코드로 들어올 수 있어요` : "어느 학급을 열지 골라요"} ▶</small></button>`
+    : `<button class="go newclasscta" data-tshost="${live.cid}">대기실 화면 띄우기 <small>${esc(live.name)} 낚시터가 열려 있어요 · 칠판에 띄우고 시작해요 ▶</small></button>`;
+  return `<div class="tsteps"><ol>${li(0, "학급 만들기")}${li(1, "낚시터 열기")}${li(2, "다 같이 시작하기")}</ol>${btn}</div>`;
+}
 // 선생님인데 아직 학급이 없으면 '학급 만들기'를 반짝이게(처음 온 선생님이 어디서 시작할지 바로 보이게)
 const needClass = () => (NET.role === "teacher" || NET.role === "admin") && !NET.student && Array.isArray(CLASSES) && CLASSES.length === 0;
 function loadClasses() {
@@ -322,11 +339,11 @@ export function renderTown() {
     if (!CLASSES) { body.innerHTML = `<p class="empty">학급을 불러오는 중…</p>`; loadClasses(); return; }
     if (NET.role !== "teacher" && NET.role !== "admin") { body.innerHTML = `<p class="empty">선생님 가입을 마치면 낚시 학급을 만들 수 있어요.</p>`; openTeacherJoin(); return; }
     body.innerHTML = `<p class="clsintro">학생은 <b>학급 코드 + 이름 + 입장번호 4자리</b>로 들어와요(구글 계정 필요 없음). 선생님이 낚시터를 열었을 때만 낚시할 수 있어요.</p>
-      <form class="joinf ${CLASSES.length ? "" : "sparkbox"}" data-newclass><input name="name" maxlength="12" placeholder="학급 이름 (예: 5학년 3반)"><button class="go ${CLASSES.length ? "" : "sparkle"}">학급 만들기</button></form>
+      <form class="joinf ${CLASSES.length ? "" : "sparkbox"}" data-newclass><input name="name" maxlength="12" placeholder="${CLASSES.length ? "학급 하나 더 만들기 (예: 5학년 4반)" : "반 이름 (예: 5학년 3반)"}"><button class="go ${CLASSES.length ? "" : "sparkle"}">학급 만들기</button></form>
       ${CLASSES.length ? CLASSES.map((c) => `<div class="clsbox"><div class="clshead"><b>${esc(c.name)}</b><span>학급 코드 <em>${c.code}</em></span><small>${c.students.length}명</small></div>${roomBox(c)}
         ${c.students.length ? `<div class="clstable"><div class="th"><span>이름</span><span>손맛</span><span>돈</span><span>낭만</span><span>잡은 수</span><span></span></div>
           ${[...c.students].sort((a, b) => b.taste - a.taste).map((s) => `<div><span>${esc(s.name)}</span><span>${s.taste.toLocaleString("ko-KR")}</span><span class="money">${won(s.money)}</span><span class="romance">${s.romance}</span><span>${s.caught}</span><span><button class="acctout" data-reset="${c.cid}:${s.sid}">${s.hasPin ? "입장번호 초기화" : "초기화됨"}</button></span></div>`).join("")}</div>`
-          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 코드 <b>${c.code}</b>를 적어 주세요.</p>`}</div>`).join("") : `<p class="empty">아직 만든 학급이 없어요. 학급 이름을 쓰고 <b>학급 만들기</b>를 눌러 첫 학급을 열어 보세요!</p>`}`;
+          : `<p class="empty">아직 들어온 학생이 없어요. 칠판에 학급 코드 <b>${c.code}</b>를 적어 주면 학생이 들어올 수 있어요.</p>`}</div>`).join("") : `<p class="empty">아직 학급이 없어요. 반 이름을 쓰고 <b>학급 만들기</b>를 누르면 학생이 들어올 학급 코드가 생겨요.</p>`}`;
     if (!CLASSES.length) setTimeout(() => body.querySelector("[data-newclass] input")?.focus(), 60);
     body.querySelectorAll("[data-room]").forEach((box) => bindRoom(box));
     body.querySelector("[data-newclass]").addEventListener("submit", (e) => { e.preventDefault(); const btn = e.target.querySelector("button"); btn.disabled = true; btn.textContent = "만드는 중…";
@@ -420,7 +437,7 @@ document.addEventListener("click", (e) => { if (e.target.id === "townClose") $("
 let tjoinBusy = false;
 function openTeacherJoin() {
   const el = $("tjoinBox"); if (!el || !el.hidden) return;
-  $("tjoinWho").textContent = `${NET.user?.email || "이 구글 계정"} 으로 로그인했어요. 선생님 가입 코드를 넣어 주세요.`;
+  $("tjoinWho").textContent = `${NET.user?.email || "이 구글 계정"}으로 로그인했어요. 선생님 가입 코드를 넣으면 바로 학급을 만들 수 있어요.`;
   $("tjoinErr").textContent = ""; $("tjoinCode").value = ""; el.hidden = false; $("town").hidden = true;
   setTimeout(() => $("tjoinCode").focus(), 50);
 }
@@ -429,13 +446,13 @@ document.addEventListener("submit", async (e) => {
   if (e.target.id !== "tjoinForm") return;
   e.preventDefault();
   const code = $("tjoinCode").value.trim(), ok = $("tjoinOk");
-  if (!code) { $("tjoinErr").textContent = "가입 코드를 넣어 주세요"; return; }
+  if (!code) { $("tjoinErr").textContent = "선생님 가입 코드를 넣어 주세요"; return; }
   if (tjoinBusy) return; tjoinBusy = true; ok.disabled = true; ok.textContent = "확인 중…"; $("tjoinErr").textContent = "";
   try {
     await (await sdk()).call("fishTeacherJoin", { code });
     Object.assign(NET, await call("fishMe")); closeTeacherJoin(); CLASSES = null; changed();
-    hooks.toast?.("선생님 가입 완료! 낚시 학급을 만들 수 있어요"); openTown("class");
-  } catch (err) { $("tjoinErr").textContent = err?.message?.replace(/^.*?: /, "") || "가입하지 못했어요. 다시 해 주세요"; }
+    hooks.toast?.("가입했어요! 이제 첫 학급을 만들어 볼까요?"); openTown("class");
+  } catch (err) { $("tjoinErr").textContent = err?.message?.replace(/^.*?: /, "") || "가입하지 못했어요. 잠시 뒤에 다시 해 주세요"; }
   finally { tjoinBusy = false; ok.disabled = false; ok.textContent = "가입하기"; }
 });
 document.addEventListener("click", (e) => { if (e.target.id === "tjoinCancel") { closeTeacherJoin(); logout(); } });
@@ -471,8 +488,8 @@ function roomBox(c) {
         : SETROW("열어 둘 시간", "지나면 자동으로 닫혀요", SEG("minutes", [[20, "20분"], [40, "40분"], [60, "60분"], [90, "90분"]], r.minutes || 40))}
       ${SETROW("문제 풀기", "던지기 전에 문제를 맞혀야 해요", `<div class="quizctl">${SEG("quizOn", [["0", "끄기"], ["1", "켜기"]], r.quizOn ? "1" : "0")}<span class="qn">문제 ${r.quizN || 0}개</span><label class="go alt filebtn">CSV 올리기<input type="file" accept=".csv,text/csv" hidden></label><button type="button" class="acctout" data-tpl>양식 받기</button></div>`)}
     </div>
-    <div class="roomacts">${open ? `<button type="button" class="go" data-host>대기실 화면 ▶</button><button type="button" class="go alt" data-roomclose>낚시터 닫기</button>` : `<button type="button" class="go" data-roomopen>낚시터 열고 대기실 만들기</button>`}<button type="button" class="go alt" data-test title="학생 화면 그대로 한 판 해 봐요. 기록은 남지 않아요">테스트 게임 ▶</button></div>
-    <small class="roomhow">학생은 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와 대기실에서 기다려요. 다 들어오면 대기실 화면에서 <b>시작</b>을 눌러요. <b>테스트 게임</b>은 이 설정 그대로 선생님이 한 판 해 보는 거예요(기록 안 남음).</small>
+    <div class="roomacts">${open ? `<button type="button" class="go" data-host>대기실 화면 ▶</button><button type="button" class="go alt" data-roomclose>낚시터 닫기</button>` : `<button type="button" class="go" data-roomopen>낚시터 열기 ▶</button>`}<button type="button" class="go alt" data-test title="학생 화면 그대로 한 판 해 봐요. 기록은 남지 않아요">테스트 게임 ▶</button></div>
+    <small class="roomhow">낚시터를 열면 대기실 화면이 떠요. 칠판에 띄워 두면 학생이 <b>${esc(studentUrl().replace(/^https?:\/\//, ""))}</b> 에서 학급 코드로 들어와요. 다 모이면 <b>다 같이 시작하기</b>를 눌러요. <b>테스트 게임</b>은 이 설정 그대로 선생님이 먼저 해 보는 한 판이에요(기록은 남지 않아요).</small>
   </form>`;
 }
 const pickVal = (box, n) => box.querySelector(`input[name=${n}]:checked`)?.value;
@@ -587,14 +604,14 @@ function renderHost() {
   const r = d.room, ph = hphase(r), P = d.players, here = P.filter((p) => p.here), away = P.filter((p) => !p.here), b = HOST.busy ? "disabled" : "";
   if (HOST.ph !== ph) HOST.seen = new Set(); HOST.ph = ph; const seen = HOST.seen; // 새로 들어온 학생만 톡 튀어나오게
   const url = studentUrl().replace(/^https?:\/\//, "");
-  const head = `<div class="hosthead"><div class="hostcode"><small>학급 코드</small><b>${esc(d.code)}</b></div><div class="hosturl"><small>주소창에 이렇게 쳐요</small><b>${esc(url)}</b></div><button class="tutx hostx" data-hclose aria-label="닫기">✕</button></div>`;
+  const head = `<div class="hosthead"><div class="hostcode"><small>학급 코드</small><b>${esc(d.code)}</b></div><div class="hosturl"><small>학생 주소</small><b>${esc(url)}</b></div><button class="tutx hostx" data-hclose aria-label="닫기">✕</button></div>`;
   const rank = [...P].filter((p) => p.n || p.pts || p.here).sort((a, b2) => b2.pts - a.pts);
   let main = "";
-  if (ph === "closed") main = `<div class="hostmid"><h2>낚시터가 닫혀 있어요</h2><button class="go" data-hopen ${b}>낚시터 열고 대기실 만들기</button></div>`;
+  if (ph === "closed") main = `<div class="hostmid"><h2>낚시터가 닫혀 있어요</h2><p>열면 학생이 학급 코드로 들어올 수 있어요.</p><button class="go" data-hopen ${b}>낚시터 열기 ▶</button></div>`;
   else if (ph === "lobby") main = `<div class="hostcount"><b>${here.length}</b><span>/ ${P.length}명 들어왔어요</span></div>
-    <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<p class="empty">학생들이 들어오면 여기에 이름이 떠요</p>`}</div>
+    <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<div class="hosthow"><b>학생에게 이렇게 알려 주세요</b><ol><li>주소창에 <em>${esc(url)}</em></li><li>학급 코드 <em>${esc(d.code)}</em></li><li>이름과 입장번호 4자리를 정해서 들어와요</li></ol><small>들어온 학생 이름이 여기에 떠요</small></div>`}</div>
     ${away.length ? `<div class="hostaway"><small>아직 안 들어온 친구 ${away.length}명</small>${away.map((p) => `<span>${esc(p.name)}</span>`).join("")}</div>` : ""}
-    <div class="hostbtns"><button class="go hoststart" data-hstart ${b || (here.length ? "" : "disabled")}>${HOST.busy ? "시작하는 중…" : here.length && !away.length ? "모두 왔어요! 시작 ▶" : "시작 ▶"}</button></div>
+    <div class="hostbtns"><button class="go hoststart" data-hstart ${b || (here.length ? "" : "disabled")}>${HOST.busy ? "시작하는 중…" : here.length && !away.length ? "모두 왔어요! 다 같이 시작하기 ▶" : "다 같이 시작하기 ▶"}</button></div>${here.length ? "" : `<p class="hostset">학생이 1명 이상 들어오면 시작할 수 있어요</p>`}
     <div class="hostctl">${hostPlace(r, b)}${hostFree(r, b)}</div><p class="hostset">한 판 ${Math.round(r.roundSec / 60)}분${r.quizOn ? " · 문제 풀고 던지기" : ""} · 낚시터는 ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 저절로 닫혀요</p>`;
   else if (ph === "free") main = `<div class="hostplay"><b class="hostclock">자유시간</b><small>${here.length} / ${P.length}명 들어옴 · 학생이 낚시터를 골라 원할 때 한 판씩(${Math.round(r.roundSec / 60)}분) · ${Math.max(1, Math.ceil((r.closesAt - hnow()) / 60000))}분 뒤 닫힘</small></div>
     <div class="hostchips">${here.map((p) => `<span class="hchip ${seen.has(p.sid) ? "old" : ""}" style="--c:${chipCol(p.name)}">${esc(p.name)}</span>`).join("") || `<p class="empty">학생들이 들어오면 여기에 이름이 떠요</p>`}</div>
@@ -603,18 +620,18 @@ function renderHost() {
   else if (ph === "countdown") main = `<div class="hostmid"><h2>준비!</h2><b class="hostbig" data-hclock>${Math.max(1, Math.ceil((r.startAt - hnow()) / 1000))}</b></div>`;
   else if (ph === "play") main = `<div class="hostplay"><b class="hostclock" data-hclock>0:00</b><small>${here.length}명 낚시 중</small></div>
     <div class="hostrank">${rank.slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${rank[0]?.pts ? Math.max(4, p.pts / rank[0].pts * 100) : 4}%;--c:${chipCol(p.name)}"></em><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>
-    <div class="hostbtns"><button class="go alt" data-hlobby ${b}>그만하고 대기실로</button></div><div class="hostctl">${hostFree(r, b)}</div>`;
+    <div class="hostbtns"><button class="go alt" data-hlobby ${b}>이번 판 끝내기</button></div><div class="hostctl">${hostFree(r, b)}</div>`;
   else { const top = rank.slice(0, 3), order = [top[1], top[0], top[2]];
     main = `<h2 class="hostdone">대회 끝!</h2><div class="podium">${order.map((p, k) => p ? `<div class="pod p${[2, 1, 3][k]}"><span>${esc(p.name)}</span><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small><i>${[2, 1, 3][k]}</i></div>` : `<div class="pod empty"></div>`).join("")}</div>
     <div class="hostrank small">${rank.slice(3).map((p, i) => `<div><i>${i + 4}</i><span>${esc(p.name)}</span><b>${p.pts.toLocaleString("ko-KR")}</b><small>${p.n}마리</small></div>`).join("")}</div>
-    <div class="hostbtns"><button class="go" data-hlobby ${b}>다음 판 준비 (대기실로)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div><div class="hostctl">${hostFree(r, b)}</div>`; }
+    <div class="hostbtns"><button class="go" data-hlobby ${b}>한 판 더 하기 (대기실로)</button><button class="go alt" data-hclose2 ${b}>낚시터 닫기</button></div><div class="hostctl">${hostFree(r, b)}</div>`; }
   here.forEach((p) => seen.add(p.sid));
   el.innerHTML = `<div class="hostp hp-${ph}"><div class="hosttitle">${esc(d.name)} ${ph === "free" ? "자유시간" : "낚시 대회"}</div>${head}${main}</div>`;
   tickHost();
   el.querySelector("[data-hclose]").addEventListener("click", closeHost);
   el.querySelector("[data-hstart]")?.addEventListener("click", () => hostAct({ start: true }));
   el.querySelector("[data-hlobby]")?.addEventListener("click", () => hostAct({ lobby: true }));
-  el.querySelector("[data-hopen]")?.addEventListener("click", () => hostAct({ open: true, minutes: 40 }));
+  el.querySelector("[data-hopen]")?.addEventListener("click", () => hostAct({ open: true }));
   el.querySelector("[data-hclose2]")?.addEventListener("click", () => hostAct({ open: false }));
   el.querySelector("[data-hfree]")?.addEventListener("click", () => hostAct({ mode: HOST.d.room.mode === "free" ? "contest" : "free" }));
   el.querySelectorAll("[data-hplace]").forEach((x) => x.addEventListener("click", () => { if (x.dataset.hplace !== HOST.d.room.place) hostAct({ place: x.dataset.hplace }); }));
@@ -622,6 +639,7 @@ function renderHost() {
 }
 
 // ---------------------------------------------------------------- 학생: 입장(코드 → 이름·번호)과 대기실
+const joinStep = (n) => $("joinSteps")?.querySelectorAll("li").forEach((li, i) => { li.className = i < n ? "done" : i === n ? "now" : ""; });
 export function bindJoin() {
   const f1 = $("joinCode"), f2 = $("joinWho");
   let code = "";
@@ -629,21 +647,21 @@ export function bindJoin() {
   f1.code.addEventListener("input", () => { f1.code.value = f1.code.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   f1.addEventListener("submit", async (e) => {
     e.preventDefault(); const b = f1.querySelector("button"), v = f1.code.value.trim();
-    if (v.length !== 6) { hooks.toast?.("학급 코드는 6자리예요"); f1.code.focus(); return; }
+    if (v.length !== 6) { hooks.toast?.("학급 코드 6자리를 모두 넣어 주세요"); f1.code.focus(); return; }
     b.disabled = true; b.textContent = "확인 중…";
-    try { const r = await checkCode(v); code = r.code; $("joinCls").innerHTML = `<b>${esc(r.name || "우리 반")}</b> 낚시터예요`; f1.hidden = true; f2.hidden = false; setTimeout(() => f2.name.focus(), 50); } catch {}
-    b.disabled = false; b.textContent = "입장하기 ▶";
+    try { const r = await checkCode(v); code = r.code; $("joinCls").innerHTML = `<b>${esc(r.name || "우리 반")}</b> 학급이에요`; f1.hidden = true; f2.hidden = false; joinStep(1); setTimeout(() => f2.name.focus(), 50); } catch {}
+    b.disabled = false; b.textContent = "다음 ▶";
   });
   f2.addEventListener("submit", (e) => {
     e.preventDefault(); const b = f2.querySelector("button.go"); b.disabled = true; b.textContent = "들어가는 중…";
     join(code, f2.name.value, f2.pin.value).catch(() => {}).finally(() => { b.disabled = false; b.textContent = "들어가기"; });
   });
-  $("joinBack").addEventListener("click", () => { f2.hidden = true; f1.hidden = false; f1.code.focus(); });
+  $("joinBack").addEventListener("click", () => { f2.hidden = true; f1.hidden = false; joinStep(0); f1.code.focus(); });
 }
 export function renderLobby() {
   const ph = phaseNow(), r = NET.room, me = NET.me?.name;
   $("lobClass").textContent = NET.student?.className ? `${NET.student.className} · ${me || ""}` : me || "";
-  const T = { closed: ["낚시터 닫힘", "선생님이 낚시터를 열면 대기실에 들어가요"], lobby: ["대기실", `선생님이 시작하면 다 같이 ${r?.place === "sea" ? "바다" : "민물"} 낚시가 시작돼요!`], countdown: ["곧 시작!", "준비하세요!"], play: ["대회 중", "낚시터로 들어가요…"], done: ["이번 판 끝!", "선생님이 다음 판을 준비하고 있어요"], free: ["자유시간!", "낚시터를 골라 언제든 낚시하러 가요. 몇 판이든 OK!"] }[ph];
+  const T = { closed: ["낚시터가 아직 닫혀 있어요", "선생님이 낚시터를 열면 바로 대기실로 바뀌어요"], lobby: ["대기실", `선생님이 시작하면 다 같이 ${r?.place === "sea" ? "바다" : "민물"} 낚시를 해요`], countdown: ["곧 시작해요!", "준비!"], play: ["대회 중", "낚시터로 들어가요…"], done: ["이번 판 끝!", "선생님이 다음 판을 준비하고 있어요"], free: ["자유시간!", "낚시터를 골라 원하는 만큼 낚시해요"] }[ph];
   $("lobTitle").textContent = T[0]; $("lobMsg").textContent = T[1];
   $("lobby").dataset.ph = ph;
   const P = ph === "closed" ? [] : NET.players || [];

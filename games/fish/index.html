@@ -461,6 +461,26 @@
   .tjoinbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .tjoinbtns .go { font-size: 18px; }
   .tjoinnote { opacity: .7; font-size: 13px; line-height: 1.5; }
+  /* 첫 화면: 누구인가요? */
+  .rolehead { margin: 0 0 2px; font-family: var(--title); font-size: 20px; color: var(--cream); }
+  .rolehelp { margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: var(--muted); } .rolehelp b { color: var(--cream); }
+  /* 선생님 수업 순서 */
+  .tsteps { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+  .tsteps ol { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tsteps li { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 14px; color: var(--muted); background: rgba(255, 248, 232, .06); }
+  .tsteps li i { display: grid; place-items: center; width: 22px; height: 22px; font-style: normal; font-size: 13px; background: rgba(255, 248, 232, .15); color: var(--cream); }
+  .tsteps li.done { color: var(--lime); } .tsteps li.done i { background: var(--lime); color: var(--ink); }
+  .tsteps li.now { color: var(--ink); background: var(--sun); font-weight: 700; } .tsteps li.now i { background: var(--ink); color: var(--sun); }
+  .tsmore { align-self: flex-end; }
+  /* 대기실 화면: 학생이 아직 없을 때 알려 줄 것 */
+  .hosthow { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px; background: rgba(255, 248, 232, .06); text-align: left; }
+  .hosthow b { font-size: 24px; color: var(--sun); } .hosthow ol { margin: 0; padding-left: 28px; font-size: 22px; line-height: 1.7; color: var(--cream); } .hosthow em { font-style: normal; color: var(--sun); letter-spacing: .04em; } .hosthow small { color: var(--muted); font-size: 15px; }
+  .hostmid p { color: var(--muted); font-size: 18px; margin: 0 0 8px; }
+  /* 학생 입장 단계 */
+  .joinsteps { list-style: none; margin: 0 0 6px; padding: 0; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+  .joinsteps li { padding: 5px 10px; font-size: 14px; color: var(--muted); background: rgba(255, 248, 232, .06); }
+  .joinsteps li.now { color: var(--ink); background: var(--sun); font-weight: 700; } .joinsteps li.done { color: var(--lime); }
+  .joinhint { display: block; color: var(--muted); font-size: 13px; line-height: 1.6; text-align: left; }
   /* 반짝이: 아직 학급이 없는 선생님에게 '학급 만들기'를 눈에 띄게 */
   .sparkle { position: relative; overflow: hidden; animation: spkGlow 1.6s ease-in-out infinite; }
   .sparkle::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, .7) 47%, rgba(255, 255, 255, .15) 55%, transparent 68%); transform: translateX(-130%); animation: spkSweep 2.4s ease-in-out infinite; pointer-events: none; }
@@ -800,10 +820,10 @@
 <div class="screen" id="join" hidden>
   <div class="panel joinp">
     <h1>잠만보<br><em>낚시터</em></h1>
-    <form id="joinCode" class="bigjoin" autocomplete="off"><label for="jcode">선생님이 알려 준 학급 코드</label><input id="jcode" name="code" maxlength="6" placeholder="ABC123" autocapitalize="characters" spellcheck="false" inputmode="text"><button class="go">입장하기 ▶</button></form>
-    <form id="joinWho" class="bigjoin" autocomplete="off" hidden><p id="joinCls"></p><input name="name" maxlength="12" placeholder="내 이름"><input name="pin" maxlength="4" inputmode="numeric" pattern="\d{4}" placeholder="입장번호 4자리" type="password"><button class="go">들어가기</button><button type="button" class="acctout" id="joinBack">학급 코드 다시 쓰기</button></form>
-    <p class="joinhelp">처음이면 이름과 입장번호 4자리를 정해서 들어와요. 다음에도 같은 이름·번호로 들어오면 잡은 물고기와 돈이 이어져요.</p>
-    <a class="acctout" href="./">선생님 화면으로</a>
+    <ol class="joinsteps" id="joinSteps"><li class="now">학급 코드</li><li>이름·입장번호</li><li>대기실</li></ol>
+    <form id="joinCode" class="bigjoin" autocomplete="off"><label for="jcode">선생님이 알려 준 학급 코드</label><input id="jcode" name="code" maxlength="6" placeholder="예: ABC123" autocapitalize="characters" spellcheck="false" inputmode="text"><button class="go">다음 ▶</button><small class="joinhint">칠판에 적힌 영어·숫자 6자리예요</small></form>
+    <form id="joinWho" class="bigjoin" autocomplete="off" hidden><p id="joinCls"></p><label for="jname">내 이름</label><input id="jname" name="name" maxlength="12" placeholder="예: 김민지"><label for="jpin">입장번호 4자리</label><input id="jpin" name="pin" maxlength="4" inputmode="numeric" pattern="\d{4}" placeholder="숫자 4자리" type="password"><small class="joinhint">처음이면 지금 정한 번호가 내 입장번호가 돼요. 다음에도 같은 이름과 번호로 들어오면 잡은 물고기와 돈이 그대로 있어요.</small><button class="go">들어가기 ▶</button><button type="button" class="acctout" id="joinBack">학급 코드 다시 쓰기</button></form>
+    <a class="acctout" href="./">선생님이에요</a>
   </div>
 </div>
 
@@ -824,7 +844,7 @@
   </div>
 </div>
 
-<div class="countdown" id="countdown" hidden><small>다 같이 시작!</small><b></b></div>
+<div class="countdown" id="countdown" hidden><small>다 같이 시작해요!</small><b></b></div>
 <div id="host" hidden></div>
 
 <div class="screen" id="town" hidden>
@@ -846,10 +866,10 @@
 
 <div class="fbbox" id="tjoinBox" hidden><form class="tutcard px tjoin" id="tjoinForm" autocomplete="off"><div class="tuthead"><b>선생님 가입</b></div>
   <p id="tjoinWho"></p>
-  <label class="tjoinlbl">선생님 가입 코드<input id="tjoinCode" maxlength="32" autocapitalize="off" spellcheck="false" placeholder="코드 입력"></label>
+  <label class="tjoinlbl">선생님 가입 코드<input id="tjoinCode" maxlength="32" autocapitalize="off" spellcheck="false" placeholder="받은 가입 코드"></label>
   <p class="tjoinerr" id="tjoinErr" role="alert"></p>
-  <div class="tjoinbtns"><button type="button" class="go alt" id="tjoinCancel">취소하고 로그아웃</button><button class="go" id="tjoinOk">가입하기</button></div>
-  <small class="tjoinnote">코드를 넣어야 선생님으로 로그인돼요. 러닝크루 교사 계정은 코드 없이 바로 들어가요.</small>
+  <div class="tjoinbtns"><button type="button" class="go alt" id="tjoinCancel">로그아웃하기</button><button class="go" id="tjoinOk">가입하기</button></div>
+  <small class="tjoinnote">가입 코드를 넣으면 선생님으로 시작할 수 있어요. 코드가 없다면 로그아웃해 주세요. 러닝크루 교사 계정은 코드 없이 바로 들어가요.</small>
 </form></div>
 
 <div class="screen" id="book" hidden>
@@ -861,6 +881,6 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=52"></script>
+<script type="module" src="game.js?v=53"></script>
 </body>
 </html>
