@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.39.0";
+export const APP_VERSION = "1.39.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.39.1",
+    date: "2026-11-03",
+    kind: "patch",
+    title: "캐릭터가 여러 가지 모습으로 사라지고, 뽑힌 이름이 더 커졌어요",
+    items: [
+      "번개 뒤 캐릭터가 구석에 남지 않고 매번 다르게 사라져요. 옆으로 후다닥, 하늘로 슝, 땅속으로 쏙, 지그재그 사사삭, 뿅, 번쩍 중 하나예요.",
+      "뽑힌 이름과 숫자가 카드 폭에 맞춰 아주 크게 나와요.",
+      "뽑은 뒤 결과 화면이 카드 밖으로 삐져나오던 문제를 고쳤어요.",
+    ],
+  },
   {
     version: "1.39.0",
     date: "2026-11-03",

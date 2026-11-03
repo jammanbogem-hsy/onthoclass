@@ -780,6 +780,8 @@ const Picker = forwardRef<
         playSfx(ctx, "cheer", { gain: 0.7 * vol, at: 0.32 });
       } else if (ctx) playCelebrate(ctx);
       const st = stageRef.current;
+      // 굴리는 동안 키워 둔 크기를 되돌린다(안 그러면 무대가 카드 밖으로 삐져나온 채 남음)
+      if (st) st.style.transform = "";
       if (st && !reduceMotion && st.animate) {
         st.animate(
           [
@@ -947,20 +949,22 @@ const Picker = forwardRef<
     ? {
         stage: play ? "min-h-[46vh]" : "min-h-[30vh]",
         drum: "text-xl sm:text-2xl",
-        roll: play ? "text-5xl sm:text-7xl" : "text-4xl sm:text-6xl",
-        result: play ? "text-7xl sm:text-[7.5rem]" : "text-6xl sm:text-7xl",
-        emoji: play ? "text-4xl sm:text-6xl" : "text-3xl sm:text-5xl",
-        phrase: play ? "text-2xl sm:text-3xl" : "text-xl sm:text-2xl",
+        roll: play ? "text-6xl sm:text-8xl" : "text-5xl sm:text-7xl",
+        result: 0, // 아래 resultSize — 카드 폭과 글자 수에 맞춰 최대한 크게
+        resultMax: play ? 13 : 10,
+        emoji: play ? "text-5xl sm:text-7xl" : "text-4xl sm:text-6xl",
+        phrase: play ? "text-3xl sm:text-4xl" : "text-2xl sm:text-3xl",
         badge: play ? "text-base sm:text-lg" : "text-sm sm:text-base",
         btn: play ? "h-16 min-w-[11rem] px-8 text-2xl" : "h-14 min-w-[9rem] px-7 text-xl",
       }
     : {
         stage: play ? "min-h-[62vh]" : "min-h-[44vh]",
         drum: "text-2xl sm:text-4xl",
-        roll: play ? "text-6xl sm:text-8xl" : "text-5xl sm:text-7xl",
-        result: play ? "text-8xl sm:text-[10rem]" : "text-6xl sm:text-8xl",
-        emoji: play ? "text-5xl sm:text-7xl" : "text-4xl sm:text-6xl",
-        phrase: play ? "text-3xl sm:text-4xl" : "text-xl sm:text-3xl",
+        roll: play ? "text-7xl sm:text-9xl" : "text-6xl sm:text-8xl",
+        result: 0,
+        resultMax: play ? 16 : 12,
+        emoji: play ? "text-6xl sm:text-8xl" : "text-5xl sm:text-7xl",
+        phrase: play ? "text-4xl sm:text-5xl" : "text-2xl sm:text-4xl",
         badge: play ? "text-lg sm:text-xl" : "text-sm sm:text-base",
         btn: play ? "h-20 min-w-[14rem] px-12 text-3xl" : "h-16 min-w-[12rem] px-10 text-2xl",
       };
@@ -993,7 +997,7 @@ const Picker = forwardRef<
       {/* 무대 — 결과 표시 */}
       <div
         ref={stageRef}
-        className={`relative flex flex-col items-center justify-center overflow-hidden rounded-[2rem] bg-[var(--md-sys-color-surface-container)] p-5 will-change-transform ${sz.stage} ${
+        className={`relative flex flex-col items-center justify-center overflow-hidden rounded-[2rem] bg-[var(--md-sys-color-surface-container)] px-5 pb-5 pt-14 will-change-transform [container-type:inline-size] ${sz.stage} ${
           rolling ? "touch-stage-rolling" : ""
         }`}
       >
@@ -1088,7 +1092,11 @@ const Picker = forwardRef<
                   🎉
                 </span>
                 <p
-                  className={`break-keep font-black leading-tight text-[var(--md-sys-color-primary)] ${sz.result}`}
+                  className="break-keep font-black leading-none text-[var(--md-sys-color-primary)]"
+                  // 짧으면 아주 크게, 길면 카드 폭(cqw)에 맞춰 줄인다(양옆 이모지 자리 남김)
+                  style={{
+                    fontSize: `min(${sz.resultMax}rem, ${(64 / Math.max(1.2, [...String(current ?? "")].reduce((w, ch) => w + (/[\u0000-\u00ff]/.test(ch) ? 0.62 : 1), 0))).toFixed(1)}cqw)`,
+                  }}
                 >
                   {current}
                 </p>

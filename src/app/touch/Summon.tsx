@@ -48,8 +48,80 @@ type Sfx = (name: "charge" | "thunder" | "zap", gain?: number) => { stop: (f?: n
 const RISE = 0.35; // 올라오기
 const RAISE = 0.95; // 기 모으는 자세 완성
 const BURST = 2.15; // 번개!
-const AWAY = 2.75; // 구석으로 물러나기 완료
-const CORNER_HOLD = 9; // 당첨 안 오면 이만큼 뒤 사라짐
+const EXIT0 = BURST + 0.5; // 번개 뒤 잠깐 폼 잡고 → 사라지기 시작
+
+// ── 사라지는 동작(매번 무작위, 바로 전 것은 피함) ──
+// x: 화면 반폭 단위(±1이면 화면 밖), y: 화면 높이 단위(+위), s: 크기 배율, run: 다리 굴리기
+export type ExitKind = "dash" | "jump" | "dig" | "zigzag" | "pop" | "zap";
+const EXITS: ExitKind[] = ["dash", "jump", "dig", "zigzag", "pop", "zap"];
+const EXIT_DUR: Record<ExitKind, number> = { dash: 0.75, jump: 0.85, dig: 0.9, zigzag: 0.95, pop: 0.6, zap: 0.7 };
+type ExitPose = { x: number; y: number; s: number; rotY: number; rotZ: number; run: number; crouch: number; hide: boolean; arms: "up" | "back" | "flail" | null };
+type ExitCfg = { kind: ExitKind; dir: number; tx: number; ty: number };
+const easeIn = (x: number) => {
+  const t = clamp01(x);
+  return t * t * t;
+};
+function exitPose(c: ExitCfg, e: number, now: number): ExitPose {
+  const o: ExitPose = { x: 0, y: 0, s: 1, rotY: 0, rotZ: 0, run: 0, crouch: 0, hide: e >= 1, arms: null };
+  const s = now / 1000;
+  if (c.kind === "dash") {
+    // 반대쪽으로 살짝 움찔 → 옆으로 돌아 후다닥
+    const wind = smooth(e / 0.2) * (1 - smooth((e - 0.2) / 0.1));
+    o.rotY = c.dir * (Math.PI / 2) * smooth(e / 0.18);
+    o.x = -c.dir * 0.06 * wind + c.dir * 1.35 * easeIn((e - 0.18) / 0.82);
+    o.run = e > 0.12 ? 1 : 0;
+    o.rotZ = -c.dir * 0.12 * o.run;
+    o.y = Math.abs(Math.sin(s * 22)) * 0.025 * o.run;
+    o.arms = "back";
+  } else if (c.kind === "jump") {
+    // 쭈그렸다가 하늘로 슝(돌면서)
+    o.crouch = smooth(e / 0.22) * (1 - smooth((e - 0.22) / 0.08)) * 1.2;
+    const up = easeIn((e - 0.25) / 0.75);
+    o.y = up * 1.5;
+    o.rotY = up * Math.PI * 3;
+    o.s = 1 - up * 0.3;
+    o.arms = "up";
+  } else if (c.kind === "dig") {
+    // 빙글빙글 돌며 땅속으로 쏙
+    const k = smooth(e);
+    o.rotY = easeIn(e) * Math.PI * 8;
+    o.y = -easeIn((e - 0.15) / 0.85) * 1.05;
+    o.crouch = k * 0.6;
+    o.arms = "up";
+  } else if (c.kind === "zigzag") {
+    // 사사삭! 지그재그로 세 번 튀어 목표 구석으로(작아지며)
+    const seg = Math.min(2, Math.floor(e * 3));
+    const local = smooth((e * 3 - seg) / 0.55);
+    const pts = [
+      { x: 0, y: 0 },
+      { x: c.tx * 0.35 + c.dir * 0.25, y: c.ty * 0.2 },
+      { x: c.tx * 0.7 - c.dir * 0.2, y: c.ty * 0.45 },
+      { x: c.tx * 1.35, y: c.ty * 0.8 },
+    ];
+    const a = pts[seg];
+    const b = pts[seg + 1];
+    o.x = a.x + (b.x - a.x) * local;
+    o.y = a.y + (b.y - a.y) * local + Math.sin(local * Math.PI) * 0.06;
+    o.rotY = Math.sign(b.x - a.x || 1) * (Math.PI / 2);
+    o.s = 1 - e * 0.45;
+    o.run = 1;
+    o.arms = "flail";
+  } else if (c.kind === "pop") {
+    // 부르르 떨다가 뿅! 작아져서 사라짐
+    const shrink = easeIn((e - 0.35) / 0.65);
+    o.s = (1 + Math.sin(e * 40) * 0.06 * (1 - shrink)) * (1 - shrink) + 0.0001;
+    o.rotY = shrink * Math.PI * 4;
+    o.y = shrink * 0.15;
+    o.arms = "up";
+  } else {
+    // zap: 번개처럼 깜빡깜빡하다 사라짐
+    o.hide = e >= 1 || (e > 0.3 && Math.floor(s * 30) % 2 === 0) || e > 0.85;
+    o.rotZ = Math.sin(s * 50) * 0.05;
+    o.x = (Math.random() - 0.5) * 0.03;
+    o.arms = "up";
+  }
+  return o;
+}
 
 type Base = {
   THREE: typeof THREE_NS;
@@ -480,6 +552,9 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
     char: "ferret" as CharId,
     shown: null as CharId | null, // 지금 장면에 올라간 모델
     phase: "idle" as "idle" | "summon" | "corner" | "cheer" | "leave",
+    exit: { kind: "dash", dir: 1, tx: 1, ty: 0 } as ExitCfg,
+    lastExit: null as ExitKind | null,
+    exitFx: false,
     cheerAt: 0,
     leaveAt: 0,
     burstDone: true,
@@ -536,7 +611,9 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
     const B = baseRef.current;
     const M = models.get(S.char) ?? null;
 
-    const away = S.phase === "summon" ? smooth((t - BURST - 0.15) / (AWAY - BURST - 0.15)) : 1;
+    const away = 0; // 구석으로 가지 않고, 그 자리에서 사라지는 동작을 한다
+    const exE = S.phase === "summon" ? (t - EXIT0) / EXIT_DUR[S.exit.kind] : 1;
+    const X = exE > 0 ? exitPose(S.exit, exE, now) : null;
     const charge = S.phase === "summon" ? clamp01((t - RAISE) / (BURST - RAISE)) : 0;
     const rise = S.phase === "summon" ? easeOutBack(t / RISE) : 1;
     const cheerT = S.phase === "cheer" ? (now - S.cheerAt) / 1000 : -1;
@@ -545,10 +622,31 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
     if (bgRef.current) bgRef.current.style.opacity = dark.toFixed(3);
     const ph = S.phase === "idle" ? "corner" : S.phase;
     const P = poseOf({ id: S.char, ph, t, ch: charge, now, ct: Math.max(0, cheerT) });
+    if (X) {
+      P.crouch += X.crouch;
+      P.dy = 0;
+      if (X.arms === "up") {
+        P.arm = () => [0.55, 1, 0.1];
+        P.fore = undefined;
+        P.w = 1;
+        P.stretch = 1.25;
+      } else if (X.arms === "back") {
+        P.arm = () => [0.25, -0.5, -0.8];
+        P.fore = undefined;
+        P.w = 1;
+        P.stretch = 1;
+      } else if (X.arms === "flail") {
+        P.arm = (sg) => [0.7, Math.sin(now / 40 + sg * 1.6) > 0 ? 0.9 : -0.2, 0.3];
+        P.fore = undefined;
+        P.w = 1;
+        P.stretch = 1.15;
+      }
+    }
     const tremble = S.phase === "summon" && t < BURST + 0.1 ? charge * charge : 0;
     const orb = S.phase === "summon" ? smooth((t - RAISE + 0.25) / 0.4) * (1 - smooth((t - BURST - 0.3) / 0.4)) : 0;
     const zapGlow = S.phase === "summon" ? Math.max(0, 1 - Math.abs(t - BURST - 0.05) / 0.25) : 0;
 
+    let feet: Pt | null = null;
     let pawL: Pt | null = null;
     let pawR: Pt | null = null;
     if (B && M) {
@@ -575,9 +673,13 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
       const baseY = 1.0 - vH / 2;
       const y = baseY - 1.6 * sc * (1 - rise) * 1.1 + P.dy * 1.6 * sc - leave * 1.6 * sc * 1.3;
       const tr = tremble * 0.035;
-      root.position.set(cx + P.dx * 1.6 * sc + (Math.random() - 0.5) * tr, y + (Math.random() - 0.5) * tr * 0.5, 0);
-      root.scale.setScalar(sc);
-      root.rotation.y = -0.18 * away + Math.sin(now / 900) * 0.04 + P.rotY;
+      const exX = X ? X.x * (vW / 2 + 1.6 * sc * 0.6) : 0;
+      const exY = X ? X.y * vH : 0;
+      root.position.set(cx + exX + P.dx * 1.6 * sc + (Math.random() - 0.5) * tr, y + exY + (Math.random() - 0.5) * tr * 0.5, 0);
+      root.scale.setScalar(sc * (X ? X.s : 1));
+      root.rotation.y = -0.18 * away + Math.sin(now / 900) * 0.04 + P.rotY + (X ? X.rotY : 0);
+      root.rotation.z = X ? X.rotZ : 0;
+      root.visible = !X?.hide;
 
       // 뼈: 쉬는 자세에서 시작해 조준
       const { bones, rest } = M;
@@ -638,7 +740,8 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
           aim(arm, fore, da, P.w);
           aim(fore, hand, P.fore ? toW(P.fore(sg)) : da, P.w);
         }
-        turn(bones[`${nm}UpLeg`], side, -P.crouch * 0.35);
+        const runA = X?.run ? Math.sin(now / 38 + (nm === "Left" ? 0 : Math.PI)) * 0.9 : 0;
+        turn(bones[`${nm}UpLeg`], side, -P.crouch * 0.35 + runA);
         turn(bones[`${nm}Leg`], side, P.crouch * 0.6);
       }
       const proj = (b: THREE_NS.Bone | undefined): Pt | null => {
@@ -646,6 +749,8 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
         const v = b.getWorldPosition(new THREE.Vector3()).project(camera);
         return { x: ((v.x + 1) / 2) * W, y: ((1 - v.y) / 2) * H };
       };
+      feet = proj(bones["Hips"]);
+      if (feet) feet.y += H * 0.18 * sc;
       pawL = proj(bones["LeftHand"]);
       pawR = proj(bones["RightHand"]);
       const col = new THREE.Color(`rgb(${C.rgb.join(",")})`);
@@ -679,9 +784,9 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
       const img = getFlat(S.char);
       const bigH = H * 0.66;
       const smallH = H * 0.28;
-      const h = bigH + (smallH - bigH) * away;
-      const cx = W / 2 + (smallH * 0.55 + W * 0.02 - W / 2) * away + P.dx * h;
-      const bottom = H + h * 0.06 + h * (1 - rise) * 1.1 + leave * h * 1.3 - P.dy * h * 0.6;
+      const h = (bigH + (smallH - bigH) * away) * (X ? X.s : 1);
+      const cx = W / 2 + (smallH * 0.55 + W * 0.02 - W / 2) * away + P.dx * h + (X ? X.x * (W / 2 + h * 0.6) : 0);
+      const bottom = H + h * 0.06 + h * (1 - rise) * 1.1 + leave * h * 1.3 - P.dy * h * 0.6 - (X ? X.y * H : 0) + (X ? X.crouch * h * 0.05 : 0);
       const tr = tremble * 10;
       const x = cx - h / 2 + (Math.random() - 0.5) * tr;
       const y = bottom - h + (Math.random() - 0.5) * tr * 0.5;
@@ -692,11 +797,14 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
         g.fillStyle = gr;
         g.fillRect(0, 0, W, H);
       }
-      if (img?.complete && img.naturalWidth) {
+      feet = { x: cx, y: bottom - h * 0.05 };
+      if (img?.complete && img.naturalWidth && !X?.hide) {
         g.save();
         g.translate(cx, y + h);
-        g.rotate(P.spineZ * 0.6 + P.headZ * 0.3 + (P.rotY ? Math.sin(P.rotY) * 0.15 : 0));
-        if (P.rotY) g.scale(Math.cos(P.rotY) >= 0 ? 1 : -1, 1);
+        const rY = P.rotY + (X ? X.rotY : 0);
+        g.rotate(P.spineZ * 0.6 + P.headZ * 0.3 + (rY ? Math.sin(rY) * 0.15 : 0) + (X ? X.rotZ : 0));
+        if (rY) g.scale(Math.cos(rY) || 0.05, 1); // 도는 동작: 가로로 납작해졌다 뒤집힘
+        if (X?.run) g.translate(0, -Math.abs(Math.sin(now / 45)) * h * 0.04);
         if (zapGlow > 0) g.filter = `brightness(${1 + zapGlow * 0.8})`;
         g.drawImage(img, -h / 2, -h, h, h);
         g.restore();
@@ -754,6 +862,33 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
         const ang = Math.random() * Math.PI * 2;
         const L = 60 + Math.random() * 140;
         S.bolts.push(makeBolt(src, { x: src.x + Math.cos(ang) * L, y: src.y + Math.sin(ang) * L }, 1.4, now, 120));
+      }
+    }
+    if (X && feet && !X.hide) {
+      const k = S.exit.kind;
+      if ((k === "dash" || k === "zigzag" || k === "dig") && Math.random() < 0.6)
+        S.bits.push({
+          x: feet.x + (Math.random() - 0.5) * 40, y: feet.y, vx: -S.exit.dir * (60 + Math.random() * 120), vy: -80 - Math.random() * 120,
+          rot: 0, vr: (Math.random() - 0.5) * 4, born: now, life: 500, ch: k === "dig" ? "🟫" : "💨", size: 26 + Math.random() * 20,
+        });
+    }
+    if (X && !S.exitFx && feet) {
+      const k = S.exit.kind;
+      const fire = (k === "pop" && exE > 0.95) || (k === "zap" && exE > 0.25) || (k === "jump" && exE > 0.25) || (k === "dig" && exE > 0.3);
+      if (fire) {
+        S.exitFx = true;
+        const at = k === "pop" ? { x: feet.x, y: feet.y - H * 0.3 } : feet;
+        const ch = k === "pop" ? "✨" : k === "zap" ? "⚡" : k === "jump" ? "💨" : "🟫";
+        for (let i = 0; i < 12; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const sp = 200 + Math.random() * 300;
+          S.bits.push({ x: at.x, y: at.y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 200, rot: 0, vr: (Math.random() - 0.5) * 8, born: now, life: 700, ch, size: 24 + Math.random() * 22 });
+        }
+        if (k === "zap") {
+          S.bolts.push(makeBolt({ x: at.x + 30, y: -20 }, { x: at.x, y: at.y - H * 0.3 }, 3.5, now, 300));
+          S.flash = Math.max(S.flash, 0.35);
+          sfxRef.current("zap", 0.5);
+        }
       }
     }
     g.save();
@@ -826,9 +961,9 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
       g.restore();
     }
 
-    if (S.phase === "summon" && t >= AWAY) {
-      S.phase = "corner";
-      S.leaveAt = now + CORNER_HOLD * 1000;
+    if (S.phase === "summon" && exE >= 1) {
+      S.phase = "leave";
+      S.leaveAt = now - 400; // 이미 사라졌으니 남은 조각만 끝나면 정리
     }
     if (S.phase === "corner" && now >= S.leaveAt) S.phase = "leave";
     if (S.phase === "cheer" && now - S.cheerAt > 2600) {
@@ -875,6 +1010,12 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
           S.char = char;
           S.t0 = performance.now();
           S.phase = "summon";
+          const pool = EXITS.filter((k) => k !== S.lastExit);
+          const kind = pool[Math.floor(Math.random() * pool.length)];
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          S.exit = { kind, dir, tx: dir, ty: Math.random() < 0.5 ? 0.6 : -0.15 };
+          S.lastExit = kind;
+          S.exitFx = false;
           S.burstDone = false;
           S.onBurst = onBurst;
           S.bolts = [];
@@ -898,7 +1039,7 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
       },
       cheer: () => {
         const S = state.current;
-        if (S.phase === "corner" || S.phase === "summon") {
+        if (S.phase === "corner") {
           S.phase = "cheer";
           S.cheerAt = performance.now();
           start();
