@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.38.0";
+export const APP_VERSION = "1.38.1";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,13 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.38.1",
+    date: "2026-11-03",
+    kind: "patch",
+    title: "번개돌이가 또렷하게 보여요",
+    items: ["어두운 하늘을 번개돌이 뒤로 보내서, 기를 모을 때도 원래 색 그대로 밝게 보여요."],
+  },
   {
     version: "1.38.0",
     date: "2026-11-03",

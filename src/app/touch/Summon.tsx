@@ -73,10 +73,16 @@ async function loadRig(canvas: HTMLCanvasElement): Promise<Rig | null> {
     renderer.setClearColor(0x000000, 0);
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-    scene.add(new THREE.HemisphereLight(0xe8e6ff, 0x3a2f55, 1.6));
-    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7fb0, 2.2));
+    const key = new THREE.DirectionalLight(0xfff4e6, 2.6);
     key.position.set(2, 4, 5);
     scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 1.0);
+    fill.position.set(-3, 1.5, 4);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xb7a8ff, 2.4); // 뒤에서 비추는 보랏빛 테두리 — 어두운 하늘에서 몸이 또렷하게
+    rim.position.set(0, 3, -4);
+    scene.add(rim);
     const rimL = new THREE.PointLight(0xb9a6ff, 0, 8);
     rimL.position.set(0, 3, 1.5);
     rimL.name = "zap";
@@ -230,6 +236,7 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
   ref
 ) {
   const glRef = useRef<HTMLCanvasElement>(null);
+  const bgRef = useRef<HTMLDivElement>(null); // 어두운 하늘 — 캐릭터 '뒤'에 깐다(위에 덮으면 캐릭터가 칙칙해짐)
   const fxRef = useRef<HTMLCanvasElement>(null);
   const [on, setOn] = useState(false);
   const rigRef = useRef<Rig | null>(null);
@@ -297,13 +304,7 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
 
     // 어두운 하늘 배경
     const dark = S.phase === "summon" ? Math.min(smooth(t / 0.3), 1 - smooth((t - BURST - 0.1) / 0.5)) : 0;
-    if (dark > 0) {
-      const gr = g.createRadialGradient(W / 2, H * 0.75, 0, W / 2, H * 0.6, Math.max(W, H) * 0.8);
-      gr.addColorStop(0, `rgba(55,35,120,${0.72 * dark})`);
-      gr.addColorStop(1, `rgba(6,6,24,${0.93 * dark})`);
-      g.fillStyle = gr;
-      g.fillRect(0, 0, W, H);
-    }
+    if (bgRef.current) bgRef.current.style.opacity = dark.toFixed(3);
 
     // ── 3D 번개돌이 ──
     let pawL: Pt | null = null;
@@ -596,6 +597,7 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
       S.raf = 0;
       g.clearRect(0, 0, W, H);
       rigRef.current?.renderer.clear();
+      if (bgRef.current) bgRef.current.style.opacity = "0";
       setOn(false);
       return;
     }
@@ -667,6 +669,11 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
 
   return (
     <div aria-hidden className={`pointer-events-none fixed inset-0 z-50 ${on ? "" : "invisible"}`}>
+      <div
+        ref={bgRef}
+        className="absolute inset-0 opacity-0"
+        style={{ background: "radial-gradient(ellipse at 50% 75%, rgba(55,35,120,0.72), rgba(6,6,24,0.93) 80%)" }}
+      />
       <canvas ref={glRef} className="absolute inset-0 h-full w-full" />
       <canvas ref={fxRef} className="absolute inset-0 h-full w-full" />
     </div>
