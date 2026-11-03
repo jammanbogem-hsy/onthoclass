@@ -45,6 +45,15 @@ type Rig = {
 };
 
 let rigPromise: Promise<Rig | null> | null = null;
+// 3D(WebGL)를 못 쓰는 기기(하드웨어 가속 꺼진 학교 PC·크롬북 등)용: Tripo 모델을 찍은 그림
+let flatImg: HTMLImageElement | null = null;
+function getFlat() {
+  if (!flatImg && typeof Image !== "undefined") {
+    flatImg = new Image();
+    flatImg.src = "/touch/ferret.png?v=1";
+  }
+  return flatImg;
+}
 
 function glowTexture(THREE: typeof THREE_NS, inner: string, outer: string) {
   const c = document.createElement("canvas");
@@ -266,6 +275,7 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
   // 화면이 한가할 때 모델 미리 불러오기(첫 뽑기가 바로 시작되게)
   useEffect(() => {
     const go = () => {
+      getFlat();
       if (!rigPromise && glRef.current) rigPromise = loadRig(glRef.current);
       void rigPromise?.then((r) => (rigRef.current = r));
     };
@@ -310,7 +320,7 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
     let pawL: Pt | null = null;
     let pawR: Pt | null = null;
     let head: Pt | null = null;
-    if (R) {
+    if (R && R.model) {
       const { THREE, renderer, scene, camera, root, bones, rest } = R;
       if (gl.width !== Math.round(W * dpr) || gl.height !== Math.round(H * dpr)) {
         renderer.setSize(W, H, false);
@@ -460,9 +470,38 @@ export const Summon = forwardRef<SummonHandle, { sfx: Sfx; onShake: (power: numb
       if (zl) zl.intensity = charge * 2 + zapGlow * 10;
       renderer.render(scene, camera);
     } else {
-      // 모델이 없을 때: 화면 아래 가운데를 손 자리로
-      pawL = { x: W / 2 - 40, y: H * 0.62 };
-      pawR = { x: W / 2 + 40, y: H * 0.62 };
+      // 3D를 못 쓸 때: 같은 번개돌이 그림을 2D로 — 올라오기·떨림·구석으로·당첨 점프는 똑같이
+      const img = getFlat();
+      const bigH = H * 0.66;
+      const smallH = H * 0.28;
+      const h = bigH + (smallH - bigH) * away;
+      const w = h; // 정사각 그림
+      const cx = W / 2 + (smallH * 0.55 + W * 0.02 - W / 2) * away;
+      let bottom = H + h * 0.06 + h * (1 - rise) * 1.1 + leave * h * 1.3;
+      if (cheerT >= 0) bottom -= Math.sin(clamp01((cheerT % 0.62) / 0.5) * Math.PI) * h * 0.25;
+      const tr = S.phase === "summon" && t < BURST + 0.1 ? charge * charge * 10 : 0;
+      const x = cx - w / 2 + (Math.random() - 0.5) * tr;
+      const y = bottom - h + (Math.random() - 0.5) * tr * 0.5;
+      // 몸 뒤 오라
+      const orb = S.phase === "summon" ? smooth((t - RAISE + 0.25) / 0.4) * (1 - smooth((t - BURST - 0.3) / 0.4)) : 0;
+      if (orb > 0.01) {
+        const gr = g.createRadialGradient(cx, y + h * 0.5, 0, cx, y + h * 0.5, h * (0.55 + charge * 0.3));
+        gr.addColorStop(0, `rgba(190,230,255,${0.5 * orb})`);
+        gr.addColorStop(1, "rgba(140,120,255,0)");
+        g.fillStyle = gr;
+        g.fillRect(0, 0, W, H);
+      }
+      if (img?.complete && img.naturalWidth) {
+        const zap = S.phase === "summon" ? Math.max(0, 1 - Math.abs(t - BURST - 0.05) / 0.25) : 0;
+        g.save();
+        if (zap > 0) g.filter = `brightness(${1 + zap * 0.8})`;
+        g.drawImage(img, x, y, w, h);
+        g.restore();
+      }
+      // 그림 속 앞발 자리(번개가 꽂힐 곳)
+      pawL = { x: x + w * 0.19, y: y + h * 0.62 };
+      pawR = { x: x + w * 0.69, y: y + h * 0.64 };
+      head = { x: x + w * 0.45, y: y + h * 0.25 };
     }
 
     // ── 2D 효과 ──

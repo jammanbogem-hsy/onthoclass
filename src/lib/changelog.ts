@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.38.1";
+export const APP_VERSION = "1.38.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,13 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.38.2",
+    date: "2026-11-03",
+    kind: "patch",
+    title: "3D가 안 되는 컴퓨터에서도 번개돌이가 나와요",
+    items: ["그래픽 가속이 꺼진 학교 컴퓨터·크롬북에서도 번개돌이가 그림으로 나와 기를 모으고 당첨 때 뛰어요."],
+  },
   {
     version: "1.38.1",
     date: "2026-11-03",
