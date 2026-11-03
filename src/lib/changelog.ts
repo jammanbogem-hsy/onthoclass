@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.35.0";
+export const APP_VERSION = "1.37.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,17 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.37.0",
+    date: "2026-11-03",
+    kind: "minor",
+    title: "뽑기가 슬롯머신처럼 돌아가요",
+    items: [
+      "뽑기를 누르면 이름이 슬롯머신처럼 굴러가다 점점 느려져 멈춰요.",
+      "멈추기 직전에 화면이 커지고 두근두근 떨려요. 당첨되면 '쾅' 흔들리며 번쩍해요.",
+      "드럼롤, 릴 소리, 잭팟 종소리, 친구들 환호 소리가 새로 생겼어요.",
+    ],
+  },
   {
     version: "1.36.0",
     date: "2026-11-01",

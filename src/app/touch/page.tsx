@@ -65,21 +65,81 @@ function out(ctx: AudioContext): AudioNode {
   return _master ?? ctx.destination;
 }
 
-// 룰렛 도는 동안의 장난스러운 '뿅' — 펜타토닉에서 무작위 음을 골라 만화처럼.
-const BLIP_NOTES = [523.25, 587.33, 659.25, 783.99, 880.0]; // 도 레 미 솔 라
-function playBlip(ctx: AudioContext, progress: number) {
+// ── 일레븐랩스로 만든 효과음(public/sounds/touch, scripts/touch/make-sfx.mjs) ──
+// 페이지가 열리면 파일만 미리 받아 두고, 첫 클릭으로 AudioContext가 생기면 디코드한다.
+// 파일을 못 받거나 디코드 전이면 아래 신스 소리로 대신 낸다(뽑기는 절대 막지 않음).
+const SFX_NAMES = ["drumroll", "spin", "stop", "rimshot", "jackpot", "cheer"] as const;
+type SfxName = (typeof SFX_NAMES)[number];
+const _raw: Partial<Record<SfxName, Promise<ArrayBuffer | null>>> = {};
+const _buf: Partial<Record<SfxName, AudioBuffer>> = {};
+let _decoding: Promise<void> | null = null;
+function preloadSfx() {
+  for (const n of SFX_NAMES) {
+    _raw[n] ??= fetch(`/sounds/touch/${n}.mp3`)
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .catch(() => null);
+  }
+}
+function sfxReady(ctx: AudioContext): Promise<void> {
+  preloadSfx();
+  _decoding ??= Promise.all(
+    SFX_NAMES.map(async (n) => {
+      try {
+        const ab = await _raw[n];
+        if (ab) _buf[n] = await ctx.decodeAudioData(ab.slice(0));
+      } catch {
+        /* 이 소리만 신스로 */
+      }
+    })
+  ).then(() => undefined);
+  return _decoding;
+}
+type Voice = { stop: (fade?: number) => void };
+function playSfx(
+  ctx: AudioContext,
+  name: SfxName,
+  { gain = 1, at = 0, loop = false, rate = 1 } = {}
+): Voice | null {
+  const b = _buf[name];
+  if (!b) return null;
+  const t = ctx.currentTime + at;
+  const src = ctx.createBufferSource();
+  src.buffer = b;
+  src.loop = loop;
+  src.playbackRate.value = rate;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(gain, t);
+  src.connect(g).connect(out(ctx));
+  src.start(t);
+  return {
+    stop(fade = 0.08) {
+      try {
+        const n = ctx.currentTime;
+        g.gain.cancelScheduledValues(n);
+        g.gain.setValueAtTime(g.gain.value, n);
+        g.gain.linearRampToValueAtTime(0, n + fade);
+        src.stop(n + fade + 0.02);
+      } catch {
+        /* 이미 멈춤 */
+      }
+    },
+  };
+}
+
+// 릴이 한 칸 넘어갈 때마다 '딱' — 짧고 마른 클릭(속도에 따라 음높이).
+function playTick(ctx: AudioContext, speed: number) {
   const t = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  osc.type = "triangle";
-  const note = BLIP_NOTES[Math.floor(Math.random() * BLIP_NOTES.length)];
-  osc.frequency.setValueAtTime(note * (progress > 0.66 ? 2 : 1), t); // 막판엔 한 옥타브 위
+  osc.type = "square";
+  osc.frequency.setValueAtTime(900 + Math.min(1, speed) * 700, t);
+  osc.frequency.exponentialRampToValueAtTime(300, t + 0.03);
   gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(0.09, t + 0.005);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.05, t + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
   osc.connect(gain).connect(out(ctx));
   osc.start(t);
-  osc.stop(t + 0.13);
+  osc.stop(t + 0.05);
 }
 
 // 쭈욱 올라가는 슬라이드 휘파람.
@@ -279,6 +339,22 @@ export default function TouchDrawPage() {
       /* 저장 실패 무시 */
     }
   }, [paneCount, soundOn, hydrated]);
+
+  // ── 효과음 파일 미리 받기 + 첫 터치에 오디오 깨우기(첫 뽑기부터 소리가 바로 나게) ──
+  useEffect(() => {
+    preloadSfx();
+    if (!soundOn) return;
+    const wake = () => {
+      const ctx = getAudio();
+      if (ctx) void sfxReady(ctx);
+    };
+    window.addEventListener("pointerdown", wake, { once: true, capture: true });
+    window.addEventListener("keydown", wake, { once: true, capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", wake, { capture: true });
+      window.removeEventListener("keydown", wake, { capture: true });
+    };
+  }, [soundOn]);
 
   // ── "동작 줄이기" 설정 감지(마운트 이후 — export-safe) ──
   useEffect(() => {
@@ -518,8 +594,7 @@ const Picker = forwardRef<
   const [drawn, setDrawn] = useState<string[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
   const [rolling, setRolling] = useState(false);
-  const [rollFace, setRollFace] = useState("");
-  const [rollFx, setRollFx] = useState({ s: 1, r: 0 });
+  const [strip, setStrip] = useState<string[]>([]); // 슬롯 릴에 지나갈 이름들(마지막에서 두 번째가 당첨)
   const [winPhrase, setWinPhrase] = useState("");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -528,13 +603,19 @@ const Picker = forwardRef<
   const [hydrated, setHydrated] = useState(false);
 
   const switchId = useId();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const reelRef = useRef<HTMLDivElement>(null); // 위아래로 구르는 이름 띠
+  const stageRef = useRef<HTMLDivElement>(null); // 확대·흔들림을 주는 무대
+  const voicesRef = useRef<Voice[]>([]); // 도는 동안 울리는 소리(드럼롤·릴)
 
   const clearTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
+    voicesRef.current.forEach((v) => v.stop());
+    voicesRef.current = [];
+    if (stageRef.current) stageRef.current.style.transform = "";
   }, []);
 
   // ── 통 저장값 불러오기(없으면 0번 통은 레거시 v1로 승계) ──
@@ -582,62 +663,146 @@ const Picker = forwardRef<
   const exhausted = excludeDrawn && items.length > 0 && pool.length === 0;
   const canDraw = !rolling && pool.length > 0;
 
-  // ── 뽑기 ──
+  // ── 당첨 순간: 무대가 '쾅' 커졌다 흔들리고, 당첨 소리 ──
+  const land = useCallback(
+    (winner: string, ctx: AudioContext | null) => {
+      const vol = compact ? 0.6 : 1; // 여러 통이 같이 울리면 조금 작게
+      if (ctx && _buf.jackpot) {
+        playSfx(ctx, "stop", { gain: 0.9 * vol });
+        playSfx(ctx, "rimshot", { gain: 0.8 * vol });
+        playSfx(ctx, "jackpot", { gain: 0.75 * vol, at: 0.12 });
+        playSfx(ctx, "cheer", { gain: 0.7 * vol, at: 0.32 });
+      } else if (ctx) playCelebrate(ctx);
+      const st = stageRef.current;
+      if (st && !reduceMotion && st.animate) {
+        st.animate(
+          [
+            { transform: "scale(1.06)" },
+            { transform: "scale(1.16) rotate(-1.5deg)", offset: 0.12 },
+            { transform: "scale(0.97) translate(-10px, 4px) rotate(1.5deg)", offset: 0.28 },
+            { transform: "scale(1.04) translate(8px, -4px) rotate(-1deg)", offset: 0.44 },
+            { transform: "scale(0.99) translate(-5px, 2px)", offset: 0.6 },
+            { transform: "scale(1.01) translate(3px, -1px)", offset: 0.78 },
+            { transform: "none" },
+          ],
+          { duration: 620, easing: "ease-out" }
+        );
+      }
+      setWinPhrase(WIN_PHRASES[Math.floor(Math.random() * WIN_PHRASES.length)]);
+      setRolling(false);
+      setCurrent(winner);
+      setDrawn((prev) => [...prev, winner]);
+      setBurst((b) => b + 1);
+    },
+    [compact, reduceMotion]
+  );
+
+  // ── 뽑기: 슬롯머신 릴이 빠르게 돌다 점점 느려지고, 당첨을 살짝 지나쳤다 되돌아와 멈춘다 ──
   const draw = useCallback(() => {
     if (rolling) return;
     const p = computePool(items, drawn, excludeDrawn);
     if (p.length === 0) return;
     const winner = p[Math.floor(Math.random() * p.length)];
     const ctx = soundOn ? getAudio() : null;
+    if (ctx) void sfxReady(ctx);
 
     setCurrent(null);
 
-    // 동작 줄이기 → 룰렛 깜빡임 없이 즉시 공개(색종이는 생략, 팡파르는 유지)
+    // 동작 줄이기 → 릴 없이 바로 공개(흔들림·색종이 없음, 소리는 그대로)
     if (reduceMotion) {
-      setRollFace(winner);
-      setRollFx({ s: 1, r: 0 });
-      setWinPhrase(WIN_PHRASES[Math.floor(Math.random() * WIN_PHRASES.length)]);
-      setCurrent(winner);
-      setDrawn((prev) => [...prev, winner]);
-      setBurst((b) => b + 1);
-      if (ctx) playCelebrate(ctx);
+      land(winner, ctx);
       return;
     }
 
+    // 릴에 지나갈 이름 띠 — 같은 이름이 연달아 붙지 않게, 당첨 바로 앞뒤는 다른 이름(아깝다! 효과)
+    const others = p.length > 1 ? p.filter((x) => x !== winner) : [winner];
+    const pick = (avoid?: string) => {
+      const src = p.length > 1 ? p : [winner];
+      let f = src[Math.floor(Math.random() * src.length)];
+      if (src.length > 1 && f === avoid) f = src[(src.indexOf(f) + 1) % src.length];
+      return f;
+    };
+    const N = compact ? 22 : 30;
+    const s: string[] = [];
+    for (let i = 0; i < N - 1; i++) s.push(pick(s[i - 1]));
+    s.push(others[Math.floor(Math.random() * others.length)]);
+    s.push(winner);
+    s.push(others[Math.floor(Math.random() * others.length)]);
+    s.push(pick());
+    const W = N; // 당첨 위치
+    setStrip(s);
     setRolling(true);
-    const faces = p.length > 1 ? p : [winner];
-    const total = Math.min(28, Math.max(14, faces.length * 2 + 12));
-    let tick = 0;
-    const step = () => {
-      tick += 1;
-      if (tick >= total) {
-        timerRef.current = null;
-        setRollFace(winner);
-        setRollFx({ s: 1, r: 0 }); // 당첨은 정자세 → touch-pop이 통통 튐
-        setWinPhrase(
-          WIN_PHRASES[Math.floor(Math.random() * WIN_PHRASES.length)]
-        );
-        setRolling(false);
-        setCurrent(winner);
-        setDrawn((prev) => [...prev, winner]);
-        setBurst((b) => b + 1);
-        if (ctx) playCelebrate(ctx);
+
+    // 도는 동안 소리: 드럼롤 + 릴 도는 소리(파일 준비되면 바로)
+    if (ctx) {
+      void sfxReady(ctx).then(() => {
+        if (rafRef.current == null) return;
+        const vol = compact ? 0.6 : 1;
+        voicesRef.current = [
+          playSfx(ctx, "drumroll", { gain: 0.8 * vol }),
+          playSfx(ctx, "spin", { gain: 0.7 * vol, loop: true }),
+        ].filter((v): v is Voice => !!v);
+      });
+    }
+
+    const D = compact ? 3000 : 3900;
+    const OV = 0.42; // 당첨을 살짝 지나치는 정도(칸)
+    const A = 0.84; // 이 시점까지 감속하며 지나치고, 나머지 시간에 되돌아옴
+    const t0 = performance.now();
+    let prevPos = 0;
+    let prevNow = t0;
+    let lastRow = 0;
+    let lastTick = 0;
+    const frame = (now: number) => {
+      const t = Math.min(1, (now - t0) / D);
+      let pos: number;
+      if (t < A) pos = (W + OV) * (1 - Math.pow(1 - t / A, 3.4));
+      else {
+        const b = (t - A) / (1 - A);
+        const e = b < 0.5 ? 2 * b * b : 1 - Math.pow(-2 * b + 2, 2) / 2;
+        pos = W + OV - OV * e;
+      }
+      const v = (Math.abs(pos - prevPos) / Math.max(1, now - prevNow)) * 1000; // 초당 칸
+      prevPos = pos;
+      prevNow = now;
+
+      const reel = reelRef.current;
+      if (reel) {
+        reel.style.transform = `translate3d(0, calc(${(-pos).toFixed(3)} * var(--row)), 0)`;
+        reel.style.filter = v > 8 ? `blur(${Math.min(3.5, v * 0.06).toFixed(1)}px)` : "none";
+      }
+      // 느려질수록 무대가 다가오고(확대) 두근두근 떨린다
+      const st = stageRef.current;
+      if (st) {
+        const k = Math.max(0, Math.min(1, (t - 0.45) / 0.55));
+        const ease = k * k * (3 - 2 * k);
+        const amp = ease * (compact ? 2 : 3.5);
+        const jx = Math.sin(now * 0.083) * amp;
+        const jy = Math.cos(now * 0.117) * amp * 0.6;
+        st.style.transform = `scale(${(1 + 0.06 * ease).toFixed(4)}) translate(${jx.toFixed(2)}px, ${jy.toFixed(2)}px)`;
+      }
+      // 한 칸 넘어갈 때마다 '딱'
+      const row = Math.round(pos);
+      if (row !== lastRow) {
+        lastRow = row;
+        if (ctx && now - lastTick > 30) {
+          playTick(ctx, v / 30);
+          lastTick = now;
+        }
+      }
+
+      if (t >= 1) {
+        rafRef.current = null;
+        voicesRef.current.forEach((x) => x.stop(0.12));
+        voicesRef.current = [];
+        if (reel) reel.style.filter = "none";
+        land(winner, ctx);
         return;
       }
-      const prog = tick / total;
-      setRollFace(faces[Math.floor(Math.random() * faces.length)]);
-      // 후반으로 갈수록 변동 폭을 키워 극적으로 — 크기 0.6~1.7배 + 좌우 흔들림
-      const amp = 0.45 + prog * 0.7;
-      const s = Math.min(1.7, Math.max(0.6, 1 + (Math.random() - 0.42) * amp));
-      const r = (Math.random() - 0.5) * (8 + prog * 16);
-      setRollFx({ s, r });
-      if (ctx) playBlip(ctx, prog);
-      // 빠르게 시작해 점점 느려지다(감속) 당첨에서 멈춘다: 40ms → ~260ms
-      const delay = 40 + Math.pow(prog, 3) * 220;
-      timerRef.current = setTimeout(step, delay);
+      rafRef.current = requestAnimationFrame(frame);
     };
-    step();
-  }, [rolling, items, drawn, excludeDrawn, reduceMotion, soundOn]);
+    rafRef.current = requestAnimationFrame(frame);
+  }, [rolling, items, drawn, excludeDrawn, reduceMotion, soundOn, compact, land]);
 
   useImperativeHandle(ref, () => ({ draw }), [draw]);
 
@@ -647,7 +812,7 @@ const Picker = forwardRef<
     setRolling(false);
     setDrawn([]);
     setCurrent(null);
-    setRollFace("");
+    setStrip([]);
     setWinPhrase("");
   }, [clearTimer]);
 
@@ -715,8 +880,22 @@ const Picker = forwardRef<
 
       {/* 무대 — 결과 표시 */}
       <div
-        className={`relative flex flex-col items-center justify-center overflow-hidden rounded-[2rem] bg-[var(--md-sys-color-surface-container)] p-5 ${sz.stage}`}
+        ref={stageRef}
+        className={`relative flex flex-col items-center justify-center overflow-hidden rounded-[2rem] bg-[var(--md-sys-color-surface-container)] p-5 will-change-transform ${sz.stage} ${
+          rolling ? "touch-stage-rolling" : ""
+        }`}
       >
+        {/* 슬롯머신 전구 — 도는 동안 빠르게, 당첨 뒤엔 천천히 줄지어 깜빡 */}
+        {items.length > 0 && !reduceMotion && (rolling || current) && (
+          <Bulbs fast={rolling} />
+        )}
+        {/* 당첨 순간 번쩍 + 뒤에서 도는 빛줄기 */}
+        {!rolling && current && !reduceMotion && (
+          <>
+            <div key={`ray${burst}`} aria-hidden className="touch-rays" />
+            <div key={`fl${burst}`} aria-hidden className="touch-flash" />
+          </>
+        )}
         {/* 색종이 (동작 줄이기에서는 생략) */}
         {burst > 0 && !rolling && current && !reduceMotion && (
           <Confetti seed={burst} dense={!compact} />
@@ -748,7 +927,7 @@ const Picker = forwardRef<
         )}
 
         {/* 결과 콘텐츠 */}
-        <div className="z-[1] flex flex-col items-center text-center">
+        <div className="z-[1] flex w-full flex-col items-center text-center">
           {items.length === 0 ? (
             play ? (
               <div className="flex flex-col items-center gap-2 text-[var(--md-sys-color-on-surface-variant)]">
@@ -760,23 +939,32 @@ const Picker = forwardRef<
               <EmptyHint onAdd={openEditor} />
             )
           ) : rolling ? (
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex w-full flex-col items-center gap-3">
               <p
                 aria-hidden
                 className={`touch-wiggle font-extrabold text-[var(--md-sys-color-tertiary)] ${sz.drum}`}
               >
                 🥁 두구두구…
               </p>
-              <p
+              {/* 릴 창: 가운데 줄이 당첨 칸, 위아래는 흐리게 */}
+              <div
                 aria-hidden
-                className={`break-keep font-extrabold text-[var(--md-sys-color-primary)] will-change-transform ${sz.roll}`}
-                style={{
-                  transform: `scale(${rollFx.s}) rotate(${rollFx.r}deg)`,
-                  transition: "transform 70ms cubic-bezier(0.2,0.7,0.3,1.3)",
-                }}
+                className={`touch-reel relative w-full max-w-[32rem] overflow-hidden rounded-3xl bg-[var(--md-sys-color-surface-container-lowest)] font-black ring-4 ring-[var(--md-sys-color-primary)] ${sz.roll}`}
               >
-                {rollFace || "…"}
-              </p>
+                <div className="pointer-events-none absolute inset-x-2 top-1/2 z-[1] h-[var(--row)] -translate-y-1/2 rounded-2xl bg-[color-mix(in_srgb,var(--md-sys-color-primary)_14%,transparent)]" />
+                <span className="pointer-events-none absolute left-1 top-1/2 z-[2] -translate-y-1/2 text-[0.5em] text-[var(--md-sys-color-primary)]">▶</span>
+                <span className="pointer-events-none absolute right-1 top-1/2 z-[2] -translate-y-1/2 text-[0.5em] text-[var(--md-sys-color-primary)]">◀</span>
+                <div ref={reelRef} className="absolute inset-x-0 top-[var(--row)] will-change-transform">
+                  {strip.map((f, i) => (
+                    <div
+                      key={i}
+                      className="flex h-[var(--row)] items-center justify-center truncate px-8 text-[var(--md-sys-color-primary)]"
+                    >
+                      <span className="truncate">{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : current ? (
             <div key={burst} className="touch-pop flex flex-col items-center">
@@ -972,6 +1160,30 @@ const Picker = forwardRef<
     </section>
   );
 });
+
+/** 무대 테두리의 슬롯머신 전구(장식) */
+function Bulbs({ fast }: { fast: boolean }) {
+  const n = 14;
+  const row = (side: "top" | "bottom") => (
+    <div
+      className={`pointer-events-none absolute inset-x-4 ${side === "top" ? "top-1.5" : "bottom-1.5"} flex justify-between`}
+    >
+      {Array.from({ length: n }, (_, i) => (
+        <span
+          key={i}
+          className={`touch-bulb ${fast ? "touch-bulb-fast" : ""}`}
+          style={{ animationDelay: `${(side === "top" ? i : n - i) * (fast ? 40 : 110)}ms` }}
+        />
+      ))}
+    </div>
+  );
+  return (
+    <div aria-hidden>
+      {row("top")}
+      {row("bottom")}
+    </div>
+  );
+}
 
 /** 항목이 하나도 없을 때의 안내 */
 function EmptyHint({ onAdd }: { onAdd: () => void }) {

@@ -862,8 +862,73 @@ html[data-font] body {
   animation: touch-jiggle 2.4s ease-in-out infinite;
 }
 
+/* ── /touch 슬롯머신 뽑기 ── */
+.touch-reel {
+  --row: 1.3em;
+  height: calc(var(--row) * 3);
+  line-height: 1.1;
+  -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+}
+.touch-stage-rolling {
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
+}
+.touch-bulb {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ffd166;
+  box-shadow: 0 0 8px 2px rgba(255, 209, 102, 0.7);
+  animation: touch-bulb 1100ms ease-in-out infinite;
+}
+.touch-bulb-fast {
+  animation-duration: 320ms;
+}
+@keyframes touch-bulb {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.touch-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0.85) 35%, rgba(255, 255, 255, 0) 75%);
+  animation: touch-flash 520ms ease-out forwards;
+}
+@keyframes touch-flash {
+  0% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+.touch-rays {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 180vmax;
+  height: 180vmax;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    color-mix(in srgb, #ffd166 38%, transparent) 0deg 9deg,
+    transparent 9deg 22.5deg
+  );
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 32%);
+  mask-image: radial-gradient(circle, #000 0%, transparent 32%);
+  animation: touch-rays 9s linear infinite, touch-rays-in 600ms ease-out both;
+}
+@keyframes touch-rays {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes touch-rays-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .touch-pop,
+  .touch-bulb,
+  .touch-rays,
+  .touch-flash,
   .touch-wiggle,
   .touch-bounce,
   .touch-jiggle {
