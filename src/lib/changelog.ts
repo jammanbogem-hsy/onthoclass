@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.37.0";
+export const APP_VERSION = "1.38.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,18 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.38.0",
+    date: "2026-11-03",
+    kind: "minor",
+    title: "번개돌이가 기를 모아 뽑아 줘요",
+    items: [
+      "뽑기를 누르면 족제비 번개돌이가 두 팔을 들어 기를 모으고, 번개가 '번쩍' 내리치며 뽑기가 시작돼요.",
+      "번개돌이는 화면 구석에서 지켜보다가 당첨되면 폴짝폴짝 뛰며 기뻐해요.",
+      "기기에서 '동작 줄이기'를 켜 두어도 뽑기 움직임이 그대로 보여요.",
+      "번개 모양 버튼으로 번개돌이 연출을 끄고 켤 수 있어요.",
+    ],
+  },
   {
     version: "1.37.0",
     date: "2026-11-03",

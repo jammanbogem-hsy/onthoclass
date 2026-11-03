@@ -9,7 +9,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=8";
 import { buildRig, skinWeights, poseRig, handPos } from "./rig.js?v=3";
 import { scanFace, pushToSkin, lensOf, scanBack, pushOntoBack, wornPoints, ringAt, frontAtP, nearestOf, settle } from "./fit.js?v=1";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, closeQuiz, quizOpen, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./town.js?v=27";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, closeQuiz, quizOpen, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./town.js?v=28";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -1774,7 +1774,7 @@ function miniNote(type, sp, sizeT, hard = false) {
 const HARD_MINI = {
   bar: (o) => { o.zone *= .72; o.speed *= 1.2; o.need = 3; o.win += 3; },
   rhythm: (o) => { o.need += 3; o.gap *= .85; o.win = 1.2 + (o.need + 4) * o.gap * 1.35 + 2.5; }, // 쉼표 마디가 섞여도 시간이 모자라지 않게
-  dodge: (o) => { o.lanes = 5; o.gap *= .62; o.speed *= 1.15; o.dur += 2; o.win = o.dur + 4; }, // 세 줄 → 다섯 줄, 장애물 많이
+  dodge: (o) => { o.lanes = 5; o.gap = Math.max(.62, o.gap * .82); o.speed *= 1.12; o.dur += 2; o.win = o.dur + 4; o.hard = true; }, // 다섯 줄, 더 자주 — 길은 늘 닿을 수 있게(아래 dodgeWave)
   jump: (o) => { o.gap *= .78; o.speed *= 1.15; o.dur += 2; o.win = o.dur + 4; },
   feed: (o) => { o.need += 2; o.fall *= 1.2; o.gap *= .85; o.win = 6 + o.need * 1.6; },
   hold: (o) => { o.need *= 1.25; o.jerk *= 1.3; },
@@ -1871,6 +1871,14 @@ function makeChart(sp, sizeT, hard = false) {
   minis.forEach((type, k) => notes.splice(Math.round((notes.length * (k + 1)) / (minis.length + 1)) + k, 0, miniNote(type, sp, sizeT, hard)));
   notes.push(mashNote(sp, sizeT, true)); // 마지막 끌어올리기
   if (GEAR.rod >= 3) for (const n of notes) if (MINI_TYPES.has(n.type)) n.win *= 1.15; // 카본 낚싯대: 미니게임 시간 넉넉히
+  // 방향키·원 칸이 너무 빨리 끝나지 않게: 우다다는 0.6초, 나머지는 0.95초보다 짧지 않게.
+  // 처음 세 칸은 손을 올릴 시간(1.9초 → 1.6초 → 1.3초 이상)을 준다(첫 1초에 줄이 끊긴다는 피드백)
+  let warm = 0;
+  for (const n of notes) {
+    if (n.type !== "tap" && n.type !== "circle") continue;
+    n.win = Math.max(n.win, n.burst ? .6 : .95);
+    if (warm < 3) { n.win = Math.max(n.win * 1.6, 1.9 - warm * .3); warm++; }
+  }
   return notes;
 }
 
@@ -2189,7 +2197,7 @@ function startMini(n) {
     : n.type === "simon" ? { seq: Array.from({ length: n.len }, () => DIRS[Math.floor(Math.random() * 4)]), phase: "watch", t: -.3, idx: 0, limit: 2.5 + n.len * 1.1 }
     : n.type === "spin" ? { turns: 0, last: -1, pa: null }
     : n.type === "rhythm" ? { notes: rhythmNotes(n), hits: 0, esc: 0, cool: 0, flash: 0 }
-    : n.type === "dodge" ? { lane: (n.lanes || 3) >> 1, y: (n.lanes || 3) >> 1, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
+    : n.type === "dodge" ? { lane: (n.lanes || 3) >> 1, y: (n.lanes || 3) >> 1, obs: [], spawn: 1, t: 0, hit: 0, inv: 0, safe: (n.lanes || 3) >> 1, last: 0 }
     : n.type === "jump" ? { y: 0, vy: 0, obs: [], spawn: 1, t: 0, hit: 0, inv: 0 }
     : n.type === "feed" ? { bx: .5, drops: [], spawn: .4, got: 0, bad: 0, lost: 0, pop: 0 }
     : n.type === "reflex" ? { phase: "wait", t: rand(1.1, 2.3), hits: 0, bad: 0 }
@@ -2458,6 +2466,23 @@ function rhythmPress(n) {
   if (m.hits >= n.need) miniWin(n);
 }
 // ---- 장애물 피하기: 세 줄 물길에서 물고기를 위아래로
+// 장애물 한 줄(벽)을 만든다. 늘 '빈 길'이 하나 이상 있고, 그 길은 앞 벽의 빈 길에서
+// 벽 사이 시간 안에 옮겨 갈 수 있는 거리(반응 0.3초 + 한 칸 0.2초)에만 둔다 → 어렵지만 반드시 깰 수 있다.
+function dodgeWave(n, m, NL) {
+  const gap = n.gap * rand(.85, 1.2);
+  m.spawn = gap;
+  const reach = TOUCH ? NL - 1 : clamp(Math.floor((gap - .3) / .2), 1, NL - 1); // 터치는 바로 그 줄을 누르면 된다
+  const lo = Math.max(0, m.safe - reach), hi = Math.min(NL - 1, m.safe + reach);
+  // 같은 줄만 계속 비면 쉬우니 대체로 옮겨 가게, 첫 벽은 가운데 근처
+  let next = m.last === 0 ? m.safe : Math.floor(rand(lo, hi + 1));
+  if (next === m.safe && hi > lo && Math.random() < .7) next = next + 1 <= hi && (Math.random() < .5 || next - 1 < lo) ? next + 1 : next - 1;
+  const free = new Set([next]);
+  // 다섯 줄: 벽 2~3개(빈 길 2~3개), 세 줄: 1~2개 — 쉬어 가는 벽도 가끔
+  const want = NL > 3 ? (Math.random() < .55 ? 3 : 2) : m.t > 1.5 && Math.random() < .45 ? 2 : 1;
+  const others = Array.from({ length: NL }, (_, i) => i).filter((l) => !free.has(l)).sort(() => Math.random() - .5);
+  for (const l of others.slice(0, Math.min(NL - 1, want))) { const r = Math.random(); m.obs.push({ x: 134, lane: l, weed: r < .35, can: r > .78 }); }
+  m.safe = next; m.last++;
+}
 function dodgePress(n, dir) {
   const m = F.ms;
   if (dir === "up") m.lane = Math.max(0, m.lane - 1);
@@ -2500,12 +2525,7 @@ function updateMini(n, dt, t) {
     if (HOLD.ptr) { const r = $("miniCv").getBoundingClientRect(); m.lane = clamp(Math.floor((HOLD.cy - r.top) / r.height * NL), 0, NL - 1); }
     m.y = lerp(m.y, m.lane, ease(16, dt));
     m.spawn -= dt;
-    if (m.spawn <= 0 && m.t < n.dur - 1.2) {
-      m.spawn = n.gap * rand(.8, 1.25);
-      const many = NL > 3 ? 1 + Math.floor(rand(1, NL - 1)) : m.t > 1.5 && Math.random() < .45 ? 2 : 1; // 늘 한 줄은 비어 있다(다섯 줄은 2~3개씩)
-      const lanes = Array.from({ length: NL }, (_, i) => i).sort(() => Math.random() - .5).slice(0, Math.min(NL - 1, many));
-      for (const l of lanes) { const r = Math.random(); m.obs.push({ x: 134, lane: l, weed: r < .35, can: r > .78 }); }
-    }
+    if (m.spawn <= 0 && m.t < n.dur - 1.2) dodgeWave(n, m, NL);
     for (const o of m.obs) o.x -= n.speed * dt;
     m.obs = m.obs.filter((o) => o.x > -10);
     for (const o of m.obs) if (!o.done && Math.abs(o.x - 22) < 7 && o.lane === Math.round(m.y) && m.inv <= 0) {
@@ -2727,6 +2747,12 @@ function drawMash(n, k, t) {
 }
 function miss(text) {
   G.misses = [...(G.misses || []).slice(-20), `${F.chart[F.i].type}:${text}`]; // 점검용
+  // 처음 두 칸까지는 놓쳐도 줄이 상하지 않는다(손 풀기) — 같은 칸을 넉넉히 다시
+  if (F.i < 2 && (F.grace ?? 2) > 0) {
+    F.grace = (F.grace ?? 2) - 1; F.combo = 0;
+    judge("천천히! 다시 해 봐요", "good"); SFX.nibble(); shake = .2;
+    showNote(); F.noteT = -.4; return;
+  }
   F.hearts--; F.combo = 0; $("combo").hidden = true;
   judge(text || "MISS", "miss"); SFX.miss(); flash("red"); shake = .6; punch = -1.2;
   A.slump = 1; F.leapV = 3.5; // 물고기가 확 뛰어오른다
@@ -2734,6 +2760,7 @@ function miss(text) {
   $("hearts").querySelectorAll("svg").forEach((h, k) => { h.classList.toggle("lost", k >= F.hearts); h.classList.toggle("hit", k === F.hearts); });
   if (F.hearts <= 0) return endFight("snap");
   showNote(); // 같은 칸을 다시 (연타는 처음부터)
+  F.noteT = -.35; // 놓친 뒤엔 숨 돌릴 틈을 조금 더
 }
 function endFight(result) {
   const f = F; if (!f) return;
@@ -3186,7 +3213,7 @@ let tutSeen = false; try { tutSeen = localStorage.getItem("jamfish-tut") === "1"
 if (!tutSeen && !STUDENT_PAGE) tutOpen(); // 학생 주소에서는 입장한 뒤 대기실에서 보여 준다
 // 한 판 더: 학생은 그사이 선생님이 바꾼 낚시터로(예전 판 장소를 그대로 쓰지 않게)
 $("againBtn").addEventListener("click", () => { const r = NET.role === "student" && NET.room; if (r && placeFor(r) !== PLACE) { $("end").hidden = true; choosePlace(placeFor(r)); } else start(); });
-document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=27").then((m) => m.renderTown()); }); } }, true);
+document.addEventListener("click", (e) => { if (e.target.closest?.("[data-town]")) { loadPlace("fresh").then(() => loadPlace("sea")).then(() => { if (!$("town").hidden) import("./town.js?v=28").then((m) => m.renderTown()); }); } }, true);
 $("placeBtn").addEventListener("click", () => { $("end").hidden = true; if (NET.role === "student") screens(); else $("start").hidden = false; });
 
 const CAM = { pos: new THREE.Vector3(1.4, 6.4, STAND.z + 7.2), look: new THREE.Vector3(0, 0, POND.z) };

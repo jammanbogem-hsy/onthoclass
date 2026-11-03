@@ -17,6 +17,9 @@ const SFX = {
   stop:     { sec: 0.6, text: "LOUD heavy slot machine reel stopping, mechanical clunk thud, immediate attack" },
   jackpot:  { sec: 3.0, text: "LOUD slot machine jackpot win, bells ringing and lots of coins pouring out, bright and happy" },
   cheer:    { sec: 3.0, text: "classroom of excited kids cheering wow and clapping, short happy crowd reaction" },
+  charge:   { sec: 2.2, text: "magical energy charging up, rising electric hum and crackle building to a peak, anime power up, no explosion" },
+  thunder:  { sec: 2.5, text: "LOUD close lightning strike, sharp electric crack followed by booming thunder rumble" },
+  zap:      { sec: 0.8, text: "LOUD electric zap whoosh, energy beam shooting forward, sci-fi, immediate attack" },
   rimshot:  { sec: 1.2, text: "LOUD drum roll ending with a big cymbal crash, game show reveal" },
 };
 

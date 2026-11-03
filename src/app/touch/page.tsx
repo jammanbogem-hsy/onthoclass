@@ -18,8 +18,9 @@ import {
 } from "react";
 import { Icon } from "@/components/Icon";
 import { Button, IconButton, Switch, Textarea } from "@/components/ui";
+import { Summon, type SummonHandle } from "./Summon";
 
-const GLOBAL_KEY = "jamtouch:v2"; // { paneCount, soundOn }
+const GLOBAL_KEY = "jamtouch:v2"; // { paneCount, soundOn, summonOn }
 const LEGACY_KEY = "jamtouch:v1"; // 단일 버전 데이터(0번 통으로 승계)
 const paneKey = (i: number) => `jamtouch:pane:${i}`;
 const MAX_PANES = 4;
@@ -68,7 +69,7 @@ function out(ctx: AudioContext): AudioNode {
 // ── 일레븐랩스로 만든 효과음(public/sounds/touch, scripts/touch/make-sfx.mjs) ──
 // 페이지가 열리면 파일만 미리 받아 두고, 첫 클릭으로 AudioContext가 생기면 디코드한다.
 // 파일을 못 받거나 디코드 전이면 아래 신스 소리로 대신 낸다(뽑기는 절대 막지 않음).
-const SFX_NAMES = ["drumroll", "spin", "stop", "rimshot", "jackpot", "cheer"] as const;
+const SFX_NAMES = ["drumroll", "spin", "stop", "rimshot", "jackpot", "cheer", "charge", "thunder", "zap"] as const;
 type SfxName = (typeof SFX_NAMES)[number];
 const _raw: Partial<Record<SfxName, Promise<ArrayBuffer | null>>> = {};
 const _buf: Partial<Record<SfxName, AudioBuffer>> = {};
@@ -293,7 +294,11 @@ export type PickerHandle = { draw: () => void };
 export default function TouchDrawPage() {
   const [paneCount, setPaneCount] = useState(1);
   const [soundOn, setSoundOn] = useState(true);
-  const [reduceMotion, setReduceMotion] = useState(false);
+  const [summonOn, setSummonOn] = useState(true); // 번개돌이(기 모으기→번개) 연출
+  const summonRef = useRef<SummonHandle>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  // 교실 화면 연출이라 기기의 "동작 줄이기" 설정과 상관없이 항상 움직인다(교사 요청).
+  const reduceMotion = false;
   const [play, setPlay] = useState(false); // 실행(몰입) 모드 — 추첨 화면만
   const [hydrated, setHydrated] = useState(false);
   const pickerRefs = useRef<(PickerHandle | null)[]>([]);
@@ -312,10 +317,12 @@ export default function TouchDrawPage() {
         const g = JSON.parse(raw) as Partial<{
           paneCount: number;
           soundOn: boolean;
+          summonOn: boolean;
         }>;
         if (typeof g.paneCount === "number")
           setPaneCount(Math.min(MAX_PANES, Math.max(1, Math.round(g.paneCount))));
         if (typeof g.soundOn === "boolean") setSoundOn(g.soundOn);
+        if (typeof g.summonOn === "boolean") setSummonOn(g.summonOn);
       } else {
         const legacy = localStorage.getItem(LEGACY_KEY);
         if (legacy) {
@@ -334,11 +341,57 @@ export default function TouchDrawPage() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(GLOBAL_KEY, JSON.stringify({ paneCount, soundOn }));
+      localStorage.setItem(GLOBAL_KEY, JSON.stringify({ paneCount, soundOn, summonOn }));
     } catch {
       /* 저장 실패 무시 */
     }
-  }, [paneCount, soundOn, hydrated]);
+  }, [paneCount, soundOn, summonOn, hydrated]);
+
+  // ── 번개돌이 연출: 소리·화면 흔들기 ──
+  const summonSfx = useCallback(
+    (name: "charge" | "thunder" | "zap", gain = 1) => {
+      const ctx = soundOn ? getAudio() : null;
+      return ctx ? playSfx(ctx, name, { gain }) : null;
+    },
+    [soundOn]
+  );
+  const shakeScreen = useCallback((power: number) => {
+    const el = mainRef.current;
+    if (!el?.animate) return;
+    const a = 14 * power;
+    el.animate(
+      [
+        { transform: "none" },
+        { transform: `translate(${-a}px, ${a * 0.6}px) scale(1.03)` },
+        { transform: `translate(${a * 0.8}px, ${-a * 0.5}px)` },
+        { transform: `translate(${-a * 0.5}px, ${a * 0.3}px)` },
+        { transform: `translate(${a * 0.3}px, 0)` },
+        { transform: "none" },
+      ],
+      { duration: 480, easing: "ease-out" }
+    );
+  }, []);
+  // 뽑기 요청: 연출이 켜져 있으면 기를 모으고 번개가 칠 때 뽑기 시작
+  const summon = useCallback(
+    (go: () => void) => {
+      const s = summonRef.current;
+      if (!summonOn || !s) return go();
+      if (s.busy()) return;
+      // 첫 뽑기에도 '기 모으는' 소리가 나도록 소리 준비를 아주 잠깐(최대 0.5초) 기다린다
+      const ctx = soundOn ? getAudio() : null;
+      if (!ctx) return s.play(go);
+      let started = false;
+      const begin = () => {
+        if (started) return;
+        started = true;
+        s.play(go);
+      };
+      void sfxReady(ctx).then(begin);
+      setTimeout(begin, 500);
+    },
+    [summonOn, soundOn]
+  );
+  const onWin = useCallback(() => summonRef.current?.cheer(), []);
 
   // ── 효과음 파일 미리 받기 + 첫 터치에 오디오 깨우기(첫 뽑기부터 소리가 바로 나게) ──
   useEffect(() => {
@@ -355,15 +408,6 @@ export default function TouchDrawPage() {
       window.removeEventListener("keydown", wake, { capture: true });
     };
   }, [soundOn]);
-
-  // ── "동작 줄이기" 설정 감지(마운트 이후 — export-safe) ──
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => setReduceMotion(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
 
   // ── 실행(몰입) 모드 진입/이탈 — 전체화면도 함께 토글 ──
   // 전체화면 요청은 사용자 제스처(버튼 클릭) 안에서 호출해야 한다.
@@ -401,8 +445,10 @@ export default function TouchDrawPage() {
 
   // ── 모든 통을 동시에 뽑기 ──
   const drawAll = useCallback(() => {
-    for (let i = 0; i < paneCount; i++) pickerRefs.current[i]?.draw();
-  }, [paneCount]);
+    summon(() => {
+      for (let i = 0; i < paneCount; i++) pickerRefs.current[i]?.draw();
+    });
+  }, [paneCount, summon]);
 
   // ── 스페이스/엔터로 "다 같이 뽑기"(입력 중·스크롤 필요 시 제외) ──
   useEffect(() => {
@@ -437,7 +483,7 @@ export default function TouchDrawPage() {
         : "max-w-7xl";
 
   return (
-    <main className="flex min-h-screen flex-col items-center bg-[var(--md-sys-color-surface)] px-3 py-6 text-[var(--md-sys-color-on-surface)] sm:px-4">
+    <main ref={mainRef} className="flex min-h-screen flex-col items-center bg-[var(--md-sys-color-surface)] px-3 py-6 text-[var(--md-sys-color-on-surface)] sm:px-4">
       <div
         className={`flex w-full flex-1 flex-col ${maxW} ${
           play ? "justify-center" : ""
@@ -500,6 +546,13 @@ export default function TouchDrawPage() {
             onClick={() => setSoundOn((v) => !v)}
           />
 
+          <IconButton
+            icon={summonOn ? "bolt" : "flash_off"}
+            variant="tonal"
+            label={summonOn ? "번개돌이 연출 끄기" : "번개돌이 연출 켜기"}
+            onClick={() => setSummonOn((v) => !v)}
+          />
+
           {!play && (
             // 세팅을 마치고 추첨 화면(실행 모드 + 전체화면)으로
             <Button ref={runBtnRef} size="lg" icon="play_arrow" onClick={enterPlay}>
@@ -548,6 +601,8 @@ export default function TouchDrawPage() {
               play={play}
               soundOn={soundOn}
               reduceMotion={reduceMotion}
+              summon={summon}
+              onWin={onWin}
             />
           ))}
         </div>
@@ -558,6 +613,7 @@ export default function TouchDrawPage() {
           </p>
         )}
       </div>
+      <Summon ref={summonRef} sfx={summonSfx} onShake={shakeScreen} />
     </main>
   );
 }
@@ -574,6 +630,8 @@ const Picker = forwardRef<
     play: boolean;
     soundOn: boolean;
     reduceMotion: boolean;
+    summon: (go: () => void) => void;
+    onWin: () => void;
   }
 >(function Picker(
   {
@@ -585,6 +643,8 @@ const Picker = forwardRef<
     play,
     soundOn,
     reduceMotion,
+    summon,
+    onWin,
   },
   ref
 ) {
@@ -693,8 +753,9 @@ const Picker = forwardRef<
       setCurrent(winner);
       setDrawn((prev) => [...prev, winner]);
       setBurst((b) => b + 1);
+      onWin();
     },
-    [compact, reduceMotion]
+    [compact, reduceMotion, onWin]
   );
 
   // ── 뽑기: 슬롯머신 릴이 빠르게 돌다 점점 느려지고, 당첨을 살짝 지나쳤다 되돌아와 멈춘다 ──
@@ -1015,7 +1076,7 @@ const Picker = forwardRef<
         ) : (
           <button
             onClick={(e) => {
-              draw();
+              summon(draw);
               if (e.detail > 0) e.currentTarget.blur(); // 마우스 클릭이면 포커스 해제 → 다음 스페이스는 전체 뽑기로
             }}
             disabled={!canDraw}

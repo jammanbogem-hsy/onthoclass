@@ -7,7 +7,7 @@ const [{ initializeApp }, A, Fn] = await Promise.all([
   import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`),
   import(`https://www.gstatic.com/firebasejs/${V}/firebase-functions.js`),
 ]);
-const app = initializeApp(FB), auth = A.getAuth(app), fns = Fn.getFunctions(app, "asia-northeast3");
+const app = initializeApp(FB, "jamfish"), auth = A.getAuth(app), fns = Fn.getFunctions(app, "asia-northeast3");
 const call = (name, data = {}) => Fn.httpsCallable(fns, name, { timeout: 40000 })(data).then((r) => r.data);
 
 const $ = (id) => document.getElementById(id);

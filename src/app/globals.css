@@ -924,20 +924,3 @@ html[data-font] body {
   to { opacity: 1; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .touch-pop,
-  .touch-bulb,
-  .touch-rays,
-  .touch-flash,
-  .touch-wiggle,
-  .touch-bounce,
-  .touch-jiggle {
-    animation: none;
-  }
-  /* 색종이는 떨어지는 애니메이션이 전부라, 멈추면 화면 위에 굳어 버린다 →
-     동작 줄이기에서는 아예 감춘다(JS에서도 렌더를 건너뜀). */
-  .touch-confetti-piece,
-  .touch-confetti-emoji {
-    display: none;
-  }
-}
