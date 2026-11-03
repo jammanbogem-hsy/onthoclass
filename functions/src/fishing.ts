@@ -14,6 +14,7 @@
  *    입장권은 해시만 저장(fishTokens/{sha256}), 입장번호도 소금+해시. 5번 틀리면 5분 잠금.
  */
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
+import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, type Transaction, type DocumentData } from "firebase-admin/firestore";
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
@@ -166,8 +167,11 @@ const tasteOf = (f: Fish) => { const { t, cond } = sizeOf(f); return Math.round(
 const db = () => getFirestore();
 const meRef = (uid: string) => db().doc(`fishers/${uid}`);
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-// 호출한 사람의 낚시꾼 키: 학생 입장권이 있으면 학생, 아니면 구글 로그인
+// 학생 Firebase 계정(uid s_{학급}_{학생}) — fishJoin 이 커스텀 토큰으로 만든 낚시터 전용 계정
+const isStudentAuth = (req: CallableRequest) => !!req.auth && req.auth.uid.startsWith("s_") && req.auth.token?.fish === "student";
+// 호출한 사람의 낚시꾼 키: 학생 계정·(예전)입장권이면 학생, 아니면 구글 로그인
 async function who(req: CallableRequest): Promise<string> {
+  if (isStudentAuth(req)) return req.auth!.uid;
   const st = req.data?.st;
   if (typeof st === "string" && st.length >= 20 && st.length <= 80) {
     const t = await db().doc(`fishTokens/${sha(st)}`).get();
@@ -342,10 +346,13 @@ export const fishCook = onCall(options, async (req) => {
 // ---------------------------------------------------------------- 낚시 학급(교사가 만들고, 학생은 코드+이름+입장번호)
 const CODE_CH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0·O·1·I 빼고
 const cleanName = (n: unknown) => String(n ?? "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, 12);
-const teacherOf = (req: CallableRequest) => { if (!req.auth) throw new HttpsError("unauthenticated", "선생님은 구글로 로그인해 주세요."); return req.auth.uid; };
+const teacherOf = (req: CallableRequest) => {
+  if (!req.auth || req.auth.uid.startsWith("s_")) throw new HttpsError("unauthenticated", "선생님은 구글로 로그인해 주세요.");
+  return req.auth.uid;
+};
 // 교사 = 낚시터 교사 가입(fishTeachers, 가입 코드로만) 또는 러닝크루 교사 계정(users.role) 또는 최고 관리자. 교사는 낚시터를 자유롭게 쓴다
 async function isTeacherUid(req: CallableRequest) {
-  if (!req.auth) return false;
+  if (!req.auth || req.auth.uid.startsWith("s_")) return false;
   if (isAdmin(req)) return true;
   const [fish, lms] = await Promise.all([db().doc(`fishTeachers/${req.auth.uid}`).get(), db().doc(`users/${req.auth.uid}`).get()]);
   return fish.exists || lms.data()?.role === "teacher";
@@ -476,11 +483,21 @@ export const fishJoin = onCall(options, async (req) => {
     return ref.id;
   });
   if (!sid) throw new HttpsError("permission-denied", "입장번호가 달라요. 번호가 생각나지 않으면 선생님에게 초기화해 달라고 말해 주세요.");
-  const key = `s_${cid}_${sid}`, st = randomBytes(24).toString("base64url");
-  await db().doc(`fishTokens/${sha(st)}`).set({ key, cid, sid, at: now });
+  const key = `s_${cid}_${sid}`;
   const me = meRef(key);
   if (!(await me.get()).exists) await me.set({ name, cid, money: 0, romance: 0, taste: 0, rod: 1, own: {}, wear: {}, stock: { ramen: 1 }, cooked: {}, bagN: 0, caught: 0, best: 0, createdAt: FieldValue.serverTimestamp() });
-  return { st, name, className: cls.data()?.name || "" };
+  // 학생마다 낚시터 전용 Firebase 계정: 이 토큰으로 로그인하면 uid 가 s_{학급}_{학생} 이 된다(러닝크루와 무관)
+  try {
+    const token = await getAuth().createCustomToken(key, { fish: "student", cid, sid });
+    await getAuth().updateUser(key, { displayName: name }).catch(() => getAuth().createUser({ uid: key, displayName: name }).catch(() => {}));
+    return { token, name, className: cls.data()?.name || "" };
+  } catch (e) {
+    // 열쇠를 못 만들면(서비스 계정 서명 권한 등) 예전 입장권으로라도 들어오게 한다 — 로그에 남겨 관리자가 고치게
+    console.error("fishJoin createCustomToken 실패", e);
+    const st = randomBytes(24).toString("base64url");
+    await db().doc(`fishTokens/${sha(st)}`).set({ key, cid, sid, at: now });
+    return { st, name, className: cls.data()?.name || "" };
+  }
 });
 // 학생 입장 1단계: 학급 코드가 맞는지와 학급 이름
 export const fishCodeCheck = onCall(options, async (req) => {

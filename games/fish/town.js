@@ -6,7 +6,10 @@ import { FB } from "./fb-config.js";
 
 const V = "12.13.0";
 // 계정: 학생(학급 코드+이름+입장번호 → 입장권 st, localStorage) 또는 구글(선생님·누구나)
-let ST = null; try { ST = localStorage.getItem("jamfish-st"); } catch {}
+let ST = null; try { ST = localStorage.getItem("jamfish-st"); } catch {} // 예전 입장권(남아 있으면 계속 쓴다)
+const stuAuth = () => !!NET.user?.uid?.startsWith("s_"); // 학생 낚시터 계정(이름+입장번호로 만든 Firebase 계정)
+const isStu = () => !!ST || stuAuth();
+const savedClass = () => { try { return localStorage.getItem("jamfish-class") || ""; } catch { return ""; } };
 // 생김새 팔레트(서버는 번호 0~7만 저장). 0번이 원래 색
 export const LOOK_PAL = {
   coat: ["#f4c21c", "#e0483c", "#3d7be0", "#4caf50", "#9b59d0", "#ff8fb8", "#f4f1e8", "#33343f"],
@@ -58,14 +61,14 @@ export async function initNet(h) {
     A.getRedirectResult(auth).catch(() => {});
     A.onAuthStateChanged(auth, async (u) => {
       NET.user = u;
-      if (ST) { // 학생 입장권이 먼저
-        try { const t0 = Date.now(); Object.assign(NET, await (await sdk()).call("fishMe", { st: ST })); keepSkew(NET.room, t0); NET.student = { name: NET.me.name, className: (() => { try { return localStorage.getItem("jamfish-class") || ""; } catch { return ""; } })() }; }
-        catch { setST(null); NET.student = null; }
-      }
-      if (!ST && u) { try { Object.assign(NET, await call("fishMe")); } catch {} } else if (!ST) Object.assign(NET, { me: null, bag: [] });
+      if (ST && u && !stuAuth()) setST(null); // 선생님이 구글로 로그인하면 남은 학생 입장권은 버린다
+      if (isStu()) { // 학생
+        try { const t0 = Date.now(); Object.assign(NET, await call("fishMe")); keepSkew(NET.room, t0); NET.student = { name: NET.me.name, className: savedClass() }; }
+        catch { setST(null); NET.student = null; if (stuAuth()) { A.signOut(auth).catch(() => {}); return; } }
+      } else if (u) { try { Object.assign(NET, await call("fishMe")); } catch {} } else Object.assign(NET, { me: null, bag: [] });
       NET.ready = true; changed();
       // 구글 로그인은 선생님만: 교사·관리자가 아니면 가입 코드 모달. 코드 없이 닫으면 로그아웃(가입 안 된 계정은 로그인 상태로 두지 않는다)
-      if (!ST && u && NET.me && NET.role === "user") openTeacherJoin(); else closeTeacherJoin();
+      if (!isStu() && u && NET.me && NET.role === "user") openTeacherJoin(); else closeTeacherJoin();
     });
   } catch { NET.ready = true; NET.failed = true; renderAcct(); hooks.onGate?.(); }
 }
@@ -79,7 +82,7 @@ export function phaseNow(r = NET.room) {
   if (r.phase === "lobby" || r.phase === "closed") return r.phase;
   const n = serverNow(); return n < r.startAt ? "countdown" : n < r.endAt ? "play" : "done";
 }
-export const hasTicket = () => !!ST;
+export const hasTicket = () => isStu();
 // 지금 낚시할 수 있는지와 그 이유. 서버에 아예 못 닿으면(학교망이 막는 등) 막지 않는다
 export function gate() {
   if (NET.failed) return { ok: true };
@@ -99,11 +102,11 @@ let lastHere = 0;
 const roomKey = (r) => JSON.stringify(r ? [r.open, r.closesAt, r.phase, r.round, r.startAt, r.endAt, r.place, r.roundSec, r.quizOn, r.quizN] : null);
 async function pollRoom() {
   let wait = 6000;
-  if (NET.role === "student" && ST && !document.hidden) {
+  if (NET.role === "student" && isStu() && !document.hidden) {
     const ph = phaseNow(); wait = ph === "play" ? 5000 : 2500;
     try {
       const here = Date.now() - lastHere > 9000, t0 = Date.now();
-      const r = await (await sdk()).call("fishRoom", { st: ST, here });
+      const r = await call("fishRoom", { here });
       if (here) lastHere = Date.now();
       keepSkew(r.room, t0);
       const was = roomKey(NET.room), wasP = JSON.stringify(NET.players);
@@ -150,7 +153,7 @@ export function askQuiz(onPass, { ctx = "cast", onFail } = {}) {
     btns.forEach((b, k) => { b.disabled = true; b.classList.toggle("right", k === q.a); b.classList.toggle("wrong", k === i && !ok); });
     hooks.sample?.(ok ? "perfect" : "miss");
     el.querySelector(".qmsg").textContent = ok ? (ctx === "fight" ? "정답! 계속 감아요" : "정답! 이제 던질 수 있어요") : `아쉬워요! 정답은 ${q.a + 1}번${ctx === "fight" ? "이에요. 물고기가 도망가요" : ""}`;
-    if (!TEST && NET.role === "student" && ST) sdk().then((a) => a.call("fishQuiz", { st: ST, qi, pick: i, ctx })).catch(() => {});
+    if (!TEST && NET.role === "student" && isStu()) sdk().then((a) => a.call("fishQuiz", { ...(ST ? { st: ST } : {}), qi, pick: i, ctx })).catch(() => {});
     quizT = setTimeout(() => { quizT = 0; el.hidden = true; el.querySelector(".qmsg").textContent = ""; if (ok) onPass(); else if (onFail) onFail(); else quizCool = Date.now() + 2500; }, ok ? 700 : 1600);
   };
   quizKey = (e) => { const n = +e.key; if (n >= 1 && n <= q.o.length) { e.preventDefault(); e.stopPropagation(); done(n - 1); } };
@@ -170,17 +173,33 @@ export async function checkCode(code) { return (await sdk()).call("fishCodeCheck
 // 학생 입장: 학급 코드 + 이름 + 입장번호 4자리
 export async function join(code, name, pin) {
   const r = await (await sdk()).call("fishJoin", { code, name, pin }).catch((e) => { hooks.toast?.(e?.message?.replace(/^.*?: /, "") || "입장하지 못했어요"); throw e; });
-  setST(r.st, r.className); NET.student = { name: r.name, className: r.className };
+  // 이름+입장번호가 맞으면 서버가 이 학생 전용 로그인 열쇠를 준다 → 낚시터 앱에 학생 계정으로 로그인
+  if (r.token) {
+    setST(null); try { localStorage.setItem("jamfish-class", r.className || ""); } catch {}
+    const { A, auth } = await sdk();
+    if (auth.currentUser) await A.signOut(auth).catch(() => {});
+    await A.signInWithCustomToken(auth, r.token);
+    NET.user = auth.currentUser;
+  } else setST(r.st, r.className); // 서버가 열쇠를 못 만든 때: 예전 입장권
+  NET.student = { name: r.name, className: r.className };
   const t0 = Date.now(); Object.assign(NET, await call("fishMe")); keepSkew(NET.room, t0); NET.ready = true; lastHere = 0; changed(); hooks.onLobby?.();
   hooks.toast?.(`${r.className} ${r.name}, 어서 와요!`);
 }
-export async function leave() { const st = ST; setST(null); NET.student = null; NET.role = ""; NET.room = null; NET.players = []; try { await (await sdk()).call("fishLeave", { st }); } catch {} Object.assign(NET, { me: null, bag: [] }); if (NET.user) { try { Object.assign(NET, await call("fishMe")); } catch {} } changed(); }
+export async function leave() {
+  const st = ST, wasAuth = stuAuth(); setST(null); try { localStorage.removeItem("jamfish-class"); } catch {}
+  NET.student = null; NET.role = ""; NET.room = null; NET.players = [];
+  if (st) { try { await (await sdk()).call("fishLeave", { st }); } catch {} }
+  Object.assign(NET, { me: null, bag: [] });
+  if (wasAuth) { const { A, auth } = await sdk(); await A.signOut(auth).catch(() => {}); }
+  else if (NET.user) { try { Object.assign(NET, await call("fishMe")); } catch {} }
+  changed();
+}
 export async function login() {
   const { A, auth } = await sdk(), p = new A.GoogleAuthProvider();
   try { await A.signInWithPopup(auth, p); }
   catch (e) { if (e?.code === "auth/popup-blocked" || e?.code === "auth/operation-not-supported-in-this-environment") await A.signInWithRedirect(auth, p); else if (e?.code !== "auth/popup-closed-by-user" && e?.code !== "auth/cancelled-popup-request") hooks.toast?.("로그인하지 못했어요. 선생님께 알려 주세요"); }
 }
-export async function logout() { if (ST) return leave(); const { A, auth } = await sdk(); await A.signOut(auth); }
+export async function logout() { if (isStu()) return leave(); const { A, auth } = await sdk(); await A.signOut(auth); }
 
 // 잡은 물고기를 살림망에(게임이 부른다). 실패해도 게임은 계속
 export async function saveCatch(sp, cm, kg, run, pts) {
@@ -194,7 +213,7 @@ export async function saveCatch(sp, cm, kg, run, pts) {
     return r;
   } catch { return null; }
 }
-export const refresh = async () => { if (ST || NET.user) { Object.assign(NET, await call("fishMe")); changed(); } };
+export const refresh = async () => { if (isStu() || NET.user) { Object.assign(NET, await call("fishMe")); changed(); } };
 
 // 학생 전용 주소(/fish/student 또는 /student). 지금 주소의 폴더 기준
 export const studentUrl = (code = "") => location.origin + location.pathname.replace(/student\/?$/, "").replace(/[^/]*$/, "") + "student" + (code ? `?code=${code}` : "");
@@ -677,7 +696,7 @@ const joinStep = (n) => $("joinSteps")?.querySelectorAll("li").forEach((li, i) =
 export function bindJoin() {
   const f1 = $("joinCode"), f2 = $("joinWho");
   let code = "";
-  const pre = new URLSearchParams(location.search).get("code"); if (pre) f1.code.value = pre.toUpperCase().slice(0, 6);
+  const pre = new URLSearchParams(location.search).get("code"); if (pre) f1.code.value = pre.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   f1.code.addEventListener("input", () => { f1.code.value = f1.code.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   f1.addEventListener("submit", async (e) => {
     e.preventDefault(); const b = f1.querySelector("button"), v = f1.code.value.trim();
@@ -691,6 +710,7 @@ export function bindJoin() {
     join(code, f2.name.value, f2.pin.value).catch(() => {}).finally(() => { b.disabled = false; b.textContent = "들어가기"; });
   });
   $("joinBack").addEventListener("click", () => { f2.hidden = true; f1.hidden = false; joinStep(0); f1.code.focus(); });
+  if (f1.code.value.length === 6) f1.requestSubmit(); // 선생님 초대 링크로 왔으면 코드 단계는 건너뛴다
 }
 export function renderLobby() {
   const ph = phaseNow(), r = NET.room, me = NET.me?.name;
