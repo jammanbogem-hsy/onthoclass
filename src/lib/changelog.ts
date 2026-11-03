@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.38.2";
+export const APP_VERSION = "1.39.0";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,19 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.39.0",
+    date: "2026-11-03",
+    kind: "minor",
+    title: "뽑기 캐릭터가 다섯으로 늘었어요",
+    items: [
+      "다람쥐·시바·바퀴·비둘기가 새로 나와요. 굵은 테두리와 선명한 색의 만화 느낌이에요.",
+      "캐릭터마다 동작이 달라요. 다람쥐는 앞발을 비비고, 시바는 엉덩이를 흔들고, 바퀴는 허둥지둥, 비둘기는 날개를 퍼덕여요.",
+      "번개가 칠 때 도토리·뼈다귀·먼지·깃털이 사방으로 튀어요.",
+      "설정에서 캐릭터를 고르거나 🎲 무작위로 둘 수 있어요.",
+      "뽑기 카드의 글자와 결과 숫자가 더 커졌어요.",
+    ],
+  },
   {
     version: "1.38.2",
     date: "2026-11-03",

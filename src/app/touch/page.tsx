@@ -18,9 +18,9 @@ import {
 } from "react";
 import { Icon } from "@/components/Icon";
 import { Button, IconButton, Switch, Textarea } from "@/components/ui";
-import { Summon, type SummonHandle } from "./Summon";
+import { CHAR_IDS, CHARS, Summon, type CharId, type SummonHandle } from "./Summon";
 
-const GLOBAL_KEY = "jamtouch:v2"; // { paneCount, soundOn, summonOn }
+const GLOBAL_KEY = "jamtouch:v2"; // { paneCount, soundOn, summonOn, summonChar }
 const LEGACY_KEY = "jamtouch:v1"; // 단일 버전 데이터(0번 통으로 승계)
 const paneKey = (i: number) => `jamtouch:pane:${i}`;
 const MAX_PANES = 4;
@@ -295,6 +295,8 @@ export default function TouchDrawPage() {
   const [paneCount, setPaneCount] = useState(1);
   const [soundOn, setSoundOn] = useState(true);
   const [summonOn, setSummonOn] = useState(true); // 번개돌이(기 모으기→번개) 연출
+  const [summonChar, setSummonChar] = useState<CharId | "random">("random"); // 뽑기 캐릭터
+  const lastChar = useRef<CharId | null>(null);
   const summonRef = useRef<SummonHandle>(null);
   const mainRef = useRef<HTMLElement>(null);
   // 교실 화면 연출이라 기기의 "동작 줄이기" 설정과 상관없이 항상 움직인다(교사 요청).
@@ -318,11 +320,14 @@ export default function TouchDrawPage() {
           paneCount: number;
           soundOn: boolean;
           summonOn: boolean;
+          summonChar: string;
         }>;
         if (typeof g.paneCount === "number")
           setPaneCount(Math.min(MAX_PANES, Math.max(1, Math.round(g.paneCount))));
         if (typeof g.soundOn === "boolean") setSoundOn(g.soundOn);
         if (typeof g.summonOn === "boolean") setSummonOn(g.summonOn);
+        if (g.summonChar === "random" || (CHAR_IDS as string[]).includes(g.summonChar ?? ""))
+          setSummonChar(g.summonChar as CharId | "random");
       } else {
         const legacy = localStorage.getItem(LEGACY_KEY);
         if (legacy) {
@@ -341,11 +346,19 @@ export default function TouchDrawPage() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(GLOBAL_KEY, JSON.stringify({ paneCount, soundOn, summonOn }));
+      localStorage.setItem(GLOBAL_KEY, JSON.stringify({ paneCount, soundOn, summonOn, summonChar }));
     } catch {
       /* 저장 실패 무시 */
     }
-  }, [paneCount, soundOn, summonOn, hydrated]);
+  }, [paneCount, soundOn, summonOn, summonChar, hydrated]);
+
+  // 고른 캐릭터(무작위면 전부, 하나씩)를 한가할 때 미리 받아 둔다
+  useEffect(() => {
+    if (!hydrated || !summonOn) return;
+    const ids = summonChar === "random" ? CHAR_IDS : [summonChar];
+    const id = window.setTimeout(() => summonRef.current?.preload(ids), 1200);
+    return () => window.clearTimeout(id);
+  }, [hydrated, summonOn, summonChar]);
 
   // ── 번개돌이 연출: 소리·화면 흔들기 ──
   const summonSfx = useCallback(
@@ -377,19 +390,26 @@ export default function TouchDrawPage() {
       const s = summonRef.current;
       if (!summonOn || !s) return go();
       if (s.busy()) return;
+      // 무작위면 바로 전 캐릭터는 빼고 고른다
+      let ch: CharId;
+      if (summonChar === "random") {
+        const pool = CHAR_IDS.filter((c) => c !== lastChar.current);
+        ch = pool[Math.floor(Math.random() * pool.length)];
+      } else ch = summonChar;
+      lastChar.current = ch;
       // 첫 뽑기에도 '기 모으는' 소리가 나도록 소리 준비를 아주 잠깐(최대 0.5초) 기다린다
       const ctx = soundOn ? getAudio() : null;
-      if (!ctx) return s.play(go);
+      if (!ctx) return s.play(go, ch);
       let started = false;
       const begin = () => {
         if (started) return;
         started = true;
-        s.play(go);
+        s.play(go, ch);
       };
       void sfxReady(ctx).then(begin);
       setTimeout(begin, 500);
     },
-    [summonOn, soundOn]
+    [summonOn, soundOn, summonChar]
   );
   const onWin = useCallback(() => summonRef.current?.cheer(), []);
 
@@ -549,9 +569,35 @@ export default function TouchDrawPage() {
           <IconButton
             icon={summonOn ? "bolt" : "flash_off"}
             variant="tonal"
-            label={summonOn ? "번개돌이 연출 끄기" : "번개돌이 연출 켜기"}
+            label={summonOn ? "소환 연출 끄기" : "소환 연출 켜기"}
             onClick={() => setSummonOn((v) => !v)}
           />
+
+          {!play && summonOn && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-[var(--md-sys-color-on-surface-variant)]">
+                캐릭터
+              </span>
+              <div className="inline-flex rounded-full bg-[var(--md-sys-color-surface-container-high)] p-1">
+                {(["random", ...CHAR_IDS] as const).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setSummonChar(c)}
+                    aria-pressed={summonChar === c}
+                    aria-label={c === "random" ? "무작위" : CHARS[c].name}
+                    title={c === "random" ? "무작위" : CHARS[c].name}
+                    className={`h-9 w-10 rounded-full text-lg transition ${
+                      summonChar === c
+                        ? "bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]"
+                        : "hover:bg-[color-mix(in_srgb,var(--md-sys-color-on-surface)_8%,transparent)]"
+                    }`}
+                  >
+                    {c === "random" ? "🎲" : CHARS[c].emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {!play && (
             // 세팅을 마치고 추첨 화면(실행 모드 + 전체화면)으로
@@ -896,22 +942,27 @@ const Picker = forwardRef<
 
   // 분할 시 더 촘촘하게(글자/무대 크기 축소). 실행 모드는 옵션이 사라져
   // 여백이 생기므로 무대를 더 키워 몰입감을 준다.
+  // 교실 TV·칠판에 띄우므로 글자를 크게. 실행(전체화면) 모드는 더 크게.
   const sz = compact
     ? {
-        stage: play ? "min-h-[42vh]" : "min-h-[28vh]",
-        drum: "text-lg sm:text-xl",
-        roll: "text-3xl sm:text-4xl",
-        result: "text-4xl sm:text-5xl",
-        emoji: "text-2xl sm:text-3xl",
-        btn: "h-12 min-w-[8rem] px-6 text-lg",
+        stage: play ? "min-h-[46vh]" : "min-h-[30vh]",
+        drum: "text-xl sm:text-2xl",
+        roll: play ? "text-5xl sm:text-7xl" : "text-4xl sm:text-6xl",
+        result: play ? "text-7xl sm:text-[7.5rem]" : "text-6xl sm:text-7xl",
+        emoji: play ? "text-4xl sm:text-6xl" : "text-3xl sm:text-5xl",
+        phrase: play ? "text-2xl sm:text-3xl" : "text-xl sm:text-2xl",
+        badge: play ? "text-base sm:text-lg" : "text-sm sm:text-base",
+        btn: play ? "h-16 min-w-[11rem] px-8 text-2xl" : "h-14 min-w-[9rem] px-7 text-xl",
       }
     : {
         stage: play ? "min-h-[62vh]" : "min-h-[44vh]",
-        drum: "text-2xl sm:text-3xl",
-        roll: "text-5xl sm:text-6xl",
-        result: "text-5xl sm:text-7xl",
-        emoji: "text-3xl sm:text-5xl",
-        btn: "h-16 min-w-[12rem] px-10 text-2xl",
+        drum: "text-2xl sm:text-4xl",
+        roll: play ? "text-6xl sm:text-8xl" : "text-5xl sm:text-7xl",
+        result: play ? "text-8xl sm:text-[10rem]" : "text-6xl sm:text-8xl",
+        emoji: play ? "text-5xl sm:text-7xl" : "text-4xl sm:text-6xl",
+        phrase: play ? "text-3xl sm:text-4xl" : "text-xl sm:text-3xl",
+        badge: play ? "text-lg sm:text-xl" : "text-sm sm:text-base",
+        btn: play ? "h-20 min-w-[14rem] px-12 text-3xl" : "h-16 min-w-[12rem] px-10 text-2xl",
       };
 
   return (
@@ -925,7 +976,7 @@ const Picker = forwardRef<
       {/* 통 이름 — 세팅 때는 편집 가능, 실행 때는 큰 제목 */}
       {showName &&
         (play ? (
-          <p className="truncate px-2 text-center text-xl font-extrabold text-[var(--md-sys-color-on-surface)] sm:text-2xl">
+          <p className="truncate px-2 text-center text-2xl font-extrabold text-[var(--md-sys-color-on-surface)] sm:text-4xl">
             {name || defaultName}
           </p>
         ) : (
@@ -975,12 +1026,12 @@ const Picker = forwardRef<
 
         {/* 남은/전체 배지 */}
         {items.length > 0 && (
-          <div className="absolute left-3 top-3 flex flex-wrap gap-1.5 text-xs font-bold">
-            <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-2.5 py-1 text-[var(--md-sys-color-on-secondary-container)]">
+          <div className={`absolute left-3 top-3 z-[2] flex flex-wrap gap-1.5 font-bold ${sz.badge}`}>
+            <span className="rounded-full bg-[var(--md-sys-color-secondary-container)] px-3 py-1 text-[var(--md-sys-color-on-secondary-container)]">
               남은 {pool.length} / 전체 {items.length}
             </span>
             {drawn.length > 0 && (
-              <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-2.5 py-1 text-[var(--md-sys-color-on-surface-variant)]">
+              <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-3 py-1 text-[var(--md-sys-color-on-surface-variant)]">
                 뽑음 {drawn.length}
               </span>
             )}
@@ -1029,7 +1080,7 @@ const Picker = forwardRef<
             </div>
           ) : current ? (
             <div key={burst} className="touch-pop flex flex-col items-center">
-              <p className="mb-2 text-base font-extrabold text-[var(--md-sys-color-tertiary)] sm:text-lg">
+              <p className={`mb-2 font-extrabold text-[var(--md-sys-color-tertiary)] ${sz.phrase}`}>
                 {winPhrase || "🎉 당첨!"}
               </p>
               <div className="flex items-center justify-center gap-2 sm:gap-3">
@@ -1084,7 +1135,7 @@ const Picker = forwardRef<
               !compact && canDraw && !current ? "touch-jiggle" : ""
             }`}
           >
-            <Icon name="touch_app" size={compact ? 22 : 28} />
+            <Icon name="touch_app" size={compact ? (play ? 28 : 24) : play ? 36 : 30} />
             {rolling ? "뽑는 중…" : current ? "또 뽑기" : "뽑기!"}
           </button>
         )}
