@@ -1,4 +1,5 @@
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { parseLessonEvidence, parseLessonReview, evidenceStats } from "../../lib/agent/lesson-evidence";
 import { scriptSyntaxError } from "../../lib/server/map-script";
 import { rateLimit } from "../../lib/server/workshop/rate-limit";
@@ -18,18 +19,25 @@ import type { EmbeddedAsset } from "../../lib/world/types";
  * 모델 호출은 등록 교사 또는 해당 공방의 학생만 허용한다.
  * 수동 편집기와 같은 공용 에셋 목록을 모델에도 제공한다.
  */
-async function authorize(request: Request): Promise<{ ok: false } | { ok: true; library: Record<string, EmbeddedAsset>; teacherUid?: string }> {
+type Auth = { ok: true; library: Record<string, EmbeddedAsset>; teacherUid?: string; owner: string };
+async function libraryNow() {
+  const library: Record<string, EmbeddedAsset> = {};
+  for (const asset of await publishedAssets()) {
+    const { id, embed } = embeddedFromLibrary(asset);
+    library[id] = embed;
+  }
+  return library;
+}
+export async function authorize(request: Request): Promise<{ ok: false } | Auth> {
   try {
     const ws = getWorkshop();
     const a = await accessFrom(request, ws);
     if (a.kind !== "student" && a.kind !== "teacher") return { ok: false };
     if (a.kind === "student") await rateLimit(`agent:${a.student.id}`, 30, 60 * 60_000);
-    const library: Record<string, EmbeddedAsset> = {};
-    for (const asset of await publishedAssets()) {
-      const { id, embed } = embeddedFromLibrary(asset);
-      library[id] = embed;
-    }
-    return { ok: true, library, ...(a.kind === "teacher" ? { teacherUid:a.teacher.siwcUserId } : {}) };
+    const library = await libraryNow();
+    return a.kind === "teacher"
+      ? { ok: true, library, teacherUid: a.teacher.siwcUserId, owner: `t:${a.teacher.siwcUserId}` }
+      : { ok: true, library, owner: `s:${a.student.id}` };
   } catch {
     return { ok: false };
   }
@@ -38,7 +46,8 @@ async function authorize(request: Request): Promise<{ ok: false } | { ok: true; 
 export const dynamic = "force-dynamic";
 
 const MAX_BODY = 11_000_000; // 맵(최대 약 2.5MB) + 참고 자료(최대 약 8MB)
-const TIMEOUT_MS = 90_000;
+const TIMEOUT_MS = 90_000; // 바로 답하는 경로(호스팅 60초 제한 안쪽에서 끝나야 함 — 실제로는 작업 경로를 씀)
+const JOB_TIMEOUT_MS = 230_000; // 백그라운드 작업 경로(함수 300초 안)
 
 function fail(error: string, status: number, detail?: string[]) {
   return Response.json({ error, detail }, { status, headers: { "cache-control": "no-store" } });
@@ -55,9 +64,19 @@ export async function POST(request: Request) {
   if (!auth.ok) return fail("사용 권한이 없어요 — 허용된 교사(Google 로그인) 또는 그 학급 초대 링크로 들어온 학생만 쓸 수 있어요", 401);
   const len = Number(request.headers.get("content-length") ?? 0);
   if (len > MAX_BODY) return fail("요청이 너무 큽니다", 413);
+  let text: string;
+  try {
+    text = await request.text();
+  } catch {
+    return fail("요청 형식이 올바르지 않습니다", 400);
+  }
+  return runAgent(text, auth, TIMEOUT_MS, request.signal, started);
+}
+
+/** 모델 호출 본체 — 바로 답하는 POST와 백그라운드 작업이 같이 쓴다 */
+export async function runAgent(text: string, auth: Auth, timeoutMs: number, signal?: AbortSignal | null, started = Date.now()): Promise<Response> {
   let body: { provider?: unknown; prompt?: unknown; doc?: unknown; brief?: unknown; history?: unknown; failedProposal?: unknown; lessonEvidence?: unknown; attachments?: unknown };
   try {
-    const text = await request.text();
     if (text.length > MAX_BODY) return fail("요청이 너무 큽니다", 413);
     body = JSON.parse(text);
   } catch {
@@ -103,8 +122,8 @@ export async function POST(request: Request) {
     return error ? { ...check, ok: false, errors: [{ code: "script", message: error }] } : check;
   };
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  request.signal?.addEventListener("abort", () => ctrl.abort());
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  signal?.addEventListener("abort", () => ctrl.abort());
   const env = providerEnv();
   const turns: Turn[] = [
     { role: "user", text: userMessage(doc, brief ? `[수업 설계]\n${JSON.stringify(brief)}\n이후 대화의 요청을 이 조건에 맞춰 제작하세요.` : "이후 대화의 요청을 현재 맵에 반영하세요.", auth.library) },
@@ -142,4 +161,58 @@ export async function POST(request: Request) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ── 백그라운드 작업: 호스팅을 거치는 요청은 60초에 끊겨(502) 오래 걸리는 맵 제작은 작업으로 돌린다 ──
+// 요청 본문(최대 11MB)과 결과는 Storage에, 상태는 Firestore(서버 전용 컬렉션)에 둔다.
+const JOBS = "jamworldAgentJobs";
+const jobFile = (id: string, kind: "req" | "res") => getStorage().bucket().file(`jamworld-agent-jobs/${id}/${kind}.json`);
+
+export async function createJob(request: Request): Promise<Response> {
+  try {
+    assertSameOrigin(request);
+  } catch {
+    return fail("다른 사이트에서 온 요청은 받을 수 없어요", 403);
+  }
+  const auth = await authorize(request);
+  if (!auth.ok) return fail("사용 권한이 없어요 — 허용된 교사(Google 로그인) 또는 그 학급 초대 링크로 들어온 학생만 쓸 수 있어요", 401);
+  const len = Number(request.headers.get("content-length") ?? 0);
+  if (len > MAX_BODY) return fail("요청이 너무 큽니다", 413);
+  const text = await request.text().catch(() => "");
+  if (!text || text.length > MAX_BODY) return fail("요청 형식이 올바르지 않습니다", 400);
+  const ref = getFirestore().collection(JOBS).doc();
+  await jobFile(ref.id, "req").save(text, { contentType: "application/json", resumable: false });
+  await ref.set({ status: "queued", owner: auth.owner, teacherUid: auth.teacherUid ?? null, createdAt: FieldValue.serverTimestamp() });
+  return Response.json({ jobId: ref.id }, { status: 202, headers: { "cache-control": "no-store" } });
+}
+
+export async function jobStatus(request: Request, id: string): Promise<Response> {
+  const auth = await authorize(request);
+  if (!auth.ok) return fail("사용 권한이 없어요", 401);
+  if (!/^[A-Za-z0-9]{10,40}$/.test(id)) return fail("작업을 찾을 수 없어요", 404);
+  const snap = await getFirestore().collection(JOBS).doc(id).get();
+  const job = snap.data();
+  if (!job || job.owner !== auth.owner) return fail("작업을 찾을 수 없어요", 404);
+  if (job.status !== "done") return Response.json({ status: job.status }, { headers: { "cache-control": "no-store" } });
+  const [buf] = await jobFile(id, "res").download();
+  return new Response(new Uint8Array(buf), { status: job.httpStatus ?? 200, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+}
+
+export async function runJob(id: string): Promise<void> {
+  const ref = getFirestore().collection(JOBS).doc(id);
+  const job = (await ref.get()).data();
+  if (!job || job.status !== "queued") return;
+  await ref.update({ status: "running" });
+  let res: Response;
+  try {
+    const [buf] = await jobFile(id, "req").download();
+    const auth: Auth = { ok: true, library: await libraryNow(), owner: job.owner, ...(job.teacherUid ? { teacherUid: job.teacherUid } : {}) };
+    res = await runAgent(buf.toString("utf8"), auth, JOB_TIMEOUT_MS);
+  } catch (e) {
+    console.error("jamworld agent job 실패", id, e);
+    res = fail("도우미가 답하지 못했어요. 잠시 뒤 다시 시도해 주세요", 500);
+  }
+  await jobFile(id, "res").save(Buffer.from(await res.arrayBuffer()), { contentType: "application/json", resumable: false });
+  await ref.update({ status: "done", httpStatus: res.status, doneAt: FieldValue.serverTimestamp() });
+  await jobFile(id, "req").delete().catch(() => undefined);
 }

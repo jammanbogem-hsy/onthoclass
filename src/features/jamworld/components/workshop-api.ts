@@ -175,3 +175,24 @@ export async function runGenerate(
         : "그림을 만들고 있어요.",
   });
 }
+
+/**
+ * 도우미 맵 제작 — 오래 걸려(1~3분) 호스팅의 60초 제한에 끊기지 않도록
+ * 작업을 맡기고(202) 2초마다 끝났는지 확인한다. 결과·오류는 바로 부르는 api()와 같다.
+ */
+export async function agentRequest<T>(json: unknown, signal?: AbortSignal): Promise<T> {
+  const { jobId } = await api<{ jobId: string }>("/api/jamworld/agent/jobs", { method: "POST", json, signal });
+  const startedAt = Date.now();
+  for (;;) {
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, 2000);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(t);
+        reject(new DOMException("취소했어요", "AbortError"));
+      }, { once: true });
+    });
+    const r = await api<T & { status?: string }>(`/api/jamworld/agent/jobs/${jobId}`, { signal });
+    if (r.status !== "queued" && r.status !== "running") return r as T;
+    if (Date.now() - startedAt > 6 * 60_000) throw new ApiError("도우미 응답이 너무 오래 걸려요. 잠시 뒤 다시 시도해 주세요", 504);
+  }
+}

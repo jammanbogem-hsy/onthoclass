@@ -8,6 +8,8 @@ import * as catalog from "./routes/workshop/catalog/route";
 import * as catalogItem from "./routes/workshop/catalog/[id]/route";
 import * as download from "./routes/workshop/catalog/[id]/download/route";
 import * as route0 from "./routes/agent/route";
+import * as agentJobs from "./routes/agent/jobs/route";
+import * as agentJob from "./routes/agent/jobs/[id]/route";
 import * as agentEstimate from "./routes/agent/estimate/route";
 import * as agentAssets from "./routes/agent/assets/route";
 import * as route1 from "./routes/agent/status/route";
@@ -39,6 +41,8 @@ const routes: Array<[string, object]> = [
   ["workshop/catalog/[id]", catalogItem],
   ["workshop/catalog/[id]/download", download],
   ["agent", route0],
+  ["agent/jobs", agentJobs],
+  ["agent/jobs/[id]", agentJob],
   ["agent/estimate", agentEstimate],
   ["agent/assets", agentAssets],
   ["agent/status", route1],
@@ -89,4 +93,9 @@ export const jamworldApi = onRequest({ region: "asia-northeast3", secrets, timeo
 export const jamworldGenerate = onDocumentCreated({ document: "jamworldGenerations/{generationId}", region: "asia-northeast3", secrets: [defineSecret("OPENAI_API_KEY")], timeoutSeconds: 540, memory: "512MiB", maxInstances: 3, retry: false }, async event => {
   if (event.data?.data().status !== "queued") return;
   await getWorkshop().runGeneration(event.params.generationId);
+});
+
+// 도우미 맵 제작 작업(호스팅 60초 제한을 피해 백그라운드로)
+export const jamworldAgentJob = onDocumentCreated({ document: "jamworldAgentJobs/{jobId}", region: "asia-northeast3", secrets, timeoutSeconds: 300, memory: "1GiB", maxInstances: 10, retry: false }, async (event) => {
+  await route0.runJob(event.params.jobId);
 });

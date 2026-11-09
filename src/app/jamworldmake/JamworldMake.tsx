@@ -369,7 +369,7 @@ export default function JamworldMake() {
             </footer>
           </main>
         )}
-        <ClassroomChrome />
+        <ClassroomChrome hideDock={route.view === "editor"} />
       </div>
     </ClassroomProvider>
   );

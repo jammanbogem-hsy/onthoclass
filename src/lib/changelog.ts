@@ -11,7 +11,7 @@
 //   2) APP_VERSION 을 그 버전으로 올린다.
 //   버전이 올라가면 학생·교사의 피드백 버튼에 빨간 점이 떠서 새 소식을 알린다.
 
-export const APP_VERSION = "1.39.1";
+export const APP_VERSION = "1.39.2";
 
 export type ChangeKind = "major" | "minor" | "patch";
 
@@ -46,6 +46,16 @@ export const KIND_META: Record<
 };
 
 export const CHANGELOG: readonly ChangeEntry[] = [
+  {
+    version: "1.39.2",
+    date: "2026-11-09",
+    kind: "patch",
+    title: "모아 월드 도우미가 큰 맵도 끝까지 만들어요",
+    items: [
+      "1분이 넘게 걸리는 맵 제작이 '요청 실패 (502)'로 끊기던 문제를 고쳤어요. 이제 다 될 때까지 기다렸다가 보여 줘요.",
+      "맵을 만드는 화면에서는 수업 채팅·학생 관리 버튼이 도우미 입력칸을 가리지 않게 숨겼어요.",
+    ],
+  },
   {
     version: "1.39.1",
     date: "2026-11-03",

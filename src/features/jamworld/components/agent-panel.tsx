@@ -7,7 +7,7 @@ import { parseBrief, parseDesignExtras, type AgentAssetNeed, type LessonBrief } 
 import { applyOps, type MapOp } from "../lib/world/ops";
 import { probeMapScript } from "../lib/render/script-probe";
 import type { MapDoc } from "../lib/world/types";
-import { api } from "./workshop-api";
+import { agentRequest, api } from "./workshop-api";
 import { useClassroom } from "./classroom-context";
 import { LessonEvidencePicker, LessonReviewView } from "./lesson-evidence";
 import { briefForEvidence, parseLessonEvidence, type LessonEvidence, type LessonReview } from "../lib/agent/lesson-evidence";
@@ -105,9 +105,9 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
     const ctrl = new AbortController(); abortRef.current = ctrl;
     sendingRef.current = true; setBusy(true);
     try {
-      let proposal = await api<AgentProposal & { questions?: string[]; assets?: AgentAssetNeed[]; lessonReview?: LessonReview }>("/api/jamworld/agent", {
-        method: "POST", json: { provider, prompt: request, doc, history, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), ...(files.length ? { attachments: files } : {}) }, signal: ctrl.signal,
-      });
+      let proposal = await agentRequest<AgentProposal & { questions?: string[]; assets?: AgentAssetNeed[]; lessonReview?: LessonReview }>(
+        { provider, prompt: request, doc, history, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), ...(files.length ? { attachments: files } : {}) }, ctrl.signal,
+      );
       for (let attempt = 0; attempt < 2; attempt++) {
         if (ctrl.signal.aborted) return;
         if (!proposal.ops.some(op => op.op === "setScript")) break;
@@ -116,13 +116,11 @@ export default function AgentPanel({ doc, disabled, onProposal, log, setLog }: {
         const diagnostic = await probeMapScript(check.doc, ctrl.signal);
         if (!diagnostic || ctrl.signal.aborted) break;
         if (attempt) throw Error(`코드를 실행해 보니 문제가 남아 있어 적용하지 않았어요: ${diagnostic}`);
-        proposal = await api<AgentProposal & { questions?: string[]; assets?: AgentAssetNeed[] }>("/api/jamworld/agent", {
-          method: "POST", signal: ctrl.signal,
-          json: { provider, doc, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), ...(files.length ? { attachments: files } : {}), history,
+        proposal = await agentRequest<AgentProposal & { questions?: string[]; assets?: AgentAssetNeed[] }>(
+          { provider, doc, ...(design ? { brief: design } : {}), ...(evidence ? {lessonEvidence:evidence} : {}), ...(files.length ? { attachments: files } : {}), history,
             prompt: `${request}\n방금 만든 코드가 격리된 실행 검사에서 실패했습니다: ${diagnostic}\n기존 맵을 기준으로 모든 요청을 유지하면서 코드를 고쳐 다시 제출하세요.`,
             failedProposal: proposal,
-          },
-        });
+          }, ctrl.signal);
       }
       if (ctrl.signal.aborted) return;
       const err = proposal.ops.length ? onProposal({ ...proposal, baseSignature: JSON.stringify(doc) }) : null;
