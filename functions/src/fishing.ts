@@ -21,7 +21,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 const options = { region: "asia-northeast3", maxInstances: 10, timeoutSeconds: 20 };
 
 // 게임(games/fish/game.js SPECIES)과 같은 값. w: 낚시터, t: 등급, p: 기본 점수, len: 크기(cm)
-const SPECIES: Record<string, { w: "fresh" | "sea"; n: string; t: string; p: number; len: [number, number] }> = {
+export const SPECIES: Record<string, { w: "fresh" | "sea"; n: string; t: string; p: number; len: [number, number] }> = {
   minnow: { w: "fresh", n: "송사리", t: "흔함", p: 10, len: [3, 6] }, pirami: { w: "fresh", n: "피라미", t: "흔함", p: 14, len: [8, 16] },
   crucian: { w: "fresh", n: "붕어", t: "흔함", p: 20, len: [15, 32] }, bluegill: { w: "fresh", n: "블루길", t: "흔함", p: 22, len: [10, 25] },
   carp: { w: "fresh", n: "잉어", t: "보통", p: 45, len: [40, 85] }, bass: { w: "fresh", n: "배스", t: "보통", p: 50, len: [25, 60] },
@@ -89,9 +89,9 @@ const SPECIES: Record<string, { w: "fresh" | "sea"; n: string; t: string; p: num
   bosskraken: { w: "sea", n: "대왕오징어", t: "보스", p: 1000, len: [800, 1200] },
 };
 const WEIGHT_K: Record<string, number> = { bingeo: 8, loach: 3, beodeulchi: 10, gakshi: 14, galgyeoni: 10, moraemuji: 9, kkeuri: 9, gangjunchi: 7, eunuh: 10, rainbowtrout: 11, tilapia: 20, dongsari: 12, chamge: 390, lenok: 11, jara: 74, hwangsso: 13, arapaima: 8, arowana: 6, anchovy: 8, saury: 3, halfbeak: 2.5, bollak: 13, noraemi: 11, jwichi: 20, dodari: 14, gamsungdom: 16, samchi: 7, squid: 8, octopus: 6, monkfish: 20, dolddom: 18, salmon: 11, stingray: 12, swordfish: 4, manta: 1.5, whaleshark: 1.2, bossgar: 6, bosskoi: 14, bossshark: 7, bosskraken: 1, mirrorcarp: 16, mahimahi: 9, sailfish: 3, minnow: 10, pirami: 9, eel: 2, cutlass: 1.5, marlin: 5, bossSea: 5, sturgeon: 7, snakehead: 9, catfish: 9, bossFresh: 9, sunfish: 30, puffer: 25, flounder: 14, tuna: 18, yellowtail: 13 };
-const kgOf = (id: string, cm: number, cond: number) => (WEIGHT_K[id] || 12) * (cm / 100) ** 3 * cond;
+export const kgOf = (id: string, cm: number, cond: number) => (WEIGHT_K[id] || 12) * (cm / 100) ** 3 * cond;
 const GRADES: [number, string][] = [[.92, "월척"], [.72, "S급"], [.45, "A급"], [.18, "B급"], [0, "놔주자급"]];
-const gradeOf = (t: number) => GRADES.find(([min]) => t >= min)![1];
+export const gradeOf = (t: number) => GRADES.find(([min]) => t >= min)![1];
 
 // 낚시 가게. romance 는 처음 살 때 한 번 오르는 낭만 점수
 export const ROD = [
@@ -141,7 +141,7 @@ export const SHOP: Record<string, { name: string; kind: "wear" | "decor" | "stoc
   ramen: { name: "라면", kind: "stock", price: 500, romance: 0, desc: "요리 재료(최대 20개)" },
 };
 // 캠핑 요리: 살림망 물고기를 써서 낭만 점수를 올린다
-type Fish = { sp: string; cm: number; kg: number; grade: string };
+export type Fish = { sp: string; cm: number; kg: number; grade: string };
 export const RECIPES: Record<string, { name: string; romance: number; ramen: number; fish: number; desc: string; ok: (f: Fish) => boolean }> = {
   ramen: { name: "라면", romance: 6, ramen: 1, fish: 0, desc: "라면 1개", ok: () => true },
   seafoodRamen: { name: "해물라면", romance: 22, ramen: 1, fish: 1, desc: "라면 1개 + 바다 물고기 1마리", ok: (f) => SPECIES[f.sp]?.w === "sea" },
@@ -162,7 +162,7 @@ function sizeOf(f: Fish) {
   return { t, cond };
 }
 const priceOf = (f: Fish, day: string) => { const { t, cond } = sizeOf(f); return Math.max(10, Math.round(SPECIES[f.sp].p * 10 * (.5 + 1.5 * t ** 1.2) * cond ** 1.2 * market(day, f.sp))); };
-const tasteOf = (f: Fish) => { const { t, cond } = sizeOf(f); return Math.round(SPECIES[f.sp].p * (.5 + 1.5 * t ** 1.2) * cond ** 1.5 * (f.grade === "놔주자급" ? .5 : 1)); };
+export const tasteOf = (f: Fish) => { const { t, cond } = sizeOf(f); return Math.round(SPECIES[f.sp].p * (.5 + 1.5 * t ** 1.2) * cond ** 1.5 * (f.grade === "놔주자급" ? .5 : 1)); };
 
 const db = () => getFirestore();
 const meRef = (uid: string) => db().doc(`fishers/${uid}`);

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>전국의 강태공</title>
+<meta name="description" content="전국 학교들이 낚은 물고기·손맛·낭만 점수를 지도와 순위로 보여 줘요">
+<meta property="og:title" content="전국의 강태공 — 전국 강태공 대결 순위">
+<meta name="theme-color" content="#0b1030">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  @font-face { font-family: "Galmuri11"; src: url("https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+  :root {
+    --bg: #0b1030; --bg2: #121a48; --card: rgba(22, 30, 78, .78); --line: rgba(160, 190, 255, .16);
+    --ink: #0b1030; --cream: #fff8e8; --muted: #9fb0e0; --sun: #ffd23f; --sky: #3ec7ff; --lime: #9cf25a; --hot: #ff4d6d; --pink: #ff8fb8; --grape: #b26bff;
+    --gold: #ffd23f; --silver: #d9e2f2; --bronze: #ff9f5a;
+    --px: "Galmuri11", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    --ui: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--cream); font-family: var(--ui); -webkit-text-size-adjust: 100%; }
+  body { background: radial-gradient(1200px 600px at 70% -10%, #23307a 0%, transparent 60%), radial-gradient(900px 500px at 0% 110%, #10305a 0%, transparent 60%), var(--bg); }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background-image: radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.5), transparent), radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,.4), transparent), radial-gradient(1.5px 1.5px at 60% 70%, rgba(255,255,255,.3), transparent), radial-gradient(1px 1px at 35% 85%, rgba(255,255,255,.35), transparent), radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,.35), transparent); }
+  button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .wrap { position: relative; width: min(1180px, 100%); margin: 0 auto; padding: 22px 16px 40px; }
+  body.embed .wrap { padding-top: 14px; }
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; margin-bottom: 16px; }
+  h1 { margin: 0; font-family: var(--px); font-size: clamp(30px, 6vw, 52px); line-height: 1; letter-spacing: .02em; text-shadow: 0 4px 0 #050822, 0 0 24px rgba(62, 199, 255, .35); }
+  h1 em { font-style: normal; color: var(--sun); }
+  h1 small { display: block; font-size: .32em; color: var(--sky); letter-spacing: .32em; margin-bottom: 8px; }
+  .live { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); animation: blink 1.6s infinite; }
+  body.embed .live { margin-right: 90px; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .totals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+  .tot { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+  .tot small { display: block; font-size: 12px; color: var(--muted); }
+  .tot b { display: block; margin-top: 4px; font-family: var(--px); font-size: clamp(20px, 3vw, 30px); font-variant-numeric: tabular-nums; color: var(--cream); }
+  .tot.t-taste b { color: var(--sun); } .tot.t-rom b { color: var(--pink); } .tot.t-fish b { color: var(--sky); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 16px; align-items: start; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .card h2 { margin: 0 0 10px; font-family: var(--px); font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  .card h2 small { font-family: var(--ui); font-size: 12px; color: var(--muted); font-weight: 400; }
+  /* 지도 */
+  .mapcard { position: sticky; top: 12px; }
+  .map { position: relative; width: 100%; aspect-ratio: 600 / 560; }
+  .map svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .map path { stroke: rgba(160, 200, 255, .35); stroke-width: .8; transition: fill .6s; cursor: pointer; }
+  .map path:hover, .map path.on { stroke: var(--sun); stroke-width: 1.6; }
+  .map .rlabel { font-family: var(--px); font-size: 11px; fill: rgba(255, 248, 232, .75); text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: rgba(5, 8, 34, .8); stroke-width: 3px; }
+  .map .dot { cursor: pointer; }
+  .map .dot circle.core { stroke: #050822; stroke-width: 1.2; }
+  .map .dot circle.halo { fill: none; stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .map .dot.top circle.halo { animation: halo 2.4s ease-out infinite; }
+  .map .dot.mine circle.core { stroke: var(--cream); stroke-width: 2.4; }
+  .map .dot.mine circle.halo { animation: halo 1.4s ease-out infinite; stroke: var(--cream) !important; }
+  @keyframes halo { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(3.2); } }
+  .map .dokdo { font-size: 9px; fill: var(--muted); font-family: var(--px); }
+  .tip { position: absolute; z-index: 3; min-width: 180px; max-width: 240px; padding: 10px 12px; background: rgba(8, 12, 40, .95); border: 1px solid var(--sun); border-radius: 12px; font-size: 13px; line-height: 1.5; pointer-events: none; transform: translate(-50%, calc(-100% - 14px)); box-shadow: 0 8px 30px rgba(0, 0, 0, .4); }
+  .tip b { font-family: var(--px); color: var(--sun); font-size: 15px; display: block; }
+  .tip .r { color: var(--muted); font-size: 12px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; align-items: center; }
+  .legend .bar { width: 90px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #1b2560, #2b5aa8, #3ec7ff, #9cf25a, #ffd23f); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--sky); vertical-align: -1px; margin-right: 4px; }
+  /* 탭 */
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabs button { border: 1px solid var(--line); background: rgba(255, 255, 255, .04); padding: 9px 14px; border-radius: 999px; font-size: 14px; font-weight: 700; color: var(--muted); min-height: 40px; }
+  .tabs button[aria-selected=true] { background: var(--sun); color: var(--ink); border-color: var(--sun); }
+  .sorts { display: flex; gap: 6px; margin: -4px 0 12px; font-size: 13px; align-items: center; color: var(--muted); }
+  .sorts button { border: 0; background: rgba(255, 255, 255, .06); padding: 6px 10px; border-radius: 8px; color: var(--muted); font-weight: 700; min-height: 34px; }
+  .sorts button[aria-pressed=true] { background: var(--sky); color: var(--ink); }
+  /* 시상대 */
+  .podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 8px; align-items: end; margin-bottom: 14px; }
+  .pod { text-align: center; padding: 12px 8px 10px; border-radius: 16px 16px 6px 6px; background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); border: 1px solid var(--line); position: relative; min-width: 0; }
+  .pod .medal { font-size: 30px; line-height: 1; }
+  .pod b { display: block; margin-top: 6px; font-family: var(--px); font-size: 15px; word-break: keep-all; }
+  .pod small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .pod strong { display: block; margin-top: 6px; font-family: var(--px); font-size: 18px; color: var(--sun); font-variant-numeric: tabular-nums; }
+  .pod.p1 { padding-top: 22px; border-color: rgba(255, 210, 63, .6); box-shadow: 0 0 30px rgba(255, 210, 63, .18) inset; }
+  .pod.p1 .medal { font-size: 40px; animation: bob 2s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+  .pod.empty { opacity: .35; }
+  /* 목록 */
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); border: 1px solid transparent; cursor: default; }
+  .row.click { cursor: pointer; } .row.click:hover { border-color: var(--line); }
+  .row.mine { border-color: var(--sun); background: rgba(255, 210, 63, .1); }
+  .row .no { font-family: var(--px); font-size: 17px; text-align: center; color: var(--muted); }
+  .row .no.m1 { color: var(--gold); } .row .no.m2 { color: var(--silver); } .row .no.m3 { color: var(--bronze); }
+  .row .nm { min-width: 0; }
+  .row .nm b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .nm small { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); margin-top: 6px; overflow: hidden; }
+  .row .bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--sky), var(--lime)); }
+  .row .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .row .val b { display: block; font-family: var(--px); font-size: 17px; color: var(--sun); }
+  .row .val small { display: block; font-size: 11px; color: var(--muted); }
+  .chips3 { display: flex; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 3px; flex-wrap: wrap; }
+  .chips3 span b { color: var(--cream); font-weight: 700; }
+  .empty { text-align: center; padding: 30px 10px; color: var(--muted); line-height: 1.7; }
+  .empty b { display: block; font-family: var(--px); color: var(--cream); font-size: 18px; margin-bottom: 4px; }
+  /* 대어 소식 */
+  .news { display: flex; flex-direction: column; gap: 8px; }
+  .news div { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); }
+  .news .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 24px; background: rgba(255, 210, 63, .14); }
+  .news .ic.boss { background: rgba(255, 77, 109, .2); } .news .ic.legend { background: rgba(178, 107, 255, .2); }
+  .news p { margin: 0; font-size: 14px; line-height: 1.45; } .news p b { color: var(--sun); } .news p small { color: var(--muted); display: block; font-size: 12px; }
+  .how { margin-top: 16px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .how summary { cursor: pointer; color: var(--cream); font-weight: 700; padding: 6px 0; }
+  .how ul { margin: 6px 0 0; padding-left: 18px; }
+  .foot { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 13px; }
+  .foot a { color: var(--muted); }
+  body.embed .foot { display: none; }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } .mapcard { position: static; } .totals { grid-template-columns: repeat(3, 1fr); } .tot.t-sch, .tot.t-ang { grid-column: span 1; } }
+  @media (max-width: 520px) { .totals { grid-template-columns: repeat(2, 1fr); } .tot.t-fish { grid-column: span 2; } .pod { padding-inline: 4px; } .pod b { font-size: clamp(11px, 3.3vw, 14px); overflow-wrap: anywhere; } .pod strong { font-size: 15px; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><small>전국 강태공 대결</small>전국의 <em>강태공</em></h1>
+    <div class="live"><i></i><span id="liveTxt">불러오는 중…</span></div>
+  </header>
+  <div class="totals">
+    <div class="tot t-sch"><small>참여 학교</small><b id="tSchools">-</b></div>
+    <div class="tot t-ang"><small>강태공(학생)</small><b id="tAnglers">-</b></div>
+    <div class="tot t-fish"><small>잡은 물고기</small><b id="tCaught">-</b></div>
+    <div class="tot t-taste"><small>손맛 점수</small><b id="tTaste">-</b></div>
+    <div class="tot t-rom"><small>낭만 점수</small><b id="tRomance">-</b></div>
+  </div>
+  <div class="grid">
+    <section class="card mapcard">
+      <h2>🗺️ 전국 낚시 지도 <small id="mapNote">점이 클수록 많이 낚은 학교예요</small></h2>
+      <div class="map" id="map"></div>
+      <div class="legend"><span>지역 색</span><span class="bar"></span><span>많이 낚을수록 밝아요</span><span><i style="background:var(--gold)"></i>1~3위 학교</span><span><i style="background:var(--cream);box-shadow:0 0 0 2px var(--sun)"></i>우리 학교</span></div>
+    </section>
+    <section class="card">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="school" aria-selected="true">🏫 학교 순위</button>
+        <button role="tab" data-tab="region" aria-selected="false">📍 지역 대항전</button>
+        <button role="tab" data-tab="angler" aria-selected="false">🎣 강태공 TOP</button>
+        <button role="tab" data-tab="news" aria-selected="false">🐋 대어 소식</button>
+      </div>
+      <div class="sorts" id="sorts"><span>무엇으로 볼까요?</span><button data-sort="taste" aria-pressed="true">손맛</button><button data-sort="caught" aria-pressed="false">마리</button><button data-sort="romance" aria-pressed="false">낭만</button></div>
+      <div id="podium" class="podium"></div>
+      <div id="list"></div>
+      <details class="how"><summary>점수는 어떻게 매겨요?</summary><ul>
+        <li><b>손맛</b> — 잡은 물고기의 게임 점수를 모두 더해요. 크고 무거울수록, 콤보·PERFECT·피버일수록 높아요.</li>
+        <li><b>마리</b> — 잡은 물고기 수예요.</li>
+        <li><b>낭만</b> — 희귀한 물고기(흔함 1 · 보통 2 · 희귀 4 · 전설 8 · 보스 15), 월척 +5 · S급 +2, 작은 물고기 놓아주기 +3, 처음 만난 물고기 +3, 노을 낚시 +2 · 비 오는 날 +1, 문제 정답 +1.</li>
+        <li>학생 이름은 가운데 글자를 가려서 보여 줘요.</li>
+      </ul></details>
+    </section>
+  </div>
+  <div class="foot"><a href="./">학생 입장</a><a href="teacher.html">선생님 방 만들기</a></div>
+</div>
+<script type="module" src="rank.js?v=1"></script>
+</body>
+</html>
