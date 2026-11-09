@@ -1,7 +1,9 @@
 // 전국 강태공 대결 — 학생 화면의 서버 연결(서버: functions/src/fishingShare.ts 의 ktApi 하나)
-// 학생은 구글 계정 없이 방 코드 + 이름으로 들어온다 → 입장권 st(이 기기 localStorage) → 모든 요청에 붙인다
+// 학생은 구글 계정 없이 방 코드 + 이름으로 들어온다 -> 입장권 st(이 기기 localStorage) -> 모든 요청에 붙인다
 // game.js 가 쓰는 것: NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, closeQuiz, quizOpen, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest
 import { FB } from "./fb-config.js";
+import { ic } from "./icons.js?v=2";
+const icn = (n, z) => `<i class="ic">${ic(n, z)}</i>`;
 
 const V = "12.13.0";
 const K_ST = "ktfish-st", K_INFO = "ktfish-info";
@@ -36,7 +38,7 @@ export async function call(op, data = {}, quiet = false) {
     if (!quiet) hooks.toast?.(msgOf(e)); throw e;
   }
 }
-// 오류는 자동으로(한 번 열 때 5개까지), 의견은 직접 → 관리자 화면
+// 오류는 자동으로(한 번 열 때 5개까지), 의견은 직접 -> 관리자 화면
 let errN = 0; const errSeen = new Set();
 function reportErr(msg, stack) {
   if (errN >= 5 || errSeen.has(msg)) return; errSeen.add(msg); errN++;
@@ -171,7 +173,7 @@ export async function saveCatch(sp, cm, kg, run, pts) {
 }
 export const refresh = async () => { if (ST) { try { const r = await call("stuMe", {}, true); takeMe(r); hooks.onGate?.(); } catch {} } };
 
-// ---------------------------------------------------------------- 학생: 입장(코드 → 이름·캐릭터)과 대기실
+// ---------------------------------------------------------------- 학생: 입장(코드 -> 이름·캐릭터)과 대기실
 const CHIP_COL = ["#ffd23f", "#3ec7ff", "#9cf25a", "#ff6bb5", "#b26bff", "#ff9f43", "#5ee0c0", "#ff4d6d"];
 const chipCol = (n) => { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0; return CHIP_COL[h % CHIP_COL.length]; };
 const joinStep = (n) => $("joinSteps")?.querySelectorAll("li").forEach((li, i) => { li.className = i < n ? "done" : i === n ? "now" : ""; });
@@ -188,8 +190,8 @@ export function bindJoin() {
     e.preventDefault(); const b = f1.querySelector("button.go"), v = f1.code.value.trim();
     if (v.length !== 6) { hooks.toast?.("방 코드 6자리를 모두 넣어 주세요"); f1.code.focus(); return; }
     b.disabled = true; b.textContent = "확인하는 중…";
-    try { const r = await checkCode(v); code = r.code; $("joinCls").innerHTML = `<b>${esc(r.school || "")}</b><span>${esc(r.name || "대결 방")}</span>`; f1.hidden = true; f2.hidden = false; joinStep(1); setTimeout(() => f2.name.focus(), 50); } catch {}
-    b.disabled = false; b.textContent = "다음";
+    try { const r = await checkCode(v); code = r.code; $("joinCls").innerHTML = `${icn("school", 40)}<b>${esc(r.school || "")}</b><span>${esc(r.name || "대결 방")}</span>`; f1.hidden = true; f2.hidden = false; joinStep(1); setTimeout(() => f2.name.focus(), 50); } catch {}
+    b.disabled = false; b.innerHTML = `다음 ${icn("right", 24)}`;
   });
   f2.addEventListener("submit", (e) => {
     e.preventDefault(); const b = f2.querySelector("button.go");
@@ -214,7 +216,7 @@ export function renderLobby() {
   const seen = renderLobby.seen ??= new Set();
   $("lobPlayers").innerHTML = P.map((n) => `<span class="hchip ${n === me ? "me" : ""} ${seen.has(n) ? "old" : ""}" style="--c:${chipCol(n)}">${esc(n)}</span>`).join("");
   P.forEach((n) => seen.add(n));
-  const m = NET.me; $("lobMe").innerHTML = m ? `<span><small>내 손맛</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></span><span><small>마리</small><b>${m.caught || 0}</b></span><span><small>낭만</small><b>${m.romance || 0}</b></span>` : "";
+  const m = NET.me; $("lobMe").innerHTML = m ? `<span><small>${icn("taste", 14)}내 손맛</small><b>${(m.taste || 0).toLocaleString("ko-KR")}</b></span><span><small>${icn("fish", 14)}마리</small><b>${m.caught || 0}</b></span><span><small>${icn("heart", 14)}낭만</small><b>${m.romance || 0}</b></span>` : "";
   $("lobPlaces").hidden = ph !== "free";
   $("lobGo").hidden = ph !== "free";
   $("lobPractice").hidden = !(ph === "lobby" || ph === "done" || ph === "closed");

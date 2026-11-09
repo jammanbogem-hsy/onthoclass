@@ -1,8 +1,10 @@
-// 전국 강태공 대결 — 선생님 화면: 구글 로그인 → 학교 등록 → 방 만들기 → 칠판 화면(대기실·시작·순위·시상대) → 결과
+// 전국 강태공 대결 — 선생님 화면: 구글 로그인, 학교 등록, 방 만들기, 칠판 화면(대기실·시작·순위·시상대), 결과
 // 서버: functions/src/fishingShare.ts (ktApi 하나, op 로 나뉨)
 import { FB } from "./fb-config.js";
 import { SETS } from "./sets.js?v=1";
-import { MAP, REGIONS } from "./korea.js?v=1";
+import { MAP, REGIONS } from "./korea.js?v=2";
+import { ic } from "./icons.js?v=2";
+const icn = (n, z, c = "") => `<i class="ic ${c}">${ic(n, z)}</i>`;
 
 const V = "12.13.0";
 const $ = (id) => document.getElementById(id);
@@ -56,7 +58,7 @@ $("adminLink").addEventListener("click", () => { location.href = "admin.html"; }
   } catch { show("vLogin"); toast("연결이 잠깐 끊겼어요. 새로고침해 주세요"); }
 })();
 
-// ---------------------------------------------------------------- 학교 등록(카카오 장소 검색 → 이름·주소·위치)
+// ---------------------------------------------------------------- 학교 등록(카카오 장소 검색으로 이름·주소·위치)
 let PICK = null, kakaoP = null;
 function loadKakao() {
   if (kakaoP) return kakaoP;
@@ -85,7 +87,7 @@ function openSignup(change = false) {
 async function searchSchool() {
   const q = $("schoolQ").value.trim(), box = $("schoolRes");
   if (q.length < 2) { toast("학교 이름을 두 글자 이상 써 주세요"); return; }
-  box.innerHTML = `<p class="muted">찾는 중…</p>`;
+  box.innerHTML = `<p class="muted">찾는 중이에요…</p>`;
   let ps; try { ps = await loadKakao(); } catch { box.innerHTML = ""; manual(true); toast("검색을 쓸 수 없어서 직접 쓰기로 바꿨어요"); return; }
   ps.keywordSearch(q, (data, status) => {
     const list = status === window.kakao.maps.services.Status.OK ? data.filter((d) => /학교|초등|중학|고등|학원|school/i.test(d.place_name + d.category_name)) : [];
@@ -103,7 +105,7 @@ function manualPick() {
 function renderPick() {
   const el = $("suPicked");
   el.hidden = !PICK;
-  if (PICK) { el.innerHTML = `<div class="picked"><span class="pin">📍</span><div><b>${esc(PICK.name)}</b><small>${esc(PICK.addr)}</small></div><button type="button" class="btn sm ghost" id="pickRe">다시 고르기</button></div>`; $("pickRe").addEventListener("click", () => { PICK = null; renderPick(); $("suSearch").hidden = false; $("schoolQ").focus(); }); $("suSearch").hidden = true; }
+  if (PICK) { el.innerHTML = `<div class="picked">${icn("pin", 40)}<div><b>${esc(PICK.name)}</b><small>${esc(PICK.addr)}</small></div><button type="button" class="btn sm ghost" id="pickRe">다시 고르기</button></div>`; $("pickRe").addEventListener("click", () => { PICK = null; renderPick(); $("suSearch").hidden = false; $("schoolQ").focus(); }); $("suSearch").hidden = true; }
   updOk();
 }
 const updOk = () => { $("suOk").disabled = !(PICK || (!$("suManual").hidden && manualPick())); };
@@ -123,12 +125,12 @@ $("suOk").addEventListener("click", async () => {
 // ---------------------------------------------------------------- 홈: 내 방들
 const studentUrl = (code) => `${location.origin}${location.pathname.replace(/[^/]*$/, "")}?code=${code}`;
 const PHASE_TXT = { closed: ["닫힘", ""], lobby: ["대기실 열림", "open"], countdown: ["곧 시작", "play"], play: ["대결 중", "play"], done: ["한 판 끝", "open"], free: ["자유시간", "play"] };
-const placeTxt = (p) => (p === "sea" ? "🌊 바다" : "🏞️ 민물");
+const placeTxt = (p, z = 18) => (p === "sea" ? `${icn("sea", z)} 바다` : `${icn("river", z)} 민물`);
 async function openHome() {
   show("vHome");
   const s = ME.teacher.school;
   $("hSchool").textContent = s.name;
-  $("hSchoolSub").innerHTML = `${esc(s.region)} · ${esc(ME.teacher.name || "")}<button id="chSchool">학교 바꾸기</button>`;
+  $("hSchoolSub").innerHTML = `<span>${icn("pin", 16)} ${esc(s.region)} · ${esc(ME.teacher.name || "")}</span><button id="chSchool">학교 바꾸기</button>`;
   $("chSchool").addEventListener("click", () => openSignup(true));
   $("roomsBox").innerHTML = `<p class="muted">방을 불러오는 중…</p>`;
   try { ROOMS = (await call("roomList")).rooms; } catch { ROOMS = []; }
@@ -137,15 +139,14 @@ async function openHome() {
 function renderRooms() {
   const box = $("roomsBox");
   if (!ROOMS.length) {
-    box.innerHTML = `<div class="card emptyhome"><h2>첫 대결 방을 만들어 볼까요?</h2><p>방을 만들면 6자리 코드와 QR이 생겨요.<br>칠판(TV)에 띄우고 학생들이 들어오면 <b>다 같이 시작</b>을 눌러요.</p><button class="btn big" data-new>＋ 새 대결 방 만들기</button></div>`;
+    box.innerHTML = `<div class="card emptyhome">${icn("rod", 64)}<h2>첫 대결 방을 만들어 볼까요?</h2><p>방을 만들면 6자리 코드와 QR이 생겨요.<br>칠판(TV)에 띄우고 학생들이 들어오면 <b>다 같이 시작</b>을 눌러요.</p><button class="btn big lime" data-new>${icn("plus", 24)}새 대결 방 만들기</button></div>`;
   } else {
-    box.innerHTML = `<div class="rooms">${ROOMS.map((r) => { const ph = r.room.phase, [pt, pc] = PHASE_TXT[ph] || PHASE_TXT.closed;
+    box.innerHTML = `<p class="sechead">${icn("flag", 20)}내 대결 방 ${ROOMS.length}개</p><div class="rooms">${ROOMS.map((r) => { const ph = r.room.phase, [pt, pc] = PHASE_TXT[ph] || PHASE_TXT.closed;
       return `<div class="card room"><div class="rh"><h3>${esc(r.name)}</h3><span class="pill ${pc}">${pt}</span></div>
-        <div class="code">${esc(r.code)}</div>
-        <div class="meta"><span>${placeTxt(r.room.place)}</span><span>한 판 ${Math.round(r.room.roundSec / 60)}분</span><span>${r.room.quizN ? `📝 ${esc(r.room.setName || "문제")} ${r.room.quizN}개` : "문제 없음"}</span><span>👥 ${r.players}명</span></div>
-        <div class="acts"><button class="btn sm" data-host="${r.rid}">칠판에 띄우기 ▶</button><button class="btn sm ghost" data-dash="${r.rid}">결과</button><button class="btn sm ghost" data-more="${r.rid}" aria-label="더 보기">⋯</button></div>
-        <div class="acts" data-moreb="${r.rid}" hidden style="grid-template-columns:1fr 1fr"><button class="btn sm ghost" data-rename="${r.rid}">이름 바꾸기</button><button class="btn sm warn" data-del="${r.rid}">방 지우기</button></div></div>`; }).join("")}
-      <button class="newroom" data-new><i>＋</i>새 대결 방</button></div>`;
+        <div class="code"><small>방 코드</small>${esc(r.code)}</div>
+        <div class="meta"><span>${placeTxt(r.room.place)}</span><span>${icn("clock", 18)} 한 판 ${Math.round(r.room.roundSec / 60)}분</span><span>${r.room.quizN ? `${icn("quiz", 18)} ${esc(r.room.setName || "문제")} ${r.room.quizN}개` : `${icn("quiz", 18)} 문제 없음`}</span><span>${icn("people", 18)} ${r.players}명</span></div>
+        <div class="acts"><button class="btn sm lime" data-host="${r.rid}">${icn("playk", 18)}칠판에 띄우기</button><button class="btn sm ghost" data-dash="${r.rid}">결과</button><button class="btn sm ghost" data-more="${r.rid}" aria-label="이름 바꾸기·지우기">${icn("more", 20)}<span class="tx">고치기</span></button></div>
+        <div class="acts" data-moreb="${r.rid}" hidden style="grid-template-columns:1fr 1fr"><button class="btn sm ghost" data-rename="${r.rid}">${icn("edit", 18)}이름 바꾸기</button><button class="btn sm warn" data-del="${r.rid}">${icn("trash", 18)}방 지우기</button></div></div>`; }).join("")}</div>`;
   }
   box.querySelectorAll("[data-new]").forEach((b) => b.addEventListener("click", openCreate));
   box.querySelectorAll("[data-host]").forEach((b) => b.addEventListener("click", () => openHost(b.dataset.host)));
@@ -211,7 +212,7 @@ $("csvFile").addEventListener("change", async (e) => {
   if (!quiz.length) { toast("문제를 읽지 못했어요. 템플릿 형식을 확인해 주세요"); return; }
   C.csv = quiz; C.set = "csv"; renderSets();
   const p = $("csvPrev"); p.hidden = false;
-  p.innerHTML = `<b>${quiz.length}문제를 읽었어요${bad ? ` · 읽지 못한 줄 ${bad}개` : ""}</b><ol>${quiz.slice(0, 30).map((q) => `<li>${esc(q.q)} → <b>${esc(q.o[q.a])}</b></li>`).join("")}</ol>${quiz.length > 30 ? `<small>…그리고 ${quiz.length - 30}문제 더</small>` : ""}`;
+  p.innerHTML = `<b>${quiz.length}문제를 읽었어요${bad ? ` · 읽지 못한 줄 ${bad}개` : ""}</b><ol>${quiz.slice(0, 30).map((q) => `<li>${esc(q.q)} · 정답 <b>${esc(q.o[q.a])}</b></li>`).join("")}</ol>${quiz.length > 30 ? `<small>…그리고 ${quiz.length - 30}문제 더</small>` : ""}`;
 });
 $("csvTpl").addEventListener("click", () => {
   const rows = [["문제", "보기1", "보기2", "보기3", "보기4", "정답"], ["물고기는 무엇으로 숨을 쉴까요?", "아가미", "허파", "코", "피부", "1"], ["바다 = ?", "river", "sea", "sky", "", "2"], ["7 × 8 = ?", "54", "56", "64", "48", "2"]];
@@ -234,7 +235,7 @@ $("createForm").addEventListener("submit", async (e) => {
   b.disabled = false; b.textContent = "방 만들고 칠판에 띄우기";
 });
 
-// ---------------------------------------------------------------- 칠판 화면(블루킷처럼): 대기실 → 다 같이 시작 → 실시간 순위 → 시상대
+// ---------------------------------------------------------------- 칠판 화면(블루킷처럼): 대기실, 다 같이 시작, 실시간 순위, 시상대
 let HOST = null;
 const hnow = () => Date.now() + (HOST?.skew || 0);
 const hphase = (r) => { if (!r?.open || r.closesAt < hnow()) return "closed"; if (r.mode === "free") return "free"; if (r.phase !== "countdown" && r.phase !== "play" && r.phase !== "done") return "lobby"; const n = hnow(); return n < r.startAt ? "countdown" : n < r.endAt ? "play" : "done"; };
@@ -254,7 +255,7 @@ async function pollHost() {
     const t0 = Date.now(), r = await call("lobby", { rid: h.rid }, true); if (HOST !== h) return;
     h.skew = r.room.now - (t0 + Date.now()) / 2;
     const key = JSON.stringify({ ...r, room: { ...r.room, now: 0 } }); h.d = r; if (key !== h.key) { h.key = key; renderHost(); }
-  } catch (e) { if (HOST === h && !h.d) { $("host").innerHTML = `<div class="hostp"><div class="hmid"><h2>방을 열지 못했어요</h2><p>${esc(msgOf(e))}</p><button class="hbtn" data-hclose>돌아가기</button></div></div>`; $("host").querySelector("[data-hclose]").addEventListener("click", closeHost); return; } }
+  } catch (e) { if (HOST === h && !h.d) { $("host").innerHTML = `<div class="hostp"><div class="hmid" style="padding-top:16vh"><h2>방을 열지 못했어요</h2><p>${esc(msgOf(e))}</p><button class="hbtn" data-hclose>${icn("left", 18)}돌아가기</button></div></div>`; $("host").querySelector("[data-hclose]").addEventListener("click", closeHost); return; } }
   if (HOST === h) h.t = setTimeout(pollHost, document.hidden ? 5000 : 2000);
 }
 function tickHost() {
@@ -271,42 +272,44 @@ function hostAct(extra) {
 }
 async function nationalRank(h) { // 한 판이 끝나면 우리 학교 전국 순위를 한 줄로
   if (h.nat !== undefined) return; h.nat = null;
-  try { const B = await call("board", {}, true), key = h.d.school?.key, S = [...B.schools].sort((a, b) => b.taste - a.taste), i = S.findIndex((s) => s.key === key);
-    if (HOST === h) { h.nat = i >= 0 ? { n: i + 1, of: S.filter((s) => s.taste > 0).length, s: S[i] } : null; renderHost(); } } catch {}
+  try { // 학교가 아주 많아도 정확하게: 서버가 우리 학교 순위를 직접 세요
+    const key = h.d.school?.key; if (!key) return;
+    const [r, B] = await Promise.all([call("school", { key }, true), call("board", {}, true)]);
+    if (HOST === h) { h.nat = r.school?.rank ? { n: r.school.rank.taste, of: Math.max(B.totals?.schools || 0, r.school.rank.taste), s: r.school } : null; renderHost(); } } catch {}
 }
 function renderHost() {
   const el = $("host"); if (!HOST) return;
-  const d = HOST.d; if (!d) { el.innerHTML = `<div class="hostp"><div class="hmid"><h2>불러오는 중…</h2></div></div>`; return; }
+  const d = HOST.d; if (!d) { el.innerHTML = `<div class="hostp"><div class="hmid" style="padding-top:20vh"><h2>${icn("fish", 48)}불러오는 중…</h2></div></div>`; return; }
   const r = d.room, ph = hphase(r), P = d.players, here = P.filter((p) => p.here), b = HOST.busy ? "disabled" : "";
   if (HOST.ph !== ph) { HOST.seen = new Set(); if (ph !== "done") HOST.nat = undefined; }
   HOST.ph = ph; const seen = HOST.seen;
   const url = studentUrl(d.code), short = url.replace(/^https?:\/\//, "").replace(/\?code=.*/, "");
   const rank = [...P].filter((p) => p.n || p.pts || p.here).sort((a, b2) => b2.pts - a.pts);
   const chips = (list) => list.map((p) => `<button class="hchip ${seen.has(p.pid) ? "old" : ""} ${HOST.kick === p.pid ? "kick" : ""}" style="--c:${chipCol(p.name)}" data-kick="${p.pid}" title="눌러서 내보내기">${HOST.kick === p.pid ? "내보낼까요?" : esc(p.name)}</button>`).join("");
-  const ctl = `<div class="hctl"><div class="grp"><small>낚시터</small>${[["fresh", "🏞️ 민물"], ["sea", "🌊 바다"]].map(([v, t]) => `<button class="${r.place === v ? "on" : ""}" data-hplace="${v}" ${b}>${t}</button>`).join("")}</div>
+  const ctl = `<div class="hctl"><div class="grp"><small>낚시터</small>${[["fresh", placeTxt("fresh", 20)], ["sea", placeTxt("sea", 20)]].map(([v, t]) => `<button class="${r.place === v ? "on" : ""}" data-hplace="${v}" ${b}>${t}</button>`).join("")}</div>
     <div class="grp"><small>한 판</small>${[180, 300, 420, 600].map((v) => `<button class="${r.roundSec === v ? "on" : ""}" data-hsec="${v}" ${b}>${v / 60}분</button>`).join("")}</div>
     ${r.quizN ? `<div class="grp"><small>문제 ${r.quizN}개</small><button class="${r.quizOn ? "on" : ""}" data-hquiz="1" ${b}>켜기</button><button class="${r.quizOn ? "" : "on"}" data-hquiz="0" ${b}>끄기</button></div>` : ""}</div>`;
-  const joinBox = `<div class="hjoin"><div class="qr">${qrSvg(url)}</div><div class="hcode"><small>방 코드</small><b>${esc(d.code)}</b><div class="url">태블릿·크롬북 주소창에 <em>${esc(short)}</em> → 코드 입력<br>또는 카메라로 QR을 찍어요</div></div></div>`;
+  const joinBox = `<div class="hjoin"><div class="qr">${qrSvg(url)}</div><div class="hcode"><small>${icn("key", 24)}방 코드</small><b>${esc(d.code)}</b><div class="url">${icn("qr", 22)}카메라로 QR을 찍거나<br>${icn("laptop", 22)}주소창에 <em>${esc(short)}</em> 쓰고 코드 넣기</div></div></div>`;
   let main = "";
   if (ph === "closed") main = `<div class="hmid"><h2>방이 닫혀 있어요</h2><p>열면 학생이 코드로 들어올 수 있어요.</p><button class="hstart" data-hopen ${b}>방 열기</button></div>`;
   else if (ph === "lobby") main = `${joinBox}<div class="hcount"><b>${here.length}</b>명 들어왔어요</div>
-    <div class="hchips">${chips(here) || `<div class="hhow"><b>학생에게 이렇게 알려 주세요</b><br>① 카메라로 QR을 찍거나 주소창에 <b>${esc(short)}</b><br>② 방 코드 <b>${esc(d.code)}</b> 입력 → 이름 쓰기<br><small style="color:#9fb0e0">들어온 학생 이름이 여기에 떠요</small></div>`}</div>
-    <div class="hmid" style="padding:4px 0"><button class="hstart" data-hstart ${b || (here.length ? "" : "disabled")}>${HOST.busy ? "시작하는 중…" : "다 같이 시작하기 ▶"}</button>${here.length ? "" : `<p style="margin-top:12px;font-size:16px">학생이 1명 이상 들어오면 시작할 수 있어요</p>`}</div>${ctl}`;
+    <div class="hchips">${chips(here) || `<div class="hhow"><b>학생에게 이렇게 알려 주세요</b><div class="st"><i class="n">1</i>카메라로 QR을 찍거나 주소창에 <b>${esc(short)}</b></div><div class="st"><i class="n">2</i>방 코드 <b>${esc(d.code)}</b> 넣고 이름 쓰기</div><small>들어온 학생 이름이 여기에 떠요</small></div>`}</div>
+    <div class="hmid" style="padding:4px 0"><button class="hstart" data-hstart ${b || (here.length ? "" : "disabled")}>${HOST.busy ? "시작하는 중…" : `다 같이 시작하기 ${icn("playk", 40)}`}</button>${here.length ? "" : `<p style="margin-top:14px;font-size:17px">학생이 1명 이상 들어오면 시작할 수 있어요</p>`}</div>${ctl}`;
   else if (ph === "countdown") main = `<div class="hmid" style="padding-top:8vh"><h2>준비!</h2><div class="hclock" data-hclock>${Math.max(1, Math.ceil((r.startAt - hnow()) / 1000))}</div></div>`;
-  else if (ph === "play" || ph === "free") main = `<div class="hclock" data-hclock>${ph === "free" ? "자유시간" : "0:00"}</div><div class="hcount" style="font-size:18px">${here.length}명 낚시 중 · 코드 <b style="font-size:22px;color:#ffd23f">${esc(d.code)}</b> (늦게 와도 들어올 수 있어요)</div>
-    <div class="hrank">${rank.slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${rank[0]?.pts ? Math.max(4, p.pts / rank[0].pts * 100) : 4}%;--c:${chipCol(p.name)}"></em><b>${fmt(p.pts)}</b><small>${p.n}마리</small></div>`).join("") || `<p class="hmid" style="font-family:var(--ui);color:#9fb0e0">첫 물고기를 기다리는 중…</p>`}</div>
-    <div class="hbig"><button class="hbtn" data-hlobby ${b}>이번 판 끝내기</button></div>`;
+  else if (ph === "play" || ph === "free") main = `<div class="hclock" data-hclock>${ph === "free" ? "자유시간" : "0:00"}</div><div class="hcount" style="font-size:19px;color:var(--muted)">${here.length}명 낚시 중 · 코드 <b style="font-size:26px;color:var(--sun);text-shadow:none;margin:0 4px">${esc(d.code)}</b> 늦게 와도 들어올 수 있어요</div>
+    <div class="hrank">${rank.slice(0, 12).map((p, i) => `<div><i>${i + 1}</i><span>${esc(p.name)}</span><em style="--w:${rank[0]?.pts ? Math.max(4, p.pts / rank[0].pts * 100) : 4}%;--c:${chipCol(p.name)}"></em><b>${fmt(p.pts)}</b><small>${p.n}마리</small></div>`).join("") || `<p class="hmid" style="color:var(--muted);font-size:20px">${icn("fish", 32)}<br>첫 물고기를 기다리는 중이에요</p>`}</div>
+    <div class="hbig"><button class="hbtn" data-hlobby ${b}>${icn("flag", 18)}이번 판 끝내기</button></div>`;
   else { // done
     nationalRank(HOST);
     const top = rank.slice(0, 3), order = [top[1], top[0], top[2]], nat = HOST.nat;
-    main = `<div class="hmid" style="padding-bottom:0"><h2>🏆 대결 끝!</h2></div><div class="podium">${order.map((p, k) => p ? `<div class="pod p${[2, 1, 3][k]}"><i>${["🥈", "🥇", "🥉"][k]}</i><span>${esc(p.name)}</span><b>${fmt(p.pts)}</b><small>${p.n}마리</small></div>` : `<div class="pod empty"></div>`).join("")}</div>
-      ${nat ? `<p class="hnational">우리 학교 <b>${esc(d.school?.name || "")}</b>는 지금 전국 <b>${nat.n}위</b>예요! <span style="color:#9fb0e0">(${nat.of}개 학교 중 · 손맛 ${fmt(nat.s.taste)})</span></p>` : ""}
+    main = `<div class="hmid" style="padding-bottom:0"><h2>${icn("trophy", 56)}대결 끝!</h2></div><div class="podium">${order.map((p, k) => p ? `<div class="pod p${[2, 1, 3][k]}">${k === 1 ? icn("crown", 48) : ""}${icn(["medal2", "medal1", "medal3"][k], k === 1 ? 64 : 48)}<span>${esc(p.name)}</span><b>${fmt(p.pts)}</b><small>${p.n}마리</small></div>` : `<div class="pod empty"></div>`).join("")}</div>
+      ${nat ? `<p class="hnational">${icn("map", 28)}우리 학교 <b>${esc(d.school?.name || "")}</b>는 지금 전국 <b>${nat.n}위</b>예요! <span style="color:var(--muted)">(${nat.of}개 학교 중 · 손맛 ${fmt(nat.s.taste)})</span></p>` : ""}
       <div class="hrank">${rank.slice(3, 15).map((p, i) => `<div><i>${i + 4}</i><span>${esc(p.name)}</span><em style="--w:${rank[0]?.pts ? Math.max(4, p.pts / rank[0].pts * 100) : 4}%;--c:${chipCol(p.name)}"></em><b>${fmt(p.pts)}</b><small>${p.n}마리</small></div>`).join("")}</div>
-      <div class="hbig"><button class="btn big" data-hlobby ${b}>한 판 더 하기</button><a class="btn big ghost" href="rank.html?school=${encodeURIComponent(d.school?.key || "")}" target="_blank" rel="noopener">🗺️ 전국 순위 보기</a></div>${ctl}`;
+      <div class="hbig"><button class="btn big lime" data-hlobby ${b}>${icn("refresh", 24)}한 판 더 하기</button><a class="btn big ghost" href="rank.html?school=${encodeURIComponent(d.school?.key || "")}" target="_blank" rel="noopener">${icn("map", 24)}전국 순위 보기</a></div>${ctl}`;
   }
   here.forEach((p) => seen.add(p.pid));
-  el.innerHTML = `<div class="hostp"><div class="hbar"><div class="ttl">${esc(d.name)}<small>${esc(d.school?.name || "")} · ${r.quizOn ? `문제 ${r.quizN}개` : "문제 없이"} · ${placeTxt(r.place)} · 한 판 ${Math.round(r.roundSec / 60)}분</small></div>
-    <button class="hbtn" data-hfull>⛶ 전체 화면</button>${ph !== "closed" ? `<button class="hbtn" data-hclose2 ${b}>방 닫기</button>` : ""}<button class="hbtn" data-hclose>✕ 나가기</button></div>${main}</div>`;
+  el.innerHTML = `<div class="hostp"><div class="hbar"><div class="ttl">${esc(d.name)}<small><span class="seg1">${icn("school", 16)} ${esc(d.school?.name || "")}</span><span class="seg1">${icn("quiz", 16)} ${r.quizOn ? `문제 ${r.quizN}개` : "문제 없이"}</span><span class="seg1">${placeTxt(r.place, 16)}</span><span class="seg1">${icn("clock", 16)} 한 판 ${Math.round(r.roundSec / 60)}분</span></small></div>
+    <div class="hacts"><button class="hbtn" data-hfull aria-label="전체 화면">${icn("full", 20)}<span class="tx">전체 화면</span></button>${ph !== "closed" ? `<button class="hbtn" data-hclose2 ${b} aria-label="방 닫기">${icn("lock", 20)}<span class="tx">방 닫기</span></button>` : ""}<button class="hbtn" data-hclose aria-label="나가기">${icn("close", 20)}<span class="tx">나가기</span></button></div></div>${main}</div>`;
   tickHost();
   const on = (sel, fn) => el.querySelectorAll(sel).forEach((x) => x.addEventListener("click", fn));
   on("[data-hclose]", closeHost);
@@ -329,20 +332,20 @@ addEventListener("keydown", (e) => { if (e.key === "Escape" && HOST && !document
 // ---------------------------------------------------------------- 결과(방별 대시보드)
 let DASH = null, dSort = "taste";
 async function openDash(rid) {
-  show("vDash"); $("vDash").innerHTML = `<p class="muted">결과를 불러오는 중…</p>`;
+  show("vDash"); $("vDash").innerHTML = `<p class="muted" style="text-align:center;padding:60px 0">결과를 불러오는 중…</p>`;
   try { DASH = await call("dash", { rid }); DASH.rid = rid; renderDash(); } catch { openHome(); }
 }
 function renderDash() {
   const D = DASH, T = D.totals, rate = T.quiz ? Math.round(T.right / T.quiz * 100) : 0;
   const st = [...D.students].sort((a, b) => dSort === "name" ? a.name.localeCompare(b.name, "ko") : (b[dSort] || 0) - (a[dSort] || 0));
-  $("vDash").innerHTML = `<div class="dashhead"><button class="btn sm ghost" data-back>← 내 방들</button><h1>${esc(D.name)} 결과</h1><button class="btn sm ghost" data-csv>엑셀(CSV)로 받기</button><button class="btn sm" data-host>칠판에 띄우기 ▶</button></div>
-    <div class="kpis"><div class="kpi"><small>참여 학생</small><b>${T.students}명</b></div><div class="kpi"><small>잡은 물고기</small><b>${fmt(T.caught)}</b></div><div class="kpi"><small>손맛 합계</small><b>${fmt(T.taste)}</b></div><div class="kpi"><small>낭만 합계</small><b>${fmt(T.romance)}</b></div><div class="kpi"><small>문제 정답률</small><b>${T.quiz ? rate + "%" : "-"}</b></div></div>
-    <div class="two"><div class="card"><h2 style="font-size:18px;margin-bottom:8px">학생별</h2><div class="tblwrap"><table class="tbl"><thead><tr>
-      ${[["name", "이름", ""], ["caught", "마리", "n"], ["taste", "손맛", "n"], ["romance", "낭만", "n"], ["right", "정답", "n"]].map(([k, t, c]) => `<th class="${c}" data-sort="${k}">${t}${dSort === k ? " ▾" : ""}</th>`).join("")}<th>가장 큰 물고기</th></tr></thead><tbody>
+  $("vDash").innerHTML = `<div class="dashhead"><button class="btn sm ghost" data-back>${icn("left", 18)}내 방들</button><h1>${esc(D.name)} 결과</h1><button class="btn sm ghost" data-csv>${icn("download", 18)}엑셀(CSV)로 받기</button><button class="btn sm lime" data-host>${icn("playk", 18)}칠판에 띄우기</button></div>
+    <div class="kpis"><div class="kpi"><small>${icn("people", 16)}참여 학생</small><b>${T.students}명</b></div><div class="kpi"><small>${icn("fish", 16)}잡은 물고기</small><b>${fmt(T.caught)}</b></div><div class="kpi"><small>${icn("taste", 16)}손맛 합계</small><b>${fmt(T.taste)}</b></div><div class="kpi"><small>${icn("heart", 16)}낭만 합계</small><b>${fmt(T.romance)}</b></div><div class="kpi"><small>${icn("check", 16)}문제 정답률</small><b>${T.quiz ? rate + "%" : "-"}</b></div></div>
+    <div class="two"><div class="card"><h2>${icn("people", 20)}학생별</h2><div class="tblwrap"><table class="tbl"><thead><tr>
+      ${[["name", "이름", ""], ["caught", "마리", "n"], ["taste", "손맛", "n"], ["romance", "낭만", "n"], ["right", "정답", "n"]].map(([k, t, c]) => `<th class="${c} ${dSort === k ? "on" : ""}" data-sort="${k}" aria-sort="${dSort === k ? "descending" : "none"}">${t}</th>`).join("")}<th>가장 큰 물고기</th></tr></thead><tbody>
       ${st.map((s) => `<tr><td>${esc(s.name)}</td><td class="n">${fmt(s.caught)}</td><td class="n">${fmt(s.taste)}</td><td class="n">${fmt(s.romance)}</td><td class="n">${s.quiz ? `${s.right}/${s.quiz}` : "-"}</td><td>${s.best ? `${esc(s.best.n)} ${s.best.cm}cm <small class="muted">${esc(s.best.grade)}</small>` : "-"}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">아직 들어온 학생이 없어요</td></tr>`}</tbody></table></div></div>
-    <div style="display:flex;flex-direction:column;gap:14px"><div class="card"><h2 style="font-size:18px;margin-bottom:4px">문제별 정답률 <small class="muted" style="font-size:12px">어려운 문제부터</small></h2>
+    <div style="display:flex;flex-direction:column;gap:14px"><div class="card"><h2>${icn("quiz", 20)}문제별 정답률 <small>어려운 문제부터</small></h2>
       ${D.questions.length ? D.questions.slice(0, 40).map((q) => { const p = Math.round(q.right / q.n * 100); return `<div class="qrow"><p>${esc(q.q)}</p><div class="bar"><i style="width:${p}%"></i></div><small>정답률 ${p}% (${q.right}/${q.n}) · 정답 ${esc(q.o[q.a] || "")}${q.picks.map((c, i) => c && i !== q.a ? ` · ${esc(q.o[i])} ${c}명` : "").join("")}</small></div>`; }).join("") : `<p class="muted">아직 푼 문제가 없어요</p>`}</div>
-      <div class="card"><h2 style="font-size:18px;margin-bottom:8px">잡힌 물고기</h2><div class="spchips">${D.species.map((s) => `<span>${esc(s.n)} <b>${s.count}</b></span>`).join("") || `<span class="muted">아직 없어요</span>`}</div></div></div></div>`;
+      <div class="card"><h2>${icn("fish", 20)}잡힌 물고기</h2><div class="spchips">${D.species.map((s) => `<span>${esc(s.n)} <b>${s.count}</b></span>`).join("") || `<span class="muted">아직 없어요</span>`}</div></div></div></div>`;
   const v = $("vDash");
   v.querySelector("[data-back]").addEventListener("click", openHome);
   v.querySelector("[data-host]").addEventListener("click", () => openHost(D.rid));

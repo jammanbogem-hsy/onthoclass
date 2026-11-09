@@ -55,6 +55,11 @@
   .map .dot.mine circle.core { stroke: var(--cream); stroke-width: 2.4; }
   .map .dot.mine circle.halo { animation: halo 1.4s ease-out infinite; stroke: var(--cream) !important; }
   @keyframes halo { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(3.2); } }
+  .map .rlabel.sm { font-size: 9.5px; fill: rgba(255, 248, 232, .9); }
+  .map .lead { stroke: rgba(255, 248, 232, .45); stroke-width: .8; pointer-events: none; }
+  .map .anc { fill: rgba(255, 248, 232, .7); pointer-events: none; }
+  .pxi { image-rendering: pixelated; vertical-align: -.15em; }
+  i.ic { font-style: normal; display: inline-flex; }
   .map .dokdo { font-size: 9px; fill: var(--muted); font-family: var(--px); }
   .tip { position: absolute; z-index: 3; min-width: 180px; max-width: 240px; padding: 10px 12px; background: rgba(8, 12, 40, .95); border: 1px solid var(--sun); border-radius: 12px; font-size: 13px; line-height: 1.5; pointer-events: none; transform: translate(-50%, calc(-100% - 14px)); box-shadow: 0 8px 30px rgba(0, 0, 0, .4); }
   .tip b { font-family: var(--px); color: var(--sun); font-size: 15px; display: block; }
@@ -85,7 +90,8 @@
   .row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); border: 1px solid transparent; cursor: default; }
   .row.click { cursor: pointer; } .row.click:hover { border-color: var(--line); }
   .row.mine { border-color: var(--sun); background: rgba(255, 210, 63, .1); }
-  .row .no { font-family: var(--px); font-size: 17px; text-align: center; color: var(--muted); }
+  [hidden] { display: none !important; }
+  .row .no { font-family: var(--px); font-size: 17px; white-space: nowrap; letter-spacing: -.04em; text-align: center; color: var(--muted); }
   .row .no.m1 { color: var(--gold); } .row .no.m2 { color: var(--silver); } .row .no.m3 { color: var(--bronze); }
   .row .nm { min-width: 0; }
   .row .nm b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -114,6 +120,63 @@
   @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } .mapcard { position: static; } .totals { grid-template-columns: repeat(3, 1fr); } .tot.t-sch, .tot.t-ang { grid-column: span 1; } }
   @media (max-width: 520px) { .totals { grid-template-columns: repeat(2, 1fr); } .tot.t-fish { grid-column: span 2; } .pod { padding-inline: 4px; } .pod b { font-size: clamp(11px, 3.3vw, 14px); overflow-wrap: anywhere; } .pod strong { font-size: 15px; } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* 확대·동네 지도 */
+  .mapwrap { position: relative; }
+  .map { overflow: hidden; border-radius: 14px; touch-action: none; }
+  .map svg { overflow: hidden; cursor: grab; }
+  .map svg:active { cursor: grabbing; }
+  .map svg.zoomed .rlabel { opacity: .35; }
+  .map .lead, .map path { vector-effect: non-scaling-stroke; }
+  .map .sname { font-family: var(--px); fill: var(--cream); text-anchor: middle; paint-order: stroke; stroke: rgba(5, 8, 34, .9); pointer-events: none; }
+  .map .sname.me { fill: var(--sun); }
+  .zoom { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 2; }
+  .zoom button, .kback { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 10px; background: rgba(8, 12, 40, .88); color: var(--cream); box-shadow: 0 0 0 2px rgba(160, 190, 255, .25); cursor: pointer; font: 700 22px/1 var(--px); }
+  .zoom button:active, .kback:active { transform: translateY(2px); }
+  .kgo { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 2; display: flex; gap: 6px; align-items: center; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--sun); color: var(--ink); font: 700 15px var(--px); cursor: pointer; box-shadow: 0 4px 0 #b88a00; white-space: nowrap; }
+  .kgo.nudge { animation: nudge .8s ease-in-out infinite; }
+  @keyframes nudge { 50% { transform: translateX(-50%) scale(1.08); } }
+  .zhint { position: absolute; left: 10px; top: 8px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  .kbox { position: absolute; inset: 0; z-index: 4; border-radius: 14px; overflow: hidden; background: #e9eef6; }
+  #kmap { position: absolute; inset: 0; }
+  .kback { position: absolute; left: 8px; top: 8px; z-index: 3; width: auto; padding: 0 14px; gap: 6px; display: flex; font-size: 14px; }
+  .kcount { position: absolute; right: 8px; top: 12px; z-index: 3; padding: 6px 10px; border-radius: 8px; background: rgba(8, 12, 40, .85); color: var(--cream); font-size: 12px; }
+  .kmsg { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; padding: 0 24px; text-align: center; color: var(--ink); font: 700 15px var(--px); background: rgba(233, 238, 246, .9); }
+  .kinfo { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; padding: 10px 12px; border-radius: 12px; background: rgba(8, 12, 40, .95); border: 1px solid var(--sun); color: var(--cream); font-size: 13px; line-height: 1.5; }
+  .kinfo b { font-family: var(--px); color: var(--sun); font-size: 15px; display: block; }
+  .kinfo .r { color: var(--muted); font-size: 12px; }
+  .kpin { display: flex; align-items: center; gap: 5px; padding: 4px 8px 4px 6px; border: 2px solid #0b1030; border-radius: 8px; background: #fff8e8; color: #0b1030; font: 700 12px var(--px); white-space: nowrap; cursor: pointer; box-shadow: 0 3px 0 rgba(11, 16, 48, .5); position: relative; }
+  .kpin::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -5px; border: 5px solid transparent; border-top-color: #0b1030; border-bottom: 0; }
+  .kpin i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #0b1030; flex: none; }
+  .kpin small { font-size: 11px; color: #4a5384; font-family: var(--ui); font-weight: 700; }
+  .kpin.me { background: var(--sun); }
+  .kpin.m1 { background: #fff1b8; }
+  /* 찾기 · 더 보기 · 우리 학교 */
+  .find { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 12px; min-height: 46px; border-radius: 12px; background: rgba(8, 12, 40, .6); box-shadow: inset 0 0 0 1px var(--line); }
+  .find:focus-within { box-shadow: inset 0 0 0 2px var(--sky); }
+  .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--cream); font: 700 16px var(--ui); padding: 10px 0; }
+  .find input::placeholder { color: var(--muted); font-weight: 400; }
+  .pinned { margin-bottom: 8px; }
+  .pinned .row { box-shadow: 0 0 0 2px var(--sun) inset; }
+  .more { display: block; width: 100%; min-height: 48px; margin-top: 8px; border: 0; border-radius: 12px; background: rgba(62, 199, 255, .14); color: var(--sky); font: 700 15px var(--px); cursor: pointer; }
+  .more small { color: var(--muted); font-family: var(--ui); margin-left: 6px; }
+  .farh { margin: 12px 0 6px; font-size: 12px; color: var(--muted); }
+
+  /* 원래 게임(픽셀) 모양에 맞추기: 각진 상자 + 계단 테두리 + 픽셀 글꼴 */
+  :root { --pxbox: 0 -4px 0 #050822, 0 4px 0 #050822, -4px 0 0 #050822, 4px 0 0 #050822, inset 0 4px 0 rgba(255, 255, 255, .08), inset 0 -4px 0 rgba(0, 0, 0, .3), 0 10px 0 rgba(0, 0, 0, .3); }
+  body { word-break: keep-all; overflow-wrap: anywhere; }
+  .card, .tot, .row, .pod, .find, .more, .tabs button, .sorts button, .zoom button, .kback, .kgo, .kcount, .kinfo, .tip, .map, .kbox, .news > div, .empty, .how { border-radius: 0 !important; }
+  .card, .tot { border: 0 !important; box-shadow: var(--pxbox); background: rgba(19, 22, 46, .9); margin: 4px; }
+  .pod { box-shadow: var(--pxbox); border: 0 !important; }
+  .row { box-shadow: 0 0 0 2px rgba(5, 8, 34, .9); }
+  .tabs button, .sorts button, .more, .kgo, .kback, .find input, .row .nm b, .foot a { font-family: var(--px) !important; }
+  .tabs button, .sorts button { box-shadow: 0 0 0 3px #050822, inset 0 -3px 0 rgba(0, 0, 0, .3); }
+  .tabs button:active, .sorts button:active, .more:active { transform: translateY(2px); }
+  .zoom button, .kback { box-shadow: 0 0 0 3px #050822, inset 0 -3px 0 rgba(0, 0, 0, .35); }
+  .kgo { box-shadow: 0 0 0 3px #050822, 0 5px 0 #050822; }
+  .kpin { border-radius: 0; box-shadow: 0 0 0 1px #0b1030, 0 3px 0 rgba(11, 16, 48, .5); }
+  .pod.click { cursor: pointer; }
+  .foot a { font-size: 16px; padding: 12px 14px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -131,18 +194,22 @@
   </div>
   <div class="grid">
     <section class="card mapcard">
-      <h2>🗺️ 전국 낚시 지도 <small id="mapNote">점이 클수록 많이 낚은 학교예요</small></h2>
-      <div class="map" id="map"></div>
+      <h2><i class="ic" data-i="map"></i> 전국 낚시 지도 <small id="mapNote">점이 클수록 많이 낚은 학교예요</small></h2>
+      <div class="mapwrap"><div class="map" id="map"></div>
+        <div class="kbox" id="kbox" hidden><div id="kmap"></div>
+          <button class="kback" id="kback"><i class="ic" data-i="left" data-s="16"></i> 전국 지도로</button>
+          <span class="kcount" id="kcount"></span><div class="kmsg" id="kmsg" hidden></div><div class="kinfo" id="kinfo" hidden></div></div></div>
       <div class="legend"><span>지역 색</span><span class="bar"></span><span>많이 낚을수록 밝아요</span><span><i style="background:var(--gold)"></i>1~3위 학교</span><span><i style="background:var(--cream);box-shadow:0 0 0 2px var(--sun)"></i>우리 학교</span></div>
     </section>
     <section class="card">
       <div class="tabs" role="tablist">
-        <button role="tab" data-tab="school" aria-selected="true">🏫 학교 순위</button>
-        <button role="tab" data-tab="region" aria-selected="false">📍 지역 대항전</button>
-        <button role="tab" data-tab="angler" aria-selected="false">🎣 강태공 TOP</button>
-        <button role="tab" data-tab="news" aria-selected="false">🐋 대어 소식</button>
+        <button role="tab" data-tab="school" aria-selected="true"><i class="ic" data-i="school"></i> 학교 순위</button>
+        <button role="tab" data-tab="region" aria-selected="false"><i class="ic" data-i="pin"></i> 지역 대항전</button>
+        <button role="tab" data-tab="angler" aria-selected="false"><i class="ic" data-i="rod"></i> 강태공 TOP</button>
+        <button role="tab" data-tab="news" aria-selected="false"><i class="ic" data-i="bigfish"></i> 대어 소식</button>
       </div>
       <div class="sorts" id="sorts"><span>무엇으로 볼까요?</span><button data-sort="taste" aria-pressed="true">손맛</button><button data-sort="caught" aria-pressed="false">마리</button><button data-sort="romance" aria-pressed="false">낭만</button></div>
+      <label class="find" id="findBox"><i class="ic" data-i="search" data-s="18"></i><input id="findQ" type="search" placeholder="학교·동네 이름으로 찾기" autocomplete="off" enterkeyhint="search"></label>
       <div id="podium" class="podium"></div>
       <div id="list"></div>
       <details class="how"><summary>점수는 어떻게 매겨요?</summary><ul>
@@ -155,6 +222,6 @@
   </div>
   <div class="foot"><a href="./">학생 입장</a><a href="teacher.html">선생님 방 만들기</a></div>
 </div>
-<script type="module" src="rank.js?v=1"></script>
+<script type="module" src="rank.js?v=7"></script>
 </body>
 </html>

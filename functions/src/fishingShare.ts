@@ -25,11 +25,13 @@ const CODE_CH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0·O·1·I �
 const HERE_MS = 30e3, GAP_MS = 3000, PLAYER_MAX = 60, CATCH_MAX = 400;
 
 // ---------------------------------------------------------------- 지역(시·도) — 카카오 주소 첫 낱말을 짧은 이름으로
-export const REGIONS = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"] as const;
+// 2026-07-01 전남광주통합특별시 출범: 광주·전남 → "전남광주" 하나로 묶어요(예전 기록도 순위에서 합쳐 보여요)
+export const REGIONS = ["서울", "부산", "대구", "인천", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남광주", "경북", "경남", "제주"] as const;
+const normRegion = (r: string) => (r === "광주" || r === "전남" ? "전남광주" : r);
 function regionOf(addr: string): string {
   const w = addr.trim().split(/\s+/)[0] || "";
-  const M: [RegExp, string][] = [[/^서울/, "서울"], [/^부산/, "부산"], [/^대구/, "대구"], [/^인천/, "인천"], [/^광주/, "광주"], [/^대전/, "대전"], [/^울산/, "울산"], [/^세종/, "세종"],
-    [/^경기/, "경기"], [/^강원/, "강원"], [/^(충북|충청북)/, "충북"], [/^(충남|충청남)/, "충남"], [/^(전북|전라북)/, "전북"], [/^(전남|전라남)/, "전남"],
+  const M: [RegExp, string][] = [[/^서울/, "서울"], [/^부산/, "부산"], [/^대구/, "대구"], [/^인천/, "인천"], [/^대전/, "대전"], [/^울산/, "울산"], [/^세종/, "세종"],
+    [/^경기/, "경기"], [/^강원/, "강원"], [/^(충북|충청북)/, "충북"], [/^(충남|충청남)/, "충남"], [/^(전북|전라북)/, "전북"], [/^(전남|전라남|광주)/, "전남광주"],
     [/^(경북|경상북)/, "경북"], [/^(경남|경상남)/, "경남"], [/^제주/, "제주"]];
   return M.find(([re]) => re.test(w))?.[1] || "";
 }
@@ -40,7 +42,7 @@ function cleanSchool(x: unknown): School {
   const lat = Number(s.lat), lng = Number(s.lng);
   if (!name) throw new HttpsError("invalid-argument", "학교 이름을 골라 주세요.");
   if (!(lat > 33 && lat < 38.7 && lng > 124.5 && lng < 131.9)) throw new HttpsError("invalid-argument", "학교 위치를 찾지 못했어요. 목록에서 학교를 골라 주세요.");
-  const region = regionOf(addr) || (REGIONS as readonly string[]).find((r) => r === s.region) || "";
+  const region = regionOf(addr) || (REGIONS as readonly string[]).find((r) => r === normRegion(String(s.region || ""))) || "";
   if (!region) throw new HttpsError("invalid-argument", "학교 주소(시·도)를 확인해 주세요.");
   const pid = cut(s.id, 20).replace(/\D/g, "");
   return { key: pid ? `k${pid}` : `n${sha(`${name}|${region}`).slice(0, 16)}`, name, addr, lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5, region };
@@ -103,25 +105,67 @@ function romanceOf(sp: string, grade: string, first: boolean, weather: unknown) 
   return r;
 }
 
-// ---------------------------------------------------------------- 전국 순위(누구나, 30초 기억)
+// ---------------------------------------------------------------- 전국 순위(누구나)
+// 학교가 수천 곳이 돼도 버티게:
+//  - 목록은 손맛 상위 BOARD_N 곳만(지도·순위표용). 합계·지역 대항전은 전체 학교 숫자 칸만 읽어 정확히 센다
+//  - 다 만든 결과는 ktMeta/board 문서에 2분 저장(여러 서버가 같이 씀) + 서버 기억 20초 → 읽기 비용이 사람 수와 상관없음
+//  - 목록 밖 학교는 op "school"(key 로 정확한 전국 순위, q 로 이름 찾기)
+const BOARD_N = 2000, BIG_N = 300;
+const dongOf = (addr: string) => String(addr || "").trim().split(/\s+/).slice(1, 3).join(" ");
+const schoolOut = (key: string, s: DocumentData, withBig: boolean) => ({ key, name: s.name, region: normRegion(s.region), dong: dongOf(s.addr), lat: s.lat, lng: s.lng,
+  caught: s.caught || 0, taste: s.taste || 0, romance: s.romance || 0, anglers: s.anglers || 0,
+  big: withBig && s.big ? { n: s.big.n, cm: s.big.cm, kg: s.big.kg, grade: s.big.grade, who: mask(s.big.who) } : null });
+async function buildBoard() {
+  const col = db().collection("ktSchools");
+  // 합계·지역 대항전은 모든 학교의 숫자 칸만 골라 읽어 정확히 센다(색인 필요 없음, 2분에 한 번)
+  const [sc, an, big, nums] = await Promise.all([
+    col.orderBy("taste", "desc").limit(BOARD_N).get(),
+    db().collection("ktAnglers").orderBy("taste", "desc").limit(100).get(),
+    db().collection("ktBig").orderBy("at", "desc").limit(20).get(),
+    col.select("region", "caught", "taste", "romance", "anglers").get(),
+  ]);
+  const schools = sc.docs.map((d, i) => schoolOut(d.id, d.data(), i < BIG_N));
+  const R = new Map<string, { region: string; schools: number; caught: number; taste: number; romance: number; anglers: number }>();
+  const totals = { schools: 0, registered: 0, anglers: 0, caught: 0, taste: 0, romance: 0 };
+  for (const d of nums.docs) {
+    const x = d.data(), reg = normRegion(String(x.region || "")), c = Number(x.caught) || 0, t = Number(x.taste) || 0, ro = Number(x.romance) || 0, a = Number(x.anglers) || 0;
+    totals.registered++; if (c > 0) totals.schools++; totals.caught += c; totals.taste += t; totals.romance += ro; totals.anglers += a;
+    if (!reg || c <= 0) continue;
+    const r = R.get(reg) || (R.set(reg, { region: reg, schools: 0, caught: 0, taste: 0, romance: 0, anglers: 0 }), R.get(reg)!);
+    r.schools++; r.caught += c; r.taste += t; r.romance += ro; r.anglers += a;
+  }
+  const anglers = an.docs.map((d) => { const a = d.data(); return { name: mask(a.name), school: a.schoolName, region: normRegion(a.region), taste: a.taste || 0, caught: a.caught || 0, romance: a.romance || 0, big: a.big ? { n: a.big.n, cm: a.big.cm } : null }; });
+  const bigs = big.docs.map((d) => { const b = d.data(); return { n: b.n, sp: b.sp, cm: b.cm, kg: b.kg, grade: b.grade, tier: b.tier, who: mask(b.name), school: b.schoolName, region: normRegion(b.region), at: b.at }; });
+  return { schools, regions: [...R.values()], anglers, bigs, totals, more: totals.registered > schools.length, at: Date.now() };
+}
 let BOARD: { t: number; v: unknown } | null = null;
 async function board() {
-  if (BOARD && Date.now() - BOARD.t < 30e3) return BOARD.v;
-  const [sc, an, big] = await Promise.all([
-    db().collection("ktSchools").orderBy("taste", "desc").limit(600).get(),
-    db().collection("ktAnglers").orderBy("taste", "desc").limit(50).get(),
-    db().collection("ktBig").orderBy("at", "desc").limit(16).get(),
-  ]);
-  const schools = sc.docs.map((d) => { const s = d.data(); return { key: d.id, name: s.name, region: s.region, lat: s.lat, lng: s.lng, caught: s.caught || 0, taste: s.taste || 0, romance: s.romance || 0, anglers: s.anglers || 0,
-    big: s.big ? { n: s.big.n, cm: s.big.cm, kg: s.big.kg, grade: s.big.grade, who: mask(s.big.who) } : null }; });
-  const R = new Map<string, { region: string; caught: number; taste: number; romance: number; anglers: number; schools: number }>();
-  for (const s of schools) { const r = R.get(s.region) || (R.set(s.region, { region: s.region, caught: 0, taste: 0, romance: 0, anglers: 0, schools: 0 }), R.get(s.region)!); r.caught += s.caught; r.taste += s.taste; r.romance += s.romance; r.anglers += s.anglers; r.schools++; }
-  const anglers = an.docs.map((d) => { const a = d.data(); return { name: mask(a.name), school: a.schoolName, region: a.region, taste: a.taste || 0, caught: a.caught || 0, romance: a.romance || 0, big: a.big ? { n: a.big.n, cm: a.big.cm } : null }; });
-  const bigs = big.docs.map((d) => { const b = d.data(); return { n: b.n, sp: b.sp, cm: b.cm, kg: b.kg, grade: b.grade, tier: b.tier, who: mask(b.name), school: b.schoolName, region: b.region, at: b.at }; });
-  const totals = schools.reduce((t, s) => ({ schools: t.schools + (s.caught ? 1 : 0), anglers: t.anglers + s.anglers, caught: t.caught + s.caught, taste: t.taste + s.taste, romance: t.romance + s.romance }), { schools: 0, anglers: 0, caught: 0, taste: 0, romance: 0 });
-  const v = { schools, regions: [...R.values()], anglers, bigs, totals, at: Date.now() };
+  if (BOARD && Date.now() - BOARD.t < 20e3) return BOARD.v;
+  const ref = db().doc("ktMeta/board"), c = (await ref.get()).data();
+  let v: unknown;
+  if (c?.j && Date.now() - (c.at || 0) < 120e3) v = JSON.parse(c.j);
+  else { v = await buildBoard(); const j = JSON.stringify(v); if (j.length < 900e3) await ref.set({ at: Date.now(), j }).catch(() => undefined); }
   BOARD = { t: Date.now(), v };
   return v;
+}
+// 학교 하나의 정확한 전국 순위(목록 밖 학교도) · 이름으로 찾기(앞글자 일치)
+const SORTS = ["taste", "caught", "romance"] as const;
+async function rankOf(s: DocumentData) {
+  const col = db().collection("ktSchools");
+  const n = await Promise.all(SORTS.map((k) => col.where(k, ">", s[k] || 0).count().get()));
+  return Object.fromEntries(SORTS.map((k, i) => [k, n[i].data().count + 1]));
+}
+async function schoolOp({ d }: { d: Record<string, unknown> }) {
+  const key = cut(d.key, 40), q = cut(d.q, 20).normalize("NFC").trim();
+  if (key) {
+    if (!ID.test(key)) throw new HttpsError("invalid-argument", "학교를 다시 골라 주세요.");
+    const x = await db().doc(`ktSchools/${key}`).get();
+    if (!x.exists) return { school: null };
+    return { school: { ...schoolOut(x.id, x.data()!, true), rank: await rankOf(x.data()!) } };
+  }
+  if (q.length < 2) return { list: [] };
+  const r = await db().collection("ktSchools").orderBy("name").startAt(q).endAt(q + "\uf8ff").limit(12).get();
+  return { list: await Promise.all(r.docs.map(async (x) => ({ ...schoolOut(x.id, x.data(), true), rank: await rankOf(x.data()) }))) };
 }
 
 // ---------------------------------------------------------------- 동작들
@@ -129,6 +173,7 @@ type Ctx = { req: CallableRequest; d: Record<string, unknown> };
 const OPS: Record<string, (c: Ctx) => Promise<unknown>> = {
   // 누구나: 전국 순위
   board: async () => board(),
+  school: (c) => schoolOp(c),
 
   // ------------------------------------------------ 선생님
   // 내 정보(가입 여부·학교·관리자)

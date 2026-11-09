@@ -498,7 +498,7 @@
   /* 반짝이: 아직 학급이 없는 선생님에게 '학급 만들기'를 눈에 띄게 */
   .sparkle { position: relative; overflow: hidden; animation: spkGlow 1.6s ease-in-out infinite; }
   .sparkle::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, .7) 47%, rgba(255, 255, 255, .15) 55%, transparent 68%); transform: translateX(-130%); animation: spkSweep 2.4s ease-in-out infinite; pointer-events: none; }
-  .sparkle::before { content: "✦"; position: absolute; top: 4px; right: 10px; font-size: 16px; color: #fff; text-shadow: 0 0 6px #fff, 0 0 12px var(--sun); animation: spkStar 1.2s ease-in-out infinite; pointer-events: none; }
+  .sparkle::before { content: ""; position: absolute; top: 8px; right: 12px; width: 8px; height: 8px; background: #fff; text-shadow: 0 0 6px #fff, 0 0 12px var(--sun); animation: spkStar 1.2s ease-in-out infinite; pointer-events: none; }
   .go.alt.sparkle { background: linear-gradient(180deg, #fff6c8, var(--cream)); }
   @keyframes spkSweep { 0%, 35% { transform: translateX(-130%); } 75%, 100% { transform: translateX(130%); } }
   @keyframes spkGlow { 0%, 100% { filter: drop-shadow(0 0 0 rgba(255, 210, 63, 0)); } 50% { filter: drop-shadow(0 0 10px rgba(255, 210, 63, .95)); } }
@@ -683,22 +683,85 @@
   .tutdots i { width: 12px; height: 12px; background: rgba(255, 248, 232, .3); cursor: pointer; }
   .tutdots i.on { background: var(--sun); }
   .tutnav { display: flex; gap: 10px; } .tutnav .go { flex: 1; }
-  /* ---------- 전국 강태공 대결(공유용) 추가 ---------- */
-  .kttitle { text-align: center; line-height: 1.05; } .kttitle small { display: block; font-size: .45em; color: var(--sky); letter-spacing: .3em; }
-  .joincls { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 10px; background: rgba(255, 248, 232, .06); } .joincls b { color: var(--sun); font-size: 20px; } .joincls span { color: var(--cream); font-size: 16px; }
-  .basepick { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: center; } .basepick span { color: var(--muted); font-size: 15px; }
-  .basepick button { border: 0; padding: 12px 6px; font: inherit; font-family: var(--px); font-size: 18px; background: rgba(255, 248, 232, .08); color: var(--cream); box-shadow: inset 0 0 0 3px rgba(255, 248, 232, .2); cursor: pointer; min-height: 48px; }
-  .basepick button[aria-pressed=true] { background: var(--sky); color: var(--ink); box-shadow: inset 0 0 0 3px var(--ink); }
-  .joinmore { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .joinmore .go { font-size: 17px; padding: 12px 6px; }
-  .lobme { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } .lobme:empty { display: none; }
-  .lobme span { display: flex; flex-direction: column; align-items: center; padding: 8px 4px; background: rgba(255, 248, 232, .06); } .lobme small { color: var(--muted); font-size: 12px; } .lobme b { color: var(--sun); font-size: 22px; font-family: var(--num); }
-  .lobleave { align-self: center; }
-  .endschool { margin: 0; text-align: center; font-size: 16px; line-height: 1.5; color: var(--cream); } .endschool b { color: var(--sky); }
-  .rankgo { background: var(--sky); font-size: 22px; }
-  .rankbox { position: fixed; inset: 0; z-index: 45; background: rgba(8, 10, 24, .7); display: grid; place-items: center; padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
-  .rankwin { position: relative; width: min(1180px, 100%); height: 100%; max-height: 900px; box-shadow: var(--pxbox); background: #0e1230; }
-  .rankwin iframe { width: 100%; height: 100%; border: 0; display: block; }
-  .rankx { position: absolute; top: 8px; right: 8px; z-index: 2; border: 0; padding: 10px 14px; font: inherit; font-family: var(--px); font-size: 16px; background: var(--sun); color: var(--ink); cursor: pointer; box-shadow: var(--pxbox); }
+  /* ---------- 전국 강태공 대결(공유용) 추가: 원래 게임과 같은 픽셀 말투 ---------- */
+  .ic { display: inline-flex; font-style: normal; vertical-align: -.16em; line-height: 1; flex: none; }
+  .ic svg, .pxi { display: block; image-rendering: pixelated; }
+  .go .ic, .acctout .ic { margin: 0 2px; }
+  .go.sub { background: #2a3160; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); box-shadow: 0 -5px 0 var(--ink), 0 5px 0 var(--ink), -5px 0 0 var(--ink), 5px 0 0 var(--ink), inset 0 4px 0 rgba(255, 255, 255, .14), inset 0 -6px 0 rgba(0, 0, 0, .28), 0 13px 0 rgba(0, 0, 0, .4); }
+  .go.sub:hover { background: #333c75; }
+  .go.ico { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+  .kttitle { text-align: center; line-height: 1.05; } .kttitle small { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: .42em; color: var(--sky); letter-spacing: .3em; margin-bottom: 4px; }
+  .kttitle small .ic { letter-spacing: 0; }
+  .joinp { gap: 16px; padding: 24px 24px 20px; }
+  .joinsteps { gap: 10px; margin: 2px 0 4px; }
+  .joinsteps li { padding: 6px 10px 7px; font-size: 14px; background: var(--ink); box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink); }
+  .joinsteps li.now { box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), inset 0 -3px 0 rgba(0, 0, 0, .2); }
+  .bigjoin { gap: 12px; }
+  .bigjoin label, .bigjoin .lbl { color: var(--cream); font-size: 16px; text-align: left; }
+  .bigjoin input { box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), inset 0 4px 0 rgba(0, 0, 0, .35); margin: 4px; background: #0d1026; }
+  .bigjoin input::placeholder { color: #5b6394; }
+  .bigjoin input:focus { outline: 0; box-shadow: 0 -4px 0 var(--sun), 0 4px 0 var(--sun), -4px 0 0 var(--sun), 4px 0 0 var(--sun), inset 0 4px 0 rgba(0, 0, 0, .35); }
+  .bigjoin .go { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .joincls { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; margin: 4px; padding: 12px 14px; text-align: left; background: #2a3160; box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), inset 0 4px 0 rgba(255, 255, 255, .1); }
+  .joincls .ic { grid-row: 1 / 3; } .joincls b { color: var(--sun); font-size: 20px; } .joincls span { color: var(--cream); font-size: 16px; }
+  .basepick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; } .basepick .lbl { grid-column: 1 / -1; }
+  .basepick button { border: 0; margin: 4px; padding: 10px 6px 12px; font: inherit; font-family: var(--px); font-size: 19px; background: #2a3160; color: var(--cream); cursor: pointer; min-height: 60px; display: flex; align-items: center; justify-content: center; gap: 10px; text-shadow: 2px 2px 0 var(--ink);
+    box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), inset 0 4px 0 rgba(255, 255, 255, .12), inset 0 -5px 0 rgba(0, 0, 0, .3); }
+  .basepick button:active { transform: translateY(3px); }
+  .joinmore { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; } .joinmore .go { font-size: 17px; padding: 12px 6px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .joinp > .acctout, .bigjoin .acctout { display: inline-flex; align-items: center; justify-content: center; gap: 6px; align-self: center; min-height: 44px; font-size: 14px; color: var(--muted); text-decoration: none; }
+  .joinp > .acctout:hover, .bigjoin .acctout:hover, .lobleave:hover { color: var(--cream); }
+  .lobme { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 4px; } .lobme:empty { display: none; }
+  .lobme span { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 9px; background: var(--ink); box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), inset 0 3px 0 rgba(255, 255, 255, .08); }
+  .lobme small { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; } .lobme b { color: var(--sun); font-size: 24px; font-family: var(--num); text-shadow: 2px 2px 0 #000; }
+  .lobme span:nth-child(3) b { color: #ff9ecb; } .lobme span:nth-child(2) b { color: var(--sky); }
+  .lobpractice .ic { margin-left: 4px; }
+  .lobbtns .go { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .lobleave { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 14px; text-decoration: none; }
+  .endschool { margin: 0; text-align: center; font-size: 16px; line-height: 1.5; color: var(--cream); padding: 10px 14px; background: #2a3160; box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink); } .endschool b { color: var(--sky); }
+  .rankgo { font-size: 20px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .rankbox { position: fixed; inset: 0; z-index: 45; background: rgba(8, 10, 24, .75); display: grid; place-items: center; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+  .rankwin { position: relative; width: min(1180px, calc(100% - 8px)); height: calc(100% - 8px); max-height: 900px; box-shadow: var(--pxbox); background: #0e1230; display: flex; flex-direction: column; }
+  .rankbar { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); border-bottom: 4px solid var(--ink); font-size: 18px; color: var(--sun); text-shadow: 2px 2px 0 var(--ink); }
+  .rankbar b { flex: 1; display: flex; align-items: center; gap: 10px; }
+  .rankwin iframe { width: 100%; flex: 1; min-height: 0; border: 0; display: block; }
+  .rankx { border: 0; margin: 4px; padding: 0 14px; min-height: 44px; font: inherit; font-family: var(--px); font-size: 16px; background: var(--cream); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-shadow: none;
+    box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), inset 0 -4px 0 rgba(0, 0, 0, .2); }
+  .rankx:active { transform: translateY(3px); }
+  .tutx { display: grid; place-items: center; }
+  /* 2차: 한국어 낱말이 중간에서 끊기지 않게 */
+  body { word-break: keep-all; overflow-wrap: anywhere; }
+  .tri { display: inline-block; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid currentColor; margin-right: 6px; vertical-align: 1px; }
+  /* 주 버튼은 연두 하나, 나머지는 남색 보조 버튼 */
+  #end .places.endact .go.alt { background: #2a3160; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); box-shadow: 0 -5px 0 var(--ink), 0 5px 0 var(--ink), -5px 0 0 var(--ink), 5px 0 0 var(--ink), inset 0 4px 0 rgba(255, 255, 255, .14), inset 0 -6px 0 rgba(0, 0, 0, .28), 0 13px 0 rgba(0, 0, 0, .4); }
+  #end .places.endact #againBtn { background: var(--lime); color: var(--ink); text-shadow: none; }
+  .lobpractice small { color: var(--muted); }
+  .go.lobpractice { font-size: 20px; }
+  @media (max-width: 520px) { .go.lobpractice { font-size: 17px; } }
+  /* 고른 상태: 노란 칸이 꾹 눌린 모양(테두리 바깥 빛 없음) */
+  .basepick button[aria-pressed=true] { background: var(--sun); color: var(--ink); text-shadow: none; transform: translateY(3px); box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink), inset 0 4px 0 rgba(255, 255, 255, .5); }
+  /* 이름 단계부터는 연습·순위·선생님 링크를 숨겨 한 화면에 */
+  #join:has(#joinWho:not([hidden])) .joinmore, #join:has(#joinWho:not([hidden])) .joinp > a.acctout { display: none; }
+  /* 대기실: 점 애니메이션 대신 마침표, 친구 목록은 상자 안에 */
+  #lobby[data-ph=lobby] .lobhead p::after { content: "."; animation: none; width: auto; }
+  .lobwho { background: var(--ink); padding: 12px; margin: 4px; min-height: 110px; box-shadow: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), inset 0 4px 0 rgba(0, 0, 0, .3); }
+  .lobwho > b { color: var(--cream); font-size: 16px; margin-bottom: 10px; }
+  .lobwho .chips:empty::after { content: "친구들이 들어오면 여기에 이름이 떠요"; color: var(--dim, #7d86b8); font-size: 14px; }
+  /* 끝 화면: 점수를 가운데로 */
+  #end #endTitle, #end .big, #end .best { text-align: center; }
+  /* 입장·대기실에서는 게임 위쪽 점수판을 숨겨 화면을 깨끗하게 */
+  body:has(#join:not([hidden])) .top, body:has(#lobby:not([hidden])) .top { visibility: hidden; }
+  .joinp .kttitle { font-size: clamp(38px, 9vw, 58px); }
+  #join, #lobby { grid-template-columns: minmax(0, 1fr); justify-items: center; } /* 좁은 화면에서 입력칸 기본 폭 때문에 판이 밀려나지 않게 */
+  .bigjoin input { width: auto; }
+  .joinmore .go { font-size: 16px; padding: 10px 6px; }
+  @media (max-height: 860px) { .joinp { gap: 12px; padding-top: 18px; } .joinp .kttitle { font-size: clamp(34px, 8vw, 48px); } .bigjoin { gap: 10px; } }
+  @media (max-width: 520px) {
+    .joinp { padding: 18px 14px 14px; gap: 12px; }
+    .joinmore { grid-template-columns: 1fr; }
+    .bigjoin input[name=code] { font-size: 32px; letter-spacing: .18em; }
+    .lobbtns .go { font-size: 14px; gap: 4px; white-space: nowrap; padding-inline: 2px; margin-inline: 4px; }
+  }
   /* 태블릿(아이패드·갤럭시탭): 버튼을 손가락 크기로, 화면 높이는 주소창을 뺀 높이 */
   @supports (height: 100dvh) { .screen { height: 100dvh; } }
   @media (pointer: coarse) { .go { min-height: 52px; } .acctout { padding: 10px; } }
@@ -741,7 +804,7 @@
 
 <div class="castm px" id="castM" hidden>
   <div class="ctrack"><i class="czone" id="castZone" hidden><i class="cpf" id="castPf"></i></i><div id="castMarks"></div><b class="cneedle" id="castNeedle"></b></div>
-  <p><span>힘 <b id="castDist">0m</b></span><span>▼ 거품까지 거리 · <b style="color:var(--lime)">초록</b>에서 떼요</span></p>
+  <p><span>힘 <b id="castDist">0m</b></span><span><i class="tri" aria-hidden="true"></i>거품까지 거리 · <b style="color:var(--lime)">초록</b>에서 떼요</span></p>
 </div>
 <div class="aimlabels" id="aimLabels" hidden></div>
 <div class="warning" id="warning" hidden><div class="stripe"></div><b>WARNING</b><span>거대한 물고기가 다가온다!</span><div class="stripe"></div></div>
@@ -816,7 +879,7 @@
         <b>점수</b><span>크기 × 무게로 점수가 매겨져요. 같은 물고기도 내 기록보다 무거우면 <em>기록 경신 ×1.3</em></span>
         <b>연타</b><span>"계속 연타하세요!"가 나오면 쉬지 말고 빠르게! 빠르면 원이 커지고, 느리면 작아져요. 큰 놈일수록 더 빠르게 오래</span>
       </div>
-      <button class="go alt tutbtn" id="tutOpen">▶ 영상으로 하는 법 보기</button>
+      <button class="go alt tutbtn" id="tutOpen"><i class="ic" data-i="play" data-s="20"></i> 영상으로 하는 법 보기</button>
       <div class="bubbles" id="legend"></div>
       <div class="mbox"><h3>오늘의 미션 <small>완료하면 +150점</small></h3><ul class="missions"></ul></div>
     </div>
@@ -825,7 +888,7 @@
 
 <div class="tut" id="tut" hidden>
   <div class="tutcard px">
-    <div class="tuthead"><small id="tutStep">1 / 5</small><b>낚시하는 법</b><button class="tutx" id="tutClose" aria-label="닫기">✕</button></div>
+    <div class="tuthead"><small id="tutStep">1 / 5</small><b>낚시하는 법</b><button class="tutx" id="tutClose" aria-label="닫기"><i class="ic" data-i="close" data-s="18"></i></button></div>
     <div class="tutvid"><video id="tutVid" muted loop playsinline autoplay preload="metadata"></video></div>
     <h3 id="tutTitle"></h3>
     <p id="tutText"></p>
@@ -842,7 +905,7 @@
     <div class="big" id="endScore">0</div>
     <p class="best" id="endBest">최고 기록 0</p>
     <p class="endschool" id="endSchool" hidden></p>
-    <button class="go rankgo" data-rank>🏆 전국 강태공 순위 보기</button>
+    <button class="go sub rankgo" data-rank><i class="ic" data-i="trophy" data-s="28"></i>전국 강태공 순위 보기</button>
     <div class="places endact"><button class="go alt" id="againBtn">한 판 더!</button><button class="go alt" id="placeBtn">대기실로</button><button class="go alt" data-openbook>물고기 도감</button></div>
     <div class="results" id="endList"></div>
     <div class="mbox"><h3>오늘의 미션</h3><ul class="missions"></ul></div>
@@ -851,14 +914,14 @@
 
 <div class="screen" id="join" hidden>
   <div class="panel joinp">
-    <h1 class="kttitle"><small>전국</small>강태공 <em>대결</em></h1>
+    <h1 class="kttitle"><small><i class="ic" data-i="rod" data-s="28"></i>전국<i class="ic" data-i="fish" data-s="28"></i></small>강태공 <em>대결</em></h1>
     <ol class="joinsteps" id="joinSteps"><li class="now">1. 방 코드</li><li>2. 이름</li><li>3. 대기실</li></ol>
-    <form id="joinCode" class="bigjoin" autocomplete="off"><label for="jcode">선생님 화면에 있는 방 코드</label><input id="jcode" name="code" maxlength="6" placeholder="ABC123" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next"><button class="go">다음</button><small class="joinhint">영어와 숫자 6자리예요. 선생님이 보여 준 QR로 들어오면 이 단계는 건너뛰어요.</small></form>
+    <form id="joinCode" class="bigjoin" autocomplete="off"><label for="jcode">선생님 화면에 있는 방 코드</label><input id="jcode" name="code" maxlength="6" placeholder="ABC123" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next"><button class="go">다음 <i class="ic" data-i="right" data-s="24"></i></button><small class="joinhint">영어와 숫자 6자리예요. 선생님이 보여 준 QR로 들어오면 이 단계는 건너뛰어요.</small></form>
     <form id="joinWho" class="bigjoin" autocomplete="off" hidden><p id="joinCls" class="joincls"></p><label for="jname">내 이름</label><input id="jname" name="name" maxlength="12" placeholder="예: 김민지" enterkeyhint="go" autocorrect="off" spellcheck="false">
-      <div class="basepick" role="group" aria-label="내 낚시꾼"><span>내 낚시꾼</span><button type="button" data-base="0" aria-pressed="true">🧢 남자</button><button type="button" data-base="1" aria-pressed="false">🎀 여자</button></div>
-      <small class="joinhint">같은 이름으로 다시 들어오면 점수가 이어져요.</small><button class="go">들어가기</button><button type="button" class="acctout" id="joinBack">방 코드 다시 쓰기</button></form>
-    <div class="joinmore"><button type="button" class="go alt" id="joinPractice">혼자 연습해 보기 🎣</button><button type="button" class="go alt" data-rank>🏆 전국 순위</button></div>
-    <a class="acctout" href="teacher.html">선생님이세요? 방 만들러 가기 →</a>
+      <div class="basepick" role="group" aria-label="내 낚시꾼"><span class="lbl">내 낚시꾼</span><button type="button" data-base="0" aria-pressed="true"><i class="ic" data-i="cap" data-s="32"></i>남자</button><button type="button" data-base="1" aria-pressed="false"><i class="ic" data-i="ribbon" data-s="32"></i>여자</button></div>
+      <small class="joinhint">같은 이름으로 다시 들어오면 점수가 이어져요.</small><button class="go">들어가기</button><button type="button" class="acctout" id="joinBack"><i class="ic" data-i="left" data-s="16"></i>방 코드 다시 쓰기</button></form>
+    <div class="joinmore"><button type="button" class="go sub" id="joinPractice"><i class="ic" data-i="rod" data-s="22"></i>혼자 연습해 보기</button><button type="button" class="go sub" data-rank><i class="ic" data-i="trophy" data-s="22"></i>전국 순위</button></div>
+    <a class="acctout" href="teacher.html"><i class="ic" data-i="school" data-s="18"></i>선생님이세요? 방 만들러 가기<i class="ic" data-i="right" data-s="14"></i></a>
   </div>
 </div>
 
@@ -869,13 +932,13 @@
       <div class="lobslot" id="lobbySlot"></div>
       <div class="lobside">
         <div class="lobplaces" id="lobPlaces" hidden><small>어디서 낚시할까요?</small><button class="go alt" data-lobplace="fresh">민물</button><button class="go alt" data-lobplace="sea">바다</button></div>
-        <button class="go lobgo" id="lobGo" hidden>낚시하러 가기 ▶</button>
+        <button class="go lobgo" id="lobGo" hidden>낚시하러 가기 <i class="ic" data-i="playk" data-s="26"></i></button>
         <div class="lobme" id="lobMe"></div>
-        <button class="go alt lobpractice" id="lobPractice" hidden>기다리는 동안 연습하기 🎣<small>연습 점수는 순위에 안 들어가요</small></button>
+        <button class="go sub lobpractice" id="lobPractice" hidden><span><i class="ic" data-i="rod" data-s="22"></i> 기다리는 동안 연습하기</span><small>연습 점수는 순위에 안 들어가요</small></button>
         <div class="lobwho"><b id="lobCount"></b><div class="chips" id="lobPlayers"></div></div>
       </div>
     </div>
-    <div class="lobbtns"><button class="go alt" data-rank>🏆 전국 순위</button><button class="go alt" data-openbook>도감</button><button class="go alt" data-tut>하는 법</button></div>
+    <div class="lobbtns"><button class="go sub" data-rank><i class="ic" data-i="trophy" data-s="22"></i>전국 순위</button><button class="go sub" data-openbook><i class="ic" data-i="book" data-s="22"></i>도감</button><button class="go sub" data-tut><i class="ic" data-i="help" data-s="22"></i>하는 법</button></div>
     <button type="button" class="acctout lobleave" id="lobLeave">다른 방으로 가기</button>
   </div>
 </div>
@@ -885,9 +948,9 @@
 
 <div id="town" hidden></div>
 
-<div class="quizbox" id="quizBox" hidden><div class="tutcard px"><div class="tuthead"><b class="qtag">문제를 맞히면 던질 수 있어요</b></div>
+<div class="quizbox" id="quizBox" hidden><div class="tutcard px"><div class="tuthead"><i class="ic" data-i="quiz" data-s="28"></i><b class="qtag">문제를 맞히면 던질 수 있어요</b></div>
   <p class="qq"></p><div class="qo"></div><p class="qmsg"></p></div></div>
-<div class="rankbox" id="rankBox" hidden><div class="rankwin"><button class="rankx" data-rankclose aria-label="닫기">✕ 닫기</button><iframe title="전국 강태공 순위" loading="lazy"></iframe></div></div>
+<div class="rankbox" id="rankBox" hidden><div class="rankwin"><div class="rankbar"><b><i class="ic" data-i="trophy" data-s="24"></i>전국 강태공 순위</b><button class="rankx" data-rankclose aria-label="닫기"><i class="ic" data-i="close" data-s="16"></i>닫기</button></div><iframe title="전국 강태공 순위" loading="lazy"></iframe></div></div>
 
 <div class="screen" id="book" hidden>
   <div class="panel wide">
@@ -898,6 +961,7 @@
   </div>
 </div>
 
-<script type="module" src="game.js?v=1"></script>
+<script type="module" src="./icons.js?v=2"></script>
+<script type="module" src="game.js?v=2"></script>
 </body>
 </html>

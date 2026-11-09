@@ -9,7 +9,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { analyze, shell, cut } from "./avatar.js?v=8";
 import { buildRig, skinWeights, poseRig, handPos } from "./rig.js?v=3";
 import { scanFace, pushToSkin, lensOf, scanBack, pushOntoBack, wornPoints, ringAt, frontAtP, nearestOf, settle } from "./fit.js?v=1";
-import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, closeQuiz, quizOpen, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./net.js?v=1";
+import { NET, initNet, saveCatch, refresh, gate, quizNeeded, askQuiz, closeQuiz, quizOpen, LOOK_PAL, serverNow, phaseNow, hasTicket, renderLobby, bindJoin, endTest } from "./net.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -3048,7 +3048,7 @@ function finish() {
   if (!G.playing) return;
   G.playing = false; G.ending = false; closeQuiz(); resetRod(); hint(""); // 시간이 다 되면 풀던 문제 창도 닫는다
   $("practag").hidden = true;
-  $("endTitle").innerHTML = G.test ? "테스트 <em>끝!</em>" : G.practice ? "연습 <em>끝!</em>" : "대회 <em>끝!</em>";
+  $("endTitle").innerHTML = G.test ? "테스트 <em>끝!</em>" : G.practice ? "연습 <em>끝!</em>" : "대결 <em>끝!</em>";
   if (G.test) { G.test = null; endTest(); }
   if (G.practice) $("againBtn").hidden = true;
   refresh().catch(() => {}); // 살림망·손맛 점수를 서버 값으로

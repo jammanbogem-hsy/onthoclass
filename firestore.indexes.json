@@ -13,6 +13,32 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "ktSchools",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "region",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "anglers",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "caught",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "romance",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "taste",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
