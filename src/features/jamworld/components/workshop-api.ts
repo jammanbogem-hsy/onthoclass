@@ -193,6 +193,6 @@ export async function agentRequest<T>(json: unknown, signal?: AbortSignal): Prom
     });
     const r = await api<T & { status?: string }>(`/api/jamworld/agent/jobs/${jobId}`, { signal });
     if (r.status !== "queued" && r.status !== "running") return r as T;
-    if (Date.now() - startedAt > 6 * 60_000) throw new ApiError("도우미 응답이 너무 오래 걸려요. 잠시 뒤 다시 시도해 주세요", 504);
+    if (Date.now() - startedAt > 10 * 60_000) throw new ApiError("도우미 응답이 너무 오래 걸려요. 잠시 뒤 다시 시도해 주세요", 504);
   }
 }

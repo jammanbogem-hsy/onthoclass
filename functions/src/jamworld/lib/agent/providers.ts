@@ -73,7 +73,7 @@ export function providerStatus(env: ProviderEnv) {
 function explain(provider: Provider, e: unknown): ProviderError {
   const label = provider === "openai" ? "OpenAI" : "Anthropic";
   const status = (e as { status?: number })?.status;
-  if (e instanceof Error && (e.name === "AbortError" || /abort|timeout/i.test(e.message))) return new ProviderError(`${label} 응답 시간이 초과됐습니다`, 504);
+  if (e instanceof Error && (e.name === "AbortError" || /abort|timeout|timed out/i.test(e.message))) return new ProviderError(`${label} 응답이 너무 오래 걸려 멈췄어요. 방이나 문제 수를 나눠서 부탁해 주세요`, 504);
   if (status === 401 || status === 403) return new ProviderError(`${label} 인증 실패 (${status}): 키가 잘못됐거나 권한이 없습니다`, 502);
   if (status === 404) return new ProviderError(`${label} 모델을 찾을 수 없습니다 (404): 계정에서 이 모델을 쓸 수 없을 수 있습니다`, 502);
   if (status === 429) return new ProviderError(`${label} 요청 한도 초과 (429): 잠시 후 다시 시도하세요`, 429);
@@ -87,7 +87,7 @@ function explain(provider: Provider, e: unknown): ProviderError {
 
 async function callAnthropic(env: ProviderEnv, turns: Turn[], signal: AbortSignal): Promise<ModelResult> {
   const model = env.ANTHROPIC_MODEL || DEFAULT_MODELS.anthropic;
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 85_000 });
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0, timeout: 600_000 }) // 시간 제한은 signal(바깥 작업 예산)이 정함;
   try {
     // Sonnet 5.5: 강제 tool_choice 는 400 → auto + 지시문. 정책 거절 시 서버측 기본 fallback 사용
     const res = await client.messages.create(
@@ -123,7 +123,7 @@ async function callAnthropic(env: ProviderEnv, turns: Turn[], signal: AbortSigna
 
 async function callOpenAI(env: ProviderEnv, turns: Turn[], signal: AbortSignal): Promise<ModelResult> {
   const model = env.OPENAI_MODEL || DEFAULT_MODELS.openai;
-  const client = new OpenAI({ apiKey: env.OPENAI_API_KEY, maxRetries: 1, timeout: 85_000 });
+  const client = new OpenAI({ apiKey: env.OPENAI_API_KEY, maxRetries: 0, timeout: 600_000 }) // 시간 제한은 signal(바깥 작업 예산)이 정함;
   try {
     const res = await client.responses.create(
       {

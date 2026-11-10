@@ -47,7 +47,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_BODY = 11_000_000; // 맵(최대 약 2.5MB) + 참고 자료(최대 약 8MB)
 const TIMEOUT_MS = 90_000; // 바로 답하는 경로(호스팅 60초 제한 안쪽에서 끝나야 함 — 실제로는 작업 경로를 씀)
-const JOB_TIMEOUT_MS = 230_000; // 백그라운드 작업 경로(함수 300초 안)
+const JOB_TIMEOUT_MS = 500_000; // 백그라운드 작업 경로(함수 540초 안, 고치기 재요청까지 포함)
 
 function fail(error: string, status: number, detail?: string[]) {
   return Response.json({ error, detail }, { status, headers: { "cache-control": "no-store" } });

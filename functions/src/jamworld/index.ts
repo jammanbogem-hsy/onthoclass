@@ -96,6 +96,6 @@ export const jamworldGenerate = onDocumentCreated({ document: "jamworldGeneratio
 });
 
 // 도우미 맵 제작 작업(호스팅 60초 제한을 피해 백그라운드로)
-export const jamworldAgentJob = onDocumentCreated({ document: "jamworldAgentJobs/{jobId}", region: "asia-northeast3", secrets, timeoutSeconds: 300, memory: "1GiB", maxInstances: 10, retry: false }, async (event) => {
+export const jamworldAgentJob = onDocumentCreated({ document: "jamworldAgentJobs/{jobId}", region: "asia-northeast3", secrets, timeoutSeconds: 540, memory: "1GiB", maxInstances: 10, retry: false }, async (event) => {
   await route0.runJob(event.params.jobId);
 });
